@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { uiChoiceCookie } from '../../src/shared/ui-choice.ts'
 import { type ObservableSnapshot, useSnapshot } from './dsh/use-snapshot.ts'
 
 type ConnectionState = 'connected' | 'disconnected' | 'connecting'
@@ -24,6 +25,12 @@ interface Services {
   sessions: { list: ObservableSnapshot<SessionListState> }
 }
 
+/** Record the stock UI as this device's choice and go there. */
+function backToClassic() {
+  document.cookie = uiChoiceCookie('classic')
+  location.assign('/')
+}
+
 /**
  * Transport check screen: connection state and the session list. The M3E
  * screens replace this once the transport is proven on a real Host.
@@ -44,6 +51,11 @@ export function App({ ctx }: { ctx: Context }) {
       </p>
       <p>
         一覧の状態: <span data-testid="list-phase">{list.phase}</span> / {list.ids.length} 件
+      </p>
+      <p>
+        <button type="button" onClick={backToClassic}>
+          今の画面に戻す
+        </button>
       </p>
       <ul data-testid="session-list">
         {list.ids.map((id) => {

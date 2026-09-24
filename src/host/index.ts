@@ -1,6 +1,8 @@
 /**
  * dsh-webui-m3e — Host half. Serves the built M3E Web UI under `/m3e` beside
- * the stock UI, which keeps the webserver fallback seat.
+ * the stock UI, which keeps the webserver fallback seat, and taps a small
+ * script into every index head that sends a device which chose M3E from the
+ * stock index to `/m3e/` (see ../shared/ui-choice.ts).
  *
  * The index goes through the same gate as the stock UI: Connection's browser
  * authentication, then the webserver's index render, which injects the module
@@ -13,6 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { uiChoiceScript } from '../shared/ui-choice.ts'
 
 export const name = 'webui-m3e'
 export const inject = ['webServer', 'connection']
@@ -46,6 +49,16 @@ const APPLICATION_PRELOAD = /<link rel="preload" as="script" href="\/plugins\/[^
  */
 export function stripApplicationPreloads(html: string): string {
   return html.replace(APPLICATION_PRELOAD, '')
+}
+
+/**
+ * Put the UI choice script first in the head, so it runs before any stock
+ * script is fetched or evaluated.
+ * @param html - an index body.
+ * @returns the body with the script right after the opening head tag.
+ */
+export function injectUiChoice(html: string): string {
+  return html.replace(/<head(?:\s[^>]*)?>/i, (open) => `${open}<script>${uiChoiceScript()}</script>`)
 }
 
 /**
@@ -101,4 +114,5 @@ export function apply(ctx: Context): void {
   }
 
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: MOUNT, handler: handle }), 'webui-m3e: /m3e route')
+  ctx.effect(() => ctx.webServer.tapIndex(injectUiChoice), 'webui-m3e: UI choice script')
 }

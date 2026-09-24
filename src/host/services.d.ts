@@ -14,6 +14,7 @@ declare module '@deepseek-ai/cordis' {
         handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
       }): () => void
       renderIndex(html: string): string
+      tapIndex(transform: (html: string) => string): () => void
     }
     connection: {
       authorizeIndex(req: IncomingMessage, res: ServerResponse): boolean

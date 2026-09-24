@@ -20,6 +20,7 @@
   },
   "include": [
     "src/host",
+    "src/shared",
     "scripts",
     "tests"
   ]
