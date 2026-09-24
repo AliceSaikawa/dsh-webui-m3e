@@ -1,0 +1,50 @@
+{
+  "name": "dsh-webui-m3e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Material 3 Expressive mobile Web UI for DeepSeek Harness, served beside the stock UI and switched per device.",
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "dist",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm run build:web && pnpm run build:host",
+    "build:web": "vite build",
+    "build:host": "node scripts/build-host.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.host.json --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.3",
+    "@deepseek-ai/dsh-client-store": "0.1.5-rc.2",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,0 +1,4 @@
+# Serve the M3E Web UI under /m3e beside the stock Web UI.
+- insert:
+    - id: webui-m3e
+      name: dsh-webui-m3e
