@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
-import { buildTrace, elapsed, filterTrace, firstOutputTime, rowDescription, turnHeading } from '../web/src/features/trace/model.ts'
+import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, rowDescription, selectTrace, turnHeading } from '../web/src/features/trace/model.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { extendMock } from '../web/src/features/trace/mock.ts'
@@ -140,7 +140,7 @@ test('durable assistant output wins over a stale stream for the same step', () =
   assert.equal(turn.rows[0].durationMs, 90)
 })
 
-test('discarded attempts count as retries within their own step only', () => {
+test('uncommitted attempts are counted within their own step without being labelled as retries', () => {
   const [turn] = buildTrace([
     record(1, 'turn/start', 100, { turn: 3 }),
     record(2, 'step/start', 110, { turn: 3, step: 1 }),
@@ -157,7 +157,8 @@ test('discarded attempts count as retries within their own step only', () => {
   assert.equal(turn.rows.length, 2)
   assert.equal(turn.rows[0].retries, 2)
   assert.equal(turn.rows[1].retries, 0)
-  assert.match(rowDescription(turn.rows[0]), /再試行 2 回/)
+  assert.match(rowDescription(turn.rows[0]), /未確定の試行 2 回/)
+  assert.doesNotMatch(rowDescription(turn.rows[0]), /再試行/)
   assert.equal(turn.usage?.totalTokens, 12)
 })
 
@@ -600,4 +601,101 @@ test('the mocks use entered-step input order and retain historical failure cause
     assert.equal(turns[4]?.rows.find(row => row.kind === 'assistant')?.failed, false)
     assert.ok(turns[1]?.rows.find(row => row.kind === 'assistant')?.termination?.message.includes('ユーザー'))
   } finally { ctx.dispose() }
+})
+
+test('rendering and searching a long trace does not expand any prior input until one row is inspected', () => {
+  let surfaceReads = 0
+  const records: SessionWireEvent[] = [record(0, 'turn/start', 0, { turn: 1 })]
+  for (let step = 1; step <= 300; step++) {
+    records.push(record(records.length, 'step/start', records.length, { turn: 1, step }))
+    records.push({ ...record(records.length, 'user/message', records.length, { content: [text(`質問 ${step}`)] }),
+      get surfaceOp() { surfaceReads++; return 'append' } })
+    records.push({ ...message(records.length, records.length, 1, step, `回答 ${step}`),
+      get surfaceOp() { surfaceReads++; return 'append' } })
+    records.push(record(records.length, 'step/end', records.length, { turn: 1, step }))
+  }
+  records.push(record(records.length, 'turn/end', records.length, { turn: 1, reason: { kind: 'completed' } }))
+  const turns = selectTrace(records)
+  for (const turn of turns) {
+    turnHeading(turn)
+    for (const row of turn.rows) rowDescription(row)
+  }
+  filterTrace(turns, '回答')
+  assert.equal(surfaceReads, 0, 'list-only work must not replay any input surface')
+  const last = turns[0]?.rows.at(-1)
+  assert.ok(last)
+  assert.equal(findTraceRow(turns, last.id), last)
+  assert.equal(surfaceReads, 0, 'finding the selected row must not expand input either')
+  const input = last.input
+  assert.equal(input.length, 599)
+  assert.deepEqual(input.at(-1), text('質問 300'))
+  assert.equal(surfaceReads, 599)
+  assert.equal(last.input, input)
+  assert.equal(surfaceReads, 599, 'reopening the same input reuses its resolved array')
+})
+
+test('list and sheet share the latest projection without retaining every streamed revision', () => {
+  const records = [record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('質問')] })]
+  const firstStream: AssistantStream = { attemptId: 'a', turn: 1, step: 1, chunks: [], content: [{ type: 'text', text: '途' }] }
+  const nextStream: AssistantStream = { ...firstStream, content: [{ type: 'text', text: '途中' }] }
+  const first = selectTrace(records, firstStream, true)
+  assert.equal(selectTrace(records, firstStream, true), first)
+  const firstRow = first[0]?.rows.at(-1)
+  assert.ok(firstRow)
+  const firstInput = firstRow.input
+  const next = selectTrace(records, nextStream, true)
+  assert.notEqual(next, first)
+  assert.deepEqual(firstRow.content, [text('途')], 'a later stream must not mutate the earlier view')
+  assert.deepEqual(next[0]?.rows.at(-1)?.content, [text('途中')])
+  assert.equal(next[0]?.rows.at(-1)?.input, firstInput, 'input does not change on a text-only update')
+  assert.equal(selectTrace(records, nextStream, true), next)
+  assert.notEqual(selectTrace(records, firstStream, true), first, 'an older streamed revision is not retained in the shared cache')
+  const stopped = selectTrace(records, nextStream, false)
+  assert.equal(stopped[0]?.rows.at(-1)?.running, false)
+  const settledRecords = [...records, message(4, 200, 1, 1, '確定した回答')]
+  const settled = selectTrace(settledRecords, nextStream, true)
+  assert.deepEqual(settled[0]?.rows.at(-1)?.content, [text('確定した回答')])
+  assert.deepEqual(firstRow.input, [text('質問')])
+  assert.equal(findTraceRow(settled, '存在しない記録'), undefined)
+})
+
+test('lazy input is resolved at each original request boundary even when inspected after compaction', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('古い質問')] }), message(4, 140, 1, 1, '古い回答'),
+    record(5, 'compaction/start', 150, { turn: 1, compactionId: 'c' }),
+    record(6, 'compaction/summary', 160, { turn: 1, compactionId: 'c', summary: [text('置き換えた要約')] }),
+    { ...record(7, 'user/message', 170, { source: { kind: 'plugin', plugin: 'compact', compactionId: 'c' }, content: [text('置き換えた要約')] }), surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 } },
+    record(8, 'compaction/end', 180, { turn: 1, compactionId: 'c' }), record(9, 'step/start', 190, { turn: 1, step: 2 }),
+    record(10, 'user/message', 200, { content: [text('新しい質問')] }), message(11, 220, 1, 2, '新しい回答'),
+  ])
+  assert.ok(turn)
+  const earlier = turn.rows.find(row => row.kind === 'assistant' && row.step === 1)
+  const later = turn.rows.find(row => row.kind === 'assistant' && row.step === 2)
+  const compaction = turn.rows.find(row => row.kind === 'compaction')
+  assert.ok(earlier)
+  assert.ok(later)
+  assert.ok(compaction)
+  assert.deepEqual(later.input, [text('置き換えた要約'), text('新しい質問')])
+  assert.deepEqual(compaction.input, [text('古い質問'), text('古い回答')])
+  assert.deepEqual(earlier.input, [text('古い質問')])
+  assert.deepEqual(later.input, [text('置き換えた要約'), text('新しい質問')])
+})
+
+test('a first and final failed attempt is labelled as uncommitted rather than as a retry', () => {
+  const row = buildTrace(traceFailureRecords)[0]?.rows.find(item => item.kind === 'assistant')
+  assert.ok(row)
+  assert.equal(row.retries, 1)
+  assert.match(rowDescription(row), /未確定の試行 1 回/)
+  assert.match(rowDescription(row), /失敗/)
+  assert.doesNotMatch(rowDescription(row), /再試行/)
+})
+
+test('reused Japanese formatters preserve durations, unknown values and grouped counts', () => {
+  assert.equal(formatDuration(undefined), '未計測')
+  assert.equal(formatDuration(0), '0 秒')
+  assert.equal(formatDuration(1234567), '1,234.57 秒')
+  assert.equal(formatCount(1234567), '1,234,567')
+  assert.equal(formatDuration(1234567), '1,234.57 秒')
 })

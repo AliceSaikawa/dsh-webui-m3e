@@ -9,7 +9,7 @@ const shown: TraceScrollState = {
 }
 
 test('hidden trace never requests scrolling, including queued resize and prepend completion', () => {
-  for (const trigger of ['activation', 'content', 'resize'] as const) {
+  for (const trigger of ['activation', 'content', 'resize', 'search'] as const) {
     for (const initialized of [false, true]) {
       for (const hasAnchor of [false, true]) {
         assert.equal(traceScrollAction({ ...shown, active: false, initialized, hasAnchor }, trigger), 'none')
@@ -79,4 +79,44 @@ test('older-page anchors restore only while active, settled, and not on reactiva
   assert.equal(traceScrollAction({ ...pending, loadingOlder: false }, 'content'), 'anchor')
   assert.equal(traceScrollAction({ ...pending, loadingOlder: false }, 'activation'), 'none')
   assert.equal(traceScrollAction({ ...pending, active: false, loadingOlder: false }, 'resize'), 'none')
+})
+
+test('search changes reveal the first match and clearing reveals the full history end', () => {
+  for (const initialized of [false, true]) {
+    for (const following of [false, true]) {
+      const state = { ...shown, initialized, following }
+      assert.equal(traceScrollAction({ ...state, searching: true }, 'search'), 'top')
+      assert.equal(traceScrollAction({ ...state, searching: false }, 'search'), 'bottom')
+    }
+  }
+  // A search change supersedes the old result set's pending page anchor.
+  const oldAnchor = { ...shown, hasAnchor: true, loadingOlder: true }
+  assert.equal(traceScrollAction({ ...oldAnchor, searching: true }, 'search'), 'top')
+  assert.equal(traceScrollAction({ ...oldAnchor, searching: false }, 'search'), 'bottom')
+})
+
+test('filtering stops follow and clearing resumes follow after reaching the true bottom', () => {
+  const filtering = { ...shown, following: false, searching: true }
+  assert.equal(traceScrollAction(filtering, 'search'), 'top')
+  for (const trigger of ['content', 'resize'] as const) {
+    assert.equal(traceScrollAction(filtering, trigger), 'none')
+    // A filtered list can fit the viewport and emit a bottom scroll event.
+    assert.equal(traceScrollAction({ ...filtering, following: true }, trigger), 'none')
+  }
+
+  const cleared = { ...filtering, searching: false }
+  assert.equal(traceScrollAction(cleared, 'search'), 'bottom')
+  const atEnd = { ...cleared, following: isTraceAtBottom(1500, 2000, 500) }
+  assert.equal(atEnd.following, true)
+  assert.equal(traceScrollAction(atEnd, 'content'), 'bottom')
+  assert.equal(traceScrollAction(atEnd, 'resize'), 'bottom')
+})
+
+test('hidden search changes cannot move the retained position or act on invisible content', () => {
+  for (const searching of [false, true]) {
+    const state = { ...shown, searching }
+    assert.equal(traceScrollAction({ ...state, active: false }, 'search'), 'none')
+    assert.equal(traceScrollAction({ ...state, visible: false }, 'search'), 'none')
+    assert.equal(traceScrollAction({ ...state, hasRows: false }, 'search'), 'none')
+  }
 })

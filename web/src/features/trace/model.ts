@@ -20,7 +20,8 @@ export interface TraceRow {
   seq: number
   title: string
   content: ContentBlock[]
-  input: ContentBlock[]
+  /** Resolved only when details read it; list rendering must not access it. */
+  readonly input: ContentBlock[]
   arguments?: string
   callId?: string
   parentCallId?: string
@@ -31,6 +32,7 @@ export interface TraceRow {
   durationMs?: number
   firstOutputMs?: number
   usage?: TokenUsage
+  /** Number of durable assistant/attempt events, not the number of retries. */
   retries: number
   running: boolean
   failed: boolean
@@ -62,10 +64,12 @@ export function blocks(value: unknown): ContentBlock[] {
 export function elapsed(start: number | undefined, end: number | undefined): number | undefined {
   return start === undefined || end === undefined ? undefined : Math.max(0, end - start)
 }
+const durationFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 })
+const countFormatter = new Intl.NumberFormat('ja-JP')
 export function formatDuration(ms: number | undefined): string {
-  return ms === undefined ? '未計測' : `${new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 }).format(ms / 1000)} 秒`
+  return ms === undefined ? '未計測' : `${durationFormatter.format(ms / 1000)} 秒`
 }
-export function formatCount(value: number): string { return new Intl.NumberFormat('ja-JP').format(value) }
+export function formatCount(value: number): string { return countFormatter.format(value) }
 export function prettyJson(value: unknown): string {
   if (typeof value === 'string') {
     try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
@@ -179,32 +183,70 @@ function rowOf(event: SessionWireEvent, kind: TraceKind, turn: TraceTurn, title:
     input: [], content: [], depth: 0, retries: 0, running: false, failed: false }
 }
 
+/** One requested input per immutable journal window, shared across live updates. */
+const detailInputs = new WeakMap<readonly SessionWireEvent[], { end: number; content: ContentBlock[] }>()
+function readInput(records: readonly SessionWireEvent[], endExclusive: number): ContentBlock[] {
+  const cached = detailInputs.get(records)
+  if (cached?.end === endExclusive) return cached.content
+  const context: { seq: number; content: ContentBlock[] }[] = []
+  for (let index = 0; index < endExclusive; index++) {
+    const event = records[index]!
+    if (!['user/message', 'assistant/message', 'tool/result'].includes(event.type)) continue
+    const data = object(event.data)
+    const content = blocks(event.type === 'user/message' ? data.content : object(data.message).content)
+    const op = object(event.surfaceOp)
+    const entry = { seq: event.seq, content }
+    if (op.op === 'replace' && number(op.startSeq) !== undefined && number(op.endSeq) !== undefined) {
+      // Replacements occupy the replaced position, including partial loaded windows.
+      const start = context.findIndex(message => message.seq === op.startSeq)
+      const end = context.findIndex(message => message.seq === op.endSeq)
+      if (end >= 0) context.splice(Math.max(0, start), end - Math.max(0, start) + 1, entry)
+      else context.splice(Math.max(0, start), start < 0 ? 0 : context.length - start, entry)
+    } else context.push(entry)
+  }
+  const content = context.flatMap(message => message.content)
+  detailInputs.set(records, { end: endExclusive, content })
+  return content
+}
+function captureInput(row: TraceRow, records: readonly SessionWireEvent[], endExclusive: number): void {
+  Object.defineProperty(row, 'input', {
+    configurable: true, enumerable: true,
+    get: () => readInput(records, endExclusive),
+  })
+}
+
+const traceSelections = new WeakMap<readonly SessionWireEvent[], { stream: AssistantStream | null; running: boolean; turns: TraceTurn[] }>()
+/** Share only the latest projection per immutable journal window between list and sheet. */
+export function selectTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false): TraceTurn[] {
+  const cached = traceSelections.get(records)
+  if (cached?.stream === stream && cached.running === running) return cached.turns
+  const turns = buildTrace(records, stream, running)
+  traceSelections.set(records, { stream, running, turns })
+  return turns
+}
+export function findTraceRow(turns: readonly TraceTurn[], id: string): TraceRow | undefined {
+  for (const turn of turns) {
+    const row = turn.rows.find(item => item.id === id)
+    if (row) return row
+  }
+  return undefined
+}
+
 /** Durable records are authoritative; live chunks only fill the current request. */
 export function buildTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false): TraceTurn[] {
   const turns: TraceTurn[] = []
   const numbered = new Map<number, TraceTurn>()
   const assistants = new Map<string, TraceRow>()
   const assistantOwners = new Map<TraceRow, TraceTurn>()
+  const turnAssistants = new Map<TraceTurn, TraceRow[]>()
+  const pendingAssistants = new Map<TraceTurn, TraceRow>()
   const shownAssistants = new Set<TraceRow>()
   const committedAssistants = new Set<TraceRow>()
   const interruptedAssistants = new Set<TraceRow>()
   const tools = new Map<string, TraceRow>()
   const summaries = new Map<string, TraceRow>()
   let current: TraceTurn | undefined
-  let context: { seq: number; content: ContentBlock[] }[] = []
-  const input = () => context.flatMap(message => message.content)
-  const recordInput = (event: SessionWireEvent, content: ContentBlock[]) => {
-    const op = object(event.surfaceOp)
-    if (op.op === 'replace' && number(op.startSeq) !== undefined && number(op.endSeq) !== undefined) {
-      // Surface replacements occupy the replaced position, not the log tail.
-      const start = context.findIndex(message => message.seq === op.startSeq)
-      const end = context.findIndex(message => message.seq === op.endSeq)
-      if (end >= 0) context.splice(Math.max(0, start), end - Math.max(0, start) + 1, { seq: event.seq, content })
-      else context.splice(Math.max(0, start), start < 0 ? 0 : context.length - start, { seq: event.seq, content })
-      return
-    }
-    context.push({ seq: event.seq, content })
-  }
+  let inputEnd = 0
   const turnFor = (event: SessionWireEvent): TraceTurn => {
     const n = number(object(event.data).turn)
     const existing = n === undefined ? current : numbered.get(n)
@@ -223,13 +265,18 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       row = { ...rowOf(event, 'assistant', turn, 'アシスタント'), step, running: true }
       assistants.set(key, row)
       assistantOwners.set(row, turn)
+      const siblings = turnAssistants.get(turn) ?? []
+      siblings.push(row)
+      turnAssistants.set(turn, siblings)
+      pendingAssistants.set(turn, row)
     }
     return row
   }
   const showAssistant = (row: TraceRow, turn: TraceTurn) => {
     if (shownAssistants.has(row)) return
-    row.input = input()
+    captureInput(row, records, inputEnd)
     shownAssistants.add(row)
+    if (pendingAssistants.get(turn) === row) pendingAssistants.delete(turn)
     turn.rows.push(row)
   }
   const closeAssistant = (row: TraceRow, turn: TraceTurn, time: number, termination?: TraceTermination) => {
@@ -241,7 +288,8 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     } else if (interruptedAssistants.has(row) && termination) setTermination(row, termination)
     row.running = false
   }
-  for (const event of records) {
+  for (const [index, event] of records.entries()) {
+    inputEnd = index
     const data = object(event.data)
     if (event.type === 'turn/start') {
       const n = number(data.turn)
@@ -260,9 +308,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       const turn = turnFor(event)
       turn.completedAt = event.time
       turn.termination = turnTermination(data.reason)
-      for (const [row, owner] of assistantOwners) {
-        if (owner === turn) closeAssistant(row, turn, event.time, turn.termination)
-      }
+      for (const row of turnAssistants.get(turn) ?? []) closeAssistant(row, turn, event.time, turn.termination)
       for (const row of turn.rows) row.running = false
       current = undefined
       continue
@@ -274,16 +320,13 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       const content = blocks(data.content)
       const source = object(data.source)
       if (source.kind === 'plugin' && source.plugin === 'compact' && string(source.compactionId)) {
-        recordInput(event, content)
         // The checkpoint is the input replacement, not a second user row.
         continue
       }
       turn.rows.push({ ...rowOf(event, 'user', turn, 'ユーザー'), content, completedAt: event.time })
-      recordInput(event, content)
     } else if (event.type === 'step/start') {
-      for (const [previous, owner] of assistantOwners) {
-        if (owner === turn && previous.step !== number(data.step) && !shownAssistants.has(previous)) showAssistant(previous, turn)
-      }
+      const previous = pendingAssistants.get(turn)
+      if (previous && previous.step !== number(data.step)) showAssistant(previous, turn)
       const row = assistantFor(event, turn)
       row.startedAt = event.time
     } else if (event.type === 'step/end') {
@@ -292,13 +335,14 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     } else if (event.type === 'assistant/attempt') {
       const row = assistantFor(event, turn)
       showAssistant(row, turn)
-      row.input = input()
+      captureInput(row, records, inputEnd)
       row.retries++
-      row.attempts = [...row.attempts ?? [], { seq: event.seq, time: event.time, termination: streamTermination(data.stream) }]
+      row.attempts ??= []
+      row.attempts.push({ seq: event.seq, time: event.time, termination: streamTermination(data.stream) })
     } else if (event.type === 'assistant/message') {
       const row = assistantFor(event, turn)
       showAssistant(row, turn)
-      row.input = input()
+      captureInput(row, records, inputEnd)
       row.content = blocks(object(data.message).content)
       row.completedAt = event.time
       row.running = false
@@ -308,7 +352,6 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       row.firstOutputMs = row.startedAt !== undefined && first !== undefined && first >= row.startedAt && first <= event.time ? first - row.startedAt : undefined
       if (data.interrupted === true) interruptedAssistants.add(row)
       setTermination(row, streamTermination(data.stream) ?? (data.interrupted === true ? { kind: 'interrupted', message: '途中までの出力を残して中断しました。' } : undefined))
-      recordInput(event, row.content)
     } else if (event.type === 'tool/call' || event.type === 'tool/ptc-dispatch-start') {
       const sub = event.type === 'tool/ptc-dispatch-start'
       const callId = string(sub ? data.subCallId : data.callId)
@@ -334,7 +377,6 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
         row.error = failure(data.error)
         row.failed = result.isError === true || row.error !== undefined
       }
-      recordInput(event, blocks(message.content))
     } else if (event.type === 'tool/ptc-dispatch') {
       const callId = string(data.subCallId)
       if (!callId) continue
@@ -360,7 +402,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
         summaries.set(id, row)
         turn.rows.push(row)
       }
-      if (event.type === 'compaction/start') { row.startedAt = event.time; row.running = true; row.input = input() }
+      if (event.type === 'compaction/start') { row.startedAt = event.time; row.running = true; captureInput(row, records, inputEnd) }
       if (event.type === 'compaction/summary') {
         row.content = Array.isArray(data.summary) ? blocks(data.summary) : [{ type: 'text', text: string(data.summary) ?? prettyJson(data.summary) }]
         row.usage = usageOf(data.usage)
@@ -368,13 +410,14 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       if (event.type === 'compaction/end') { row.completedAt = event.time; row.running = false; row.error = failure(data.error); row.failed = row.error !== undefined }
     }
   }
+  inputEnd = records.length
   if (stream && running) {
     const synthetic: SessionWireEvent = { type: 'step/start', seq: (records.at(-1)?.seq ?? -1) + 1, time: 0, data: { turn: stream.turn, step: stream.step } }
     const turn = turnFor(synthetic)
     const row = assistantFor(synthetic, turn)
     if (row.completedAt === undefined && turn.completedAt === undefined) {
       showAssistant(row, turn)
-      row.input = input()
+      captureInput(row, records, inputEnd)
       row.content = [...stream.content]
       row.running = true
       row.usage = stream.usage
@@ -419,7 +462,7 @@ export function rowDescription(row: TraceRow): string {
   const parts = row.kind === 'user' ? [contentText(row.content).trim() || '添付のみ']
     : row.running ? ['開始済み・実行中'] : [formatDuration(row.durationMs)]
   if (row.kind === 'assistant' && row.usage && !row.running) parts.push(`出力 ${formatCount(row.usage.outputTokens)} トークン`)
-  if (row.retries) parts.push(`再試行 ${row.retries} 回`)
+  if (row.retries) parts.push(`未確定の試行 ${row.retries} 回`)
   if (row.termination) parts.push(terminationLabel(row.termination))
   else if (row.failed) parts.push('失敗')
   return parts.join(' ・ ')

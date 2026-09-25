@@ -1,13 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { M3eSearchBar } from '@m3e/react/search'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
-import { buildTrace, filterTrace, rowDescription, turnHeading, type TraceKind, type TraceRow } from './model.ts'
+import { selectTrace, filterTrace, rowDescription, turnHeading, type TraceKind, type TraceRow } from './model.ts'
 import { RecordSheet } from './RecordSheet.tsx'
 import { isTraceAtBottom, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
+import { retainTraceSession, traceEmptyMessage, type TraceSessionData } from './view-state.ts'
 import './trace.css'
 
 const icons: Record<TraceKind, string> = { user: 'person', assistant: 'smart_toy', tool: 'terminal', subtool: 'subdirectory_arrow_right', compaction: 'summarize' }
@@ -23,11 +24,19 @@ export function TraceView({ sessionId, active }: { sessionId: string; active: bo
 }
 
 function TraceSession({ sessionId, active }: { sessionId: string; active: boolean }) {
-  const { face, snapshot, records, stream } = useSession(sessionId)
+  const session = useSession(sessionId)
+  const retained = useRef<TraceSessionData | null>(null)
+  retained.current = retainTraceSession(retained.current, session, active)
+  // Mount the panel on its first visible visit, then preserve its state and DOM.
+  return retained.current && <TracePanel sessionId={sessionId} active={active} data={retained.current} />
+}
+
+const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessionId: string; active: boolean; data: TraceSessionData }) {
+  const { face, snapshot, records, stream } = data
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const turns = useMemo(() => buildTrace(records, stream, snapshot.running), [records, stream, snapshot.running])
+  const turns = useMemo(() => selectTrace(records, stream, snapshot.running), [records, stream, snapshot.running])
   const filtered = useMemo(() => filterTrace(turns, query), [turns, query])
   const count = filtered.reduce((total, turn) => total + turn.rows.length, 0)
   const scroll = useRef<HTMLDivElement>(null)
@@ -40,6 +49,7 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
   const current = useRef({ active, query, hasRows: false, loadingOlder: false })
   current.current = { active, query, hasRows: turns.some(turn => turn.rows.length > 0), loadingOlder: loading || snapshot.loadingOlder }
   const wasActive = useRef(false)
+  const searchChanged = useRef(false)
 
   const updateScroll = (trigger: TraceScrollTrigger) => {
     // Guard before accessing dimensions, including callbacks already in the queue.
@@ -55,6 +65,8 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
     if (action === 'anchor' && anchor.current) {
       restoreAnchor(node, anchor.current)
       anchor.current = null
+    } else if (action === 'top') {
+      node.scrollTop = 0
     } else if (action === 'bottom') {
       node.scrollTop = node.scrollHeight
       initialized.current = true
@@ -68,11 +80,13 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
     if (!active) {
       // A pending prepend must not compete with the shell's restoration later.
       anchor.current = null
+      searchChanged.current = false
       return
     }
     // The parent restores its snapshot after child layout effects. Defer the
     // first activation to passive setup so even a previously empty panel wins.
-    if (!activating) updateScroll('content')
+    if (!activating) updateScroll(searchChanged.current ? 'search' : 'content')
+    searchChanged.current = false
   }, [active, turns, query, loading, snapshot.loadingOlder])
 
   useEffect(() => {
@@ -98,10 +112,11 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
   }, [active])
 
   const changeQuery = (value: string) => {
-    if (!current.current.active) return
+    if (!current.current.active || value === current.current.query) return
+    searchChanged.current = true
+    anchor.current = null
+    follow.current = !value.trim()
     setQuery(value)
-    follow.current = false
-    if (scroll.current) scroll.current.scrollTop = 0
   }
   const loadOlder = async () => {
     if (!current.current.active) return
@@ -136,8 +151,8 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
           <Icon name="expand_less" slot="icon" />{loading || snapshot.loadingOlder ? '読み込み中…' : '前の記録を読み込む'}
         </M3eButton></div>}
         {loadError && <p className="trace-error" role="alert">{loadError}</p>}
-        {!turns.length && <p className="trace-empty">まだ記録がありません。</p>}
-        {query.trim() && count === 0 && <p className="trace-empty" role="status">一致する記録がありません。</p>}
+        {!turns.length && <p className="trace-empty" role="status">{traceEmptyMessage(snapshot.openState)}</p>}
+        {turns.length > 0 && query.trim() && count === 0 && <p className="trace-empty" role="status">一致する記録がありません。</p>}
         {filtered.map(turn => <section className="trace-turn" key={turn.id} aria-label={turnHeading(turn)}>
           <h2>{turnHeading(turn)}</h2>
           {turn.termination && <p className={turn.termination.kind === 'error' ? 'trace-error' : 'trace-note'}>{turn.termination.message}</p>}
@@ -165,4 +180,4 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
       </M3eSearchBar>
     </footer>
   </section>
-}
+})
