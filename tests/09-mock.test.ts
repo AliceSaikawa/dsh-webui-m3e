@@ -5,7 +5,7 @@ import { approvalRecords, imageBase64, MOCK_IDS, readmeRecords } from '../web/sr
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock-files.ts'
-import { appendFilePage, directoryChanged, fileChanged, readImageFile, workspaceFilesOf } from '../web/src/features/session-tools/files.ts'
+import { appendFilePage, directoryChanged, directoryRequestPath, fileBreadcrumbs, fileChanged, fileRoute, readImageFile, workspaceFilesOf } from '../web/src/features/session-tools/files.ts'
 import { extendMock, SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
 import { catalogEntries, childAddress, contextPercent, hasChildren, maxTurn, menuActions, runningJobCount, type ContextPressure } from '../web/src/features/session-tools/presentation.ts'
 import { goalsRemoteOf, performGoalOperation, type GoalProjection } from '../web/src/features/session-tools/operations.ts'
@@ -14,7 +14,7 @@ const sessionId = MOCK_IDS.sessions.approval
 
 test('ファイルの偽物は相対パスと絶対パスを同じ作業フォルダに解決し、階層をたどれる', async () => {
   const { remote } = createWorkspaceFilesMock()
-  const root = unwrapRemoteResult(await remote.list(sessionId, ''))
+  const root = unwrapRemoteResult(await remote.list(sessionId, directoryRequestPath('')))
   assert.equal(root.path, '')
   assert.deepEqual(root.entries.map(entry => entry.name), ['docs', 'README.md', 'preview.png', 'sample.bin'])
   const docs = unwrapRemoteResult(await remote.list(sessionId, 'docs'))
@@ -25,6 +25,23 @@ test('ファイルの偽物は相対パスと絶対パスを同じ作業フォ�
   assert.equal((await remote.list(sessionId, '/mock/dsh-webui-m3e-other')).ok, false)
   assert.equal((await remote.list(sessionId, 'missing')).ok, false)
   assert.equal(unwrapRemoteResult(await remote.list(sessionId, 'docs/canvas')).entries[0]?.name, 'screens.md')
+  const rootCrumb = fileBreadcrumbs(docs.path)[0]!
+  assert.equal(fileRoute(sessionId, 'files', rootCrumb.path), `/s/${sessionId}/files`)
+  assert.deepEqual(unwrapRemoteResult(await remote.list(sessionId, directoryRequestPath(rootCrumb.path))), root)
+  assert.deepEqual(unwrapRemoteResult(await remote.list(sessionId, '/mock/dsh-webui-m3e')), root)
+})
+
+test('ファイルの偽物は実物と同じく空の要求パスを拒否し、ルートの変換は一覧の RPC に限る', async () => {
+  const { remote } = createWorkspaceFilesMock()
+  for (const result of await Promise.all([
+    remote.list(sessionId, ''), remote.stat(sessionId, ''), remote.read(sessionId, '', {}), remote.readBytes(sessionId, '', {}),
+  ])) {
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.error.code, 'gateway/bad-request')
+  }
+  assert.equal(directoryRequestPath('docs/canvas'), 'docs/canvas')
+  assert.equal(directoryRequestPath('/mock/dsh-webui-m3e'), '/mock/dsh-webui-m3e')
+  assert.equal(unwrapRemoteResult(await remote.list(sessionId, '.')).path, '')
 })
 
 test('仕様の偽ファイルを 5000 行と 1000 行に分けて読むと全文を重複なく復元できる', async () => {
@@ -83,7 +100,7 @@ test('ファイル変更を通知し、読み直した内容と一覧のサイ�
   const current = unwrapRemoteResult(await fixture.remote.read(sessionId, 'README.md', {}))
   assert.equal(current.text, '# 更新しました')
   assert.notEqual(current.version, old.version)
-  const entries = unwrapRemoteResult(await fixture.remote.list(sessionId, '')).entries
+  const entries = unwrapRemoteResult(await fixture.remote.list(sessionId, '.')).entries
   assert.equal(entries.find(entry => entry.name === 'README.md')?.size, current.bytes)
   assert.equal(fixture.subscriberCount, 1)
   const pending = iterator.next()

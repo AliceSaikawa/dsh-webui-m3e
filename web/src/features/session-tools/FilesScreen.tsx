@@ -9,7 +9,7 @@ import { PageScaffold } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { childFilePath, directoryChanged, fileBreadcrumbs, fileKind, fileRoute, fileSize, sortFileEntries, workspaceFilesOf, type WorkspaceDirectoryListing } from './files.ts'
+import { childFilePath, directoryChanged, directoryRequestPath, fileBreadcrumbs, fileKind, fileRoute, fileSize, sortFileEntries, workspaceFilesOf, type WorkspaceDirectoryListing } from './files.ts'
 import './files.css'
 
 export function FilesScreen({ sessionId }: { sessionId: string }) {
@@ -34,7 +34,7 @@ function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string 
     setLoading(true)
     setError('')
     if (!api) { setError('ファイルの一覧を利用できません。'); setLoading(false); return }
-    void api.list(sessionId, path, controller.signal).then(unwrapRemoteResult).then(value => {
+    void api.list(sessionId, directoryRequestPath(path), controller.signal).then(unwrapRemoteResult).then(value => {
       if (!controller.signal.aborted) setListing(value)
     }).catch(failure => {
       if (!controller.signal.aborted) setError(remoteErrorMessage(failure, 'フォルダを読み込めませんでした。'))

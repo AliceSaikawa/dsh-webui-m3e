@@ -47,6 +47,8 @@ export function fileSize(bytes?: number): string {
   return `${(bytes / 1024 / 1024).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} MB`
 }
 export function childFilePath(parent: string, name: string): string { return parent ? `${parent.replace(/\/+$/, '')}/${name}` : name }
+/** URLs and listing responses use an empty root, but the RPC requires a path. */
+export function directoryRequestPath(path: string): string { return path || '.' }
 export function fileRoute(sessionId: string, screen: 'files' | 'file', path: string): string {
   return `/s/${encodeURIComponent(sessionId)}/${screen}${path ? `?path=${encodeURIComponent(path)}` : ''}`
 }
@@ -71,6 +73,11 @@ export function fileChanged(change: WorkspaceFileChange, file: WorkspaceFileStat
 
 export class FileVersionChanged extends Error {}
 export interface FileTextContent extends WorkspaceFileStat { readonly text: string; readonly nextOffset: number; readonly eof: boolean }
+export interface FilePageRequest { readonly offset: number; readonly requestId: number }
+/** A retry must trigger another load even when its line offset has not changed. */
+export function nextFilePageRequest(previous: FilePageRequest, offset: number): FilePageRequest {
+  return { offset, requestId: previous.requestId + 1 }
+}
 export function appendFilePage(previous: FileTextContent | undefined, page: WorkspaceFileText): FileTextContent {
   if (previous && (previous.version !== page.version || previous.absolutePath !== page.absolutePath)) throw new FileVersionChanged()
   if (page.offset !== (previous?.nextOffset ?? 1) || (!page.eof && page.lines === 0)) throw new Error('読み込み位置を確認できませんでした。')

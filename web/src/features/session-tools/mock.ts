@@ -53,7 +53,14 @@ export function extendMock(kit: MockKit): void {
   function publish(sessionId: string, goal: GoalView | undefined) {
     if (goal) goals.set(sessionId, goal)
     else goals.delete(sessionId)
-    kit.setProjection(sessionId, 'goal', goalProjectionOf(goal))
+    const view = goalProjectionOf(goal)
+    if (view) {
+      const { activation: _activation, ...durable } = view
+      kit.setProjection(sessionId, 'goal', durable)
+    } else kit.setProjection(sessionId, 'goal', null)
+    void kit.emit('goal/activation-changed', { sessionId,
+      ...(goal ? { goal: { id: goal.id, revision: goal.revision, activation: goal.activation } } : {}),
+    })
   }
   publish(parent, {
     id: 'session-tools-goal', revision: 1, objective: '承認シートを作り、テストで操作を確かめる',
@@ -101,5 +108,9 @@ export function extendMock(kit: MockKit): void {
   kit.scenario('goal-blocked', () => {
     const goal = goals.get(parent)!
     publish(parent, { ...goal, revision: goal.revision + 1, phase: 'blocked', activation: 'disarmed', blockedReason: { code: 'verification-failed', message: '承認シートのテストに失敗しました。原因の確認が必要です。' } })
+  })
+  kit.scenario('goal-disarmed', () => {
+    const goal = goals.get(parent)!
+    publish(parent, { ...goal, activation: 'disarmed' })
   })
 }

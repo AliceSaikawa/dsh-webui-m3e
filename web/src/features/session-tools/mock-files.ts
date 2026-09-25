@@ -40,13 +40,14 @@ export function createWorkspaceFilesMock() {
   }
 
   const absolutePath = (path: string) => path ? `${ROOT}/${path}` : ROOT
-  const abortFailure = (signal?: AbortSignal) => signal?.aborted ? failure('rpc/aborted', '読み込みを取り消しました。') : undefined
+  const requestFailure = (input: string, signal?: AbortSignal) => signal?.aborted ? failure('rpc/aborted', '読み込みを取り消しました。')
+    : input.length === 0 ? failure('gateway/bad-request', 'パスを指定してください。') : undefined
   const metadata = (path: string, file?: MockFile) => ({ absolutePath: absolutePath(path), version: `mock-${file?.revision ?? 1}`, ...(file ? { bytes: file.bytes.length } : {}) })
 
   const remote: WorkspaceFilesRemote = {
     async list(_sessionId, input, signal) {
-      const aborted = abortFailure(signal)
-      if (aborted) return aborted
+      const invalid = requestFailure(input, signal)
+      if (invalid) return invalid
       const path = relativePath(input)
       if (path === undefined || !directories.has(path)) return failure('workspace-files/not-found', 'フォルダが見つかりません。')
       const prefix = path ? `${path}/` : ''
@@ -64,8 +65,8 @@ export function createWorkspaceFilesMock() {
       return success({ path, entries, truncated: false })
     },
     async stat(_sessionId, input, signal) {
-      const aborted = abortFailure(signal)
-      if (aborted) return aborted
+      const invalid = requestFailure(input, signal)
+      if (invalid) return invalid
       const path = relativePath(input)
       if (path === undefined) return failure('workspace-files/not-found', 'ファイルが見つかりません。')
       const file = files.get(path)
@@ -73,8 +74,8 @@ export function createWorkspaceFilesMock() {
       return success(metadata(path, file))
     },
     async read(_sessionId, input, options = {}, signal) {
-      const aborted = abortFailure(signal)
-      if (aborted) return aborted
+      const invalid = requestFailure(input, signal)
+      if (invalid) return invalid
       const path = relativePath(input)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure('workspace-files/not-found', 'ファイルが見つかりません。')
@@ -86,8 +87,8 @@ export function createWorkspaceFilesMock() {
       return success({ ...metadata(path, file), offset, text: lines.join('\n'), lines: lines.length, eof: offset - 1 + lines.length >= allLines.length })
     },
     async readBytes(_sessionId, input, options = {}, signal) {
-      const aborted = abortFailure(signal)
-      if (aborted) return aborted
+      const invalid = requestFailure(input, signal)
+      if (invalid) return invalid
       const path = relativePath(input)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure('workspace-files/not-found', 'ファイルが見つかりません。')

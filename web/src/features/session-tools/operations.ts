@@ -3,6 +3,8 @@ import type { RemoteResult, SessionJob } from '../../dsh/services.ts'
 /** Browser RPC shapes verified against the installed dsh-goal package. */
 export interface GoalRef { readonly id: string; readonly revision: number }
 export type GoalPhase = 'active' | 'paused' | 'blocked' | 'complete'
+export type GoalActivation = 'armed' | 'disarmed'
+export interface GoalActivationRef extends GoalRef { readonly activation: GoalActivation }
 export interface GoalSnapshot extends GoalRef {
   readonly objective: string
   readonly phase: GoalPhase
@@ -15,11 +17,13 @@ export interface GoalProjection {
   readonly createdAt: number
   readonly updatedAt: number
 }
+/** Display observations may include live activation; the durable projection never does. */
+export interface GoalDisplayState extends GoalProjection { readonly activation?: GoalActivation }
 export interface GoalView extends GoalSnapshot {
   readonly roundsStarted: number
   readonly createdAt: number
   readonly updatedAt: number
-  readonly activation: 'armed' | 'disarmed'
+  readonly activation: GoalActivation
 }
 export type GoalAction = 'pause' | 'resume' | 'complete' | 'clear'
 export interface GoalsRemote {
@@ -37,15 +41,15 @@ export function goalsRemoteOf(value: unknown): GoalsRemote | undefined {
     typeof remote[key as keyof GoalsRemote] === 'function') ? remote as GoalsRemote : undefined
 }
 
-export function goalProjectionOf(view: GoalView | undefined): GoalProjection | null {
+export function goalProjectionOf(view: GoalView | undefined): GoalDisplayState | null {
   if (!view) return null
-  const { roundsStarted, createdAt, updatedAt, activation: _activation, ...goal } = view
-  return { goal, roundsStarted, createdAt, updatedAt }
+  const { roundsStarted, createdAt, updatedAt, activation, ...goal } = view
+  return { goal, roundsStarted, createdAt, updatedAt, activation }
 }
 
 export interface GoalObservation {
   readonly baseline: GoalProjection | null | undefined
-  readonly value: GoalProjection | null
+  readonly value: GoalDisplayState | null
   readonly ref?: GoalRef
 }
 
@@ -53,7 +57,7 @@ export interface GoalObservation {
 export function currentGoalProjection(
   projected: GoalProjection | null | undefined,
   observed: GoalObservation | undefined,
-): GoalProjection | null | undefined {
+): GoalDisplayState | null | undefined {
   if (!observed) return projected
   if (projected === observed.baseline) return observed.value
   const newest = observed.value?.goal ?? observed.ref
@@ -66,8 +70,8 @@ export function currentGoalProjection(
 }
 
 export type GoalOperationResult =
-  | { readonly ok: true; readonly value: GoalProjection | null; readonly ref: GoalRef }
-  | { readonly ok: false; readonly refreshed: true; readonly value: GoalProjection | null }
+  | { readonly ok: true; readonly value: GoalDisplayState | null; readonly ref: GoalRef }
+  | { readonly ok: false; readonly refreshed: true; readonly value: GoalDisplayState | null }
   | { readonly ok: false; readonly refreshed: false }
 
 /** Never retry a mutation with a new ref; refresh failures for an explicit next action. */
@@ -90,12 +94,13 @@ export async function performGoalOperation(
   return { ok: false, refreshed: false }
 }
 
-export function goalPhaseLabel(phase: GoalPhase): string {
+export function goalPhaseLabel(phase: GoalPhase, activation?: GoalActivation): string {
+  if (phase === 'active') return activation === 'disarmed' ? '停止中' : activation === 'armed' ? '進行中' : '状態未確認'
   return { active: '進行中', paused: '一時停止', blocked: '行き詰まり', complete: '完了' }[phase]
 }
 
-export function goalPrimaryAction(goal: GoalSnapshot): 'pause' | 'resume' | undefined {
-  if (goal.phase === 'active') return 'pause'
+export function goalPrimaryAction(goal: GoalSnapshot, activation?: GoalActivation): 'pause' | 'resume' | undefined {
+  if (goal.phase === 'active') return activation === 'disarmed' ? 'resume' : activation === 'armed' ? 'pause' : undefined
   if (goal.phase === 'paused' || goal.phase === 'blocked') return 'resume'
   return undefined
 }

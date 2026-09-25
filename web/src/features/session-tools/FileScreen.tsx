@@ -8,7 +8,7 @@ import { PageScaffold } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage, remoteFailureOf, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileSize, FileVersionChanged, imageMediaTypes, readImageFile, workspaceFilesOf, type FileTextContent, type WorkspaceFileStat } from './files.ts'
+import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileSize, FileVersionChanged, imageMediaTypes, nextFilePageRequest, readImageFile, workspaceFilesOf, type FilePageRequest, type FileTextContent, type WorkspaceFileStat } from './files.ts'
 import './files.css'
 
 export function FileScreen({ sessionId }: { sessionId: string }) {
@@ -32,11 +32,11 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
   const [watchError, setWatchError] = useState('')
   const [changed, setChanged] = useState(false)
   const [revision, setRevision] = useState(0)
-  const [nextOffset, setNextOffset] = useState(1)
+  const [request, setRequest] = useState<FilePageRequest>({ offset: 1, requestId: 0 })
   const textRef = useRef<FileTextContent | undefined>(undefined)
   const loadGuard = useRef(false)
   const markMetadata = (value: WorkspaceFileStat) => { metadataRef.current = value; setMetadata(value) }
-  const reload = () => { loadGuard.current = true; setNextOffset(1); setRevision(value => value + 1) }
+  const reload = () => { loadGuard.current = true; setRequest(value => nextFilePageRequest(value, 1)); setRevision(value => value + 1) }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -44,7 +44,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
     setLoading(true)
     loadGuard.current = true
     setError('')
-    if (nextOffset === 1) {
+    if (request.offset === 1) {
       textRef.current = undefined
       metadataRef.current = undefined
       setText(undefined); setMetadata(undefined); setImageUrl(''); setChanged(false); setBinary(kind === 'binary')
@@ -61,7 +61,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
           objectUrl = URL.createObjectURL(new Blob([image.data], { type: imageMediaTypes[fileExtension(path)] }))
           markMetadata(image); setImageUrl(objectUrl)
         } else {
-          const result = await api.read(sessionId, path, { offset: nextOffset, limit: 5000 }, controller.signal)
+          const result = await api.read(sessionId, path, { offset: request.offset, limit: 5000 }, controller.signal)
           if (controller.signal.aborted) return
           if (!result.ok && result.error.code === 'workspace-file/not-text') {
             const stat = unwrapRemoteResult(await api.stat(sessionId, path, controller.signal))
@@ -82,7 +82,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
       }
     })()
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [api, sessionId, path, kind, revision, nextOffset])
+  }, [api, sessionId, path, kind, request])
 
   useEffect(() => {
     if (!api || !path) return
@@ -128,7 +128,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
       {!binary && text && !text.eof && <div className="session-file-more"><M3eButton variant="tonal" disabled={loading || changed} onClick={() => {
         if (loadGuard.current) return
         loadGuard.current = true
-        setNextOffset(text.nextOffset)
+        setRequest(value => nextFilePageRequest(value, text.nextOffset))
       }}>続きを読み込む</M3eButton></div>}
       {!binary && text?.eof && text.text.length === 0 && <p className="placeholder">このファイルは空です。</p>}
     </article>
