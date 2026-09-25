@@ -1,0 +1,1112 @@
+{
+  "groups": [
+    {
+      "id": "atgfq8lr",
+      "x": 208,
+      "y": 85,
+      "axis": "x",
+      "items": [
+        {
+          "id": "u4rmr1r1",
+          "kind": "topAppBar",
+          "label": "セッション一覧",
+          "icon": "menu",
+          "variant": "filled",
+          "icon2": null,
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "921ibp8j",
+      "x": 208,
+      "y": 873,
+      "axis": "x",
+      "items": [
+        {
+          "id": "05z6ttf0",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "radiusTop": 0,
+          "radiusBottom": 0
+        }
+      ]
+    },
+    {
+      "id": "uuvovtc4",
+      "x": 548,
+      "y": 801,
+      "axis": "x",
+      "items": [
+        {
+          "id": "xs6wi4ln",
+          "kind": "fab",
+          "label": "作成",
+          "icon": "add",
+          "variant": "tonal",
+          "size": 56,
+          "note": "新しいセッションを作成する。"
+        }
+      ]
+    },
+    {
+      "id": "r8uhjm9o",
+      "x": 224,
+      "y": 189,
+      "axis": "y",
+      "items": [
+        {
+          "id": "wgd5fuvk",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right",
+          "size": 380,
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+        },
+        {
+          "id": "lu75vrjt",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right",
+          "size": 380,
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+        },
+        {
+          "id": "xskkb6c0",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right",
+          "size": 380,
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+        }
+      ]
+    },
+    {
+      "id": "c-bar",
+      "x": 978,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-bar-i",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          },
+          "note": "⋮ には統計とクォータを入れる。"
+        }
+      ]
+    },
+    {
+      "id": "c-box",
+      "x": 994,
+      "y": 851,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-box-i",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28,
+          "note": "入力欄の枠。1 行のとき約 110 の高さで、最大 6 行まで伸びる。キーボード表示中は visualViewport に合わせて上に動く。"
+        }
+      ]
+    },
+    {
+      "id": "c-text",
+      "x": 1016,
+      "y": 867,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-text-i",
+          "kind": "text",
+          "label": "メッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "c-plus",
+      "x": 1002,
+      "y": 907,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-plus-i",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c-perm",
+      "x": 1058,
+      "y": 915,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-perm-i",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined",
+          "note": "今の権限プリセット。タップで選び直す。"
+        }
+      ]
+    },
+    {
+      "id": "c-send",
+      "x": 1318,
+      "y": 907,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-send-i",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled",
+          "note": "送信。Enter キーでは送らない。"
+        }
+      ]
+    },
+    {
+      "id": "r-bar",
+      "x": 1470,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "r-ai",
+      "x": 1486,
+      "y": 269,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-ai-i",
+          "kind": "text",
+          "label": "テストを書いています…",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "r-load",
+      "x": 1486,
+      "y": 305,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-load-i",
+          "kind": "loadingIndicator",
+          "label": "",
+          "icon": null,
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "r-queue",
+      "x": 1716,
+      "y": 803,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-queue-i",
+          "kind": "chip",
+          "label": "順番待ち 1件",
+          "icon": "schedule",
+          "variant": "tonal",
+          "note": "タップで、編集・取り消し・割り込みへの変更を選ぶ。"
+        }
+      ]
+    },
+    {
+      "id": "r-box",
+      "x": 1486,
+      "y": 851,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-box-i",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "r-text",
+      "x": 1508,
+      "y": 867,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-text-i",
+          "kind": "text",
+          "label": "テストも追加して",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "r-plus",
+      "x": 1494,
+      "y": 907,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-plus-i",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined"
+        }
+      ]
+    },
+    {
+      "id": "r-stop",
+      "x": 1630,
+      "y": 907,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-stop-i",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "stop",
+          "variant": "tonal",
+          "note": "AI の処理を止める。"
+        }
+      ]
+    },
+    {
+      "id": "r-split",
+      "x": 1682,
+      "y": 903,
+      "axis": "x",
+      "items": [
+        {
+          "id": "r-split-i",
+          "kind": "splitButton",
+          "label": "順番待ち",
+          "icon": "arrow_upward",
+          "variant": "filled",
+          "note": "左で「今の処理の後に回す」で送信。▾ から「割り込み（今の処理に割り込ませる）」を選べる。"
+        }
+      ]
+    },
+    {
+      "id": "p-bar",
+      "x": 1962,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "p-bar-i",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "p-sheet",
+      "x": 1962,
+      "y": 579,
+      "axis": "x",
+      "items": [
+        {
+          "id": "p-sheet-i",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 400,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28,
+          "note": "下に払うと閉じる。"
+        }
+      ]
+    },
+    {
+      "id": "p-list",
+      "x": 1978,
+      "y": 611,
+      "axis": "y",
+      "items": [
+        {
+          "id": "p-l1",
+          "kind": "listItem",
+          "label": "画像を添付",
+          "supporting": "",
+          "icon": "image",
+          "variant": "filled"
+        },
+        {
+          "id": "p-l2",
+          "kind": "listItem",
+          "label": "ファイルを参照",
+          "supporting": "入力欄で @ を打っても出せる",
+          "icon": "alternate_email",
+          "variant": "filled"
+        },
+        {
+          "id": "p-l3",
+          "kind": "listItem",
+          "label": "コマンド",
+          "supporting": "入力欄で / を打っても出せる",
+          "icon": "terminal",
+          "variant": "filled"
+        },
+        {
+          "id": "p-l4",
+          "kind": "listItem",
+          "label": "計画モード",
+          "supporting": "",
+          "icon": "checklist",
+          "variant": "filled",
+          "switch": true,
+          "checked": false
+        },
+        {
+          "id": "p-l5",
+          "kind": "listItem",
+          "label": "モデル",
+          "supporting": "DeepSeek V4",
+          "icon": "smart_toy",
+          "icon2": "chevron_right",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "a-bar",
+      "x": 2454,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "a-sheet",
+      "x": 2454,
+      "y": 699,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-sheet-i",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 280,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28,
+          "note": "承認が来たら自動で開く。下に払っても閉じない（返事が必要）。"
+        }
+      ]
+    },
+    {
+      "id": "a-title",
+      "x": 2478,
+      "y": 735,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-title-i",
+          "kind": "text",
+          "label": "ツールの承認",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "a-tool",
+      "x": 2478,
+      "y": 779,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-tool-i",
+          "kind": "text",
+          "label": "bash を実行しようとしています",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "a-reason",
+      "x": 2478,
+      "y": 811,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-reason-i",
+          "kind": "text",
+          "label": "理由：テストを実行するため",
+          "icon": null,
+          "variant": "filled",
+          "size": 14
+        }
+      ]
+    },
+    {
+      "id": "a-btns",
+      "x": 2470,
+      "y": 867,
+      "axis": "x",
+      "items": [
+        {
+          "id": "a-no",
+          "kind": "button",
+          "label": "拒否",
+          "icon": null,
+          "variant": "outlined",
+          "size": 182,
+          "action": {
+            "to": "running",
+            "transition": "fade"
+          }
+        },
+        {
+          "id": "a-yes",
+          "kind": "button",
+          "label": "許可（1回）",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "action": {
+            "to": "running",
+            "transition": "fade"
+          }
+        }
+      ]
+    },
+    {
+      "id": "z594dvdi",
+      "x": 978,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "cq0ni206",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "selected": 0,
+          "note": "会話画面の表示切り替え。トレースでは入力欄を隠し、記録を広く見せる。",
+          "actions": {
+            "tab:1": {
+              "to": "trace",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "8vd1uc0m",
+      "x": 994,
+      "y": 354,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-ai-i",
+          "kind": "text",
+          "label": "iPhone の PWA の手順を足します。",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "h87bewfl",
+      "x": 1114,
+      "y": 268,
+      "axis": "x",
+      "items": [
+        {
+          "id": "c-user-i",
+          "kind": "card",
+          "label": "README の手順を見直して",
+          "supporting": "",
+          "icon": null,
+          "variant": "filled",
+          "fill": "primaryContainer",
+          "noImage": true,
+          "size": 260,
+          "size2": 64
+        }
+      ]
+    },
+    {
+      "id": "t-running",
+      "x": 1470,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-running-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t-plus",
+      "x": 1962,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-plus-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t-approval",
+      "x": 2454,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-approval-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tr-bar",
+      "x": 2946,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "t-trace",
+      "x": 2946,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-trace-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 1,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "actions": {
+            "tab:0": {
+              "to": "running",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tr-older",
+      "x": 2962,
+      "y": 237,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-older-i",
+          "kind": "button",
+          "label": "前の記録を読み込む",
+          "icon": "expand_less",
+          "variant": "text",
+          "note": "古い記録は必要なときだけ読み込む。"
+        }
+      ]
+    },
+    {
+      "id": "tr-t2",
+      "x": 2970,
+      "y": 301,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-t2-i",
+          "kind": "text",
+          "label": "ターン 2 ・ 合計 18.4 秒 ・ 12,480 トークン",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "tr-list2",
+      "x": 2962,
+      "y": 327,
+      "axis": "y",
+      "items": [
+        {
+          "id": "tr-u",
+          "kind": "listItem",
+          "label": "ユーザー",
+          "supporting": "README の手順を見直して",
+          "icon": "person",
+          "variant": "filled"
+        },
+        {
+          "id": "tr-a",
+          "kind": "listItem",
+          "label": "アシスタント",
+          "supporting": "4.1 秒 ・ 出力 812 トークン",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "action": {
+            "to": "record",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "tr-b",
+          "kind": "listItem",
+          "label": "ツール：bash",
+          "supporting": "1.2 秒 ・ 失敗",
+          "icon": "terminal",
+          "variant": "filled",
+          "icon2": "error",
+          "note": "失敗したツールは色で分かるようにする（isError）。"
+        },
+        {
+          "id": "tr-r",
+          "kind": "listItem",
+          "label": "ツール：read_file",
+          "supporting": "0.1 秒",
+          "icon": "description",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "tr-t3",
+      "x": 2970,
+      "y": 635,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-t3-i",
+          "kind": "text",
+          "label": "ターン 3 ・ 実行中",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "tr-list3",
+      "x": 2962,
+      "y": 661,
+      "axis": "y",
+      "items": [
+        {
+          "id": "tr-u3",
+          "kind": "listItem",
+          "label": "ユーザー",
+          "supporting": "テストも追加して",
+          "icon": "person",
+          "variant": "filled"
+        },
+        {
+          "id": "tr-a3",
+          "kind": "listItem",
+          "label": "アシスタント",
+          "supporting": "生成中…",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "note": "実行中の記録は開始の印だけ出し、経過時間を勝手に数えない。"
+        }
+      ]
+    },
+    {
+      "id": "rd-bar",
+      "x": 3438,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rd-tabs",
+      "x": 3438,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-tabs-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 1,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "actions": {
+            "tab:0": {
+              "to": "running",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rd-sheet",
+      "x": 3438,
+      "y": 419,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-sheet-i",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 560,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28,
+          "note": "記録をタップすると開く。下に払うと閉じる。"
+        }
+      ]
+    },
+    {
+      "id": "rd-title",
+      "x": 3462,
+      "y": 459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-title-i",
+          "kind": "text",
+          "label": "アシスタント（ターン 2）",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "rd-list",
+      "x": 3454,
+      "y": 503,
+      "axis": "y",
+      "items": [
+        {
+          "id": "rd-time",
+          "kind": "listItem",
+          "label": "所要時間",
+          "supporting": "4.1 秒（最初の出力まで 0.8 秒）",
+          "icon": "timer",
+          "variant": "filled"
+        },
+        {
+          "id": "rd-tok",
+          "kind": "listItem",
+          "label": "トークン",
+          "supporting": "入力 11,668 ・ 出力 812 ・ キャッシュ 9,200",
+          "icon": "data_usage",
+          "variant": "filled"
+        },
+        {
+          "id": "rd-in",
+          "kind": "listItem",
+          "label": "入力",
+          "supporting": "送ったメッセージとツールの結果",
+          "icon": "input",
+          "variant": "filled",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "rd-out",
+          "kind": "listItem",
+          "label": "出力",
+          "supporting": "思考 1 ・ テキスト 1 ・ ツール呼び出し 2",
+          "icon": "output",
+          "variant": "filled",
+          "icon2": "chevron_right",
+          "note": "ツール呼び出しの引数はトレースでは見られる（承認シートでは出せない）。"
+        }
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "id": "seedF1",
+      "name": "セッション一覧",
+      "x": 208,
+      "y": 85
+    },
+    {
+      "id": "h0vanepn",
+      "name": "入力画面（待機中）",
+      "x": 978,
+      "y": 87,
+      "note": "1 つのセッションの会話。ナビゲーションバーは出さない。入力欄は角丸の枠 1 つにまとめ、Enter は改行、送信はボタンだけ。",
+      "swipe": {
+        "right": "home"
+      }
+    },
+    {
+      "id": "running",
+      "name": "会話（AI 実行中）",
+      "x": 1470,
+      "y": 87,
+      "note": "AI が作業中の会話。停止ボタンが現れ、送信ボタンは「順番待ち」と「割り込み」を選べるスプリットボタンになる。順番待ちのメッセージは入力欄の上に出す。"
+    },
+    {
+      "id": "plus",
+      "name": "＋ のシート",
+      "x": 1962,
+      "y": 87,
+      "note": "入力欄の ＋ で開くボトムシート。使う頻度の低い機能をここにまとめる。"
+    },
+    {
+      "id": "approval",
+      "name": "ツール承認",
+      "x": 2454,
+      "y": 87,
+      "note": "AI がツールを使う前の承認。DSH から届くのはツール名と理由だけで、引数は出せない。許可は毎回 1 回限りで、「常に許可」はない。返事が済むまで入力欄は隠す。"
+    },
+    {
+      "id": "trace",
+      "name": "トレース",
+      "x": 2946,
+      "y": 87,
+      "note": "会話の記録をターンごとに並べる。ユーザー・アシスタント・ツール・サブツール・要約の記録があり、所要時間とトークン数を添える。最新の記録から表示し、生成中は末尾を追う。PC 版の時間軸の図はスマホでは出さない。"
+    },
+    {
+      "id": "record",
+      "name": "記録の詳細",
+      "x": 3438,
+      "y": 87,
+      "note": "トレースの記録を 1 つ選んだときの詳細。トークン、所要時間、入力、出力を見る。"
+    }
+  ],
+  "paletteKey": "purple",
+  "frame": "phone",
+  "title": "DSH",
+  "brief": "DeepSeek Harness（AI コーディングエージェント）をスマホから操作する PWA。セッションの一覧、会話、ツール承認を扱う。",
+  "platform": "web",
+  "dynamicColor": false,
+  "theme": {
+    "dark": false,
+    "bothModes": false,
+    "contrast": "standard",
+    "shape": "rounded",
+    "font": "roboto",
+    "emphasized": false,
+    "motion": "standard"
+  }
+}
