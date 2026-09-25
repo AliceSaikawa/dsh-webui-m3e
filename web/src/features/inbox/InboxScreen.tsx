@@ -6,7 +6,7 @@ import { TabScaffold } from '../../app/shell/TabScaffold.tsx'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { presentInteraction } from '../interactions/InteractionSheet.tsx'
-import { buildInboxRows } from './model.ts'
+import { buildInboxRows, inboxStatus } from './model.ts'
 import { useInbox } from './use-inbox.ts'
 import './inbox.css'
 
@@ -15,9 +15,10 @@ export function InboxScreen() {
   const workspaceList = useSnapshot(workspaces.list)
   const { list, pending } = useInbox()
   const [now, setNow] = useState(Date.now)
-  const rows = buildInboxRows(pending, list, workspaceList.items, now)
+  const rows = buildInboxRows(pending, list, workspaceList, now)
+  const status = inboxStatus(rows, list, workspaceList)
   const hasCompleted = rows.completed.length > 0
-  const isEmpty = rows.pending.length === 0 && !hasCompleted
+  const hasRows = rows.pending.length > 0 || hasCompleted
   useEffect(() => {
     if (!hasCompleted) return
     setNow(Date.now())
@@ -26,7 +27,11 @@ export function InboxScreen() {
   }, [hasCompleted])
 
   return <TabScaffold title="対応待ち">
-    <div className={`inbox-content${isEmpty ? ' inbox-is-empty' : ''}`}>
+    <div className={`inbox-content${!hasRows ? ' inbox-is-empty' : ''}`}>
+      <div className="inbox-notices">
+        {status.workspaceError && <p className="inbox-error" role="alert">{status.workspaceError}</p>}
+        {hasRows && status.loadingMessage && <p className="inbox-loading" role="status">{status.loadingMessage}</p>}
+      </div>
       {rows.pending.length > 0 && <section className="inbox-section" aria-labelledby="inbox-pending-heading">
         <h2 id="inbox-pending-heading">返事が必要</h2>
         <M3eActionList aria-label="返事が必要">
@@ -51,9 +56,9 @@ export function InboxScreen() {
           </M3eListAction>)}
         </M3eActionList>
       </section>}
-      {isEmpty && <div className="inbox-empty" role="status">
-        <Icon name="front_hand" />
-        <p>対応待ちはありません</p>
+      {!hasRows && <div className="inbox-empty" role="status">
+        <Icon name={status.loadingMessage ? 'hourglass_empty' : 'front_hand'} />
+        {status.loadingMessage ? <p>{status.loadingMessage}</p> : status.showEmpty && <p>対応待ちはありません</p>}
       </div>}
     </div>
   </TabScaffold>

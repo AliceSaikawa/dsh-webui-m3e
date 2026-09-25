@@ -1,5 +1,5 @@
 import { isPlanReview, type PendingInteraction } from '../../dsh/interactions-store.ts'
-import type { SessionListState, SessionSummary, WorkspaceView } from '../../dsh/services.ts'
+import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
 
 interface InboxRow {
   key: string
@@ -21,6 +21,29 @@ export interface CompletedInboxRow extends InboxRow {
 export interface InboxRows {
   pending: PendingInboxRow[]
   completed: CompletedInboxRow[]
+}
+
+function workspaceFailed(workspaces: WorkspaceSnapshot): boolean {
+  return workspaces.state === 'error' || workspaces.error !== null
+}
+
+function workspaceLoading(workspaces: WorkspaceSnapshot): boolean {
+  return !workspaceFailed(workspaces) && (workspaces.phase === 'pending' || workspaces.state === 'loading')
+}
+
+/** Keep loading/error decisions testable without rendering React components. */
+export function inboxStatus(rows: InboxRows, list: SessionListState, workspaces: WorkspaceSnapshot) {
+  const loadingMessage = list.phase === 'pending' ? '対応待ちを読み込んでいます'
+    : workspaceLoading(workspaces) ? 'ワークスペースを読み込んでいます' : null
+  const workspaceError = !workspaceFailed(workspaces) ? null
+    : workspaces.items.length > 0
+      ? 'ワークスペース一覧を取得できませんでした。所属は前回取得した情報です。'
+      : 'ワークスペース一覧を取得できませんでした。所属を確認できません。'
+  return {
+    loadingMessage,
+    workspaceError,
+    showEmpty: rows.pending.length === 0 && rows.completed.length === 0 && loadingMessage === null,
+  }
 }
 
 /** The controller's queue is already in arrival order, including deferred requests. */
@@ -58,22 +81,33 @@ export function countInbox(pending: readonly PendingInteraction[], list: Session
 export function buildInboxRows(
   pending: readonly PendingInteraction[],
   list: SessionListState,
-  workspaces: readonly WorkspaceView[],
+  workspaces: WorkspaceSnapshot,
   now: number,
 ): InboxRows {
   const namesBySession = new Map<string, string>()
-  for (const workspace of workspaces) {
+  for (const workspace of workspaces.items) {
     for (const id of workspace.sessionIds) {
       if (!namesBySession.has(id)) namesBySession.set(id, workspace.title.trim() || '名前のないワークスペース')
     }
   }
   const identity = (sessionId: string) => {
     const session = list.byId[sessionId]
-    const workspace = workspaces.find(item => item.path === session?.cwd)
+    const workspace = workspaces.items.find(item => item.path === session?.cwd)
+    const knownName = namesBySession.get(sessionId) ?? (workspace ? workspace.title.trim() || '名前のないワークスペース' : undefined)
+    let workspaceName: string
+    if (workspaceFailed(workspaces)) {
+      workspaceName = knownName ? `${knownName}（更新未確認）` : 'ワークスペースを確認できません'
+    } else if (workspaceLoading(workspaces)) {
+      workspaceName = knownName ? `${knownName}（更新中）` : 'ワークスペースを読み込み中'
+    } else {
+      workspaceName = knownName ?? (list.phase === 'pending' ? 'ワークスペースを読み込み中'
+        : !session ? 'ワークスペースを確認できません' : 'ワークスペース未登録')
+    }
     return {
       sessionId,
-      title: session?.displayTitle.trim() || '題名のないセッション',
-      workspaceName: namesBySession.get(sessionId) ?? (workspace ? workspace.title.trim() || '名前のないワークスペース' : 'ワークスペース未登録'),
+      title: session?.displayTitle.trim() || (list.phase === 'pending' ? 'セッションを読み込み中'
+        : !session ? 'セッション情報を取得できません' : '題名のないセッション'),
+      workspaceName,
     }
   }
   return {
