@@ -43,7 +43,9 @@ label { display: block; margin-block: 8px; }
 .placeholder-list m3e-button { min-height: 64px; width: 100%; }
 .muted { color: var(--md-sys-color-on-surface-variant); }
 .conversation-tabs { flex: none; }
-.conversation-content { background: var(--md-sys-color-surface-container-low, var(--md-sys-color-surface)); }
+.conversation-content { overflow: hidden; scrollbar-gutter: auto; background: var(--md-sys-color-surface-container-low, var(--md-sys-color-surface)); }
+.conversation-panel { height: 100%; min-height: 0; overflow: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+.conversation-panel[hidden] { display: none; }
 .conversation-footer, .page-footer { flex: none; background: var(--md-sys-color-surface); padding: 8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
 .composer-placeholder { padding: 12px 16px; min-height: 104px; border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-high, var(--md-sys-color-surface-variant)); }
 .composer-placeholder textarea { border: 0; resize: none; padding: 0; outline: none; }

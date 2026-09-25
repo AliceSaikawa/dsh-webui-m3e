@@ -324,16 +324,22 @@ test('サブエージェントの親または選択中の子を削除すると�
   try {
     const parentSessionId = MOCK_IDS.sessions.readme
     ctx.mock.addSession({ id: 'child', parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: true, updatedAt: 0 }, [])
-    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child' })
+    ctx.mock.updateList((state) => {
+      state.subagentsByParent = { [parentSessionId]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: 'child', mode: 'one-shot', activity: 'inactive', hasChildren: false }] } }
+    })
+    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child', mode: 'one-shot' })
     assert.equal(ctx.sessions.list.getSnapshot().currentAddress?.childSessionId, 'child')
     ctx.mock.removeSession(parentSessionId)
     assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
     assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
     assert.equal(ctx.sessions.binding('child')!.session.getSnapshot().subagent?.parentAvailable, false)
-    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child' })
+    assert.throws(() => ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child', mode: 'one-shot' }))
     assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
     ctx.mock.addSession({ id: 'second-child', parentId: MOCK_IDS.sessions.approval, origin: 'subagent', displayTitle: '別の子の会話', running: false, blank: true, updatedAt: 0 }, [])
-    ctx.sessions.openSubagent({ parentSessionId: MOCK_IDS.sessions.approval, childSessionId: 'second-child' })
+    ctx.mock.updateList((state) => {
+      state.subagentsByParent = { [MOCK_IDS.sessions.approval]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: 'second-child', mode: 'continuable', label: '別の子の会話', activity: 'inactive', hasChildren: false }] } }
+    })
+    ctx.sessions.openSubagent({ parentSessionId: MOCK_IDS.sessions.approval, childSessionId: 'second-child', mode: 'continuable' })
     ctx.mock.removeSession('second-child')
     assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
     assert.equal(ctx.sessions.list.getSnapshot().current, undefined)

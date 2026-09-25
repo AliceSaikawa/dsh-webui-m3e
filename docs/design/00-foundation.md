@@ -269,9 +269,14 @@ web/src/
 - `app/theme/index.ts`：`useAppearance()` は `system | light | dark`、`setAppearance(value)` と `backToClassic()`。`app/icons/Icon.tsx`：`Icon({ name, slot?, filled?, className? })`。
 - `dsh/services.ts`：`DshProvider / useDsh` と共有型。`dsh/session.ts`：`useSession(id)` は `face / snapshot / records / stream / projection / ctx`。開けない ID の `face` は undefined。`projection<T>(key)` はフックなので、最上位で無条件に呼ぶ。別名の `useSessionProjection(face, key)` も用意した。
 - `useSession(id)` は読むだけで、`sessions.open` を呼ばない。会話の選択は `ConversationScreen` が行う。会話画面以外で状態や履歴を読んでも、選択中の会話と完了の未読印を変えない。
+- `SubagentAddress` は `{ parentSessionId, childSessionId, mode: 'one-shot' | 'continuable' }`。09 は子のカタログ行の mode をそのまま渡す。ID だけから mode を推測しない。mock の `openSubagent` も親のカタログの子 ID・kind・mode を照合し、不一致なら選択を変えずに例外にする。シナリオでは `addSession` で子の履歴を用意し、`updateList` で `subagentsByParent[parentSessionId].entries` に `{ kind: 'child', id, mode, ... }` を登録する。
+- **02・04 の入口変更**：`ChatView({ sessionId, active })` と `TraceView({ sessionId, active })` に必須の `active: boolean` を追加した。正常な会話では両方をマウントしたまま、非表示側のパネルに `hidden` と `inert` を付ける。同じ会話のタブ切り替えでは部品と DOM を再作成せず、展開状態・検索条件と閲覧位置を保持する。別の会話へ移る、会話画面から出る、会話を開けない状態になる場合の保持は対象外。
+- 両パネルは独立した高さ 100% のスクロール領域を持ち、共通の `main` 自体はスクロールしない。02・04 は各パネル、またはその中で高さ 100% に収まる専用要素をスクロール対象にし、二重のスクロールを作らない。土台の `data-scroll-area` は表示中のパネルだけに付く。非表示側はレイアウト・フォーカス・アクセシビリティツリーの対象外とし、隠れる本文や消える入力欄にフォーカスが残る場合は表示先のタブへ移す。
+- **02・04 が守ること**：`active === false` の間は末尾への自動移動・寸法による末尾判定・フォーカス移動を行わない。タイマー、スクロール監視、予約済みのフレーム処理も停止する。初回の末尾移動は初めて `active === true` になり履歴を表示できたときだけ行い、非表示中に初回表示済みの印を付けない。再表示だけを理由に初回の移動を繰り返さず、保持した閲覧位置・表示状態から再開する。非表示中も履歴データの購読は続けてよい。
 - `stream` は `{ attemptId, turn, step, chunks, content, usage?, finishReason? } | null`。`content` は復元済みの ContentBlock 配列。`finishReason` は文字列でなく `{ kind: ... }`。
 - `dsh/interactions.ts`：`initializeInteractions(ctx)` を描画前に一度呼ぶ。`usePendingInteractions / defer / resetDeferred / isPlanReview` を公開。pending の `deferred` は boolean、`answer()` は `Promise<void>`。`presentInteraction(pending, { from })` の戻り値は `close(): void`。会話に再入場したときだけ deferred を解除し、チャット／トレース切り替えでは解除しない。
 - `dsh/mock/kit.ts`：MockKit の型入口。すべての指定関数を実装した。`emit` と `streamAssistant` は Promise を返す。`emit` の宛先は payload の `agent`（セッション ID）または `sessionId` で指定する。`addWorkspace` は WorkspaceView、`addSession` は SessionSummary と履歴を受け取る。`updateList` は新しい一覧を返す形と渡された一覧を変更する形の両方に対応する。`scenario` は名前に合う URL のときだけ実行する。
+- **06 の即時シナリオ**：ctx 構築中の `extendMock` / シナリオ内で遅延なしの `kit.emit()` を使える。受け手が未登録なら、そのイベントの最初の `$on` 登録後の microtask で一度だけ配送し、承認・質問・プランを対応待ちへ入れる。シナリオの状態設定は引き続き同期実行する。`emit()` の Promise は承認・質問への回答まで待つ。構築完了後の通常の未登録イベントは保留・後日再生しない。配送前の ctx 破棄・対象セッション削除で保留要求を片付ける。
 - MockKit に `setSessionState(sessionId, patch: Partial<SessionSnapshot>): void`、`removeSession(sessionId): void`、`removeWorkspace(workspaceId): void` を追加した。`lastAgentError`、`openState: 'error'` と `openError`、`promptError` は `setSessionState` で設定できる。共通データを消すシナリオには後の 2 関数を使う。既存の 9 関数の引数と戻り値は維持した。偽データに `ctx.remote.workspace` は置かない。
 
 #### 未確認事項を静的に照合した結果と判断
@@ -353,3 +358,26 @@ web/src/
 - 再度拒否された場合は止めるというユーザー指示に従い、全担当の調査・実装を停止し、ソース変更なしを回収した。同じ HTTP 確認を別コマンド・ツールで再試行していない。保護フック・権限設定は変更していない。
 - 今回も変更はこの追記だけ。3 件とも未修正で、「段階 2 が使う公開入口」の新しい契約はまだ確定していない。DSH は起動せず、main には触れていない。
 - 検証：`pnpm typecheck`、`pnpm test`、`pnpm build` はすべて未実施。担当外で必要になったソース変更：なし。HTTP 確認の拒否に対する扱いを、次回の再開指示で確定する必要がある。
+
+### 2026-09-25：拒否時の作業範囲を見直した指示を受け、残った 3 件を修正
+
+- ユーザーから、拒否された操作だけを止め、その操作に依存しない修正・検証・コミットは続ける指示を受けた。過去の停止記録はその時点の記録として維持する。今回は開発サーバーの起動、HTTP 確認、ブラウザー操作を実施せず、Node のテストと指定の 3 コマンドで検証した。今回の再開中に拒否された操作はない。
+
+#### 修正前の確認と実装
+
+1. **サブエージェントの共有型と mock**：共有型の mode 欠落と、mock がカタログを照合しない問題は未修正だった。前節に記録した実物の照合結果を使い、`SubagentAddress.mode` を必須の `'one-shot' | 'continuable'` にした。mock は親カタログから子 ID を探し、`kind: 'child'` と mode の一致を要求する。未登録、診断行、mode の欠落・不一致では選択を変えずに例外にする。親が利用不可でも正常なカタログにある子は閲覧できる。
+   - `addSession` の parentId だけから mode を推測しない。初期の snapshot.subagent は null とし、`openSubagent` 成功後に完全なアドレスを保存する。`subagentAddress` と、別の会話から `open(childId)` で戻る場合も mode を保持する。
+   - 新規の Node テスト 6 件は修正前の mock ですべて失敗し、修正後に成功した。両 mode の正常系、欠落・不一致時の選択保持、未登録・診断行、親モデルを削除してカタログを再登録した場合の閲覧を検証した。既存の削除テストにも mode とカタログを追加した。
+2. **初期シナリオの即時イベント**：遅延なしの承認・質問・プランが対応待ち 0 件になることを Node テストで再現した。ctx 構築中に受け手なしで出たイベントだけを保留し、該当イベントの最初のハンドラ登録後に一度だけ配送する方式を選んだ。同じ同期処理中に登録した waterfall 全体を使い、既存シナリオの同期状態設定と起動 API は維持した。
+   - 回帰テストでは 3 件すべてが対応待ちへ入り、回答が emit の Promise へ戻ることを確認した。中断、登録解除、ctx 破棄、セッション削除・同じ ID の再作成でも不要な要求が残ったり復活したりしないことを含め、新規 8 件が成功した。
+3. **会話内のタブ保持**：条件分岐で部品を入れ替える構造が残っていたため、正常な会話では ChatView / TraceView の両方を描いたまま、非表示側を `hidden` / `inert` にした。共通 main のスクロールを止め、各パネルに独立したスクロール領域を持たせた。非表示にする本文のフォーカス、または消える入力欄から失われたフォーカスは表示先のタブへ移す。
+   - 仮の部品の契約変更は `ChatView({ sessionId, active })` と `TraceView({ sessionId, active })` の必須 boolean 追加だけ。返す画面の形や他の仮の部品の引数・戻り値は変更していない。
+   - 「段階 2 が使う公開入口」に、方式と保持範囲、02・04 が非表示中の自動移動・寸法測定・フォーカス処理を止めること、初回の末尾移動を最初の可視表示まで待ち再表示時に繰り返さないことを書いた。09 の mode の渡し方と、06 の即時 emit の契約も同じ節に追記した。
+
+#### 今回の検証と引き継ぎ
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：69 件すべて成功（既存 55 件と新規 14 件）。起動グラフなどの既存テストも成功。
+- `pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 885 KB、同梱フォント約 4 MB）。依存・ロックファイルは変更していない。
+- 画面は未検証。ユーザー指示に従いオーケストレーターへ引き継ぐ。`?mock` で同じ会話のチャット／トレース間を切り替えた際の閲覧位置・表示状態、非表示側のフォーカス除外とスクロール独立性を確認する。02・04 は本実装で `active` の契約を守った上で、初回表示と再表示を確認する。React の描画テストは追加していない。
+- 担当外で必要になった変更：なし。変更は 00 の担当ファイルと本書の実装メモ内のみ。main、DSH 本体、保護フック・権限設定は変更せず、DSH も起動していない。
