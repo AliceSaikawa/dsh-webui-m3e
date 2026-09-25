@@ -9,11 +9,22 @@
         {
           "id": "u4rmr1r1",
           "kind": "topAppBar",
-          "label": "セッション一覧",
+          "label": "dsh-webui-m3e",
           "icon": "menu",
           "variant": "filled",
-          "icon2": null,
-          "size": 412
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "drawer",
+              "transition": "slideLeft"
+            },
+            "icon2": {
+              "to": "listMenu",
+              "transition": "fade"
+            }
+          },
+          "note": "タイトルは今いるワークスペースの名前。≡ でワークスペースを切り替える。"
         }
       ]
     },
@@ -49,7 +60,23 @@
             }
           ],
           "radiusTop": 0,
-          "radiusBottom": 0
+          "radiusBottom": 0,
+          "selected": 0,
+          "actions": {
+            "tab:1": {
+              "to": "search",
+              "transition": "fade"
+            },
+            "tab:2": {
+              "to": "inbox",
+              "transition": "fade"
+            },
+            "tab:3": {
+              "to": "settings",
+              "transition": "fade"
+            }
+          },
+          "note": "対応待ちには件数のバッジを付ける。"
         }
       ]
     },
@@ -66,7 +93,11 @@
           "icon": "add",
           "variant": "tonal",
           "size": 56,
-          "note": "新しいセッションを作成する。"
+          "note": "新しいセッションを作成する。",
+          "action": {
+            "to": "newSession",
+            "transition": "slide"
+          }
         }
       ]
     },
@@ -85,7 +116,11 @@
           "supporting": "作業フォルダ・最終更新日時",
           "icon2": "chevron_right",
           "size": 380,
-          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok",
+          "action": {
+            "to": "h0vanepn",
+            "transition": "slide"
+          }
         },
         {
           "id": "lu75vrjt",
@@ -96,7 +131,11 @@
           "supporting": "作業フォルダ・最終更新日時",
           "icon2": "chevron_right",
           "size": 380,
-          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok この行は AI が実行中のセッションの例。",
+          "action": {
+            "to": "running",
+            "transition": "slide"
+          }
         },
         {
           "id": "xskkb6c0",
@@ -107,7 +146,11 @@
           "supporting": "作業フォルダ・最終更新日時",
           "icon2": "chevron_right",
           "size": 380,
-          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok"
+          "note": "アイコンのところには使用しているAIのモデルのファビコンでも取得して表示することを考えてる感じ。最悪なしでもok",
+          "action": {
+            "to": "h0vanepn",
+            "transition": "slide"
+          }
         }
       ]
     },
@@ -126,8 +169,12 @@
           "variant": "filled",
           "actions": {
             "icon": {
-              "to": "seedF1",
+              "to": "back",
               "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
             }
           },
           "note": "⋮ には統計とクォータを入れる。"
@@ -202,7 +249,11 @@
           "label": "ワークスペース書込",
           "icon": "shield",
           "variant": "outlined",
-          "note": "今の権限プリセット。タップで選び直す。"
+          "note": "今の権限プリセット。タップで選び直す。",
+          "action": {
+            "to": "permissionSheet",
+            "transition": "slideUp"
+          }
         }
       ]
     },
@@ -237,8 +288,12 @@
           "variant": "filled",
           "actions": {
             "icon": {
-              "to": "seedF1",
+              "to": "back",
               "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
             }
           }
         }
@@ -287,7 +342,11 @@
           "label": "順番待ち 1件",
           "icon": "schedule",
           "variant": "tonal",
-          "note": "タップで、編集・取り消し・割り込みへの変更を選ぶ。"
+          "note": "タップで、編集・取り消し・割り込みへの変更を選ぶ。",
+          "action": {
+            "to": "queueEdit",
+            "transition": "slideUp"
+          }
         }
       ]
     },
@@ -338,7 +397,11 @@
           "kind": "iconButton",
           "label": "",
           "icon": "add",
-          "variant": "outlined"
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
         }
       ]
     },
@@ -386,7 +449,13 @@
           "label": "README の見直し",
           "icon": "arrow_back",
           "icon2": "more_vert",
-          "variant": "filled"
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
         }
       ]
     },
@@ -422,7 +491,11 @@
           "label": "画像を添付",
           "supporting": "",
           "icon": "image",
-          "variant": "filled"
+          "variant": "filled",
+          "action": {
+            "to": "attachPreview",
+            "transition": "slide"
+          }
         },
         {
           "id": "p-l2",
@@ -430,7 +503,11 @@
           "label": "ファイルを参照",
           "supporting": "入力欄で @ を打っても出せる",
           "icon": "alternate_email",
-          "variant": "filled"
+          "variant": "filled",
+          "action": {
+            "to": "atSuggest",
+            "transition": "fade"
+          }
         },
         {
           "id": "p-l3",
@@ -438,7 +515,11 @@
           "label": "コマンド",
           "supporting": "入力欄で / を打っても出せる",
           "icon": "terminal",
-          "variant": "filled"
+          "variant": "filled",
+          "action": {
+            "to": "slashSuggest",
+            "transition": "fade"
+          }
         },
         {
           "id": "p-l4",
@@ -457,7 +538,11 @@
           "supporting": "DeepSeek V4",
           "icon": "smart_toy",
           "icon2": "chevron_right",
-          "variant": "filled"
+          "variant": "filled",
+          "action": {
+            "to": "modelSheet",
+            "transition": "slideUp"
+          }
         }
       ]
     },
@@ -473,7 +558,13 @@
           "label": "承認シートの実装",
           "icon": "arrow_back",
           "icon2": "more_vert",
-          "variant": "filled"
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
         }
       ]
     },
@@ -560,8 +651,8 @@
           "variant": "outlined",
           "size": 182,
           "action": {
-            "to": "running",
-            "transition": "fade"
+            "to": "back",
+            "transition": "slideUp"
           }
         },
         {
@@ -572,8 +663,8 @@
           "variant": "filled",
           "size": 182,
           "action": {
-            "to": "running",
-            "transition": "fade"
+            "to": "back",
+            "transition": "slideUp"
           }
         }
       ]
@@ -602,13 +693,7 @@
             }
           ],
           "selected": 0,
-          "note": "会話画面の表示切り替え。トレースでは入力欄を隠し、記録を広く見せる。",
-          "actions": {
-            "tab:1": {
-              "to": "trace",
-              "transition": "fade"
-            }
-          }
+          "note": "会話画面の表示切り替え。トレースでは入力欄を隠し、記録を広く見せる。トレースの例は「承認シートの実装」の画面で描いている。"
         }
       ]
     },
@@ -671,7 +756,13 @@
               "icon": "",
               "label": "トレース"
             }
-          ]
+          ],
+          "actions": {
+            "tab:1": {
+              "to": "trace",
+              "transition": "fade"
+            }
+          }
         }
       ]
     },
@@ -744,8 +835,12 @@
           "variant": "filled",
           "actions": {
             "icon": {
-              "to": "seedF1",
+              "to": "back",
               "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
             }
           }
         }
@@ -777,7 +872,7 @@
           ],
           "actions": {
             "tab:0": {
-              "to": "running",
+              "to": "back",
               "transition": "fade"
             }
           }
@@ -827,7 +922,7 @@
           "id": "tr-u",
           "kind": "listItem",
           "label": "ユーザー",
-          "supporting": "README の手順を見直して",
+          "supporting": "承認シートを作って",
           "icon": "person",
           "variant": "filled"
         },
@@ -851,7 +946,11 @@
           "icon": "terminal",
           "variant": "filled",
           "icon2": "error",
-          "note": "失敗したツールは色で分かるようにする（isError）。"
+          "note": "失敗したツールは色で分かるようにする（isError）。",
+          "action": {
+            "to": "record",
+            "transition": "slideUp"
+          }
         },
         {
           "id": "tr-r",
@@ -859,7 +958,11 @@
           "label": "ツール：read_file",
           "supporting": "0.1 秒",
           "icon": "description",
-          "variant": "filled"
+          "variant": "filled",
+          "action": {
+            "to": "record",
+            "transition": "slideUp"
+          }
         }
       ]
     },
@@ -920,7 +1023,7 @@
           "variant": "filled",
           "actions": {
             "icon": {
-              "to": "seedF1",
+              "to": "back",
               "transition": "slide"
             }
           }
@@ -950,13 +1053,7 @@
               "icon": "",
               "label": "トレース"
             }
-          ],
-          "actions": {
-            "tab:0": {
-              "to": "running",
-              "transition": "fade"
-            }
-          }
+          ]
         }
       ]
     },
@@ -1039,6 +1136,4764 @@
           "note": "ツール呼び出しの引数はトレースでは見られる（承認シートでは出せない）。"
         }
       ]
+    },
+    {
+      "id": "kredwd2p",
+      "x": 2962,
+      "y": 905,
+      "axis": "x",
+      "items": [
+        {
+          "id": "d2zivwne",
+          "kind": "searchBar",
+          "label": "検索",
+          "icon": "search",
+          "variant": "filled",
+          "icon2": "mic",
+          "size": 380
+        }
+      ]
+    },
+    {
+      "id": "g1",
+      "x": 208,
+      "y": 1180,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i0",
+          "kind": "topAppBar",
+          "label": "検索",
+          "icon": null,
+          "variant": "filled",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "g3",
+      "x": 224,
+      "y": 1276,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i2",
+          "kind": "searchBar",
+          "label": "セッションを検索",
+          "icon": "search",
+          "variant": "filled",
+          "size": 380,
+          "note": "入力を止めて少し待ってから検索する。前の検索は取り消す（AbortSignal）。"
+        }
+      ]
+    },
+    {
+      "id": "g5",
+      "x": 232,
+      "y": 1352,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i4",
+          "kind": "text",
+          "label": "「承認」の検索結果",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "g9",
+      "x": 224,
+      "y": 1380,
+      "axis": "y",
+      "items": [
+        {
+          "id": "i6",
+          "kind": "listItem",
+          "label": "承認シートの実装",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "…ツールの承認シートを下から出して…",
+          "action": {
+            "to": "running",
+            "transition": "slide"
+          },
+          "note": "1 行目は題名、2 行目は一致した箇所。一致した語を強調する。"
+        },
+        {
+          "id": "i7",
+          "kind": "listItem",
+          "label": "README の見直し",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "…承認の手順を README に足します…",
+          "action": {
+            "to": "h0vanepn",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "i8",
+          "kind": "listItem",
+          "label": "権限プリセットの整理",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "…承認なしで書き込めるのは…"
+        }
+      ]
+    },
+    {
+      "id": "g11",
+      "x": 224,
+      "y": 1612,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i10",
+          "kind": "button",
+          "label": "さらに読み込む",
+          "icon": "expand_more",
+          "variant": "text",
+          "note": "hasMore が true のときだけ出す。"
+        }
+      ]
+    },
+    {
+      "id": "g13",
+      "x": 208,
+      "y": 1968,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i12",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 1,
+          "size": 412,
+          "actions": {
+            "tab:0": {
+              "to": "seedF1",
+              "transition": "fade"
+            },
+            "tab:2": {
+              "to": "inbox",
+              "transition": "fade"
+            },
+            "tab:3": {
+              "to": "settings",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "g15",
+      "x": 700,
+      "y": 1180,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i14",
+          "kind": "topAppBar",
+          "label": "対応待ち",
+          "icon": null,
+          "variant": "filled",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "g17",
+      "x": 724,
+      "y": 1280,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i16",
+          "kind": "text",
+          "label": "返事が必要",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "g21",
+      "x": 716,
+      "y": 1306,
+      "axis": "y",
+      "items": [
+        {
+          "id": "i18",
+          "kind": "listItem",
+          "label": "承認シートの実装",
+          "icon": "terminal",
+          "variant": "filled",
+          "supporting": "ツールの承認：bash を実行しようとしています",
+          "action": {
+            "to": "approval",
+            "transition": "slideUp"
+          },
+          "note": "会話を開かず、承認のシートをこの画面の上に出す。"
+        },
+        {
+          "id": "i19",
+          "kind": "listItem",
+          "label": "DB の選び直し",
+          "icon": "help",
+          "variant": "filled",
+          "supporting": "質問：PostgreSQL と SQLite のどちらにしますか",
+          "note": "AI からの質問のシートを出す（シートは会話のジャンルで作る）。",
+          "action": {
+            "to": "question",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "i20",
+          "kind": "listItem",
+          "label": "認証の作り直し",
+          "icon": "checklist",
+          "variant": "filled",
+          "supporting": "プランの確認：承認するまで作業を始めません",
+          "note": "プランの確認も「質問」の一種（intent: plan-review）。本文が長いので全画面のシートにする案。",
+          "action": {
+            "to": "planReview",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "g23",
+      "x": 724,
+      "y": 1538,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i22",
+          "kind": "text",
+          "label": "終わったもの",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "g25",
+      "x": 716,
+      "y": 1564,
+      "axis": "y",
+      "items": [
+        {
+          "id": "i24",
+          "kind": "listItem",
+          "label": "README の見直し",
+          "icon": "done_all",
+          "variant": "filled",
+          "supporting": "完了 ・ 3 分前",
+          "action": {
+            "to": "h0vanepn",
+            "transition": "slide"
+          },
+          "note": "完了して未読のもの。開くと既読になり、この画面から消える。"
+        }
+      ]
+    },
+    {
+      "id": "g27",
+      "x": 700,
+      "y": 1968,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i26",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 2,
+          "size": 412,
+          "actions": {
+            "tab:0": {
+              "to": "seedF1",
+              "transition": "fade"
+            },
+            "tab:1": {
+              "to": "search",
+              "transition": "fade"
+            },
+            "tab:3": {
+              "to": "settings",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "g29",
+      "x": 1192,
+      "y": 1180,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i28",
+          "kind": "topAppBar",
+          "label": "設定",
+          "icon": null,
+          "variant": "filled",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "g31",
+      "x": 1216,
+      "y": 1280,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i30",
+          "kind": "text",
+          "label": "この端末",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "g34",
+      "x": 1208,
+      "y": 1306,
+      "axis": "y",
+      "items": [
+        {
+          "id": "i32",
+          "kind": "listItem",
+          "label": "今の画面に戻す",
+          "icon": "swap_horiz",
+          "variant": "filled",
+          "supporting": "この端末だけ、DSH の標準の画面を使う",
+          "note": "Cookie dsh-webui を classic にして / へ移る。"
+        },
+        {
+          "id": "i33",
+          "kind": "listItem",
+          "label": "外観",
+          "icon": "dark_mode",
+          "variant": "filled",
+          "supporting": "端末の設定に合わせる",
+          "icon2": "chevron_right",
+          "note": "M3E の画面の明暗。DSH の ui-theme とは別にこの端末で持つか、共有するかは未決。",
+          "action": {
+            "to": "appearance",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "g36",
+      "x": 1216,
+      "y": 1466,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i35",
+          "kind": "text",
+          "label": "DSH の設定",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "g42",
+      "x": 1208,
+      "y": 1492,
+      "axis": "y",
+      "items": [
+        {
+          "id": "i37",
+          "kind": "listItem",
+          "label": "モデル",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "既定のモデル、サブエージェントのモデル",
+          "icon2": "chevron_right",
+          "action": {
+            "to": "settingsModel",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "i38",
+          "kind": "listItem",
+          "label": "権限",
+          "icon": "shield",
+          "variant": "filled",
+          "supporting": "ワークスペース書込",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "i39",
+          "kind": "listItem",
+          "label": "エージェント",
+          "icon": "tune",
+          "variant": "filled",
+          "supporting": "プリセット、ループ",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "i40",
+          "kind": "listItem",
+          "label": "提供元と API キー",
+          "icon": "key",
+          "variant": "filled",
+          "supporting": "DeepSeek、ローカル",
+          "icon2": "chevron_right",
+          "note": "キーは書き込むだけで、読み出せない。登録済みかどうかだけ出す。",
+          "action": {
+            "to": "keys",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "i41",
+          "kind": "listItem",
+          "label": "Web 検索とシェル",
+          "icon": "travel_explore",
+          "variant": "filled",
+          "supporting": "言語もここ",
+          "icon2": "chevron_right",
+          "note": "件数の少ない名前空間をまとめたページ。ui-* と ui-onboarding は今の画面向けなので出さない案。"
+        }
+      ]
+    },
+    {
+      "id": "g44",
+      "x": 1192,
+      "y": 1968,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i43",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 3,
+          "size": 412,
+          "actions": {
+            "tab:0": {
+              "to": "seedF1",
+              "transition": "fade"
+            },
+            "tab:1": {
+              "to": "search",
+              "transition": "fade"
+            },
+            "tab:2": {
+              "to": "inbox",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "g46",
+      "x": 1684,
+      "y": 1180,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i45",
+          "kind": "topAppBar",
+          "label": "モデル",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "g48",
+      "x": 1700,
+      "y": 1284,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i47",
+          "kind": "select",
+          "label": "既定のモデル",
+          "icon": null,
+          "variant": "outlined",
+          "tabs": [
+            {
+              "label": "DeepSeek V4"
+            },
+            {
+              "label": "ローカル（ollama）"
+            }
+          ],
+          "selected": 0,
+          "supporting": "すぐ反映されます",
+          "note": "補足の文は applies から出す（live ならすぐ、restart なら再起動後）。"
+        }
+      ]
+    },
+    {
+      "id": "g50",
+      "x": 1700,
+      "y": 1376,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i49",
+          "kind": "select",
+          "label": "サブエージェントのモデル",
+          "icon": null,
+          "variant": "outlined",
+          "tabs": [
+            {
+              "label": "既定と同じ"
+            },
+            {
+              "label": "DeepSeek V4"
+            },
+            {
+              "label": "ローカル（ollama）"
+            }
+          ],
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "g52",
+      "x": 1700,
+      "y": 1468,
+      "axis": "x",
+      "items": [
+        {
+          "id": "i51",
+          "kind": "button",
+          "label": "既定値に戻す",
+          "icon": null,
+          "variant": "text",
+          "note": "ユーザーが上書きした項目（user に値がある）だけに出す。"
+        }
+      ]
+    },
+    {
+      "id": "gL1",
+      "x": 208,
+      "y": 2273,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL0",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 320,
+          "size2": 892,
+          "fill": "surfaceContainerLow",
+          "corners": {
+            "tl": 0,
+            "tr": 16,
+            "bl": 0,
+            "br": 16
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL3",
+      "x": 236,
+      "y": 2321,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL2",
+          "kind": "text",
+          "label": "ワークスペース",
+          "icon": null,
+          "variant": "filled",
+          "size": 14,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gL7",
+      "x": 220,
+      "y": 2353,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iL4",
+          "kind": "listItem",
+          "label": "dsh-webui-m3e",
+          "icon": "folder_open",
+          "variant": "filled",
+          "supporting": "~/dev/dsh-webui-m3e",
+          "size": 296,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "今のワークスペース。選択中の見た目にする。"
+        },
+        {
+          "id": "iL5",
+          "kind": "listItem",
+          "label": "deepseek-harness",
+          "icon": "folder",
+          "variant": "filled",
+          "supporting": "~/dev/deepseek-harness",
+          "size": 296,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iL6",
+          "kind": "listItem",
+          "label": "notes",
+          "icon": "folder",
+          "variant": "filled",
+          "supporting": "~/notes",
+          "size": 296,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL9",
+      "x": 220,
+      "y": 2577,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL8",
+          "kind": "listItem",
+          "label": "ワークスペースを追加",
+          "icon": "add",
+          "variant": "filled",
+          "size": 296,
+          "action": {
+            "to": "picker",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL11",
+      "x": 236,
+      "y": 2673,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL10",
+          "kind": "text",
+          "label": "長押しで、名前の変更・並べ替え・登録の解除",
+          "icon": null,
+          "variant": "filled",
+          "size": 12
+        }
+      ]
+    },
+    {
+      "id": "gL13",
+      "x": 700,
+      "y": 2273,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL12",
+          "kind": "topAppBar",
+          "label": "フォルダを選ぶ",
+          "icon": "close",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL16",
+      "x": 716,
+      "y": 2373,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL14",
+          "kind": "chip",
+          "label": "~",
+          "icon": null,
+          "variant": "outlined"
+        },
+        {
+          "id": "iL15",
+          "kind": "chip",
+          "label": "dev",
+          "icon": null,
+          "variant": "tonal",
+          "note": "パンくず。タップでその階層に戻る。"
+        }
+      ]
+    },
+    {
+      "id": "gL20",
+      "x": 716,
+      "y": 2421,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iL17",
+          "kind": "listItem",
+          "label": "dsh-webui-m3e",
+          "icon": "folder",
+          "variant": "filled",
+          "icon2": "chevron_right",
+          "note": "タップで 1 階層下に入る。隠しフォルダは出さない。"
+        },
+        {
+          "id": "iL18",
+          "kind": "listItem",
+          "label": "deepseek-harness",
+          "icon": "folder",
+          "variant": "filled",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iL19",
+          "kind": "listItem",
+          "label": "sandbox",
+          "icon": "folder",
+          "variant": "filled",
+          "icon2": "chevron_right"
+        }
+      ]
+    },
+    {
+      "id": "gL22",
+      "x": 724,
+      "y": 2653,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL21",
+          "kind": "text",
+          "label": "1,000 件を超えるフォルダは一部だけ表示します",
+          "icon": null,
+          "variant": "filled",
+          "size": 12
+        }
+      ]
+    },
+    {
+      "id": "gL25",
+      "x": 716,
+      "y": 3053,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL23",
+          "kind": "button",
+          "label": "新しいフォルダ",
+          "icon": "create_new_folder",
+          "variant": "outlined",
+          "size": 182,
+          "note": "今の階層にフォルダを作る（createDirectory）。"
+        },
+        {
+          "id": "iL24",
+          "kind": "button",
+          "label": "ここを追加",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "今の階層をワークスペースとして登録する（workspace.create）。登録済みなら既存のものを返す。"
+        }
+      ]
+    },
+    {
+      "id": "gL27",
+      "x": 1192,
+      "y": 2273,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL26",
+          "kind": "topAppBar",
+          "label": "新しいセッション",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL29",
+      "x": 1310,
+      "y": 2633,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL28",
+          "kind": "text",
+          "label": "何をしますか",
+          "icon": null,
+          "variant": "filled",
+          "size": 24,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gL31",
+      "x": 1298,
+      "y": 2677,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL30",
+          "kind": "text",
+          "label": "dsh-webui-m3e で始めます",
+          "icon": null,
+          "variant": "filled",
+          "size": 14
+        }
+      ]
+    },
+    {
+      "id": "gL33",
+      "x": 1208,
+      "y": 3037,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL32",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gL35",
+      "x": 1230,
+      "y": 3053,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL34",
+          "kind": "text",
+          "label": "メッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gL37",
+      "x": 1216,
+      "y": 3093,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL36",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gL39",
+      "x": 1272,
+      "y": 3101,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL38",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined"
+        }
+      ]
+    },
+    {
+      "id": "gL41",
+      "x": 1532,
+      "y": 3093,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL40",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled",
+          "note": "送ると同時にセッションを作り、会話画面に切り替わる。"
+        }
+      ]
+    },
+    {
+      "id": "gL43",
+      "x": 1684,
+      "y": 2273,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL42",
+          "kind": "topAppBar",
+          "label": "dsh-webui-m3e",
+          "icon": "menu",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gL45",
+      "x": 1856,
+      "y": 2345,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL44",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 228,
+          "size2": 304,
+          "fill": "surfaceContainer",
+          "radiusTop": 12,
+          "radiusBottom": 12
+        }
+      ]
+    },
+    {
+      "id": "gL49",
+      "x": 1860,
+      "y": 2353,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA344",
+          "kind": "listItem",
+          "label": "並べ替え",
+          "icon": "swap_vert",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "一覧の並び順を手で変えるモードに入る（insertSessionBefore）。"
+        },
+        {
+          "id": "iA345",
+          "kind": "listItem",
+          "label": "選んでアーカイブ",
+          "icon": "checklist",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "行を複数選んで、まとめてアーカイブする。"
+        },
+        {
+          "id": "iA346",
+          "kind": "listItem",
+          "label": "名前を変える",
+          "icon": "edit",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "renameDialog",
+            "transition": "fade"
+          },
+          "note": "今のワークスペースの名前を変える。"
+        },
+        {
+          "id": "iA347",
+          "kind": "listItem",
+          "label": "サブエージェントも表示",
+          "icon": "account_tree",
+          "variant": "filled",
+          "size": 220,
+          "switch": true,
+          "checked": false,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "一覧にサブエージェントのセッションが来るかは未確認。"
+        }
+      ]
+    },
+    {
+      "id": "gL51",
+      "x": 1684,
+      "y": 3061,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL50",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 0,
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gL53",
+      "x": 2176,
+      "y": 2273,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL52",
+          "kind": "topAppBar",
+          "label": "dsh-webui-m3e",
+          "icon": "menu",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gL55",
+      "x": 2176,
+      "y": 2361,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL54",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 104,
+          "fill": "tertiaryContainer"
+        }
+      ]
+    },
+    {
+      "id": "gL57",
+      "x": 2200,
+      "y": 2377,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL56",
+          "kind": "text",
+          "label": "DSH との接続が切れました",
+          "icon": null,
+          "variant": "filled",
+          "size": 16,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gL59",
+      "x": 2200,
+      "y": 2409,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL58",
+          "kind": "text",
+          "label": "表示は 3 分前のものです",
+          "icon": null,
+          "variant": "filled",
+          "size": 14
+        }
+      ]
+    },
+    {
+      "id": "gL61",
+      "x": 2468,
+      "y": 2397,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL60",
+          "kind": "button",
+          "label": "再接続",
+          "icon": null,
+          "variant": "text",
+          "note": "connection.reconnect() を呼ぶ。"
+        }
+      ]
+    },
+    {
+      "id": "gL65",
+      "x": 2192,
+      "y": 2481,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iL62",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iL63",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iL64",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        }
+      ]
+    },
+    {
+      "id": "gL67",
+      "x": 2516,
+      "y": 2989,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL66",
+          "kind": "fab",
+          "label": "作成",
+          "icon": "add",
+          "variant": "tonal",
+          "size": 56,
+          "note": "接続が切れている間は押せない。"
+        }
+      ]
+    },
+    {
+      "id": "gL69",
+      "x": 2176,
+      "y": 3061,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iL68",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 0,
+          "size": 412,
+          "actions": {
+            "tab:1": {
+              "to": "search",
+              "transition": "fade"
+            },
+            "tab:2": {
+              "to": "inbox",
+              "transition": "fade"
+            },
+            "tab:3": {
+              "to": "settings",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA1",
+      "x": 208,
+      "y": 3366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA0",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA3",
+      "x": 208,
+      "y": 3456,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA2",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA5",
+      "x": 344,
+      "y": 3518,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA4",
+          "kind": "card",
+          "label": "README の手順を見直して",
+          "icon": null,
+          "variant": "filled",
+          "size": 260,
+          "size2": 64,
+          "fill": "primaryContainer",
+          "noImage": true,
+          "action": {
+            "to": "messageActions",
+            "transition": "slideUp"
+          },
+          "note": "自分のメッセージ。長押しでメッセージの操作を開く。"
+        }
+      ]
+    },
+    {
+      "id": "gA7",
+      "x": 508,
+      "y": 3590,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA6",
+          "kind": "image",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 96,
+          "note": "添付した画像。タップで全画面に広げる。"
+        }
+      ]
+    },
+    {
+      "id": "gA9",
+      "x": 224,
+      "y": 3698,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA8",
+          "kind": "listItem",
+          "label": "考えた内容",
+          "icon": "psychology",
+          "variant": "filled",
+          "supporting": "12 秒",
+          "icon2": "expand_more",
+          "note": "reasoning。ふだんは畳んでおき、タップで開く。"
+        }
+      ]
+    },
+    {
+      "id": "gA12",
+      "x": 224,
+      "y": 3770,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA10",
+          "kind": "listItem",
+          "label": "read_file",
+          "icon": "description",
+          "variant": "filled",
+          "supporting": "README.md ・ 0.1 秒",
+          "icon2": "chevron_right",
+          "action": {
+            "to": "toolDetail",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA11",
+          "kind": "listItem",
+          "label": "bash",
+          "icon": "terminal",
+          "variant": "filled",
+          "supporting": "pnpm test ・ 失敗 ・ 1.2 秒",
+          "icon2": "error",
+          "action": {
+            "to": "toolDetail",
+            "transition": "slideUp"
+          },
+          "note": "失敗したツールは色で分かるようにする（isError）。引数の JSON から主な値を 1 つ添える。JSON が壊れていたらツール名だけ。"
+        }
+      ]
+    },
+    {
+      "id": "gA14",
+      "x": 224,
+      "y": 3926,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA13",
+          "kind": "text",
+          "label": "PWA の手順を README に足しました。",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA16",
+      "x": 224,
+      "y": 3954,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA15",
+          "kind": "text",
+          "label": "テストが 1 件失敗しています。",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA18",
+      "x": 224,
+      "y": 3998,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA17",
+          "kind": "chip",
+          "label": "/permission を実行しました",
+          "icon": "terminal",
+          "variant": "outlined",
+          "note": "コマンドの結果（command/done）は吹き出しにせず、小さな行で出す。"
+        }
+      ]
+    },
+    {
+      "id": "gA20",
+      "x": 224,
+      "y": 4130,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA19",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gA22",
+      "x": 246,
+      "y": 4146,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA21",
+          "kind": "text",
+          "label": "メッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA24",
+      "x": 232,
+      "y": 4186,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA23",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA26",
+      "x": 288,
+      "y": 4194,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA25",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined",
+          "action": {
+            "to": "permissionSheet",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA28",
+      "x": 548,
+      "y": 4186,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA27",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA30",
+      "x": 700,
+      "y": 3366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA29",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA32",
+      "x": 700,
+      "y": 3456,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA31",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA34",
+      "x": 700,
+      "y": 3658,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA33",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 600,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA36",
+      "x": 724,
+      "y": 3694,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA35",
+          "kind": "text",
+          "label": "bash",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA40",
+      "x": 716,
+      "y": 3742,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA37",
+          "kind": "listItem",
+          "label": "引数",
+          "icon": "data_object",
+          "variant": "filled",
+          "supporting": "{\"command\": \"pnpm test\"}",
+          "note": "生の JSON を整形して見せる。"
+        },
+        {
+          "id": "iA38",
+          "kind": "listItem",
+          "label": "結果",
+          "icon": "output",
+          "variant": "filled",
+          "supporting": "1 件失敗 ・ 214 行",
+          "icon2": "chevron_right",
+          "note": "結果は入れ子のブロックになりうるので、中身の種類ごとに描く。"
+        },
+        {
+          "id": "iA39",
+          "kind": "listItem",
+          "label": "所要時間",
+          "icon": "timer",
+          "variant": "filled",
+          "supporting": "1.2 秒"
+        }
+      ]
+    },
+    {
+      "id": "gA42",
+      "x": 1192,
+      "y": 3366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA41",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA44",
+      "x": 1192,
+      "y": 3456,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA43",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA46",
+      "x": 1192,
+      "y": 3922,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA45",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 336,
+          "fill": "surfaceContainerHighest",
+          "note": "iPhone のキーボードが出ている範囲。入力欄は visualViewport に合わせてこの上に来る。"
+        }
+      ]
+    },
+    {
+      "id": "gA48",
+      "x": 1358,
+      "y": 4074,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA47",
+          "kind": "text",
+          "label": "キーボード",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA50",
+      "x": 1208,
+      "y": 3570,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA49",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 224,
+          "fill": "surfaceContainer",
+          "radiusTop": 16,
+          "radiusBottom": 16
+        }
+      ]
+    },
+    {
+      "id": "gA54",
+      "x": 1208,
+      "y": 3574,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA51",
+          "kind": "listItem",
+          "label": "/plan",
+          "icon": "checklist",
+          "variant": "filled",
+          "supporting": "計画モードを始める",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA52",
+          "kind": "listItem",
+          "label": "/plan off",
+          "icon": "close",
+          "variant": "filled",
+          "supporting": "計画モードを終える",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA53",
+          "kind": "listItem",
+          "label": "/permission",
+          "icon": "shield",
+          "variant": "filled",
+          "supporting": "権限を選び直す",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA56",
+      "x": 1208,
+      "y": 3802,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA55",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gA58",
+      "x": 1230,
+      "y": 3818,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA57",
+          "kind": "text",
+          "label": "/pl",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA60",
+      "x": 1216,
+      "y": 3858,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA59",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA62",
+      "x": 1272,
+      "y": 3866,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA61",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined",
+          "action": {
+            "to": "permissionSheet",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA64",
+      "x": 1532,
+      "y": 3858,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA63",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA66",
+      "x": 1684,
+      "y": 3366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA65",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA68",
+      "x": 1684,
+      "y": 3456,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA67",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA70",
+      "x": 1684,
+      "y": 3922,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA69",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 336,
+          "fill": "surfaceContainerHighest",
+          "note": "iPhone のキーボードが出ている範囲。入力欄は visualViewport に合わせてこの上に来る。"
+        }
+      ]
+    },
+    {
+      "id": "gA72",
+      "x": 1850,
+      "y": 4074,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA71",
+          "kind": "text",
+          "label": "キーボード",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA74",
+      "x": 1700,
+      "y": 3570,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA73",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 224,
+          "fill": "surfaceContainer",
+          "radiusTop": 16,
+          "radiusBottom": 16
+        }
+      ]
+    },
+    {
+      "id": "gA78",
+      "x": 1700,
+      "y": 3574,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA75",
+          "kind": "listItem",
+          "label": "docs/",
+          "icon": "folder",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA76",
+          "kind": "listItem",
+          "label": "docs/handoff.md",
+          "icon": "description",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA77",
+          "kind": "listItem",
+          "label": "docs/ui-spec.md",
+          "icon": "description",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA80",
+      "x": 1700,
+      "y": 3802,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA79",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gA82",
+      "x": 1722,
+      "y": 3818,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA81",
+          "kind": "text",
+          "label": "README の手順を @docs",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA84",
+      "x": 1708,
+      "y": 3858,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA83",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA86",
+      "x": 1764,
+      "y": 3866,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA85",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined",
+          "action": {
+            "to": "permissionSheet",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA88",
+      "x": 2024,
+      "y": 3858,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA87",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA90",
+      "x": 2176,
+      "y": 3366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA89",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA92",
+      "x": 2176,
+      "y": 3456,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA91",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA94",
+      "x": 2176,
+      "y": 3886,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA93",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 372,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA96",
+      "x": 2200,
+      "y": 3922,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA95",
+          "kind": "text",
+          "label": "順番待ちのメッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA98",
+      "x": 2200,
+      "y": 3966,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA97",
+          "kind": "text",
+          "label": "テストも追加して",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA102",
+      "x": 2192,
+      "y": 4002,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA99",
+          "kind": "listItem",
+          "label": "編集",
+          "icon": "edit",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA100",
+          "kind": "listItem",
+          "label": "今すぐ割り込ませる",
+          "icon": "bolt",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "順番待ちから割り込み（steer）に変える。"
+        },
+        {
+          "id": "iA101",
+          "kind": "listItem",
+          "label": "取り消す",
+          "icon": "delete",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA104",
+      "x": 208,
+      "y": 4459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA103",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA106",
+      "x": 208,
+      "y": 4549,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA105",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA108",
+      "x": 208,
+      "y": 4759,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA107",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 592,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA110",
+      "x": 232,
+      "y": 4787,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA109",
+          "kind": "text",
+          "label": "質問 1 / 2",
+          "icon": null,
+          "variant": "filled",
+          "size": 12
+        }
+      ]
+    },
+    {
+      "id": "gA112",
+      "x": 232,
+      "y": 4811,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA111",
+          "kind": "text",
+          "label": "どちらのデータベースにしますか",
+          "icon": null,
+          "variant": "filled",
+          "size": 20,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA114",
+      "x": 232,
+      "y": 4847,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA113",
+          "kind": "text",
+          "label": "今のデータは 3 万件ほどです",
+          "icon": null,
+          "variant": "filled",
+          "size": 14,
+          "note": "detail。ないこともある。"
+        }
+      ]
+    },
+    {
+      "id": "gA116",
+      "x": 232,
+      "y": 4887,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA115",
+          "kind": "radio",
+          "label": "PostgreSQL（複数人で使う前提）",
+          "icon": null,
+          "variant": "filled",
+          "checked": true
+        }
+      ]
+    },
+    {
+      "id": "gA118",
+      "x": 232,
+      "y": 4935,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA117",
+          "kind": "radio",
+          "label": "SQLite（1 台で完結）",
+          "icon": null,
+          "variant": "filled",
+          "checked": false
+        }
+      ]
+    },
+    {
+      "id": "gA120",
+      "x": 224,
+      "y": 4999,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA119",
+          "kind": "textField",
+          "label": "その他（自由に書く）",
+          "icon": null,
+          "variant": "outlined",
+          "note": "自由に書くと、単一選択では選んだ項目より優先される（custom）。"
+        }
+      ]
+    },
+    {
+      "id": "gA123",
+      "x": 224,
+      "y": 5239,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA121",
+          "kind": "button",
+          "label": "あとで",
+          "icon": null,
+          "variant": "outlined",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "シートを畳むだけ。質問は対応待ちに残る。"
+        },
+        {
+          "id": "iA122",
+          "kind": "button",
+          "label": "次へ",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA125",
+      "x": 700,
+      "y": 4459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA124",
+          "kind": "topAppBar",
+          "label": "プランの確認",
+          "icon": "close",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slideUp"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA127",
+      "x": 724,
+      "y": 4563,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA126",
+          "kind": "text",
+          "label": "認証の作り直し",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA129",
+      "x": 724,
+      "y": 4611,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA128",
+          "kind": "text",
+          "label": "1. ログインの Cookie を HttpOnly にする",
+          "icon": null,
+          "variant": "filled",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "id": "gA131",
+      "x": 724,
+      "y": 4647,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA130",
+          "kind": "text",
+          "label": "2. トークンの期限を 1 日にする",
+          "icon": null,
+          "variant": "filled",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "id": "gA133",
+      "x": 724,
+      "y": 4683,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA132",
+          "kind": "text",
+          "label": "3. 期限切れのときはログイン画面に戻す",
+          "icon": null,
+          "variant": "filled",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "id": "gA135",
+      "x": 724,
+      "y": 4719,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA134",
+          "kind": "text",
+          "label": "4. テストを 6 件足す",
+          "icon": null,
+          "variant": "filled",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "id": "gA138",
+      "x": 716,
+      "y": 5239,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA136",
+          "kind": "button",
+          "label": "直してほしい",
+          "icon": null,
+          "variant": "outlined",
+          "size": 182,
+          "note": "自由入力で修正を頼む（custom）。"
+        },
+        {
+          "id": "iA137",
+          "kind": "button",
+          "label": "このプランで進める",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "ラベルは intent.approve の文字をそのまま使う。"
+        }
+      ]
+    },
+    {
+      "id": "gA140",
+      "x": 1192,
+      "y": 4459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA139",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA142",
+      "x": 1192,
+      "y": 4549,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA141",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA144",
+      "x": 1192,
+      "y": 4871,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA143",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 480,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA146",
+      "x": 1216,
+      "y": 4907,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA145",
+          "kind": "text",
+          "label": "モデル",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA149",
+      "x": 1208,
+      "y": 4955,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA147",
+          "kind": "listItem",
+          "label": "DeepSeek V4",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "icon2": "check",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA148",
+          "kind": "listItem",
+          "label": "ローカル（ollama）",
+          "icon": "dns",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA151",
+      "x": 1216,
+      "y": 5119,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA150",
+          "kind": "text",
+          "label": "考える深さ",
+          "icon": null,
+          "variant": "filled",
+          "size": 14,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA155",
+      "x": 1216,
+      "y": 5151,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA152",
+          "kind": "chip",
+          "label": "低",
+          "icon": null,
+          "variant": "outlined"
+        },
+        {
+          "id": "iA153",
+          "kind": "chip",
+          "label": "中",
+          "icon": null,
+          "variant": "tonal",
+          "checked": true
+        },
+        {
+          "id": "iA154",
+          "kind": "chip",
+          "label": "高",
+          "icon": null,
+          "variant": "outlined"
+        }
+      ]
+    },
+    {
+      "id": "gA157",
+      "x": 1216,
+      "y": 5199,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA156",
+          "kind": "text",
+          "label": "モデルが対応しているときだけ出します",
+          "icon": null,
+          "variant": "filled",
+          "size": 12,
+          "note": "reasoningEffort。"
+        }
+      ]
+    },
+    {
+      "id": "gA159",
+      "x": 1684,
+      "y": 4459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA158",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA161",
+      "x": 1684,
+      "y": 4549,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA160",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA163",
+      "x": 1684,
+      "y": 4951,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA162",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 400,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA165",
+      "x": 1708,
+      "y": 4987,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA164",
+          "kind": "text",
+          "label": "権限",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA168",
+      "x": 1700,
+      "y": 5035,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA166",
+          "kind": "listItem",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "filled",
+          "supporting": "作業フォルダの中だけ書き込める",
+          "icon2": "check",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA167",
+          "kind": "listItem",
+          "label": "フル アクセス",
+          "icon": "warning",
+          "variant": "filled",
+          "supporting": "制限なしで操作する",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "危険な選択肢。選ぶときに確認のダイアログを出すかは未決。"
+        }
+      ]
+    },
+    {
+      "id": "gA170",
+      "x": 2176,
+      "y": 4459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA169",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA172",
+      "x": 2176,
+      "y": 4549,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA171",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA174",
+      "x": 2192,
+      "y": 5135,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA173",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 200,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gA176",
+      "x": 2208,
+      "y": 5151,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA175",
+          "kind": "image",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 64
+        }
+      ]
+    },
+    {
+      "id": "gA178",
+      "x": 2284,
+      "y": 5151,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA177",
+          "kind": "image",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 64
+        }
+      ]
+    },
+    {
+      "id": "gA180",
+      "x": 2214,
+      "y": 5235,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA179",
+          "kind": "text",
+          "label": "この画面の崩れを直して",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA182",
+      "x": 2200,
+      "y": 5271,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA181",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA184",
+      "x": 2516,
+      "y": 5271,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA183",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA186",
+      "x": 208,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA185",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA188",
+      "x": 208,
+      "y": 5642,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA187",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA190",
+      "x": 380,
+      "y": 5624,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA189",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 228,
+          "size2": 520,
+          "fill": "surfaceContainer",
+          "radiusTop": 12,
+          "radiusBottom": 12
+        }
+      ]
+    },
+    {
+      "id": "gA198",
+      "x": 384,
+      "y": 5632,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA191",
+          "kind": "listItem",
+          "label": "題名を変える",
+          "icon": "edit",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "renameDialog",
+            "transition": "fade"
+          }
+        },
+        {
+          "id": "iA192",
+          "kind": "listItem",
+          "label": "統計",
+          "icon": "monitoring",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "stats",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA193",
+          "kind": "listItem",
+          "label": "ファイル",
+          "icon": "folder",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "files",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA194",
+          "kind": "listItem",
+          "label": "ジョブ",
+          "icon": "pending_actions",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "jobs",
+            "transition": "slide"
+          },
+          "note": "動いているジョブがあれば件数を添える。"
+        },
+        {
+          "id": "iA195",
+          "kind": "listItem",
+          "label": "サブエージェント",
+          "icon": "account_tree",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "subagents",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA196",
+          "kind": "listItem",
+          "label": "ゴール",
+          "icon": "flag",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "goal",
+            "transition": "slide"
+          }
+        },
+        {
+          "id": "iA197",
+          "kind": "listItem",
+          "label": "アーカイブ",
+          "icon": "inventory_2",
+          "variant": "filled",
+          "size": 220,
+          "action": {
+            "to": "back",
+            "transition": "slide"
+          },
+          "note": "アーカイブして一覧に戻る。"
+        }
+      ]
+    },
+    {
+      "id": "gA200",
+      "x": 700,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA199",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA202",
+      "x": 700,
+      "y": 5642,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA201",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA204",
+      "x": 700,
+      "y": 5924,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA203",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 520,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA206",
+      "x": 724,
+      "y": 5960,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA205",
+          "kind": "text",
+          "label": "統計",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA208",
+      "x": 724,
+      "y": 6008,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA207",
+          "kind": "text",
+          "label": "コンテキストの使用率 62%",
+          "icon": null,
+          "variant": "filled",
+          "size": 14
+        }
+      ]
+    },
+    {
+      "id": "gA210",
+      "x": 716,
+      "y": 6032,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA209",
+          "kind": "linearProgress",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "value": 62,
+          "size": 380
+        }
+      ]
+    },
+    {
+      "id": "gA214",
+      "x": 716,
+      "y": 6080,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA211",
+          "kind": "listItem",
+          "label": "トークン",
+          "icon": "data_usage",
+          "variant": "filled",
+          "supporting": "入力 1.2 万 ・ 出力 3,400 ・ キャッシュ 8.9 万"
+        },
+        {
+          "id": "iA212",
+          "kind": "listItem",
+          "label": "ターン",
+          "icon": "replay",
+          "variant": "filled",
+          "supporting": "12"
+        },
+        {
+          "id": "iA213",
+          "kind": "listItem",
+          "label": "モデル",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "DeepSeek V4"
+        }
+      ]
+    },
+    {
+      "id": "gA216",
+      "x": 1192,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA215",
+          "kind": "topAppBar",
+          "label": "ファイル",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA219",
+      "x": 1208,
+      "y": 5652,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA217",
+          "kind": "chip",
+          "label": "dsh-webui-m3e",
+          "icon": null,
+          "variant": "outlined"
+        },
+        {
+          "id": "iA218",
+          "kind": "chip",
+          "label": "docs",
+          "icon": null,
+          "variant": "tonal",
+          "note": "パンくず。タップでその階層に戻る。"
+        }
+      ]
+    },
+    {
+      "id": "gA223",
+      "x": 1208,
+      "y": 5700,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA220",
+          "kind": "listItem",
+          "label": "canvas",
+          "icon": "folder",
+          "variant": "filled",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iA221",
+          "kind": "listItem",
+          "label": "handoff.md",
+          "icon": "description",
+          "variant": "filled",
+          "supporting": "3.2 KB"
+        },
+        {
+          "id": "iA222",
+          "kind": "listItem",
+          "label": "ui-spec.md",
+          "icon": "description",
+          "variant": "filled",
+          "supporting": "9.8 KB",
+          "action": {
+            "to": "fileView",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA225",
+      "x": 1684,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA224",
+          "kind": "topAppBar",
+          "label": "ui-spec.md",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA227",
+      "x": 1700,
+      "y": 5656,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA226",
+          "kind": "text",
+          "label": "# 画面の仕様",
+          "icon": null,
+          "variant": "filled",
+          "size": 13
+        }
+      ]
+    },
+    {
+      "id": "gA229",
+      "x": 1700,
+      "y": 5684,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA228",
+          "kind": "text",
+          "label": "M3E Canvas のモックと、会話で決めた…",
+          "icon": null,
+          "variant": "filled",
+          "size": 13
+        }
+      ]
+    },
+    {
+      "id": "gA231",
+      "x": 1700,
+      "y": 5712,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA230",
+          "kind": "text",
+          "label": "## セッション一覧（ホーム）",
+          "icon": null,
+          "variant": "filled",
+          "size": 13
+        }
+      ]
+    },
+    {
+      "id": "gA233",
+      "x": 1700,
+      "y": 5740,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA232",
+          "kind": "text",
+          "label": "- 上のバー：左に ≡、中央にタイトル…",
+          "icon": null,
+          "variant": "filled",
+          "size": 13
+        }
+      ]
+    },
+    {
+      "id": "gA235",
+      "x": 2176,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA234",
+          "kind": "topAppBar",
+          "label": "ジョブ",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA239",
+      "x": 2192,
+      "y": 5656,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA236",
+          "kind": "listItem",
+          "label": "pnpm test",
+          "icon": "terminal",
+          "variant": "filled",
+          "supporting": "bash ・ 実行中 ・ 2 分",
+          "icon2": "stop",
+          "note": "右のボタンで止める。止める API の形は未確認。"
+        },
+        {
+          "id": "iA237",
+          "kind": "listItem",
+          "label": "README の下書き",
+          "icon": "account_tree",
+          "variant": "filled",
+          "supporting": "サブエージェント ・ 完了"
+        },
+        {
+          "id": "iA238",
+          "kind": "listItem",
+          "label": "pnpm build",
+          "icon": "terminal",
+          "variant": "filled",
+          "supporting": "bash ・ 失敗",
+          "icon2": "error"
+        }
+      ]
+    },
+    {
+      "id": "gA241",
+      "x": 2668,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA240",
+          "kind": "topAppBar",
+          "label": "サブエージェント",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA244",
+      "x": 2684,
+      "y": 5656,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA242",
+          "kind": "listItem",
+          "label": "テストの追加",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "実行中 ・ 続けて頼める",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iA243",
+          "kind": "listItem",
+          "label": "型の確認",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "supporting": "終了 ・ 1 回限り",
+          "icon2": "chevron_right"
+        }
+      ]
+    },
+    {
+      "id": "gA246",
+      "x": 3160,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA245",
+          "kind": "topAppBar",
+          "label": "ゴール",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA248",
+      "x": 3176,
+      "y": 5656,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA247",
+          "kind": "card",
+          "label": "承認シートを完成させてテストを通す",
+          "icon": null,
+          "variant": "filled",
+          "supporting": "進行中 ・ 12 / 256 ラウンド",
+          "size": 380,
+          "size2": 120,
+          "fill": "secondaryContainer",
+          "noImage": true
+        }
+      ]
+    },
+    {
+      "id": "gA251",
+      "x": 3176,
+      "y": 5800,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA249",
+          "kind": "button",
+          "label": "一時停止",
+          "icon": null,
+          "variant": "outlined",
+          "size": 182
+        },
+        {
+          "id": "iA250",
+          "kind": "button",
+          "label": "完了にする",
+          "icon": null,
+          "variant": "filled",
+          "size": 182
+        }
+      ]
+    },
+    {
+      "id": "gA253",
+      "x": 3176,
+      "y": 5868,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA252",
+          "kind": "button",
+          "label": "ゴールを消す",
+          "icon": null,
+          "variant": "text"
+        }
+      ]
+    },
+    {
+      "id": "gA255",
+      "x": 3652,
+      "y": 5552,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA254",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA257",
+      "x": 3652,
+      "y": 5642,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA256",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA259",
+      "x": 3652,
+      "y": 6164,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA258",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 280,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA261",
+      "x": 3676,
+      "y": 6200,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA260",
+          "kind": "text",
+          "label": "メッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA264",
+      "x": 3668,
+      "y": 6248,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA262",
+          "kind": "listItem",
+          "label": "コピー",
+          "icon": "content_copy",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA263",
+          "kind": "listItem",
+          "label": "ここから分岐",
+          "icon": "call_split",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "この時点までの会話で新しいセッションを作る（sessions.fork の atSeq）。"
+        }
+      ]
+    },
+    {
+      "id": "gA266",
+      "x": 208,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA265",
+          "kind": "topAppBar",
+          "label": "dsh-webui-m3e",
+          "icon": "menu",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gA270",
+      "x": 224,
+      "y": 6749,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA267",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iA268",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "iA269",
+          "kind": "listItem",
+          "label": "セッション題名",
+          "icon": "person",
+          "variant": "filled",
+          "supporting": "作業フォルダ・最終更新日時",
+          "icon2": "chevron_right"
+        }
+      ]
+    },
+    {
+      "id": "gA272",
+      "x": 208,
+      "y": 7257,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA271",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 280,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA274",
+      "x": 232,
+      "y": 7293,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA273",
+          "kind": "text",
+          "label": "セッション題名",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA277",
+      "x": 224,
+      "y": 7341,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA275",
+          "kind": "listItem",
+          "label": "題名を変える",
+          "icon": "edit",
+          "variant": "filled",
+          "action": {
+            "to": "renameDialog",
+            "transition": "fade"
+          }
+        },
+        {
+          "id": "iA276",
+          "kind": "listItem",
+          "label": "アーカイブ",
+          "icon": "inventory_2",
+          "variant": "filled",
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA279",
+      "x": 700,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA278",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA281",
+      "x": 700,
+      "y": 6735,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA280",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA283",
+      "x": 750,
+      "y": 6981,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA282",
+          "kind": "dialog",
+          "label": "題名を変える",
+          "icon": null,
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA285",
+      "x": 774,
+      "y": 7049,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA284",
+          "kind": "textField",
+          "label": "README の見直し",
+          "icon": null,
+          "variant": "outlined",
+          "size": 264
+        }
+      ]
+    },
+    {
+      "id": "gA287",
+      "x": 1192,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA286",
+          "kind": "topAppBar",
+          "label": "dsh-webui-m3e",
+          "icon": "menu",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gA289",
+      "x": 1276,
+      "y": 7025,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA288",
+          "kind": "text",
+          "label": "まだセッションがありません",
+          "icon": null,
+          "variant": "filled",
+          "size": 18,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA291",
+      "x": 1312,
+      "y": 7061,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA290",
+          "kind": "text",
+          "label": "右下の ＋ から始められます",
+          "icon": null,
+          "variant": "filled",
+          "size": 14
+        }
+      ]
+    },
+    {
+      "id": "gA293",
+      "x": 1532,
+      "y": 7361,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA292",
+          "kind": "fab",
+          "label": "作成",
+          "icon": "add",
+          "variant": "tonal",
+          "size": 56,
+          "action": {
+            "to": "newSession",
+            "transition": "slide"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA295",
+      "x": 1192,
+      "y": 7433,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA294",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 0,
+          "size": 412,
+          "actions": {
+            "tab:1": {
+              "to": "search",
+              "transition": "fade"
+            },
+            "tab:2": {
+              "to": "inbox",
+              "transition": "fade"
+            },
+            "tab:3": {
+              "to": "settings",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA297",
+      "x": 1684,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA296",
+          "kind": "topAppBar",
+          "label": "README の見直し",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "icon2": "more_vert",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            },
+            "icon2": {
+              "to": "convMenu",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA299",
+      "x": 1684,
+      "y": 6735,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA298",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "size": 412,
+          "selected": 0
+        }
+      ]
+    },
+    {
+      "id": "gA301",
+      "x": 1820,
+      "y": 6797,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA300",
+          "kind": "card",
+          "label": "README の手順を見直して",
+          "icon": null,
+          "variant": "filled",
+          "size": 260,
+          "size2": 64,
+          "fill": "primaryContainer",
+          "noImage": true
+        }
+      ]
+    },
+    {
+      "id": "gA303",
+      "x": 1700,
+      "y": 6885,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA302",
+          "kind": "card",
+          "label": "AI の処理が止まりました",
+          "icon": "error",
+          "variant": "outlined",
+          "supporting": "モデルの呼び出しに失敗しました",
+          "size": 380,
+          "size2": 120,
+          "noImage": true
+        }
+      ]
+    },
+    {
+      "id": "gA305",
+      "x": 1700,
+      "y": 7409,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA304",
+          "kind": "box",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "size2": 112,
+          "fill": "surfaceContainerHigh",
+          "radiusTop": 28,
+          "radiusBottom": 28
+        }
+      ]
+    },
+    {
+      "id": "gA307",
+      "x": 1722,
+      "y": 7425,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA306",
+          "kind": "text",
+          "label": "メッセージ",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "gA309",
+      "x": 1708,
+      "y": 7465,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA308",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "add",
+          "variant": "outlined",
+          "action": {
+            "to": "plus",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA311",
+      "x": 1764,
+      "y": 7473,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA310",
+          "kind": "chip",
+          "label": "ワークスペース書込",
+          "icon": "shield",
+          "variant": "outlined",
+          "action": {
+            "to": "permissionSheet",
+            "transition": "slideUp"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA313",
+      "x": 2024,
+      "y": 7465,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA312",
+          "kind": "iconButton",
+          "label": "",
+          "icon": "arrow_upward",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "gA315",
+      "x": 2176,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA314",
+          "kind": "topAppBar",
+          "label": "提供元と API キー",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412,
+          "actions": {
+            "icon": {
+              "to": "back",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "gA318",
+      "x": 2192,
+      "y": 6749,
+      "axis": "y",
+      "items": [
+        {
+          "id": "iA316",
+          "kind": "listItem",
+          "label": "DeepSeek",
+          "icon": "key",
+          "variant": "filled",
+          "supporting": "API キー：登録済み",
+          "icon2": "chevron_right",
+          "action": {
+            "to": "keyEntry",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "iA317",
+          "kind": "listItem",
+          "label": "ローカル（ollama）",
+          "icon": "dns",
+          "variant": "filled",
+          "supporting": "キーは不要"
+        }
+      ]
+    },
+    {
+      "id": "gA320",
+      "x": 2668,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA319",
+          "kind": "topAppBar",
+          "label": "提供元と API キー",
+          "icon": "arrow_back",
+          "variant": "filled",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gA322",
+      "x": 2668,
+      "y": 7137,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA321",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 400,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA324",
+      "x": 2692,
+      "y": 7173,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA323",
+          "kind": "text",
+          "label": "DeepSeek の API キー",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA326",
+      "x": 2684,
+      "y": 7229,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA325",
+          "kind": "textField",
+          "label": "API キー",
+          "icon": null,
+          "variant": "outlined",
+          "supporting": "保存すると、あとから表示できません"
+        }
+      ]
+    },
+    {
+      "id": "gA329",
+      "x": 2684,
+      "y": 7425,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA327",
+          "kind": "button",
+          "label": "登録を消す",
+          "icon": null,
+          "variant": "outlined",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "credentials.unset。"
+        },
+        {
+          "id": "iA328",
+          "kind": "button",
+          "label": "保存",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "action": {
+            "to": "back",
+            "transition": "slideUp"
+          },
+          "note": "credentials.set。"
+        }
+      ]
+    },
+    {
+      "id": "gA331",
+      "x": 3160,
+      "y": 6645,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA330",
+          "kind": "topAppBar",
+          "label": "設定",
+          "icon": null,
+          "variant": "filled",
+          "size": 412
+        }
+      ]
+    },
+    {
+      "id": "gA333",
+      "x": 3160,
+      "y": 7217,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA332",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 320,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28
+        }
+      ]
+    },
+    {
+      "id": "gA335",
+      "x": 3184,
+      "y": 7253,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA334",
+          "kind": "text",
+          "label": "外観",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "gA337",
+      "x": 3184,
+      "y": 7305,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA336",
+          "kind": "radio",
+          "label": "端末の設定に合わせる",
+          "icon": null,
+          "variant": "filled",
+          "checked": true
+        }
+      ]
+    },
+    {
+      "id": "gA339",
+      "x": 3184,
+      "y": 7353,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA338",
+          "kind": "radio",
+          "label": "ライト",
+          "icon": null,
+          "variant": "filled",
+          "checked": false
+        }
+      ]
+    },
+    {
+      "id": "gA341",
+      "x": 3184,
+      "y": 7401,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA340",
+          "kind": "radio",
+          "label": "ダーク",
+          "icon": null,
+          "variant": "filled",
+          "checked": false
+        }
+      ]
+    },
+    {
+      "id": "gA343",
+      "x": 3160,
+      "y": 7433,
+      "axis": "x",
+      "items": [
+        {
+          "id": "iA342",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            {
+              "icon": "home",
+              "label": "一覧"
+            },
+            {
+              "icon": "search",
+              "label": "検索"
+            },
+            {
+              "icon": "front_hand",
+              "label": "対応待ち"
+            },
+            {
+              "icon": "settings",
+              "label": "設定"
+            }
+          ],
+          "selected": 3,
+          "size": 412
+        }
+      ]
     }
   ],
   "frames": [
@@ -1053,17 +5908,14 @@
       "name": "入力画面（待機中）",
       "x": 978,
       "y": 87,
-      "note": "1 つのセッションの会話。ナビゲーションバーは出さない。入力欄は角丸の枠 1 つにまとめ、Enter は改行、送信はボタンだけ。",
-      "swipe": {
-        "right": "home"
-      }
+      "note": "1 つのセッションの会話。ナビゲーションバーは出さない。入力欄は角丸の枠 1 つにまとめ、Enter は改行、送信はボタンだけ。 左端からのスワイプで前の画面に戻る。"
     },
     {
       "id": "running",
       "name": "会話（AI 実行中）",
       "x": 1470,
       "y": 87,
-      "note": "AI が作業中の会話。停止ボタンが現れ、送信ボタンは「順番待ち」と「割り込み」を選べるスプリットボタンになる。順番待ちのメッセージは入力欄の上に出す。"
+      "note": "AI が作業中の会話。停止ボタンが現れ、送信ボタンは「順番待ち」と「割り込み」を選べるスプリットボタンになる。順番待ちのメッセージは入力欄の上に出す。 左端からのスワイプで前の画面に戻る。承認が来るとツール承認のシートが自動で開く。"
     },
     {
       "id": "plus",
@@ -1077,7 +5929,7 @@
       "name": "ツール承認",
       "x": 2454,
       "y": 87,
-      "note": "AI がツールを使う前の承認。DSH から届くのはツール名と理由だけで、引数は出せない。許可は毎回 1 回限りで、「常に許可」はない。返事が済むまで入力欄は隠す。"
+      "note": "AI がツールを使う前の承認。DSH から届くのはツール名と理由だけで、引数は出せない。許可は毎回 1 回限りで、「常に許可」はない。返事が済むまで入力欄は隠す。 対応待ちから開いたときは、会話ではなく対応待ちの上に出す（プレビューでは背景が会話のまま）。"
     },
     {
       "id": "trace",
@@ -1092,6 +5944,245 @@
       "x": 3438,
       "y": 87,
       "note": "トレースの記録を 1 つ選んだときの詳細。トークン、所要時間、入力、出力を見る。"
+    },
+    {
+      "id": "search",
+      "name": "検索",
+      "x": 208,
+      "y": 1180,
+      "note": "セッションの全文検索（ISessions.search）。ファイルの中身は検索できない。結果の 1 件に何が入るか（SessionSearchResultItem）は未確認。"
+    },
+    {
+      "id": "inbox",
+      "name": "対応待ち",
+      "x": 700,
+      "y": 1180,
+      "note": "自分の操作が必要なセッションだけを種類ごとに並べる。承認・質問・プランの行は、会話を開かずにシートを直接出す。"
+    },
+    {
+      "id": "settings",
+      "name": "設定",
+      "x": 1192,
+      "y": 1180,
+      "note": "上はこの端末だけの設定、下は DSH 全体の設定。DSH の設定は名前空間ごとのスキーマから画面を自動で作る。"
+    },
+    {
+      "id": "settingsModel",
+      "name": "設定の詳細（モデル）",
+      "x": 1684,
+      "y": 1180,
+      "note": "DSH の設定の 1 ページの例。agent-default-model と subagent-model-selection の 2 つの名前空間を 1 ページにまとめる。writable が false なら全部無効にする。書き込みが競合（settings/conflict）したら読み直しを促す。"
+    },
+    {
+      "id": "drawer",
+      "name": "ワークスペースの切り替え",
+      "x": 208,
+      "y": 2273,
+      "bg": "inverseSurface",
+      "note": "一覧の ≡ で左から出るドロワー。ワークスペースを選ぶと、一覧がそのワークスペースのセッションに切り替わる。右側の暗い部分をタップすると閉じる。"
+    },
+    {
+      "id": "picker",
+      "name": "フォルダの選択",
+      "x": 700,
+      "y": 2273,
+      "note": "ワークスペースに加えるフォルダを、DSH が動いている機械の中から選ぶ。iPhone からは OS のフォルダ選択（native）が使えないので、1 階層ずつたどる形（browse）にする。directoryPicker が使えないときは「ワークスペースを追加」自体を出さない。"
+    },
+    {
+      "id": "newSession",
+      "name": "新しいセッション",
+      "x": 1192,
+      "y": 2273,
+      "note": "一覧の ＋ で開く、まだ何も話していない会話。セッションは最初のメッセージを送った時点で作る（sessions.create）。何も送らずに戻ったら作らないので、空のセッションが増えない。"
+    },
+    {
+      "id": "listMenu",
+      "name": "一覧の ⋮ メニュー",
+      "x": 1684,
+      "y": 2273,
+      "note": "一覧の右上の ⋮ で開くメニュー。今のワークスペースと一覧の見せ方に対する操作を置く。項目を選ぶか、外側をタップすると閉じる。"
+    },
+    {
+      "id": "offline",
+      "name": "接続が切れたとき",
+      "x": 2176,
+      "y": 2273,
+      "note": "DSH との接続が切れたときの一覧。PWA を裏に回して戻ると再接続が走るので、状態を出さないと固まったように見える。再接続中は上のバーの下に細い進捗バーだけを出し、失敗したらこのバナーを出す。表示中のデータは最後に受け取ったもの。"
+    },
+    {
+      "id": "chatDetail",
+      "name": "チャット（メッセージの種類）",
+      "x": 208,
+      "y": 3366,
+      "note": "チャットタブに出るものの見本。画面に出すのは user/message、assistant/message、tool/result、system/message の 4 種類で、知らない種類は読み飛ばす。生成中の文は届いた分から少しずつ出す。"
+    },
+    {
+      "id": "toolDetail",
+      "name": "ツール呼び出しの詳細",
+      "x": 700,
+      "y": 3366,
+      "note": "チャットのツールの行をタップすると開くシート。下に払うと閉じる。"
+    },
+    {
+      "id": "slashSuggest",
+      "name": "コマンドの候補",
+      "x": 1192,
+      "y": 3366,
+      "note": "入力の先頭で / を打つと、入力欄の上に候補を出す。候補は commands/change で更新する。選ぶと入力欄に差し込み、引数のヒント（input.hint）があれば薄く出す。"
+    },
+    {
+      "id": "atSuggest",
+      "name": "ファイルの候補",
+      "x": 1684,
+      "y": 3366,
+      "note": "空白の後で @ を打つと、作業フォルダのファイルの候補を出す（fileReferences.list）。選ぶと @パス を差し込むだけで、中身は読まない。"
+    },
+    {
+      "id": "queueEdit",
+      "name": "順番待ちの編集",
+      "x": 2176,
+      "y": 3366,
+      "note": "実行中の会話で、順番待ちのメッセージをタップすると開くシート（updateQueue）。"
+    },
+    {
+      "id": "question",
+      "name": "AI からの質問",
+      "x": 208,
+      "y": 4459,
+      "note": "AI からの質問（user-questions/request）。会話中なら自動で開き、対応待ちからも開ける。1 回の質問に複数の問いが入ることがあり、そのときは 1 問ずつ進む。複数選択の問い（multiSelect）ではチェックボックスにする。"
+    },
+    {
+      "id": "planReview",
+      "name": "プランの確認",
+      "x": 700,
+      "y": 4459,
+      "note": "計画モードで AI が作ったプランの確認。質問の一種（intent: plan-review）として届き、detail がプランの本文（Markdown）。長いので全画面で開き、スクロールする。"
+    },
+    {
+      "id": "modelSheet",
+      "name": "モデルの選択",
+      "x": 1192,
+      "y": 4459,
+      "note": "＋ のシートの「モデル」から開く。選んだモデルは、この会話の次のメッセージから使う。会話ごとに切り替える手段（コマンドか API か）は未確認。"
+    },
+    {
+      "id": "permissionSheet",
+      "name": "権限の選び直し",
+      "x": 1684,
+      "y": 4459,
+      "note": "入力欄の権限のチップから開く。1 タップで承認の細かさを切り替える（permissions の projection）。説明文は PresetOption.description をそのまま出す。組み合わせがどのプリセットにも合わないときは「カスタム」と表示だけして、選べないようにする。"
+    },
+    {
+      "id": "attachPreview",
+      "name": "画像の添付",
+      "x": 2176,
+      "y": 4459,
+      "note": "＋ のシートの「画像を添付」で iOS の写真選択を開き、選んだ画像を入力欄の中に並べる。送る前なら × で外せる。PNG・JPEG・WebP・GIF。"
+    },
+    {
+      "id": "convMenu",
+      "name": "会話の ⋮ メニュー",
+      "x": 208,
+      "y": 5552,
+      "note": "会話の右上の ⋮ で開くメニュー。項目を選ぶか、外側をタップすると閉じる。"
+    },
+    {
+      "id": "stats",
+      "name": "統計",
+      "x": 700,
+      "y": 5552,
+      "note": "会話の ⋮ の「統計」で開くシート。値はすべて projection（tokenUsage、contextPressure）から読む。クォータは第 1 弾では出さない方針で、出どころも未確認。"
+    },
+    {
+      "id": "files",
+      "name": "ファイル",
+      "x": 1192,
+      "y": 5552,
+      "note": "会話の作業フォルダの中を、読み取り専用で見る（workspaceFiles.list）。書き込みはできない。1 階層ずつたどる。"
+    },
+    {
+      "id": "fileView",
+      "name": "ファイルの中身",
+      "x": 1684,
+      "y": 5552,
+      "note": "テキストは 5,000 行ずつ読む（read）。画像はそのまま表示し、それ以外のファイルは大きさだけ出す。ファイルが変わったら（changes）読み直す。"
+    },
+    {
+      "id": "jobs",
+      "name": "ジョブ",
+      "x": 2176,
+      "y": 5552,
+      "note": "この会話で動いているジョブ（jobsBySession）。完了はイベントで届くので、開いている間は自動で更新する。"
+    },
+    {
+      "id": "subagents",
+      "name": "サブエージェント",
+      "x": 2668,
+      "y": 5552,
+      "note": "この会話が呼び出した子のエージェント。行をタップすると、子の会話を会話画面と同じ形で開く（openSubagent）。続けて頼めるもの（continuable）だけ入力欄を出す。"
+    },
+    {
+      "id": "goal",
+      "name": "ゴール",
+      "x": 3160,
+      "y": 5552,
+      "note": "会話に設定したゴールの状態。状態は進行中・一時停止・行き詰まり・完了の 4 つで、行き詰まりのときは理由を出す。ゴールの作成と編集は後回し。"
+    },
+    {
+      "id": "messageActions",
+      "name": "メッセージの操作",
+      "x": 3652,
+      "y": 5552,
+      "note": "チャットのメッセージを長押しすると開くシート。"
+    },
+    {
+      "id": "rowActions",
+      "name": "セッションの操作",
+      "x": 208,
+      "y": 6645,
+      "note": "一覧の行を長押しすると開くシート。行を横にスワイプしてもアーカイブできる。"
+    },
+    {
+      "id": "renameDialog",
+      "name": "題名を変える",
+      "x": 700,
+      "y": 6645,
+      "note": "会話の ⋮ や一覧の長押しから開くダイアログ（ISession.rename）。ワークスペースの名前の変更も同じ形にする。"
+    },
+    {
+      "id": "emptyList",
+      "name": "セッションがないとき",
+      "x": 1192,
+      "y": 6645,
+      "note": "ワークスペースにまだセッションがないときの一覧。"
+    },
+    {
+      "id": "convError",
+      "name": "会話のエラー",
+      "x": 1684,
+      "y": 6645,
+      "note": "AI の処理が失敗したとき（lastAgentError）は、会話の最後にこのカードを出す。送信に失敗したとき（promptError）は、入力欄の上に小さく出して、もう一度送れるようにする。会話自体を開けなかったとき（openState: error）は、画面の中央に理由と「もう一度開く」を出す。"
+    },
+    {
+      "id": "keys",
+      "name": "提供元と API キー",
+      "x": 2176,
+      "y": 6645,
+      "note": "設定の「提供元と API キー」。キーは書き込むだけで、表示も読み出しもできない。登録済みかどうかだけを出す。"
+    },
+    {
+      "id": "keyEntry",
+      "name": "API キーの入力",
+      "x": 2668,
+      "y": 6645,
+      "note": "API キーを登録し直すシート。入力した値は保存後に消え、二度と表示しない。"
+    },
+    {
+      "id": "appearance",
+      "name": "外観",
+      "x": 3160,
+      "y": 6645,
+      "note": "設定の「外観」。M3E の画面の明暗を選ぶ。DSH 本体のテーマ設定と共有するかは未決。"
     }
   ],
   "paletteKey": "purple",

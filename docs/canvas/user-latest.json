@@ -247,7 +247,7 @@
     {
       "id": "r-ai",
       "x": 1486,
-      "y": 199,
+      "y": 269,
       "axis": "x",
       "items": [
         {
@@ -263,7 +263,7 @@
     {
       "id": "r-load",
       "x": 1486,
-      "y": 235,
+      "y": 305,
       "axis": "x",
       "items": [
         {
@@ -600,7 +600,15 @@
               "icon": "",
               "label": "トレース"
             }
-          ]
+          ],
+          "selected": 0,
+          "note": "会話画面の表示切り替え。トレースでは入力欄を隠し、記録を広く見せる。",
+          "actions": {
+            "tab:1": {
+              "to": "trace",
+              "transition": "fade"
+            }
+          }
         }
       ]
     },
@@ -637,6 +645,415 @@
           "noImage": true,
           "size": 260,
           "size2": 64
+        }
+      ]
+    },
+    {
+      "id": "t-running",
+      "x": 1470,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-running-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t-plus",
+      "x": 1962,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-plus-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t-approval",
+      "x": 2454,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-approval-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 0,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tr-bar",
+      "x": 2946,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "t-trace",
+      "x": 2946,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "t-trace-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 1,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "actions": {
+            "tab:0": {
+              "to": "running",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "tr-older",
+      "x": 2962,
+      "y": 237,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-older-i",
+          "kind": "button",
+          "label": "前の記録を読み込む",
+          "icon": "expand_less",
+          "variant": "text",
+          "note": "古い記録は必要なときだけ読み込む。"
+        }
+      ]
+    },
+    {
+      "id": "tr-t2",
+      "x": 2970,
+      "y": 301,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-t2-i",
+          "kind": "text",
+          "label": "ターン 2 ・ 合計 18.4 秒 ・ 12,480 トークン",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "tr-list2",
+      "x": 2962,
+      "y": 327,
+      "axis": "y",
+      "items": [
+        {
+          "id": "tr-u",
+          "kind": "listItem",
+          "label": "ユーザー",
+          "supporting": "README の手順を見直して",
+          "icon": "person",
+          "variant": "filled"
+        },
+        {
+          "id": "tr-a",
+          "kind": "listItem",
+          "label": "アシスタント",
+          "supporting": "4.1 秒 ・ 出力 812 トークン",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "action": {
+            "to": "record",
+            "transition": "slideUp"
+          }
+        },
+        {
+          "id": "tr-b",
+          "kind": "listItem",
+          "label": "ツール：bash",
+          "supporting": "1.2 秒 ・ 失敗",
+          "icon": "terminal",
+          "variant": "filled",
+          "icon2": "error",
+          "note": "失敗したツールは色で分かるようにする（isError）。"
+        },
+        {
+          "id": "tr-r",
+          "kind": "listItem",
+          "label": "ツール：read_file",
+          "supporting": "0.1 秒",
+          "icon": "description",
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "tr-t3",
+      "x": 2970,
+      "y": 635,
+      "axis": "x",
+      "items": [
+        {
+          "id": "tr-t3-i",
+          "kind": "text",
+          "label": "ターン 3 ・ 実行中",
+          "icon": null,
+          "variant": "filled",
+          "size": 13,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "tr-list3",
+      "x": 2962,
+      "y": 661,
+      "axis": "y",
+      "items": [
+        {
+          "id": "tr-u3",
+          "kind": "listItem",
+          "label": "ユーザー",
+          "supporting": "テストも追加して",
+          "icon": "person",
+          "variant": "filled"
+        },
+        {
+          "id": "tr-a3",
+          "kind": "listItem",
+          "label": "アシスタント",
+          "supporting": "生成中…",
+          "icon": "smart_toy",
+          "variant": "filled",
+          "note": "実行中の記録は開始の印だけ出し、経過時間を勝手に数えない。"
+        }
+      ]
+    },
+    {
+      "id": "rd-bar",
+      "x": 3438,
+      "y": 87,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-bar-i",
+          "kind": "topAppBar",
+          "label": "承認シートの実装",
+          "icon": "arrow_back",
+          "icon2": "more_vert",
+          "variant": "filled",
+          "actions": {
+            "icon": {
+              "to": "seedF1",
+              "transition": "slide"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rd-tabs",
+      "x": 3438,
+      "y": 177,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-tabs-i",
+          "kind": "tabs",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "selected": 1,
+          "tabs": [
+            {
+              "icon": "",
+              "label": "チャット"
+            },
+            {
+              "icon": "",
+              "label": "トレース"
+            }
+          ],
+          "actions": {
+            "tab:0": {
+              "to": "running",
+              "transition": "fade"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rd-sheet",
+      "x": 3438,
+      "y": 419,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-sheet-i",
+          "kind": "bottomSheet",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 412,
+          "size2": 560,
+          "fill": "surfaceContainerLow",
+          "radiusTop": 28,
+          "note": "記録をタップすると開く。下に払うと閉じる。"
+        }
+      ]
+    },
+    {
+      "id": "rd-title",
+      "x": 3462,
+      "y": 459,
+      "axis": "x",
+      "items": [
+        {
+          "id": "rd-title-i",
+          "kind": "text",
+          "label": "アシスタント（ターン 2）",
+          "icon": null,
+          "variant": "filled",
+          "size": 22,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "rd-list",
+      "x": 3454,
+      "y": 503,
+      "axis": "y",
+      "items": [
+        {
+          "id": "rd-time",
+          "kind": "listItem",
+          "label": "所要時間",
+          "supporting": "4.1 秒（最初の出力まで 0.8 秒）",
+          "icon": "timer",
+          "variant": "filled"
+        },
+        {
+          "id": "rd-tok",
+          "kind": "listItem",
+          "label": "トークン",
+          "supporting": "入力 11,668 ・ 出力 812 ・ キャッシュ 9,200",
+          "icon": "data_usage",
+          "variant": "filled"
+        },
+        {
+          "id": "rd-in",
+          "kind": "listItem",
+          "label": "入力",
+          "supporting": "送ったメッセージとツールの結果",
+          "icon": "input",
+          "variant": "filled",
+          "icon2": "chevron_right"
+        },
+        {
+          "id": "rd-out",
+          "kind": "listItem",
+          "label": "出力",
+          "supporting": "思考 1 ・ テキスト 1 ・ ツール呼び出し 2",
+          "icon": "output",
+          "variant": "filled",
+          "icon2": "chevron_right",
+          "note": "ツール呼び出しの引数はトレースでは見られる（承認シートでは出せない）。"
+        }
+      ]
+    },
+    {
+      "id": "kredwd2p",
+      "x": 2962,
+      "y": 905,
+      "axis": "x",
+      "items": [
+        {
+          "id": "d2zivwne",
+          "kind": "searchBar",
+          "label": "検索",
+          "icon": "search",
+          "variant": "filled",
+          "icon2": "mic",
+          "size": 380
         }
       ]
     }
@@ -678,6 +1095,20 @@
       "x": 2454,
       "y": 87,
       "note": "AI がツールを使う前の承認。DSH から届くのはツール名と理由だけで、引数は出せない。許可は毎回 1 回限りで、「常に許可」はない。返事が済むまで入力欄は隠す。"
+    },
+    {
+      "id": "trace",
+      "name": "トレース",
+      "x": 2946,
+      "y": 87,
+      "note": "会話の記録をターンごとに並べる。ユーザー・アシスタント・ツール・サブツール・要約の記録があり、所要時間とトークン数を添える。最新の記録から表示し、生成中は末尾を追う。PC 版の時間軸の図はスマホでは出さない。"
+    },
+    {
+      "id": "record",
+      "name": "記録の詳細",
+      "x": 3438,
+      "y": 87,
+      "note": "トレースの記録を 1 つ選んだときの詳細。トークン、所要時間、入力、出力を見る。"
     }
   ],
   "paletteKey": "purple",
