@@ -1,20 +1,22 @@
-import type { ISessions, SessionFace } from './services.ts'
+import type { ISessions } from './services.ts'
 
-/** Own selection only while this conversation screen is mounted. */
-export function enterConversation(
+/** The conversation and every nested tools page belong to the same session. */
+export function conversationSessionId(pathname: string): string | undefined {
+  const encoded = /^\/s\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
+  if (!encoded) return undefined
+  try { return decodeURIComponent(encoded) || undefined }
+  catch { return undefined }
+}
+
+/** Reconcile URL entry and readiness changes, without per-screen cleanup. */
+export function syncConversationSelection(
   sessions: Pick<ISessions, 'list' | 'open' | 'clear'>,
-  sessionId: string,
-  face: Pick<SessionFace, 'getSnapshot'> | undefined,
-): () => void {
-  if (!face || face.getSnapshot().removed) return () => {}
-  // A valid failed session must still be selected: the real controller retries
-  // its history when returning from a different conversation.
-  sessions.open(sessionId)
-  let released = false
-  return () => {
-    if (released) return
-    released = true
-    // Another navigation may already have selected a child or a new session.
-    if (sessions.list.getSnapshot().current === sessionId) sessions.clear()
-  }
+  sessionId: string | undefined,
+  canOpen: boolean,
+): void {
+  const { current, phase } = sessions.list.getSnapshot()
+  if (sessionId === undefined) {
+    // Boot may restore selection after the initial render. Wait for its baseline.
+    if (phase === 'ready' && current !== undefined) sessions.clear()
+  } else if (canOpen && current !== sessionId) sessions.open(sessionId)
 }

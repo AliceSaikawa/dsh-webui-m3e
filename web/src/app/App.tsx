@@ -8,11 +8,13 @@ import { registerRoutes, useRoute } from './router.ts'
 import { routes } from './routes.ts'
 import { useViewport } from './viewport.ts'
 import { ErrorBoundary } from './ErrorBoundary.tsx'
+import { useConversationSelection } from './use-conversation-selection.ts'
 import './styles.css'
 
 registerRoutes(routes)
 function Frame() {
   const route = useRoute()
+  useConversationSelection(route.pathname)
   const viewport = useViewport()
   const overlays = useOverlays()
   return <div className="app-viewport" style={{ top: viewport.top, height: viewport.height, '--app-height': `${viewport.height}px` } as CSSProperties}>

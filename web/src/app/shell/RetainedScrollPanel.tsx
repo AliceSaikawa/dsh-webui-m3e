@@ -11,7 +11,7 @@ export class RetainedScrollPanel extends Component<Props> {
   getSnapshotBeforeUpdate(previous: Props): ScrollPosition<HTMLElement>[] | null {
     const root = this.panel.current
     if (!root || !previous.active || this.props.active) return null
-    return rememberScrollPositions([root, ...root.querySelectorAll<HTMLElement>('*')])
+    return rememberScrollPositions([root, ...root.querySelectorAll<HTMLElement>('[data-scroll-area]')])
   }
 
   componentDidUpdate(previous: Props, _state: unknown, snapshot: ScrollPosition<HTMLElement>[] | null): void {

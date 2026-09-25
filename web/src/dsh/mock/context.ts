@@ -25,7 +25,11 @@ export interface MockKit {
   updateList(update: (state: SessionListState) => SessionListState | void): void
   scenario(name: string, setup: (kit: MockKit) => void): void
 }
-export type MockExtension = { extendMock(kit: MockKit): void }
+export type MockExtension = {
+  /** Diagnostic origin supplied by the feature-module collector. */
+  readonly source?: string
+  extendMock(kit: MockKit): void
+}
 export interface MockOptions { scenario?: string; extensions?: readonly MockExtension[]; pageSize?: number }
 export interface MockContext extends DshContext { readonly mock: MockKit; dispose(): void }
 
@@ -217,7 +221,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
 
   const sessions: ISessions = {
-    list, searchResultLimit: 30,
+    list, searchResultLimit: 20,
     async create(input = {}) {
       const sessionId = input.sessionId ?? id('session')
       if (models.has(sessionId)) return sessionId
@@ -605,7 +609,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   kit.scenario('approval-demo', () => {
     void kit.emit('approval/request', { agent: MOCK_IDS.sessions.readme, toolName: 'bash', callId: 'mock-approval-demo', reason: 'テストを実行するため、今回の操作を承認してください。' }, { afterMs: 1000 }).catch(() => { /* Disposing an unanswered demo may abort the waterfall. */ })
   })
-  for (const extension of options.extensions ?? []) extension.extendMock(kit)
+  for (const [index, extension] of (options.extensions ?? []).entries()) {
+    try { extension.extendMock(kit) }
+    catch (error) { console.error(`偽データの拡張に失敗しました: ${extension.source ?? `拡張 ${index + 1}`}`, error) }
+  }
   if (options.scenario) {
     const setup = scenarios.get(options.scenario)
     if (setup) setup(kit)

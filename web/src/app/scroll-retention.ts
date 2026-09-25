@@ -5,7 +5,7 @@ export interface ScrollTarget {
 }
 export interface ScrollPosition<T extends ScrollTarget> { target: T; top: number; left: number }
 
-/** Capture before hiding, including a feature's own nested scroll container. */
+/** Capture before hiding; callers pass the panel and marked nested scroll areas. */
 export function rememberScrollPositions<T extends ScrollTarget>(targets: Iterable<T>): ScrollPosition<T>[] {
   return Array.from(targets, (target) => ({ target, top: target.scrollTop, left: target.scrollLeft }))
     .filter(({ top, left }) => top !== 0 || left !== 0)

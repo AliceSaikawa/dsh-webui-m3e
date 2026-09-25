@@ -1,8 +1,23 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { enterConversation } from '../web/src/dsh/conversation-selection.ts'
-import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { conversationSessionId, syncConversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { createMockContext, type MockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
+
+function syncPath(ctx: MockContext, pathname: string) {
+  const id = conversationSessionId(pathname)
+  const face = id === undefined ? undefined : ctx.sessions.binding(id)?.session
+  syncConversationSelection(ctx.sessions, id, !!face && !face.getSnapshot().removed)
+}
+
+function observeSelection(ctx: MockContext): string[] {
+  const calls: string[] = []
+  const open = ctx.sessions.open
+  const clear = ctx.sessions.clear
+  ctx.mock.patch('sessions.open', (id: string) => { calls.push(`open:${id}`); open(id) })
+  ctx.mock.patch('sessions.clear', () => { calls.push('clear'); clear() })
+  return calls
+}
 
 test('取得に失敗した有効な会話も A → B → A の再入場で選び直す', () => {
   const ctx = createMockContext()
@@ -14,18 +29,16 @@ test('取得に失敗した有効な会話も A → B → A の再入場で選�
   const failure = { code: 'transport/disconnected', message: '接続エラー', details: {} }
   ctx.mock.setSessionState(a, { openState: 'error', openError: failure })
   try {
-    const leaveA = enterConversation(ctx.sessions, a, ctx.sessions.binding(a)!.session)
+    syncPath(ctx, `/s/${a}`)
     assert.equal(ctx.sessions.list.getSnapshot().current, a)
-    leaveA()
-    const leaveB = enterConversation(ctx.sessions, b, ctx.sessions.binding(b)!.session)
-    leaveB()
-    const leaveAgain = enterConversation(ctx.sessions, a, ctx.sessions.binding(a)!.session)
+    syncPath(ctx, `/s/${b}`)
+    syncPath(ctx, `/s/${a}`)
     assert.deepEqual(opened, [a, b, a])
     assert.equal(ctx.sessions.list.getSnapshot().current, a)
     // Mock errors are deliberate scenarios, not a reason to skip real selection.
     assert.equal(ctx.sessions.binding(a)!.session.getSnapshot().openState, 'error')
     assert.deepEqual(ctx.sessions.binding(a)!.session.getSnapshot().openError, failure)
-    leaveAgain()
+    syncPath(ctx, '/')
   } finally { ctx.dispose() }
 })
 
@@ -33,13 +46,13 @@ test('会話から離れると選択を解除し、その後の完了は未読�
   const ctx = createMockContext()
   const id = MOCK_IDS.sessions.readme
   try {
-    const leave = enterConversation(ctx.sessions, id, ctx.sessions.binding(id)!.session)
+    syncPath(ctx, `/s/${id}`)
     const generating = ctx.mock.streamAssistant(id, '会話を離れた後に完了します', { chunkMs: 0 })
-    leave()
+    syncPath(ctx, '/')
     assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
     await generating
     assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
-    leave()
+    syncPath(ctx, '/')
     assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
   } finally { ctx.dispose() }
 })
@@ -48,12 +61,12 @@ test('会話を選択したまま応答が完了しても未読の完了印を�
   const ctx = createMockContext()
   const id = MOCK_IDS.sessions.readme
   try {
-    const leave = enterConversation(ctx.sessions, id, ctx.sessions.binding(id)!.session)
+    syncPath(ctx, `/s/${id}`)
     await ctx.mock.streamAssistant(id, '確認中に完了します', { chunkMs: 0 })
     assert.equal(ctx.sessions.list.getSnapshot().current, id)
     assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.running, false)
     assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
-    leave()
+    syncPath(ctx, '/')
     assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
   } finally { ctx.dispose() }
 })
@@ -73,20 +86,114 @@ test('未読の会話が再び生成を始めると前回の完了印を解除�
   } finally { ctx.dispose() }
 })
 
-test('存在しない・削除済みの会話は選ばず、新しい選択を古い cleanup が解除しない', () => {
+test('存在しない・削除済みの会話は選ばず、会話以外に移ってから解除する', () => {
   const ctx = createMockContext()
   const a = MOCK_IDS.sessions.readme
   const b = MOCK_IDS.sessions.approval
   try {
-    const leaveA = enterConversation(ctx.sessions, a, ctx.sessions.binding(a)!.session)
-    ctx.sessions.open(b)
-    leaveA()
+    syncPath(ctx, `/s/${a}`)
+    syncPath(ctx, `/s/${b}`)
     assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    enterConversation(ctx.sessions, 'missing', undefined)()
+    syncPath(ctx, '/s/missing')
     assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    const removed = ctx.sessions.binding(a)!.session
     ctx.mock.removeSession(a)
-    enterConversation(ctx.sessions, a, removed)()
+    syncPath(ctx, `/s/${a}`)
     assert.equal(ctx.sessions.list.getSnapshot().current, b)
+    syncPath(ctx, '/inbox')
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+  } finally { ctx.dispose() }
+})
+
+test('URL の先頭の会話 ID だけを解釈し、補助画面とエンコードされた ID に対応する', () => {
+  for (const page of ['', '/trace', '/files', '/file', '/jobs', '/subagents', '/goal', '/files/deeper']) {
+    assert.equal(conversationSessionId(`/s/a%2Fb${page}`), 'a/b')
+  }
+  for (const path of ['/', '/search', '/inbox', '/settings', '/new', '/s/', '/s/%ZZ', '/sessions/a']) {
+    assert.equal(conversationSessionId(path), undefined)
+  }
+})
+
+test('チャット・トレース・09 補助画面の往復では再選択せず、完了印を付けない', async () => {
+  const ctx = createMockContext()
+  const id = MOCK_IDS.sessions.readme
+  const calls = observeSelection(ctx)
+  try {
+    syncPath(ctx, `/s/${id}`)
+    const scope = ctx.sessions.scope(id)
+    const goal = ctx.sessions.binding(id)!.session.projections.faceOf('goal')
+    for (const page of ['trace', 'files', 'file', 'jobs', 'subagents', 'goal']) {
+      syncPath(ctx, `/s/${id}/${page}`)
+      assert.equal(ctx.sessions.scope(id), scope)
+      assert.equal(ctx.sessions.list.getSnapshot().current, id)
+    }
+    ctx.mock.setProjection(id, 'goal', { status: 'active' })
+    assert.deepEqual(goal.getSnapshot(), { status: 'active' })
+    await ctx.mock.streamAssistant(id, '完了', { chunkMs: 0 })
+    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
+    syncPath(ctx, `/s/${id}`)
+    assert.deepEqual(calls, [`open:${id}`])
+    syncPath(ctx, '/settings')
+    assert.deepEqual(calls, [`open:${id}`, 'clear'])
+  } finally { ctx.dispose() }
+})
+
+test('起動時に会話外で残った選択は一覧が ready になってから一度だけ解除する', () => {
+  const ctx = createMockContext()
+  const id = MOCK_IDS.sessions.readme
+  ctx.sessions.open(id)
+  ctx.mock.updateList((state) => { state.phase = 'pending' })
+  const calls = observeSelection(ctx)
+  try {
+    syncPath(ctx, '/')
+    assert.equal(ctx.sessions.list.getSnapshot().current, id)
+    assert.deepEqual(calls, [])
+    ctx.mock.updateList((state) => { state.phase = 'ready' })
+    syncPath(ctx, '/')
+    syncPath(ctx, '/')
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    assert.deepEqual(calls, ['clear'])
+    // A restored selection can also arrive after the first ready render.
+    ctx.sessions.open(id)
+    syncPath(ctx, '/search')
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    assert.deepEqual(calls, ['clear', `open:${id}`, 'clear'])
+  } finally { ctx.dispose() }
+})
+
+test('openSubagent 後の移動や face の同等な入れ替えでは open を重ねない', () => {
+  const ctx = createMockContext()
+  const parentSessionId = MOCK_IDS.sessions.readme
+  const childSessionId = 'selected-child'
+  try {
+    ctx.mock.addSession({ id: childSessionId, parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: false, updatedAt: 0 }, [])
+    ctx.mock.updateList((state) => {
+      state.subagentsByParent = { [parentSessionId]: { state: 'ready', error: null, entries: [{ kind: 'child', id: childSessionId, mode: 'continuable' }] } }
+    })
+    const address = { parentSessionId, childSessionId, mode: 'continuable' } as const
+    ctx.sessions.openSubagent(address)
+    const calls = observeSelection(ctx)
+    syncPath(ctx, `/s/${childSessionId}`)
+    const face = ctx.sessions.binding(childSessionId)!.session
+    for (const replacement of [{ ...face }, { ...face }]) {
+      syncConversationSelection(ctx.sessions, childSessionId, !replacement.getSnapshot().removed)
+    }
+    syncPath(ctx, `/s/${childSessionId}/goal`)
+    assert.deepEqual(calls, [])
+    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+  } finally { ctx.dispose() }
+})
+
+test('補助画面への直接アクセスでも、会話が開けるようになった時点で選択する', () => {
+  const ctx = createMockContext()
+  const id = conversationSessionId(`/s/${MOCK_IDS.sessions.readme}/goal`)!
+  const calls = observeSelection(ctx)
+  try {
+    ctx.mock.updateList((state) => { state.phase = 'pending' })
+    syncConversationSelection(ctx.sessions, id, false)
+    assert.deepEqual(calls, [])
+    ctx.mock.updateList((state) => { state.phase = 'ready' })
+    syncConversationSelection(ctx.sessions, id, true)
+    syncConversationSelection(ctx.sessions, id, true)
+    assert.deepEqual(calls, [`open:${id}`])
   } finally { ctx.dispose() }
 })
