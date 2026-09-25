@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   filterCommands, findReferenceToken, fitImageDimensions, isKnownCommand,
-  isReferencePathSafe, replaceReference, shouldConvertImage, visibleQueue,
+  isReferencePathSafe, reasoningEffortLabel, replaceReference, shouldConvertImage, visibleQueue,
 } from '../web/src/features/composer/helpers.ts'
 
 test('reference completion is limited to the cursor word after a whitespace boundary', () => {
@@ -65,6 +65,16 @@ test('only queued and steering placements are shown, retaining order and identit
   assert.deepEqual(selected.map(item => item.id), [0, 2])
   assert.equal(selected[0], queue[0])
   assert.equal(queue.length, 5)
+})
+
+test('考える深さの off は無効化と分かる名前で示し、未知の候補も見分けられる', () => {
+  const choices = ['off', 'low', 'high', 'max', 'future-one', 'future-two']
+  const labels = choices.map(reasoningEffortLabel)
+  assert.deepEqual(labels.slice(0, 4), ['オフ（考えない）', '低', '高', '最大'])
+  assert.equal(new Set(labels).size, choices.length)
+  assert.match(labels[4]!, /^追加の深さ \d+$/u)
+  assert.match(labels[5]!, /^追加の深さ \d+$/u)
+  assert.equal(reasoningEffortLabel('off', 0), 'オフ（考えない）')
 })
 
 test('image conversion preserves all supported types at the exact size limit', () => {

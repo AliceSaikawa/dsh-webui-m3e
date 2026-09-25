@@ -200,7 +200,7 @@
 参照元は今回 `npm root -g` で確認した `/Users/user/.npm-global/lib/node_modules` の DSH 配下。既存プラグインは読み取りだけで、変更・起動はしていない。
 
 1. **画像送信**：`dsh-client-ui-conversation/lib/client.js:2908–2959` を再確認した。`beginSubmission` は表示用の添付と本文を登録し、実送信は `prompt(content, mode, undefined, requestId)` で行う。`2811–2821`、`3213–3232` の画像形式に合わせ、Data URL の先頭を除いた base64 を `{ type: 'image', mediaType, data, name }` として送る。画像には file-upload を使わない。失敗時は仮表示を abandon し、下書きは保持する。
-2. **モデル**：`dsh-client-ui-model-selection/lib/client.js:46`、`152–180` の `session.modelCatalog()`／`session.selectModel({ sessionId, provider, model, reasoningEffort? })` を採用した。現在値は `modelSelection.next ?? catalog.default`。`dsh-api-session-controller/lib/types/types.d.ts:96–136` のモデルごとの efforts だけを選択肢にする。モデル・深さの選択は会話単位であり、全体の既定値は変えない。
+2. **モデル**：`dsh-client-ui-model-selection/lib/client.js:46`、`152–180` の `session.modelCatalog()`／`session.selectModel({ sessionId, provider, model, reasoningEffort? })` を採用した。現在値は `modelSelection.next ?? catalog.default`。`dsh-api-session-controller/lib/types/types.d.ts:96–136` のモデルごとの efforts だけを選択肢にする。会話へのモデル・深さの適用に加え、Host は `agentDefaultModel.saveSelection` で全体の既定値の保存も試みる。既定値の保存だけに失敗しても警告を記録して会話への選択は成功する（2026-09-26 訂正。以前の「全体の既定値は変えない」という記述は誤り）。
 3. **権限**：`dsh-client-ui-permission-presets/lib/client.js:488–493` の `/permission <preset>` を使い、`ok` と `matched` を確かめる。新規画面の候補は、同 `230–258` が読む `settings.describe()` の permission 名前空間にある defaultPreset の列挙スキーマから取得できた。03 では公開された object / union / const の形だけを読む。全体設定への mutate は呼ばない。
 4. **ファイル参照**：`dsh-client-ui-reference/lib/client.js:109` の第一引数は sessionId。`17–22` の規則どおり、空白のあるパスを引用し、ディレクトリには `/` を付け、引用符や制御文字のある候補は除く。
 5. **計画モードとコマンド**：前回の `/plan`／`/plan off`、`pending ? !active : active` の調査結果を採用した。再送では projection の実効状態と希望値が違う場合だけ切り替える。`dsh-client-ui-commands/lib/client.js:537–539` の `commands/change` で一覧を取り直す。イベント API の解除関数がない場合も、閉じた画面へ更新を渡さない。
@@ -272,3 +272,40 @@
 - 最終検証：`pnpm typecheck` 成功、`pnpm test` 148 件すべて成功、`pnpm build` 成功。ビルドには既存と同種の 500 KB 超のチャンク警告がある（JavaScript 約 974 KB）。
 - 未確認のこと：指示に従い、`?mock` のブラウザ操作、DSH・開発サーバー起動、HTTP 確認は行っていない。実画面での複数行入力・失敗表示の操作確認はオーケストレーターへ引き継ぐ。今回 DSH の送信 API は変更せず、前節までのプラグイン調査結果を変更する判断はない。
 - 拒否された操作はなし。担当外で必要になった変更はなし。03 のファイルとこの実装メモだけを変更した。
+
+### 2026-09-26：Claude（Opus 5.5）の指摘 1〜4 の修正
+
+開始時は `feat/03-composer`、作業ツリーはクリーンだった。オーケストレーターが取り込んだ土台と各機能を使い、03 の担当内だけを変更した。自分で merge・rebase は行っていない。
+
+#### 1. HTTP でも画像を添付できる ID
+
+- `crypto.randomUUID` を廃止し、モジュール内の連番 `composer-image-<番号>` にした。画像はタブのメモリ内だけに保持するため、下書きの画像を見分けるこの ID に暗号 API や永続的な一意性は不要と判断した。
+- 画像デコード・変換後に送信内容とプレビューを組み立てる処理を `image-content.ts` へ分離した。送信形式・Data URL の検証は維持し、ブラウザの画像処理を Node テストへ持ち込まない。
+- 暗号 API がない状態で、同じ画像の複数添付・削除後の再添付でも ID が重ならず、base64 とプレビュー情報を保持することを検証した。HTTP の実画面、写真選択や HEIC のデコードは今回も未確認。
+
+#### 2. 考える深さの表示と偽データ
+
+- インストール済み `dsh-llm-deepseek/lib/index.js:1413–1443` と `1578–1597` を読み取り確認した。実物の候補は `off / low / high / max`、thinking 無効時は `off` だけ。通常の既定値は接続設定を反映し、指定がなければ `high` になる。
+- `off` を「オフ（考えない）」と表示する。未知の候補は「追加の深さ <一覧での番号>」とし、日本語表示を保ったまま複数の候補を区別する。送信する ID は変えない。
+- 03 の偽モデルも同じ 4 候補とし、既定は `high` にした。全候補の選択と非対応の `medium` の拒否を Node テストで検証した。
+
+#### 3. 先行拡張の偽セッションとコマンド一覧の失敗
+
+- `extendMock` の開始時に `kit.updateList` から既存の全セッションを取得し、03 の補助機能へ登録する。projection の書き込みも一覧を更新するため、初期化は一覧取得のコールバックの外で行う。
+- 他機能が指定した権限・計画・モデルの projection を保持し、不足分だけ補う。共通会話に土台が指定した権限の 1 候補も維持する。03 が候補を補う会話では従来の 2 候補を使う。後続の追加・削除・同じ ID の再追加も扱い、古いモデル選択を引き継がない。
+- テスト内で先行・後続の拡張を用意し、権限等の取得、コマンド一覧、ファイル候補、モデル選択、明示値の保持を検証した。他機能の偽データを読み込むテストや、他機能のファイル変更は追加していない。
+- **判断**：実物でコマンド一覧の取得に失敗した場合、`/` で始まる入力は送信せず、本文・画像・送り方を下書きに保持する。取得不能と「一覧に存在しない」を区別し、コマンドのつもりの入力を勝手に通常文として送らない。再送では一覧を取り直し、既知のコマンドなら実行、未知なら通常文として送る。既存の挙動を維持し、取得失敗と復旧後の両経路の回帰テストを追加した。
+
+#### 4. モデル選択の既定値保存の訂正
+
+- インストール済み `dsh-api-session-controller/lib/types/commands.js:126–158` を読み、会話へモデルを適用したあと `agentDefaultModel.saveSelection` で全体の既定値も保存することを確認した。既定値だけ保存できない場合は警告を残して、会話の選択成功を返す。
+- 本メモの以前の「全体の既定値は変えない」を訂正した。03 の API の呼び方は変更していない。新規画面でまだ送信していない選択はローカル保持のまま。モデルシートに既定値保存の説明を添えるかは、依頼どおり段階 3 の判断に残す。
+- 調査元は前節までに記録した `/Users/user/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` の上記パッケージ。必要なファイルを読むだけで、プラグインの変更・起動はしていない。
+
+#### 検証結果と残る確認
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：428 件すべて成功。今回追加した回帰テストは 6 件。
+- `pnpm build`：成功。既存と同種の 500 KB 超のチャンク警告あり（JavaScript 約 1,479 KB、同梱フォント約 4 MB）。
+- `?mock` の画面操作はなし。DSH・開発サーバー起動、HTTP 確認、ブラウザ操作は行っていない。統合画面、iPhone の画像選択・キーボード、実 DSH の通信はオーケストレーターおよび段階 3 の確認に残す。
+- 今回、拒否された操作はなし。担当外で必要になった変更はなし。

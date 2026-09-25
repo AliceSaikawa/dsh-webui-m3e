@@ -223,6 +223,33 @@ test('known commands reject simultaneous image attachments while retaining the d
   assert.equal(readDraft(key).text, '/plan')
 })
 
+test('コマンド一覧が取得できなければスラッシュ入力を送らず保持し、復旧後に判定し直す', async () => {
+  for (const [label, text, isCommand] of [
+    ['list-known', '/plan off', true],
+    ['list-unknown', '/unknown argument', false],
+  ] as const) {
+    const h = harness(label)
+    const key = `session:${h.id}`
+    const failure = new Error('Catalog unavailable')
+    const listCommands = h.options.api.listCommands
+    h.options.api.listCommands = async () => { throw failure }
+    writeDraft(key, { text, images: isCommand ? [] : [image] })
+    assert.equal((await deliverDraft(h.existing('steer'))).error, failure)
+    assert.equal(readDraft(key).text, text)
+    assert.deepEqual(readDraft(key).images, isCommand ? [] : [image])
+    assert.equal(readDraft(key).retryMode, 'steer')
+    assert.equal(h.submissions.length, 0)
+    assert.equal(h.prompts.length, 0)
+    assert.equal(h.calls.some(call => call.startsWith('command:')), false)
+    h.options.api.listCommands = listCommands
+    assert.deepEqual(await deliverDraft(h.existing('steer')), {})
+    assert.equal(h.calls.includes(`command:${text}`), isCommand)
+    assert.equal(h.prompts.length, isCommand ? 0 : 1)
+    if (!isCommand) assert.deepEqual(h.prompts[0]?.content, [image.prompt, { type: 'text', text }])
+    assert.deepEqual(readDraft(key), { text: '', images: [] })
+  }
+})
+
 test('creation followed by a missing scope still transfers the draft to the created session', async () => {
   const h = harness('missing-scope')
   h.put({ text: 'あとで再送', images: [image] })

@@ -7,7 +7,7 @@ import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { QueueAction } from '../../dsh/services.ts'
 import type { ModelCatalog, ModelSelection, PermissionProjection } from './api.ts'
-import { visibleQueue } from './helpers.ts'
+import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
@@ -47,7 +47,6 @@ export function PlusSheet({ close, plan, disabled, modelName, onImage, onReferen
   </div>
 }
 
-const effortNames: Record<string, string> = { none: 'なし', minimal: '最小', low: '低', medium: '中', high: '高', xhigh: 'とても高い', max: '最大' }
 export function ModelSheet({ catalog, selected, apply, close }: {
   catalog: ModelCatalog; selected: ModelSelection | null | undefined; apply(selection: ModelSelection): Promise<void>; close(): void
 }) {
@@ -67,7 +66,7 @@ export function ModelSheet({ catalog, selected, apply, close }: {
         return <div key={model.id}>
           <SheetRow selected={isSelected} disabled={busy} onClick={() => { void choose({ provider: group.id, model: model.id }) }}>{model.name}</SheetRow>
           {isSelected && model.reasoning && <fieldset className="composer-efforts" disabled={busy}><legend>考える深さ</legend>
-            {model.reasoning.efforts.map(effort => <M3eButton key={effort.id} variant={(selected.reasoningEffort ?? model.reasoning?.defaultEffort) === effort.id ? 'filled' : 'tonal'} onClick={() => { void choose({ provider: group.id, model: model.id, reasoningEffort: effort.id }) }}>{effortNames[effort.id] ?? '追加の深さ'}</M3eButton>)}
+            {model.reasoning.efforts.map((effort, index) => <M3eButton key={effort.id} variant={(selected.reasoningEffort ?? model.reasoning?.defaultEffort) === effort.id ? 'filled' : 'tonal'} onClick={() => { void choose({ provider: group.id, model: model.id, reasoningEffort: effort.id }) }}>{reasoningEffortLabel(effort.id, index)}</M3eButton>)}
           </fieldset>}
         </div>
       })}

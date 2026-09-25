@@ -92,7 +92,7 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     assert.equal((await api.defaultPermissions())?.currentValue, 'workspace-write')
     for (const sessionId of Object.values(MOCK_IDS.sessions)) {
       const face = ctx.sessions.binding(sessionId)!.session
-      assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), mockPermissions)
+      assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), { currentValue: 'workspace-write', options: [{ value: 'workspace-write', name: 'ワークスペース書込' }] })
       assert.deepEqual(face.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
       assert.deepEqual(face.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: null })
     }
@@ -107,6 +107,14 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     assert.deepEqual(face.projections.faceOf('plan').getSnapshot(), { active: true, pending: false })
     requireMatched(await face.command('/plan off'))
     assert.deepEqual(face.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
+    const efforts = (await api.modelCatalog()).groups.find(group => group.id === 'deepseek')!.models[0]!.reasoning!
+    assert.deepEqual(efforts.efforts.map(effort => effort.id), ['off', 'low', 'high', 'max'])
+    assert.equal(efforts.defaultEffort, 'high')
+    for (const effort of efforts.efforts) {
+      const value = { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: effort.id }
+      assert.deepEqual(await api.selectModel(created, value), value)
+    }
+    await assert.rejects(api.selectModel(created, { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'medium' }), /モデルを選び直して/)
     const selection = { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' }
     assert.deepEqual(await api.selectModel(created, selection), selection)
     assert.deepEqual(face.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: selection })
@@ -153,5 +161,67 @@ test('偽の commands/change の購読を解除でき、別機能の projection 
     assert.deepEqual(ctx.sessions.binding('extra-fixture')!.session.projections.faceOf('plan').getSnapshot(), { active: true, pending: true })
     ctx.mock.removeSession('extra-fixture')
     await assert.rejects(composerApi(ctx.remote).selectModel('extra-fixture', mockModelCatalog.default), /会話が見つかりません/)
+  } finally { ctx.dispose() }
+})
+
+test('先行拡張の会話にも補助機能を提供し、明示された projection は保持する', async () => {
+  const permissions = { currentValue: 'fixture-preset', options: [{ value: 'fixture-preset', name: '先行拡張の権限' }] }
+  const plan = { active: true, pending: true }
+  const modelSelection = { lastUsed: mockModelCatalog.default, next: { provider: 'ollama', model: 'local' } }
+  const ctx = createMockContext({ extensions: [
+    { extendMock(kit) {
+      kit.addSession({ id: 'earlier-empty', displayTitle: '先に追加した会話', running: false, blank: false, updatedAt: 0 }, [])
+      kit.addSession({ id: 'earlier-projected', displayTitle: '設定済みの会話', running: false, blank: false, updatedAt: 0,
+        projectionValues: { permissions, plan, modelSelection, fixtureOnly: { value: 1 } },
+      }, [])
+      kit.setProjection(MOCK_IDS.sessions.readme, 'permissions', permissions)
+    } },
+    { extendMock },
+  ] })
+  try {
+    const api = composerApi(ctx.remote)
+    const empty = ctx.sessions.binding('earlier-empty')!.session
+    assert.deepEqual(empty.projections.faceOf('permissions').getSnapshot(), mockPermissions)
+    assert.deepEqual(empty.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
+    assert.deepEqual(empty.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: null })
+    const projected = ctx.sessions.binding('earlier-projected')!.session
+    assert.deepEqual(projected.projections.faceOf('permissions').getSnapshot(), permissions)
+    assert.deepEqual(projected.projections.faceOf('plan').getSnapshot(), plan)
+    assert.deepEqual(projected.projections.faceOf('modelSelection').getSnapshot(), modelSelection)
+    assert.deepEqual(projected.projections.faceOf('fixtureOnly').getSnapshot(), { value: 1 })
+    assert.deepEqual(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.projections.faceOf('permissions').getSnapshot(), permissions)
+    assert.deepEqual(ctx.sessions.list.getSnapshot().byId['earlier-empty']?.projectionValues?.permissions, mockPermissions)
+    for (const sessionId of ['earlier-empty', 'earlier-projected']) {
+      assert.equal((await api.listCommands(sessionId)).some(command => command.name === 'plan'), true)
+      assert.deepEqual((await api.listFiles(sessionId, 'docs/', new AbortController().signal)).map(file => file.path), ['docs/handoff.md', 'docs/ui-spec.md'])
+      assert.deepEqual(await api.selectModel(sessionId, mockModelCatalog.default), mockModelCatalog.default)
+    }
+    assert.deepEqual(projected.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: modelSelection.lastUsed, next: mockModelCatalog.default })
+  } finally { ctx.dispose() }
+})
+
+test('先行・後続の会話の削除を反映し、同じ ID の再追加に古いモデルを残さない', async () => {
+  const ctx = createMockContext({ extensions: [
+    { extendMock(kit) {
+      kit.addSession({ id: 'earlier-removed', displayTitle: '削除する会話', running: false, blank: false, updatedAt: 0,
+        projectionValues: { modelSelection: { lastUsed: mockModelCatalog.default, next: null } },
+      }, [])
+    } },
+    { extendMock },
+  ] })
+  try {
+    const api = composerApi(ctx.remote)
+    ctx.mock.addSession({ id: 'later-removed', displayTitle: '後で追加した会話', running: false, blank: false, updatedAt: 0 }, [])
+    for (const sessionId of ['earlier-removed', 'later-removed']) {
+      assert.deepEqual(await api.selectModel(sessionId, mockModelCatalog.default), mockModelCatalog.default)
+      ctx.mock.removeSession(sessionId)
+      await assert.rejects(api.listCommands(sessionId), /会話が見つかりません/)
+      await assert.rejects(api.listFiles(sessionId, '', new AbortController().signal), /会話が見つかりません/)
+      await assert.rejects(api.selectModel(sessionId, mockModelCatalog.default), /会話が見つかりません/)
+      ctx.mock.addSession({ id: sessionId, displayTitle: '追加し直した会話', running: false, blank: false, updatedAt: 0 }, [])
+      const selection = { provider: 'ollama', model: 'local' }
+      assert.deepEqual(await api.selectModel(sessionId, selection), selection)
+      assert.deepEqual(ctx.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: selection })
+    }
   } finally { ctx.dispose() }
 })

@@ -67,6 +67,15 @@ export function visibleQueue<T extends { placement: string }>(queue: readonly T[
   return queue.filter(item => item.placement === 'queued' || item.placement === 'steering')
 }
 
+const effortNames = new Map([
+  ['off', 'オフ（考えない）'], ['none', 'なし'], ['minimal', '最小'], ['low', '低'],
+  ['medium', '中'], ['high', '高'], ['xhigh', 'とても高い'], ['max', '最大'],
+])
+
+export function reasoningEffortLabel(id: string, index: number): string {
+  return effortNames.get(id) ?? `追加の深さ ${index + 1}`
+}
+
 export const imageMaxEdge = 2048
 export type SupportedImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
 

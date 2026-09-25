@@ -1,6 +1,5 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
-import { MOCK_IDS } from '../../dsh/mock/fixtures.ts'
-import type { RemoteResult } from '../../dsh/services.ts'
+import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
 import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
@@ -19,10 +18,10 @@ export const mockPermissions: PermissionProjection = {
   ],
 }
 export const mockModelCatalog: ModelCatalog = {
-  default: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'medium' },
+  default: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' },
   routableProviders: ['deepseek', 'ollama'],
   groups: [
-    { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-v4', name: 'DeepSeek V4', reasoning: { efforts: [{ id: 'low', name: '低' }, { id: 'medium', name: '中' }, { id: 'high', name: '高' }], defaultEffort: 'medium' } }] },
+    { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-v4', name: 'DeepSeek V4', reasoning: { efforts: [{ id: 'off', name: 'オフ（考えない）' }, { id: 'low', name: '低' }, { id: 'high', name: '高' }, { id: 'max', name: '最大' }], defaultEffort: 'high' } }] },
     { id: 'ollama', name: 'ローカル', models: [{ id: 'local', name: 'ローカル（ollama）', description: 'この端末のモデルを使います。' }] },
   ],
   failures: [],
@@ -45,7 +44,10 @@ export function extendMock(kit: MockKit): void {
     kit.setProjection(sessionId, 'plan', initial.plan ?? { active: false, pending: false })
     kit.setProjection(sessionId, 'modelSelection', selection)
   }
-  for (const sessionId of Object.values(MOCK_IDS.sessions)) initialize(sessionId)
+  const existing: SessionSummary[] = []
+  kit.updateList(state => { existing.push(...Object.values(state.byId)) })
+  // Projection writes also update the list; perform them after its snapshot callback.
+  for (const summary of existing) initialize(summary.id, summary.projectionValues)
 
   // The foundation creates new sessions through this public method too.
   // Preserve a later feature's explicit projections when initializing its fixtures.

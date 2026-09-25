@@ -1,5 +1,6 @@
 import type { PreparedImage } from './types.ts'
-import { fitImageDimensions, isSupportedImageMediaType, shouldConvertImage } from './helpers.ts'
+import { fitImageDimensions, shouldConvertImage } from './helpers.ts'
+import { createPreparedImage } from './image-content.ts'
 
 function readDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -51,15 +52,5 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
     name = `${name.replace(/\.[^.]+$/u, '') || '画像'}.jpg`
   }
 
-  if (!isSupportedImageMediaType(mediaType)) throw new Error('この画像形式には対応していません。')
-  const comma = previewUrl.indexOf(',')
-  if (comma < 0 || !previewUrl.slice(0, comma).endsWith(';base64') || previewUrl.slice(comma + 1).length === 0) {
-    throw new Error('画像のデータを読み取れませんでした。')
-  }
-  const { width, height } = dimensions
-  return {
-    id: crypto.randomUUID(), name, previewUrl, width, height,
-    prompt: { type: 'image', mediaType, data: previewUrl.slice(comma + 1), name },
-    attachment: { type: 'image', value: { previewUrl, name, width, height } },
-  }
+  return createPreparedImage({ name, previewUrl, ...dimensions, mediaType })
 }
