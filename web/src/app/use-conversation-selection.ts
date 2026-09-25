@@ -1,13 +1,14 @@
 import { useLayoutEffect, useMemo } from 'react'
 import { useDsh } from '../dsh/services.ts'
 import { useSnapshot } from '../dsh/use-snapshot.ts'
-import { conversationSessionId, syncConversationSelection } from '../dsh/conversation-selection.ts'
+import { canSelectConversation, conversationSessionId, syncConversationSelection } from '../dsh/conversation-selection.ts'
 
 /** URL selection spans chat, trace and independently mounted tools. */
 export function useConversationSelection(pathname: string): void {
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
   const sessionId = conversationSessionId(pathname)
+  const selectable = canSelectConversation(sessions, sessionId)
   const scope = sessionId === undefined ? undefined : sessions.scope(sessionId)
   const face = scope === undefined ? undefined : sessions.sessionOf(scope)
   const availability = useMemo(() => ({
@@ -21,7 +22,7 @@ export function useConversationSelection(pathname: string): void {
   const phase = list.phase
   useLayoutEffect(() => {
     syncConversationSelection(sessions, sessionId, canOpen)
-  }, [sessions, sessionId, canOpen, phase, outsideSelection])
+  }, [sessions, sessionId, canOpen, selectable, phase, outsideSelection])
 }
 
 /** Keep list and face subscriptions out of Frame and the visible screen tree. */

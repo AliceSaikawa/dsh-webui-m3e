@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { conversationSessionId, syncConversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { canSelectConversation, conversationSessionId, syncConversationSelection } from '../web/src/dsh/conversation-selection.ts'
 import { createMockContext, type MockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 
@@ -245,3 +245,79 @@ test('ready 後の選択例外はログに残して外へ投げず、別の会�
     assert.equal(errors.mock.callCount(), 1)
   } finally { ctx.dispose() }
 })
+
+test('初回取得が pending のままでも、作った会話が一覧にあれば一度だけ開く', async () => {
+  const ctx = createMockContext()
+  const calls = observeSelection(ctx)
+  try {
+    ctx.mock.updateList((state) => { state.phase = 'pending' })
+    const id = await ctx.sessions.create({ sessionId: 'created-before-baseline' })
+    assert.equal(ctx.sessions.list.getSnapshot().phase, 'pending')
+    assert.ok(ctx.sessions.list.getSnapshot().byId[id])
+    syncPath(ctx, `/s/${id}`)
+    syncPath(ctx, `/s/${id}/trace`)
+    assert.deepEqual(calls, [`open:${id}`])
+    assert.equal(ctx.sessions.list.getSnapshot().current, id)
+  } finally { ctx.dispose() }
+})
+
+test('phase と face が変わらなくても一覧への追加で選択可能になり、その時点で開く', () => {
+  const ctx = createMockContext()
+  const id = MOCK_IDS.sessions.readme
+  const summary = ctx.sessions.list.getSnapshot().byId[id]!
+  const face = ctx.sessions.binding(id)!.session
+  const calls = observeSelection(ctx)
+  try {
+    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
+    assert.equal(canSelectConversation(ctx.sessions, id), false)
+    syncPath(ctx, `/s/${id}`)
+    assert.deepEqual(calls, [])
+    ctx.mock.updateList((state) => { state.ids = [id]; state.byId = { [id]: summary } })
+    assert.equal(ctx.sessions.list.getSnapshot().phase, 'pending')
+    assert.equal(ctx.sessions.binding(id)!.session, face)
+    assert.equal(canSelectConversation(ctx.sessions, id), true)
+    syncPath(ctx, `/s/${id}`)
+    assert.deepEqual(calls, [`open:${id}`])
+  } finally { ctx.dispose() }
+})
+
+test('一覧にない子も保存されたアドレスがあれば pending のまま開ける', () => {
+  const ctx = createMockContext()
+  const parentSessionId = MOCK_IDS.sessions.readme
+  const childSessionId = 'known-child-before-baseline'
+  const address = { parentSessionId, childSessionId, mode: 'continuable' as const }
+  const calls = observeSelection(ctx)
+  try {
+    ctx.mock.addSession({ id: childSessionId, parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: false, updatedAt: 0 }, [])
+    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
+    assert.equal(canSelectConversation(ctx.sessions, childSessionId), false)
+    syncPath(ctx, `/s/${childSessionId}/goal`)
+    assert.deepEqual(calls, [])
+    ctx.mock.setSessionState(childSessionId, { subagent: { address, parentAvailable: true } })
+    assert.equal(canSelectConversation(ctx.sessions, childSessionId), true)
+    assert.deepEqual(ctx.sessions.subagentAddress(childSessionId), address)
+    syncPath(ctx, `/s/${childSessionId}/goal`)
+    syncPath(ctx, `/s/${childSessionId}`)
+    assert.deepEqual(calls, [`open:${childSessionId}`])
+    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+  } finally { ctx.dispose() }
+})
+
+for (const phase of ['pending', 'ready'] as const) {
+  test(`${phase} でも scope だけでは一覧・アドレスにない会話を open しない`, (t) => {
+    const errors = t.mock.method(console, 'error', () => {})
+    const ctx = createMockContext()
+    const id = MOCK_IDS.sessions.readme
+    const calls: string[] = []
+    ctx.mock.patch('sessions.open', (sessionId: string) => { calls.push(sessionId); throw new Error('選択できない ID です。') })
+    try {
+      ctx.mock.updateList((state) => { state.phase = phase; state.ids = []; state.byId = {} })
+      assert.ok(ctx.sessions.scope(id))
+      assert.equal(ctx.sessions.subagentAddress(id), undefined)
+      syncPath(ctx, `/s/${id}`)
+      assert.deepEqual(calls, [])
+      assert.equal(errors.mock.callCount(), 0)
+      assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    } finally { ctx.dispose() }
+  })
+}
