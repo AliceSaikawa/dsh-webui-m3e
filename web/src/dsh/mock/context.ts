@@ -11,6 +11,8 @@ import { imageAttachment, imageBase64, MOCK_IDS, sharedSessions, sharedWorkspace
 type EventHandler = (this: AgentContext, payload: unknown, next: () => Promise<unknown>) => unknown
 export interface MockKit {
   addWorkspace(workspace: WorkspaceView): void
+  /** Update an existing workspace in place; unknown ids throw and identity stays fixed. */
+  updateWorkspace(workspaceId: string, update: Partial<Omit<WorkspaceView, 'workspaceId'>> | ((current: WorkspaceView) => Partial<Omit<WorkspaceView, 'workspaceId'>>)): void
   addSession(summary: SessionSummary, records: readonly SessionWireEvent[]): void
   addRemote(namespace: string, impl: unknown): void
   /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
@@ -332,6 +334,17 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return
       }
       workspaceList.update((state) => ({ ...state, items: [...state.items, structuredClone(workspace)] }))
+    },
+    updateWorkspace(workspaceId, update) {
+      const current = workspaceList.getSnapshot().items.find((item) => item.workspaceId === workspaceId)
+      if (!current) {
+        throw new Error(`偽のワークスペースが見つかりません: ${workspaceId}`)
+      }
+      const next = structuredClone(typeof update === 'function' ? update(structuredClone(current)) : update)
+      workspaceList.update((state) => ({
+        ...state,
+        items: state.items.map((item) => item.workspaceId === workspaceId ? { ...item, ...next, workspaceId } : item),
+      }))
     },
     addSession(summary, inputRecords) {
       if (models.has(summary.id)) {

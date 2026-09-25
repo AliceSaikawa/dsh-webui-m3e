@@ -12,6 +12,7 @@ import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { usePendingInteractions, resetDeferred } from '../../dsh/interactions.ts'
+import { shouldHideComposer } from '../../dsh/interaction-presentation.ts'
 import { ChatView } from '../chat/ChatView.tsx'
 import { TraceView } from '../trace/TraceView.tsx'
 import { Composer } from '../composer/Composer.tsx'
@@ -26,7 +27,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   const pending = usePendingInteractions(sessionId)
   const current = pending.find(item => !item.deferred)
   const overlays = useOverlays()
-  const answering = !!current || overlays.some(entry => entry.sessionId === sessionId && entry.interactionKey)
+  const composerHidden = shouldHideComposer(sessionId, pending, overlays)
   const contentRef = useRef<HTMLElement>(null)
   const chatTabRef = useRef<HTMLElement | null>(null)
   const traceTabRef = useRef<HTMLElement | null>(null)
@@ -69,6 +70,6 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
           </RetainedScrollPanel>
         </>}
     </main>
-    {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!answering && <Composer target={{ kind: 'session', sessionId }} />}</footer>}
+    {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!composerHidden && <Composer target={{ kind: 'session', sessionId }} />}</footer>}
   </section>
 }

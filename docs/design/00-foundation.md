@@ -278,7 +278,9 @@ web/src/
 - **02・04 が守ること**：`active === false` の間は末尾への自動移動・寸法による末尾判定・フォーカス移動を行わない。タイマー、スクロール監視、予約済みのフレーム処理も停止する。初回の末尾移動は初めて `active === true` になり履歴を表示できたときだけ行い、非表示中に初回表示済みの印を付けない。再表示だけを理由に初回の移動を繰り返さず、保持した閲覧位置・表示状態から再開する。非表示中も履歴データの購読は続けてよい。
 - `stream` は `{ attemptId, turn, step, chunks, content, usage?, finishReason? } | null`。`content` は復元済みの ContentBlock 配列。`finishReason` は文字列でなく `{ kind: ... }`。
 - `dsh/interactions.ts`：`initializeInteractions(ctx)` を描画前に一度呼ぶ。`usePendingInteractions / defer / resetDeferred / isPlanReview` を公開。pending の `deferred` は boolean、`answer()` は `Promise<void>`。`presentInteraction(pending, { from })` の戻り値は `close(): void`。会話に再入場したときだけ deferred を解除し、チャット／トレース切り替えでは解除しない。
+- ConversationScreen は `dsh/interaction-presentation.ts` の `shouldHideComposer(sessionId, pending, overlays): boolean` で入力欄の表示を決める。同じ会話の未回答の承認は、05 の「トレースで見る」で deferred になっても回答・取消まで Composer を隠す。質問・プランの「あとで」は、応答シートが閉じれば入力を許す。deferred でない要求と、同じ会話の interactionKey 付きシートが残る間も入力欄を隠す。仮の部品の引数・戻り値は変更していない。
 - `dsh/mock/kit.ts`：MockKit の型入口。すべての指定関数を実装した。`emit` と `streamAssistant` は Promise を返す。`emit` の宛先は payload の `agent`（セッション ID）または `sessionId` で指定する。`addWorkspace` は WorkspaceView、`addSession` は SessionSummary と履歴を受け取る。`updateList` は新しい一覧を返す形と渡された一覧を変更する形の両方に対応する。`scenario` は名前に合う URL のときだけ実行する。
+- `MockKit.updateWorkspace(workspaceId, update): void` を追加した。update は `Partial<Omit<WorkspaceView, 'workspaceId'>>` または `(current: WorkspaceView) => Partial<Omit<WorkspaceView, 'workspaceId'>>`。既存行へ patch を浅くマージし、ID とワークスペースの並びを保って更新を通知する。01 などが共通ワークスペースへ会話を足すときは、`kit.updateWorkspace(id, w => ({ sessionIds: [...w.sessionIds, addedSessionId] }))` とし、先に他機能が追加した ID を残す。配列は置換で、会話自体の登録は引き続き addSession を使う。関数には現在値の複製を渡し、返した patch も複製する。存在しない ID または関数の例外は更新せずに投げる。既存の MockKit 関数の形は変えない。
 - **06 の即時シナリオ**：ctx 構築中の `extendMock` / シナリオ内で遅延なしの `kit.emit()` を使える。受け手が未登録なら、そのイベントの最初の `$on` 登録後の microtask で一度だけ配送し、承認・質問・プランを対応待ちへ入れる。シナリオの状態設定は引き続き同期実行する。`emit()` の Promise は承認・質問への回答まで待つ。構築完了後の通常の未登録イベントは保留・後日再生しない。配送前の ctx 破棄・対象セッション削除で保留要求を片付ける。
 - MockKit に `setSessionState(sessionId, patch: Partial<SessionSnapshot>): void`、`removeSession(sessionId): void`、`removeWorkspace(workspaceId): void` を追加した。`lastAgentError`、`openState: 'error'` と `openError`、`promptError` は `setSessionState` で設定できる。共通データを消すシナリオには後の 2 関数を使う。既存の 9 関数の引数と戻り値は維持した。偽データに `ctx.remote.workspace` は置かない。
 - mock は会話を選ぶと通常・子とも完了の未読印を解除する。生成開始で前回の印を解除し、正常完了時に未選択の会話だけ印を付ける。`addSession` / `addWorkspace` の ID 重複は `console.error` で知らせ、その 1 件だけを無視する。既存データと後続の拡張登録は保持し、引数・戻り値は変えない。
@@ -445,3 +447,12 @@ web/src/
 - `pnpm typecheck`：成功。`pnpm test`：93 件すべて成功（前回 83 件を維持・更新し、新規 10 件）。`pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 887 KB、同梱フォント約 4 MB）。
 - オーケストレーターがブラウザで、09 の補助画面との往復時の選択保持、02・04 の active 対応と目印付きの内部スクロール保持、取得失敗画面の「読み直す」を確かめる。段階 3 では起動時の選択復元、補助画面表示中の実物の projection 追従、ページ再読み込みによる取得再開を確認する。
 - 担当外で必要になった変更：なし。main、依存・ロックファイル、DSH 本体、保護フック・権限設定は変更していない。DSH・開発サーバーの起動、HTTP 確認、ブラウザー操作は行っていない。今回の操作拒否はない。
+
+### 2026-09-25：段階 2 のレビュー・統合予行演習の指摘 2 件を修正
+
+- 承認を保留すると、従来の判定では応答シートを閉じた時点で Composer が再表示されることを Node テストで再現した。判定を純粋関数 shouldHideComposer に分け、未回答の承認は deferred にかかわらず入力欄を隠すようにした。自動で開くシートを選ぶ条件は維持し、保留した承認のシートを勝手に開き直さない。質問・プランの「あとで」はシートを閉じれば従来どおり入力できる。
+- MockKit に既存ワークスペースをその位置で更新する updateWorkspace を追加した。patch と現在値を受け取る関数の両方に対応し、ID・並び・対象外の行・一覧のメタデータを保つ。複数機能が同じワークスペースへ順番に追記しても先の会話 ID を失わない。未登録 ID と更新関数の例外では状態も通知回数も変えず、渡した値や返した配列の後からの変更は保存値へ漏れない。
+- 「段階 2 が使う公開入口」に、承認と質問・プランの入力可否、および updateWorkspace の型・追記例・更新時の扱いを記載した。既存の MockKit 関数と仮の部品の引数・戻り値は変更していない。01 が削除・再追加から更新関数へ切り替える作業は 01 側で行う。
+- 回帰テストは計 10 件追加した。承認の保留・回答・取消、質問とプランの保留、他の会話・シートとの分離、ワークスペースの順序・通知・ID の固定・複数機能の追記・値の分離・例外時の無変更を検証した。変更前は承認の判定テスト 3 件が失敗し、最初のワークスペース更新テスト 3 件も関数未実装で失敗することを確認してから修正した。
+- `pnpm typecheck`：成功。`pnpm test`：103 件すべて成功。`pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 887 KB、同梱フォント約 4 MB）。オーケストレーターがブラウザで、05 の「トレースで見る」からチャットへ戻ったときの入力欄と、01 の更新関数利用後のワークスペースの並びを確かめる。
+- 担当外への引き継ぎ：01 の mock が行っているワークスペースの削除・再追加を updateWorkspace に切り替える。01 のファイルは変更していない。今回変更したのは担当ファイルと本書の実装メモだけで、main には触れていない。DSH・開発サーバーの起動、HTTP 確認、ブラウザー操作は行っていない。今回の操作拒否はない。
