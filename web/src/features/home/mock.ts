@@ -83,7 +83,9 @@ export function extendMock(kit: MockKit): void {
   kit.scenario('empty', () => removeAllSessions(kit))
   kit.scenario('no-workspace', () => {
     removeAllSessions(kit)
-    for (const workspace of sharedWorkspaces) kit.removeWorkspace(workspace.workspaceId)
+    // MockKit cannot enumerate workspaces yet; include the other default fixtures.
+    const workspaceIds = [...sharedWorkspaces.map((workspace) => workspace.workspaceId), 'ws-chat-check', 'ws-trace-example']
+    for (const workspaceId of workspaceIds) kit.removeWorkspace(workspaceId)
   })
   kit.scenario('home-pending', () => kit.updateList((state) => { state.phase = 'pending' }))
   kit.scenario('native-browse', () => kit.patch('remote.directoryPicker', createDirectoryMock()))

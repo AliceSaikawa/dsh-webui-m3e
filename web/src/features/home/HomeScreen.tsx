@@ -20,6 +20,7 @@ import { SessionRow } from './SessionRow.tsx'
 import { useDirectoryAvailability } from './directory.ts'
 import { normalizeWorkspaceError } from './workspace-errors.ts'
 import { canEditHomeSession } from './session-navigation.ts'
+import { scheduleLoadingRecovery } from './loading-recovery.ts'
 import './home.css'
 
 type Mode = 'normal' | 'sort' | 'select'
@@ -47,6 +48,9 @@ export function HomeScreen() {
   const drawer = useRef<M3eDrawerContainerElement | null>(null)
   const menu = useRef<M3eMenuElement | null>(null)
   const loading = snapshot.phase === 'pending' || list.phase === 'pending'
+  const [slowLoading, setSlowLoading] = useState(false)
+
+  useEffect(() => scheduleLoadingRecovery(loading, setSlowLoading), [loading])
 
   useEffect(() => {
     if (snapshot.phase === 'ready' && preferences.workspaceId !== (workspace?.workspaceId ?? null)) setCurrentWorkspace(workspace?.workspaceId ?? null)
@@ -117,7 +121,7 @@ export function HomeScreen() {
         {(pull > 20 || refreshing) && <p className="home-refresh" role="status">{refreshing ? '読み直しています…' : pull >= 72 ? '離して読み直す' : '下に引っぱって読み直す'}</p>}
         {snapshot.error && <p className="home-error" role="alert">{remoteErrorMessage(snapshot.error)}</p>}
         {refreshError && <p className="home-error" role="alert">{refreshError}</p>}
-        {(loading || snapshot.error || refreshError) && <div className="home-list-recovery">
+        {((loading && slowLoading) || snapshot.error || refreshError) && <div className="home-list-recovery">
           {loading && !refreshError && !snapshot.error && <p role="status">一覧の読み込みが完了していません。</p>}
           {list.phase === 'pending' || refreshError ? <M3eButton disabled={!connected || refreshing} onClick={() => { void refresh() }}>セッション一覧を読み直す</M3eButton> : null}
           <M3eButton onClick={() => window.location.reload()}>画面を再読み込み</M3eButton>

@@ -3,7 +3,7 @@ import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eAssistChip, M3eChipSet } from '@m3e/react/chips'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { back, navigate } from '../../app/router.ts'
+import { back } from '../../app/router.ts'
 import { ConnectionBanner } from '../../app/shell/ConnectionBanner.tsx'
 import { useConnection } from '../../app/shell/index.ts'
 import { openDialog, showSnackbar, TextPromptDialog } from '../../app/overlay/index.ts'
@@ -66,7 +66,7 @@ export function DirectoryScreen() {
     try {
       const item = await workspaces.create({ path: listing.path })
       setCurrentWorkspace(item.workspaceId)
-      if (mounted.current) { showSnackbar('ワークスペースを追加しました'); navigate('/', { replace: true }) }
+      if (mounted.current) { showSnackbar('ワークスペースを追加しました'); back() }
     } catch (failure) { if (mounted.current) showSnackbar(remoteErrorMessage(failure)) }
     finally { if (mounted.current) setSaving(false) }
   }
