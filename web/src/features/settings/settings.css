@@ -1,0 +1,33 @@
+.settings-content { max-width: 760px; margin-inline: auto; padding: var(--app-space); }
+.settings-section { margin: 8px 0 28px; }
+.settings-section > h2 { margin: 12px 8px; font-size: 15px; color: var(--md-sys-color-primary); }
+.settings-card { border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
+.settings-card m3e-list-action { --m3e-list-item-two-line-height: 76px; }
+.settings-card m3e-list-action + m3e-list-action { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.settings-content m3e-list-action, .settings-sheet m3e-list-action { min-height: 56px; }
+.settings-version { text-align: center; font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin: 28px 0; }
+.settings-notice { border-radius: 20px; padding: 16px; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.settings-error { color: var(--md-sys-color-error); font-size: 14px; }
+.settings-namespace { margin-bottom: 28px; }
+.settings-namespace > h2 { font-size: 18px; margin: 16px 4px; }
+.settings-fields { border-radius: var(--app-radius); padding: 4px 16px; background: var(--md-sys-color-surface-container-low); }
+.settings-field { padding: 18px 0; min-width: 0; }
+.settings-field + .settings-field { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.settings-field h3 { margin: 0 0 12px; font-size: 16px; }
+.settings-field label { overflow-wrap: anywhere; }
+.settings-field m3e-form-field { width: 100%; --m3e-form-field-width: 100%; }
+.settings-field m3e-form-field input { border: 0; border-radius: 0; padding: 0; outline: none; }
+.settings-field m3e-select { width: 100%; }
+.settings-field-help { font-size: 13px; margin: 8px 0 0; color: var(--md-sys-color-on-surface-variant); white-space: pre-line; }
+.settings-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; }
+.settings-switch-row span { overflow-wrap: anywhere; }
+.settings-switch-row m3e-switch { flex: none; }
+.settings-group { border: 0; padding: 0 0 0 12px; margin: 12px 0; border-left: 2px solid var(--md-sys-color-outline-variant); min-width: 0; }
+.settings-group legend { padding: 8px 0; font-weight: 550; overflow-wrap: anywhere; }
+.settings-value { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; max-height: 240px; overflow: auto; }
+.settings-reset { margin-top: 8px; min-height: 44px; }
+.settings-saving { font-size: 13px; min-height: 20px; color: var(--md-sys-color-primary); }
+.settings-sheet { padding: 0 12px; }
+.settings-sheet h2 { margin-top: 8px; }
+.settings-key-input { width: 100%; --m3e-form-field-width: 100%; }
+.settings-key-input input { border: 0; border-radius: 0; padding: 0; outline: none; }
