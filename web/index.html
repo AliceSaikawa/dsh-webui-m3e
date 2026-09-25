@@ -4,6 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>DSH</title>
+    <link rel="manifest" href="/m3e/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/m3e/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="DSH" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#fffbff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1b1e" media="(prefers-color-scheme: dark)" />
+    <script>
+      if ('%PROD%' === 'true' && 'serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/m3e/sw.js', {
+            scope: '/m3e/',
+            type: 'module',
+            updateViaCache: 'none',
+          }).catch(() => console.warn('ホーム画面用のキャッシュを準備できませんでした。'))
+        }, { once: true })
+      }
+    </script>
     <script type="module" src="./src/main.tsx"></script>
   </head>
   <body>

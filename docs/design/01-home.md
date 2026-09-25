@@ -111,4 +111,116 @@
 
 ## 実装メモ
 
-（実装した担当が書き足します）
+### 2026-09-25：01-home の実装
+
+#### 実装したもの
+
+- 一覧は `useDsh().workspaces.list` と `sessions.list` を購読し、選択したワークスペースの `sessionIds` 順に表示する。アーカイブ済み・存在しない ID を除き、サブエージェントは既定で隠す。選択中 ID と表示設定は端末の `localStorage` に保存する。保存不能時もメモリ上で操作でき、再接続で一覧が差し替わっても ID が存在する限り選択を保つ。
+- モデルの `lastUsed`、作業フォルダ名、更新日時、返事待ち・実行中・未読完了の印を表示する。今日の日時は `HH:mm`、それ以外は `YYYY/MM/DD`。モデルが不明なら頭文字、値がなければ汎用アイコン。DeepSeek 用の簡略化した魚と汎用の SVG を担当フォルダに同梱した。外部アセットは使わない。
+- ドロワーは `M3eDrawerContainer` の `startMode="over"` と `M3eNavMenu` を使う。左から開き、暗い背景のタップ・左スワイプ・閉じるボタン・Escape で閉じる。M3E 部品によるフォーカストラップと背景の操作抑止を利用する。ワークスペースの切り替え、長押しから名前変更・移動先を選ぶ並べ替え・確認後の登録解除を実装した。
+- 一覧のメニューに並べ替え・選択アーカイブ・名前変更・サブエージェント表示スイッチを実装した。並べ替えはつまみの Pointer Events により、確定時に `insertSessionBefore` を 1 回呼ぶ。キーボードの上下キーでも移動できる。アーカイブは長押しシート、横スワイプ、複数選択に対応し、逐次適用する。途中で失敗した場合は成功件数を通知し、未処理の選択を残す。長押し・スワイプ後のクリックによる意図しない画面遷移を抑止する。
+- 行末にも操作ボタンを置き、長押しが難しい場合に同じシートへ到達できるようにした。ドロワーでは選択・追加の Enter / Space と操作の Shift+F10 を扱う。
+- 下への引っぱりで `sessions.refresh()` を呼ぶ。空一覧、ワークスペースなし、読み込み中のスケルトン、接続切れ時の FAB 無効化を実装した。下部余白と安全領域は土台の枠を利用する。
+- フォルダ選択は × で `back()`、パンくずとフォルダで同じ画面内を移動し、隠しフォルダを除外する。作成後はその親の一覧を再取得する。「ここを追加」は返ったワークスペースを選択して一覧へ戻る。古い一覧応答を AbortSignal で破棄し、読み込み中や接続切れ時には追加を無効にする。
+- 仮の部品の入口 `HomeScreen()` と `routes` の形は維持した。他担当の部品、共有型・公開入口、依存は変更していない。
+
+#### 未確認事項を現行 DSH のソースで照合した結果
+
+参照元はインストール済み DSH の `node_modules/@deepseek-ai/` 以下。以下はその配下からの相対パス。読むだけで、DSH の変更・起動・通信は行っていない。
+
+1. **native のとき list は使えない。** `dsh-api-workspace-controller/lib/types/directory-picker.js:98-101,126-132` は `requireCapability('browse', 'list')` で種別を検査し、native なら `directory-picker/unavailable`、`details.capability: 'native'` を返す。フォルダ作成も同じ制約（同113-120）。M3E は native の `pick` を呼ばず、一覧を取得できなければブラウザから追加できない理由を表示する。
+2. **`capability()` は公開 RPC ではない。** `dsh-api-workspace-controller/lib/typert.remote-client.d.ts:10-14` の directoryPicker は `list`・`createDirectory`・`pick` のみ。現行 UI は `dsh-client-ui-workspace/lib/client.js:2740-2744` の directoryFlow 登録有無で判定するが、M3E では現行 UI を読み込まない。そこで `list(undefined)` の読み取りプローブを使うと決めた。成功なら追加可能、native の構造化失敗なら説明画面への追加行を残し、それ以外の利用不可では追加行を隠す。ホームが読み取れない場合は画面内で再試行できるよう追加行を残す。
+3. **フォルダの型は `home` を持つ。** `dsh-host-directory-picker/lib/types/types.d.ts:10-37` は `{path, home, crumbs, entries, truncated}`、各項目は `{name,path,hidden}`。ホームの短縮はこの `home` とパス境界を照合する。判明しない場合はパスを推測せず、そのまま出す。`list(path, signal?)` と `createDirectory(path,name)` は RemoteResult、作成結果は絶対パス（前記 remote-client.d.ts:11-13）。
+4. **ワークスペース操作は土台の facade を使う。** `ctx.remote.workspace` はオブジェクト引数の RPC、一覧購読と位置引数を持つのは `ctx.workspaces`。根拠は `dsh-api-workspace-controller/lib/types/types.d.ts:60-106`、`lib/types/client/service.d.ts:27-69`。00 の公開入口に合わせ、担当内では `useDsh().workspaces` を使うと決めた。
+5. **専用のアーカイブ解除 API はない。** 前記 remote-client.d.ts:15-23 と client/service.d.ts:27-69 で確認。解除操作は作っていない。
+6. **サブエージェント行が一覧に到達する経路はある。** `dsh-session-query/lib/index.js:94-114` は origin で除外しない。`dsh-api-session-controller/lib/types/list.js:104-124,287-291` が一覧に origin を渡し、`types/client/sessions/service.js:434-454` が byId に引き継ぐ。現行 UI 側が `dsh-client-ui-workspace/lib/client.js:339` で非表示にする。実物での到達確認は段階 3 に残す。
+7. モデルは `lastUsed: null | {provider,model,reasoningEffort?}`（`dsh-api-session-controller/lib/types/types.d.ts:76-94`）。状態の印は現行 UI と同じ **返事待ち → 実行中 → 未読完了** の優先順位（`dsh-client-ui-workspace/lib/client.js:780-824`）にした。
+
+現行 sidebar は `primitives.FishLogo` を参照しているが、指定された `dsh-client-ui-primitives/lib` は存在しなかった。ロゴの探索は広げず、同梱 SVG は本実装の簡略アイコンとした。
+
+#### 偽データと検証
+
+- 標準は 3 ワークスペース・7 セッション。主ワークスペースは共通の 2 件と追加 4 件、別ワークスペースは 1 件、残りは空。共通セッションの履歴は変更していない。質問待ちの偽イベントは土台の起動時保留修正前でも受信できるよう 500ms 後に発火する。
+- `?mock&scenario=empty`、`no-workspace`、`home-pending`、`native-browse`、`native-unavailable`、`picker-unavailable`、`picker-truncated` を用意した。`native-browse` は将来 list が使える場合の応答を想定した成功例で、現行 DSH が native で browse できることを意味しない。土台の `disconnected` と `reconnecting` も使える。
+- フォルダの偽データは `/mock` から `dev/dsh-webui-m3e` をたどれる。隠し属性、作成、重複、読み取り失敗、書き込み失敗、1,000 件での省略をメモリ内で再現する。
+- `tests/01-home.test.ts` は表示順・除外、選択維持、日時、モデル、ホームの短縮、保存・復元と保存失敗を検証。`tests/01-directory.test.ts` は公開 RPC のプローブ、native / 利用不可 / 読み取り失敗 / 通信失敗 / 取消を検証。`tests/01-mock.test.ts` はフィクスチャ、質問受信、フォルダ作成と異常系、各シナリオを検証する。
+- `pnpm typecheck`：成功。Node 側の型検査でブラウザ用設定フックへ到達する問題は、担当内の純粋な `preferences-store.ts` へ保存処理を分離して解消した。
+- `pnpm test`：79 件すべて成功（今回追加 24 件）。
+- `pnpm build`：成功。Vite の既存の大きいチャンクに関する警告は残る。
+- **ブラウザで操作した画面はなし。** 今回のオーケストレーター指示に従い、開発サーバーの起動・HTTP 確認・ブラウザ操作は実施していない。上記シナリオでの一覧、ドロワー、フォルダ選択、メニュー、長押し・スワイプ・ドラッグ、空表示の目視とスマートフォン実機操作はオーケストレーターに引き継ぐ。Node テストを画面操作の成功とは扱わない。
+
+#### 担当外の変更・停止事項
+
+- 担当外で必要になった変更：なし。
+- 拒否された操作：なし。パッチの構文検証で同じファイルの削除・追加を同時指定できないエラーが 1 回出たため、通常の更新パッチに修正した。権限拒否ではなく、別経路による回避はしていない。
+- `main`、他 worktree、DSH 本体、共有ファイルは変更せず、merge / rebase も行っていない。土台の後続修正の取り込みはオーケストレーターに委ねる。
+
+### 2026-09-26：レビュー 3 件と統合予行演習の指摘を修正
+
+#### 今回の前提と範囲
+
+- 開始時は `feat/01-home`、HEAD は `5cfa391`（main を取り込んだマージ）、作業ツリーはクリーン。共通の指示は前回確認済みで、プロジェクトの AGENTS.md、設計 README、本書、指定された `rv-01.codex.out.md` の全文を確認した。
+- この worktree の 09 は `SessionMenu.tsx`・`routes.tsx`・空の `mock.ts` の仮部品のままだった。参照時の main は `231ef73` で、09 の実装が存在したため、`git show main:<09 のソース>` で読み取りだけ行い、子を開く順序・カタログの型・名前変更の失敗表示を照合した。チェックアウトや merge / rebase はしていない。以下の検証はこのブランチの実際の状態に対する結果であり、06・07・09・10 を全部重ねた統合検証ではない。
+
+#### レビューの 3 件
+
+1. **一覧取得失敗の通知：01 の復帰導線を修正、確実な通知には DSH の公開 API 追加が必要。** この時点では読み込み中にも「セッション一覧を読み直す」と「画面を再読み込み」を出した（後述の Opus レビュー対応で 8 秒待ってから表示するよう修正）。公開 `refresh()` が例外を返した場合は画面内に日本語エラーを残し、再試行できるようにした。未完了の一覧を空一覧として扱ったり、pending の長さだけで通信失敗と断定したりしない。実 DSH が内部に保持した失敗は現行の公開口から取得できず、初回失敗と読み込み中の区別、および取得済み一覧の更新失敗の確実な通知は未解決。「担当外で必要になった変更」に引き継ぐ。
+2. **一時失敗でワークスペース追加が消える：修正済み。** namespace 不在、または native 以外の明確な `directory-picker/unavailable` だけ入口を隠す。`gateway/internal`・`gateway/bad-request`・通信失敗・不明な失敗ではフォルダ選択への入口を残し、同画面で理由を表示して再試行できる。native の説明画面への入口は維持する。中断済みプローブは hook が反映しない。
+3. **ワークスペース操作の汎用エラー文言：01 内で修正済み。** `workspace-errors.ts` で、実物の通常 Error の既知形式 `workspace <operation> failed: <code>: <message>` のみを厳密に認識する。対象 operation は rename・delete・reorder・session archive・move。既存の構造化失敗は優先してそのまま通し、形式が一致しないものを推測で解釈しない。コードを `RemoteCallError` に正規化し、土台の `remoteErrorMessage` で名前の重複・パス不正・移動不正・gateway の入力不備と内部エラーを日本語で区別する。名前変更、登録解除、並べ替え、単独・複数アーカイブに適用した。create はもともと `rpcError` を保持し、既存変換が扱えるため変更不要だった。
+
+実物との照合根拠（インストール済み DSH の `node_modules/@deepseek-ai/` 以下）：
+
+- `dsh-api-session-controller/lib/types/client/sessions/manager.js:354-435` の `refreshList()` は構造化失敗を内部 `listState/listError` に保存して Promise を正常終了し、ready への変更は成功時のみ。同843-845の内部 snapshot には state/error があるが、`service.js:435,505` の公開一覧への変換で落ちる。公開 refresh は同200-201で内部へ委譲する。
+- `dsh-api-workspace-controller/lib/types/client/service.js:32-61` が前述の Error 形式を生成する。create の例外は同4-11,26-30で `rpcError` を保持する。
+- ソースを読むだけで確認した。実物の失敗操作、DSH 起動、独立した RPC による代替取得は行っていない。
+
+#### 統合予行演習の 3 件
+
+- **子の会話：** `home-review-child` を親 `readme-review` の ready カタログへ `kind: 'child'`、`mode: 'one-shot'`、`activity: 'inactive'`、`hasChildren: false` で登録した。同じ親の既存 entries・補助情報と別の親のカタログを保持する。子の snapshot にも mode 付き subagent を設定し、URL で直接開く場合も閲覧用の状態を維持する。
+- **子の行を開く処理：** `session-navigation.ts` でカタログを確認し、未取得なら `refreshSubagents(parentId)` 後の最新 snapshot から mode とエラーを読み直す。`sessions.openSubagent(address)` に成功してから `navigate` を呼ぶ。欠けた親・子、取得失敗、mode 不正を通常の会話への移動で代替しない。読み込み中に一覧を離れた場合も遅れた移動を行わない。返事待ちなどの表示は維持し、子の行は名前変更・長押し操作・スワイプ・複数選択アーカイブ・手動移動の対象から外した。操作側にも子を除くガードを置く。
+- カタログの取得は `setSubagentCatalogOpen` なしでも可能（実物の `dsh-api-session-controller/lib/types/client/sessions/service.js:183-184`、`manager.js:259-329`）。保持済みアドレスだけでは `openSubagent` のカタログ照合（同105-110）を満たさないため、最新の child entry を必要とする。
+- **ワークスペースの順序：** 共通行の削除・再追加をやめ、`kit.updateWorkspace(id, current => patch)` で自担当の会話 ID だけ追記する。先に追加されたワークスペースと会話、並び、名前、更新日時を維持する。
+- **名前変更ダイアログ：** `onConfirm` は保存を await して成功後だけ閉じる。セッションの失敗はそのまま、ワークスペースの既知例外は正規化して再送出し、`TextPromptDialog` 内のエラー欄へ渡す。失敗をスナックバーで消費しない。
+
+#### 今回の検証
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：142 件すべて成功。今回 15 件追加し、既存テストも更新した。一時的なプローブ失敗後の成功、取り消し、他機能のワークスペース・会話順の保持、カタログ保持、子の mode と選択順、カタログ失敗時の移動抑止、画面離脱、実物の Error 形式から日本語文言への変換、保存失敗の再送出を検証した。
+- `pnpm build`：成功。既存の 500 kB 超のチャンク警告は残る。
+- `git diff --check`：成功。
+- DSH・開発サーバーの起動、HTTP 確認、ブラウザ操作は指示どおり未実施。`?mock` の実画面でのダイアログ内エラー、子の入力欄・操作無効化、読み直しボタン、一時失敗時の追加入口はオーケストレーターの統合確認に残す。
+
+#### 担当外で必要になった変更
+
+- **DSH の公開 API：セッション一覧の実際の取得状態と失敗を購読できる入口の追加が必要。** 土台の「main 取り込み後の土台の残りを修正」の調査結論に合わせ、依頼先を訂正した。現在の公開 API は初回取得・手動更新・再接続の通常の失敗を通知しないため、土台 00 の型や mock だけを変えても解決しない。DSH の公開 API が追加されるまでは 01 の読み直しボタンで復帰を試せる形とする。01 から非公開 manager を参照したり、別 RPC の結果を既存一覧の取得結果と見なしたりしない。公開入口が確定した後、土台への接続と 01 の取得失敗表示を検討する。
+- ワークスペース例外の正規化は今回 01 内で扱えたため、指摘 3 に対する土台変更は必須ではない。他機能でも同形式を扱う場合の共通化は今回の担当外。
+- ブランチへの後続機能取り込みはオーケストレーターに委ねる。今回の変更は 01 の担当ファイルのみ。拒否された操作はなく、禁止操作の回避もしていない。
+
+### 2026-09-26：Opus 5.5 レビューの指摘 1〜4 を修正
+
+#### 今回の前提と修正
+
+- 開始時は `feat/01-home`、HEAD は `98e988c`、作業ツリーはクリーン。オーケストレーターが取り込んだ main は `706236c` で、土台・02・04・06・07・09・10 を含む。指定の `rv-01.opusF.out.md` 全文、担当設計と画面仕様、土台の最新の実装メモを確認した。指摘 5 は参考扱いとして変更していない。
+- **指摘 1：統合時のワークスペースなし。** `no-workspace` は共通 3 件に加え、02 の `ws-chat-check` と 04 の `ws-trace-example` も削除する。全機能の実際の `mock.ts` をアプリと同じ名前順で集める Node テストを追加した。通常時は 02・04 のワークスペースが存在すること、`empty` はワークスペースを残して会話を消すこと、`no-workspace` は全ワークスペース・会話・scope・binding を消すことを検証する。将来の機能追加もテストの収集対象に入り、削除漏れを検出する。他機能のファイルは変更していない。
+- **指摘 2：通常の読み込み表示。** 一覧またはワークスペースの pending が連続して 8 秒続いた場合だけ、未完了の案内と復帰ボタンを表示する。それまではスケルトンを表示する。読み込み完了で待ち時間をリセットし、effect の終了時にタイマーを取り消す。既に分かっているワークスペースエラーや公開 refresh の例外は待たずに表示する。8 秒は復帰操作の案内を出す目安で、通信失敗を断定する時間ではない。
+- **指摘 3：追加後の戻り方。** 作成結果のワークスペースを選択してから土台の `back()` を呼ぶ。一覧から開いた場合は元の履歴へ戻り、直接開いて戻り先がない場合は土台が一覧へ置き換える。追加時に一覧の履歴を重複させない。
+- **指摘 4：失敗通知の依頼先。** 前節の「土台 00 に追加が必要」という記録を訂正した。DSH の公開 API 追加が必要で、それまでは 01 の読み直しボタンを復帰手段とする。
+
+#### 実物を読むだけで再確認したこと
+
+- `npm root -g` 配下の `@deepseek-ai/dsh/node_modules/@deepseek-ai/` を参照した。`dsh-api-session-controller/lib/types/client/sessions/manager.js:354-435` は一覧の通常の失敗を内部に保存して Promise を解決する。`sessions/service.js:434-505` の公開一覧には state/error が含まれない。土台の調査結論と一致し、確実な失敗判定は引き続き未解決。
+- `dsh-api-workspace-controller/lib/types/client/model.js:38-43` は create の成功結果を返す前に一覧へ取り込む。選択してから戻る順序を維持した。土台の `router.ts` も読み、履歴ありの `history.back()` と履歴なしの一覧への置き換えを確認した。実物の起動や操作はしていない。
+
+#### 今回の検証
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：377 件すべて成功（今回 4 件追加）。全機能の mock 統合テストは、修正前に 02・04 のワークスペースが残って失敗することも確認した。タイマーの 3 件は通常の短い読み込み、8 秒の境界、完了後のリセットと再度の待ち時間、終了時の取り消しを Node の偽時計で検証した。
+- `pnpm build`：成功。既存の 500 kB 超チャンク警告は残る（JavaScript 約 1,422 kB）。
+- ブラウザで操作した画面はなし。DSH・開発サーバーの起動、HTTP 確認、React/DOM の描画テストは行っていない。オーケストレーターには `?mock&scenario=no-workspace` の空表示と追加入口、`?mock&scenario=home-pending` の 8 秒前後、フォルダ選択から追加後の戻り操作の画面確認を引き継ぐ。Node テストを画面操作の成功とは扱わない。
+
+#### 担当外で必要になった変更
+
+- 今回の指摘 1〜4 を直すために必須の担当外変更はなし。01 の担当ファイルと本書の実装メモだけを変更した。
+- 将来の恒久策として、00 の MockKit に全ワークスペースを列挙・削除できる公開入口の追加を依頼する。現時点の公開入口にはないため、今回はレビュー指定どおり 01 に対象 ID を明示した。新しいワークスペースが増えた際の追記漏れは統合テストで検出する。
+- 一覧取得失敗の確実な通知には、前節に記載した DSH の公開 API 追加が引き続き必要。土台だけで実物にない失敗欄を追加する依頼にはしない。
+- 今回の操作拒否なし。禁止操作の回避、main・他 worktree の変更、merge / rebase は行っていない。

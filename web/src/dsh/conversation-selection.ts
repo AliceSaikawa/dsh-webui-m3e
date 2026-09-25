@@ -15,8 +15,13 @@ export function syncConversationSelection(
   canOpen: boolean,
 ): void {
   const { current, phase } = sessions.list.getSnapshot()
+  // A request can create a scope before the list baseline makes it selectable.
+  if (phase !== 'ready') return
   if (sessionId === undefined) {
     // Boot may restore selection after the initial render. Wait for its baseline.
-    if (phase === 'ready' && current !== undefined) sessions.clear()
-  } else if (canOpen && current !== sessionId) sessions.open(sessionId)
+    if (current !== undefined) sessions.clear()
+  } else if (canOpen && current !== sessionId) {
+    try { sessions.open(sessionId) }
+    catch (error) { console.error(`会話を選択できませんでした: ${sessionId}`, error) }
+  }
 }
