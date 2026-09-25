@@ -1,14 +1,14 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eSwitch } from '@m3e/react/switch'
-import { M3eTextareaAutosize } from '@m3e/react/textarea-autosize'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { openDialog } from '../../app/overlay/index.ts'
+import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import type { QueueAction, QueuedMessage, SessionFace } from '../../dsh/services.ts'
+import type { QueueAction } from '../../dsh/services.ts'
 import type { ModelCatalog, ModelSelection, PermissionProjection } from './api.ts'
 import { visibleQueue } from './helpers.ts'
+import { queueEditPrompt } from './queue-edit.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
   // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
@@ -92,27 +92,6 @@ export function PermissionSheet({ permissions, apply, close }: {
   </div>
 }
 
-/** The shared name prompt only has a single-line input. Queue editing needs a textarea. */
-function QueueEditDialog({ face, item, close }: { face: SessionFace; item: QueuedMessage; close(): void }) {
-  const [text, setText] = useState(item.text ?? '')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const id = useId()
-  async function save() {
-    if (busy || !text.trim()) return
-    setBusy(true); setError('')
-    try { unwrapRemoteResult(await face.updateQueue(item.id, { kind: 'edit', content: [{ type: 'text', text }] })); close() }
-    catch (error) { setError(errorText(error)); setBusy(false) }
-  }
-  return <div className="composer-sheet"><h2>順番待ちのメッセージを編集</h2><label htmlFor={id}>メッセージ</label>
-    <textarea id={id} rows={3} value={text} disabled={busy} onChange={event => setText(event.target.value)} autoFocus />
-    <M3eTextareaAutosize htmlFor={id} minRows={3} maxRows={6} />
-    {item.content.some(part => part.type !== 'text') && <p>編集すると添付画像は外れます。</p>}
-    {error && <p role="alert">{error}</p>}
-    <div className="actions"><M3eButton disabled={busy} onClick={close}>キャンセル</M3eButton><M3eButton variant="filled" disabled={busy || !text.trim()} onClick={() => { void save() }}>保存</M3eButton></div>
-  </div>
-}
-
 export function QueueSheet({ sessionId, close }: { sessionId: string; close(): void }) {
   const { face, snapshot } = useSession(sessionId)
   const items = visibleQueue(snapshot.queue)
@@ -130,7 +109,7 @@ export function QueueSheet({ sessionId, close }: { sessionId: string; close(): v
     {!items.length && <p>順番待ちのメッセージはありません。</p>}
     {!selected ? items.map(item => <SheetRow key={item.id} detail={item.placement === 'steering' ? '割り込み待ち' : '順番待ち'} onClick={() => setSelectedId(item.id)}>{item.preview || item.text || '画像付きのメッセージ'}</SheetRow>) : <>
       <p className="composer-queue-preview">{selected.preview || selected.text || '画像付きのメッセージ'}</p>
-      <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <QueueEditDialog face={face} item={selected} close={done} />, { label: '順番待ちのメッセージを編集' }) }}>編集</SheetRow>
+      <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <TextPromptDialog {...queueEditPrompt(face, selected, done)} />, { label: '順番待ちのメッセージを編集' }) }}>編集</SheetRow>
       <SheetRow icon="bolt" disabled={busy || !face} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
       <SheetRow icon="delete" disabled={busy || !face} onClick={() => { void act({ kind: 'remove' }) }}>取り消す</SheetRow>
       {items.length > 1 && <M3eButton onClick={() => setSelectedId(undefined)}>一覧に戻る</M3eButton>}
