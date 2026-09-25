@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useDsh, type ObservableSnapshot, type SessionFace, type SessionSnapshot } from './services.ts'
-import { ensureSessionOpen, journalOf } from './session-journal.ts'
+import { journalOf } from './session-journal.ts'
 import { useSnapshot } from './use-snapshot.ts'
 
 export type { AssistantStream, SessionJournal } from './session-journal.ts'
@@ -27,6 +27,7 @@ function missingSession(id: string, pending: boolean): ObservableSnapshot<Sessio
 /**
  * The controller owns scope lifetime, follow, reconnect baseline and pagination.
  * Every feature sees the same face and journal. No consumer starts its own feed.
+ * Reading a session never changes the selection; the conversation screen opens it.
  * `projection(key)` is a hook: call it unconditionally at component top level.
  */
 export function useSession(id: string) {
@@ -38,10 +39,6 @@ export function useSession(id: string) {
   const fallback = useMemo(() => missingSession(id, list.phase === 'pending'), [id, list.phase])
   const snapshot = useSnapshot(face ?? fallback)
   const journal = useSnapshot(journalOf(binding))
-
-  useEffect(() => {
-    ensureSessionOpen(sessions, binding)
-  }, [sessions, binding])
 
   const projection = useMemo(() => function useProjection<T = unknown>(key: string): T | undefined {
     return useSessionProjection<T>(face, key)

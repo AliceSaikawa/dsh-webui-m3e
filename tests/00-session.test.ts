@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createSessionJournal, ensureSessionOpen, foldSessionWindow, journalOf } from '../web/src/dsh/session-journal.ts'
-import { servicesOf, type ISessions, type SessionBinding, type SessionEventLikeEntry, type SessionEventWindow, type SessionWireEvent, type StreamChunk } from '../web/src/dsh/services.ts'
+import { createSessionJournal, foldSessionWindow, journalOf } from '../web/src/dsh/session-journal.ts'
+import { servicesOf, type SessionBinding, type SessionEventLikeEntry, type SessionEventWindow, type SessionWireEvent, type StreamChunk } from '../web/src/dsh/services.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 
 function durable(seq: number, type = 'user/message'): SessionEventLikeEntry {
@@ -103,22 +103,95 @@ test('multiple consumers share one journal and one source subscription; remount 
   unsubscribeC()
 })
 
-test('opening one session across consumers selects it once and never opens missing sessions', () => {
-  let current: string | undefined
-  let openState = 'cold'
-  let opens = 0
-  const sessions = {
-    list: { getSnapshot: () => ({ current }) },
-    open(id: string) { opens++; current = id; openState = 'loading' },
-  } as unknown as ISessions
-  const binding = { sessionId: 'session-1', session: { getSnapshot: () => ({ openState }) } } as unknown as SessionBinding
-  ensureSessionOpen(sessions, undefined)
-  ensureSessionOpen(sessions, binding)
-  ensureSessionOpen(sessions, binding)
-  assert.equal(opens, 1)
-  openState = 'error'
-  ensureSessionOpen(sessions, binding)
-  assert.equal(opens, 2)
+test('transient appends preserve records identity; durable append and replacement create new arrays', () => {
+  const firstEvent = durable(1)
+  const feed = source(window([firstEvent]))
+  const journal = createSessionJournal(feed)
+  const unsubscribe = journal.subscribe(() => {})
+  const before = journal.getSnapshot()
+  const firstChunk = transient({ type: 'text-delta', index: 0, text: '返' })
+  feed.replace({ ...window([firstEvent, firstChunk], 2), change: { kind: 'append', entries: [firstChunk] } })
+  const first = journal.getSnapshot()
+  assert.equal(first.records, before.records)
+  assert.notEqual(first.stream, before.stream)
+  const secondChunk = transient({ type: 'text-delta', index: 0, text: '事' }, 1.75)
+  feed.replace({ ...window([firstEvent, firstChunk, secondChunk], 3), change: { kind: 'append', entries: [secondChunk] } })
+  assert.equal(journal.getSnapshot().records, before.records)
+  assert.deepEqual(journal.getSnapshot().stream?.content, [{ type: 'text', text: '返事' }])
+  const secondEvent = durable(2)
+  const entries = [firstEvent, firstChunk, secondChunk, secondEvent]
+  feed.replace({ ...window(entries, 4), change: { kind: 'append', entries: [secondEvent] } })
+  const appended = journal.getSnapshot()
+  assert.notEqual(appended.records, before.records)
+  assert.deepEqual(appended.records.map(event => event.seq), [1, 2])
+  feed.replace(window(entries, 5))
+  assert.notEqual(journal.getSnapshot().records, appended.records)
+  assert.deepEqual(journal.getSnapshot().records, appended.records)
+  unsubscribe()
+})
+
+test('the first snapshot after a transient append still contains the whole durable window', () => {
+  const chunk = transient({ type: 'text-delta', index: 0, text: '途中' })
+  const feed = source({ ...window([durable(1), durable(2), chunk], 8), change: { kind: 'append', entries: [chunk] } })
+  const journal = createSessionJournal(feed)
+  assert.deepEqual(journal.getSnapshot().records.map(event => event.seq), [1, 2])
+  assert.deepEqual(journal.getSnapshot().stream?.content, [{ type: 'text', text: '途中' }])
+})
+
+test('resubscribing after missed revisions rebuilds durable history before transient reuse', () => {
+  const firstEvent = durable(1)
+  const feed = source(window([firstEvent]))
+  const journal = createSessionJournal(feed)
+  const unsubscribe = journal.subscribe(() => {})
+  const before = journal.getSnapshot()
+  unsubscribe()
+  const secondEvent = durable(2)
+  feed.replace({ ...window([firstEvent, secondEvent], 2), change: { kind: 'append', entries: [secondEvent] } })
+  const firstChunk = transient({ type: 'text-delta', index: 0, text: '返' }, 2.5)
+  const entries = [firstEvent, secondEvent, firstChunk]
+  feed.replace({ ...window(entries, 3), change: { kind: 'append', entries: [firstChunk] } })
+  const unsubscribeAgain = journal.subscribe(() => {})
+  const restored = journal.getSnapshot()
+  assert.notEqual(restored.records, before.records)
+  assert.deepEqual(restored.records.map(event => event.seq), [1, 2])
+  const secondChunk = transient({ type: 'text-delta', index: 0, text: '事' }, 2.75)
+  feed.replace({ ...window([...entries, secondChunk], 4), change: { kind: 'append', entries: [secondChunk] } })
+  assert.equal(journal.getSnapshot().records, restored.records)
+  unsubscribeAgain()
+})
+
+test('a durable update between the initial read and subscription is not lost', () => {
+  const firstEvent = durable(1)
+  const feed = source(window([firstEvent]))
+  const journal = createSessionJournal(feed)
+  journal.getSnapshot()
+  const secondEvent = durable(2)
+  feed.replace({ ...window([firstEvent, secondEvent], 2), change: { kind: 'append', entries: [secondEvent] } })
+  const unsubscribe = journal.subscribe(() => {})
+  const chunk = transient({ type: 'text-delta', index: 0, text: '途中' }, 2.5)
+  feed.replace({ ...window([firstEvent, secondEvent, chunk], 3), change: { kind: 'append', entries: [chunk] } })
+  assert.deepEqual(journal.getSnapshot().records.map(event => event.seq), [1, 2])
+  unsubscribe()
+})
+
+test('skipped transient revisions reuse records only when all durable references are unchanged', () => {
+  const firstEvent = durable(1)
+  const feed = source(window([firstEvent]))
+  const journal = createSessionJournal(feed)
+  const before = journal.getSnapshot()
+  const firstChunk = transient({ type: 'text-delta', index: 0, text: '返' })
+  feed.replace({ ...window([firstEvent, firstChunk], 2), change: { kind: 'append', entries: [firstChunk] } })
+  const secondChunk = transient({ type: 'text-delta', index: 0, text: '事' }, 1.75)
+  feed.replace({ ...window([firstEvent, firstChunk, secondChunk], 3), change: { kind: 'append', entries: [secondChunk] } })
+  const resumed = journal.getSnapshot()
+  assert.equal(resumed.records, before.records)
+  assert.deepEqual(resumed.stream?.content, [{ type: 'text', text: '返事' }])
+
+  const replacement = durable(1, 'assistant/message')
+  feed.replace(window([replacement], 4))
+  feed.replace({ ...window([replacement, firstChunk], 5), change: { kind: 'append', entries: [firstChunk] } })
+  assert.notEqual(journal.getSnapshot().records, resumed.records)
+  assert.deepEqual(journal.getSnapshot().records.map(event => event.type), ['assistant/message'])
 })
 
 test('service facade uses the Workspace controller and keeps raw namespaces intact', () => {

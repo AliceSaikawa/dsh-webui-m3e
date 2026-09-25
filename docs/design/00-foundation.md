@@ -121,7 +121,7 @@ web/src/
 
 - `connection`：`state`（`ObservableSnapshot`）、`reconnect()`
 - `sessions`：`list`（`SessionListState`）、`create`、`search`、`fork`、`refresh`、`openSubagent`、`scope`、`binding`
-- `workspaces`：`ctx.remote.workspace` の `list` と各操作
+- `workspaces`：`ctx.workspaces` の `list` と各操作。`ctx.remote.workspace` は RPC の名前空間で、画面からは使わない。
 - `remote`：`ctx.remote` をそのまま（型は緩いままでよい。各機能が自分のフォルダで型を書き直す）
 
 型は `SessionSummary`、`SessionListState`、`WorkspaceView`、`WorkspaceSnapshot`、`SessionSnapshot`、`QueuedMessage`、`SessionWireEvent`、`ContentBlock`、`RemoteResult`、`RemoteFailure` を用意します。中身は API の調査メモの §3、§8 に合わせます。
@@ -264,12 +264,15 @@ web/src/
 - `app/router.ts`：`useRoute()` は `path`（登録パターンまたは null）、`pathname`、`params`、`query`、`tab`、`definition` を返す。`params` はクエリー引数も含むが、パス引数を優先する。`RouteDef.render(params)` は ReactNode を返す。
 - `app/shell/index.ts`：`TabScaffold({ title?, topBar?, children, fab?, tab? })`、`PageScaffold({ title, children, actions?, footer? })`、`useConnection()`。後者は `state / connected / lastConnectedAt / reconnect` を返す。接続成功時刻が不明の切断画面では、架空の経過時間を出さず、保存済みデータと表示する。
 - `app/overlay/index.ts`：`openSheet / openFullSheet / openDialog` は `ReactNode` または `(close) => ReactNode` と任意の options を受け、何度呼んでも安全な `close(): void` を返す。options は `dismissible / label / interactionKey / sessionId`。応答シートは後の 2 項目も指定する。
+- OverlayHost はいちばん上の 1 枚だけを描く。シートから別のシートやダイアログを開くと、下のシートは閉じて開き直し、中の状態は保たれない。別のシートやダイアログを開く前に、下のシートを閉じる。
 - `TextPromptDialog({ title, initialValue?, label?, onConfirm, onCancel })` の `onConfirm(value)` は `void` または `Promise<void>`。保存成功後に閉じる責任は呼び出し元が持つ。`Markdown({ children, className? })` の children は Markdown 文字列。
 - `app/theme/index.ts`：`useAppearance()` は `system | light | dark`、`setAppearance(value)` と `backToClassic()`。`app/icons/Icon.tsx`：`Icon({ name, slot?, filled?, className? })`。
 - `dsh/services.ts`：`DshProvider / useDsh` と共有型。`dsh/session.ts`：`useSession(id)` は `face / snapshot / records / stream / projection / ctx`。開けない ID の `face` は undefined。`projection<T>(key)` はフックなので、最上位で無条件に呼ぶ。別名の `useSessionProjection(face, key)` も用意した。
+- `useSession(id)` は読むだけで、`sessions.open` を呼ばない。会話の選択は `ConversationScreen` が行う。会話画面以外で状態や履歴を読んでも、選択中の会話と完了の未読印を変えない。
 - `stream` は `{ attemptId, turn, step, chunks, content, usage?, finishReason? } | null`。`content` は復元済みの ContentBlock 配列。`finishReason` は文字列でなく `{ kind: ... }`。
 - `dsh/interactions.ts`：`initializeInteractions(ctx)` を描画前に一度呼ぶ。`usePendingInteractions / defer / resetDeferred / isPlanReview` を公開。pending の `deferred` は boolean、`answer()` は `Promise<void>`。`presentInteraction(pending, { from })` の戻り値は `close(): void`。会話に再入場したときだけ deferred を解除し、チャット／トレース切り替えでは解除しない。
 - `dsh/mock/kit.ts`：MockKit の型入口。すべての指定関数を実装した。`emit` と `streamAssistant` は Promise を返す。`emit` の宛先は payload の `agent`（セッション ID）または `sessionId` で指定する。`addWorkspace` は WorkspaceView、`addSession` は SessionSummary と履歴を受け取る。`updateList` は新しい一覧を返す形と渡された一覧を変更する形の両方に対応する。`scenario` は名前に合う URL のときだけ実行する。
+- MockKit に `setSessionState(sessionId, patch: Partial<SessionSnapshot>): void`、`removeSession(sessionId): void`、`removeWorkspace(workspaceId): void` を追加した。`lastAgentError`、`openState: 'error'` と `openError`、`promptError` は `setSessionState` で設定できる。共通データを消すシナリオには後の 2 関数を使う。既存の 9 関数の引数と戻り値は維持した。偽データに `ctx.remote.workspace` は置かない。
 
 #### 未確認事項を静的に照合した結果と判断
 
@@ -290,3 +293,34 @@ web/src/
 - `pnpm typecheck` 成功、`pnpm test` は 45 件成功、`pnpm build` 成功。起動グラフなどの既存テストも維持。本番 JavaScript に偽データの固有文字列が含まれないことを確認した。
 - 390×664 の Chromium で `?mock` の一覧表示と実行エラーがないことを確認した。続く一連の画面操作の検証コマンドは「Opaque shell wrappers」として拒否され、停止。検証内容を一時スクリプトとして実行する再試行の許可を確認中。
 - 残る注意：既存 DSH store 配下の use-sync-external-store 1.2.0 には React 19 の peer 範囲警告がある。本番 JavaScript は約 881 KB、同梱フォントは約 4 MB で、Vite の chunk サイズ警告がある。実物の DSH 接続と iOS 実機・Simulator のキーボード検証は段階 3 に残す。
+
+### 2026-09-25：レビュー指摘 1〜6 の修正
+
+- 偽データの `remote.workspace = workspaces` を削除した。`ctx.remote.workspace` は undefined になり、画面が誤った窓口を使うと偽データでも動かない。明示された例外の範囲で、本文の workspaces の説明も `ctx.workspaces` に直した。
+- MockKit に上記の状態設定と削除の 3 関数を追加した。削除したセッションは一覧、ワークスペースの sessionIds、scope / binding から消える。選択・送信前 echo・待機列・生成中の応答・遅延タイマーも片付け、古い face や同じ ID の再追加から古い処理が復活しないようにした。
+- `useSession` の戻り値は維持し、開く副作用と `ensureSessionOpen` を削除した。会話の選択は `ConversationScreen` だけが行う。存在しない・削除済み・openState が error の face では開く操作を行わない。これにより、画面を描く前に設定した open-error シナリオも上書きされない。
+- open error では `remoteErrorMessage(snapshot.openError)` と `back()` を呼ぶ「一覧に戻る」を表示する。「もう一度開く」を削除し、開けていない会話には Composer も表示しない。
+- transient だけの append では直前の records 配列を再利用する。revision が飛んだ場合は確定イベントの参照と件数を照合し、同じときだけ再利用する。初回や途中で確定イベントが増えた場合は窓全体から復元する。event の追加・replace は新しい配列にし、stream は毎回復元する。
+- OverlayHost のコードは変更せず、下のシートの状態が保たれない制約と、別のシートやダイアログを開く前に閉じる手順を「段階 2 が使う公開入口」に追記した。
+
+#### 静的に確かめたことと、実装上の判断
+
+- インストール済み `dsh-api-session-controller/lib/client.js` の `open(id)` は `manager.select(id)` を呼ぶ。同 `lib/types/client/sessions/manager.js` の select は選択中 ID を変え、`completedNotifications.delete(sessionId)` で未読の完了印を消す。一覧になく保持された子セッションのアドレスもない ID は例外になる。そのため、状態を読むフックからは選択を呼ばない。
+- `client.js` の followCurrent は `current === this.watched` なら終了する。同じ ID の open だけで再読み込みできるとは扱わず、再試行ボタンは設けない。実物は読み取りだけで、DSH は起動していない。
+- MockKit の既存 9 関数の引数・戻り値と `dsh/mock/kit.ts` の型公開は維持した。削除を繰り返しても安全にし、セッションがない場合の `setSessionState` は既存 kit と同様に誤った ID として例外にする。sessionId は snapshot の patch で変更できない。
+
+#### 今回の検証
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：55 件すべて成功。MockKit の状態設定・削除・誤った remote の不在と、records の配列同一性・event 追加・replace・取りこぼした revision の復元を検証した。React の描画テストは追加していない。
+- `pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 884 KB、同梱フォント約 4 MB）。
+- 既存の 5173 番の Vite が停止していたため、この worktree で `pnpm dev` を起動した。IPv6 の localhost で待ち受けていたので、表示された `http://localhost:5173/m3e/` を使用した。
+- 390×664 の Chromium で `?mock` の「一覧 / 検索 / 対応待ち / 設定」の 4 画面を操作した。README の会話でチャット／トレースの切り替え、入力欄の表示切り替え、← による一覧への復帰が成功した。
+- `?mock&scenario=approval-demo#/s/readme-review` で「ツールの承認」シートが開いた。`?mock#/s/missing` で「会話が見つかりません。」と「一覧に戻る」が表示され、押すと一覧へ戻った。再試行ボタンと入力欄は表示されない。各操作でブラウザーの実行時エラーはなかった。
+- 最初のブラウザー検証は IPv4 宛ての接続失敗、次は Web Component の外側にあると仮定した aria-current の検証が失敗した。Vite の実際の待受とアクセシビリティ情報を確認し、表示された URL とボタン・見出しで再検証した。今回、操作の拒否や禁止事項の回避はない。
+- 担当外で必要になった変更：なし。ほかの設計書、main、DSH 本体は変更していない。
+
+#### 段階 3 で確かめること
+
+- 本物の DSH で、会話を開けなかったあとに再試行するための公開された操作があるか、別の会話へ移動して戻ると再読み込みされるかを確かめる。同じ ID の `sessions.open` の呼び直しで復旧できるかは、静的なコードでは見込めないため、実動作の確認を残す。
+- 会話画面に入ったときだけ選択中の会話と完了の未読印が更新され、ほかの画面で `useSession` を読むだけでは変わらないことを実物で確かめる。従来の DSH 接続・iOS キーボードの確認も段階 3 に残る。

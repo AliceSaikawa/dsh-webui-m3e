@@ -8,6 +8,8 @@ import type { PendingSubmissionRetirement, SessionWireEvent } from '../web/src/d
 test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の controller 契約で公開する', () => {
   const ctx = createMockContext()
   try {
+    assert.equal(ctx.remote.workspace, undefined)
+    assert.equal(Object.hasOwn(ctx.remote, 'workspace'), false)
     assert.deepEqual(ctx.workspaces.list.getSnapshot().items.map((item) => item.title), ['dsh-webui-m3e', 'deepseek-harness', 'notes'])
     assert.equal(ctx.sessions.list.getSnapshot().ids.length, 2)
     const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
@@ -209,5 +211,149 @@ test('全偽履歴のメッセージは JSON として保存できる', () => {
     const records: SessionWireEvent[] = []
     for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow(ctx.sessions.binding(sessionId)!.eventSource.getSnapshot()).records)
     assert.deepEqual(JSON.parse(JSON.stringify(records)), records)
+  } finally { ctx.dispose() }
+})
+
+test('機能のシナリオから会話のエラー状態を通知し、一覧の実行状態も合わせる', () => {
+  const ctx = createMockContext()
+  try {
+    const binding = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
+    const failure = { code: 'mock/open-failed', message: '会話を読み込めません。', details: {} }
+    const promptError = { op: 'send' as const, error: { code: 'mock/send-failed', message: '送信できません。', details: {} } }
+    let changes = 0
+    const unsubscribe = binding.session.subscribe(() => { changes++ })
+    ctx.mock.setSessionState(binding.sessionId, { lastAgentError: '応答の生成に失敗しました。', openState: 'error', openError: failure, promptError, running: false })
+    const state = binding.session.getSnapshot()
+    assert.equal(state.lastAgentError, '応答の生成に失敗しました。')
+    assert.equal(state.openState, 'error')
+    assert.deepEqual(state.openError, failure)
+    assert.deepEqual(state.promptError, promptError)
+    assert.equal(state.running, false)
+    assert.equal(ctx.sessions.list.getSnapshot().byId[binding.sessionId]?.running, false)
+    assert.equal(foldSessionWindow(binding.eventSource.getSnapshot()).stream, null)
+    assert.equal(changes, 1)
+    failure.message = '変更済み'
+    assert.equal(binding.session.getSnapshot().openError?.message, '会話を読み込めません。')
+    ctx.mock.setSessionState(binding.sessionId, { lastAgentError: null, openState: 'open', openError: null, promptError: null })
+    assert.equal(binding.session.getSnapshot().promptError, null)
+    unsubscribe()
+  } finally { ctx.dispose() }
+})
+
+test('removeSession は選択・一覧・ワークスペース・scope と送信 echo をまとめて片付ける', async () => {
+  const ctx = createMockContext()
+  try {
+    const sessionId = MOCK_IDS.sessions.readme
+    const binding = ctx.sessions.binding(sessionId)!
+    ctx.sessions.open(sessionId)
+    await ctx.workspaces.archiveSession(sessionId)
+    ctx.mock.updateList((state) => {
+      state.jobsBySession = { [sessionId]: [] }
+      state.subagentsByParent = { [sessionId]: { state: 'ready', error: null } }
+    })
+    const retirements: PendingSubmissionRetirement[] = []
+    const echo = binding.session.beginSubmission({ mode: 'queue', text: '送信前の入力', attachments: [], onRetire: (value) => retirements.push(value) })
+    ctx.mock.removeSession(sessionId)
+    ctx.mock.removeSession(sessionId)
+    echo.abandon()
+    const list = ctx.sessions.list.getSnapshot()
+    assert.equal(list.ids.includes(sessionId), false)
+    assert.equal(list.byId[sessionId], undefined)
+    assert.equal(list.jobsBySession[sessionId], undefined)
+    assert.equal(list.subagentsByParent[sessionId], undefined)
+    assert.equal(list.current, undefined)
+    assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(sessionId), false)
+    assert.ok(ctx.workspaces.list.getSnapshot().items.every((item) => !item.sessionIds.includes(sessionId)))
+    assert.equal(ctx.sessions.scope(sessionId), undefined)
+    assert.equal(ctx.sessions.scopeOf(binding.ctx), undefined)
+    assert.equal(ctx.sessions.sessionOf(binding.ctx), undefined)
+    assert.equal(ctx.sessions.binding(sessionId), undefined)
+    assert.equal(binding.session.getSnapshot().removed, true)
+    assert.equal(binding.session.getSnapshot().pendingSubmissions.length, 0)
+    assert.deepEqual(retirements, [{ reason: 'failed' }])
+    assert.equal((await binding.session.rename('復活しない')).ok, false)
+    assert.equal((await binding.session.prompt([{ type: 'text', text: '復活しない' }], 'queue')).ok, false)
+    assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId], undefined)
+  } finally { ctx.dispose() }
+})
+
+test('削除した会話のストリーム・遅延イベント・ページングは同じ ID の新しい会話に届かない', { timeout: 1000 }, async () => {
+  const ctx = createMockContext({ pageSize: 4 })
+  try {
+    const sessionId = MOCK_IDS.sessions.readme
+    const binding = ctx.sessions.binding(sessionId)!
+    const summary = { ...ctx.sessions.list.getSnapshot().byId[sessionId]!, running: false, blank: true }
+    const on = ctx.remote.$on as (event: string, handler: () => unknown) => () => void
+    let events = 0
+    on('approval/request', () => { events++; return 'allowed-once' })
+    const streaming = ctx.mock.streamAssistant(sessionId, '削除前の生成', { chunkMs: 10_000 })
+    const emitted = ctx.mock.emit('approval/request', { agent: sessionId }, { afterMs: 10_000 })
+    const loading = binding.session.loadOlder()
+    ctx.mock.removeSession(sessionId)
+    ctx.mock.addSession(summary, [])
+    await Promise.all([streaming, emitted, loading])
+    assert.equal(events, 0)
+    assert.deepEqual(binding.eventSource.getSnapshot().entries, [])
+    assert.equal(binding.session.getSnapshot().loadingOlder, false)
+    const replacement = ctx.sessions.binding(sessionId)!
+    assert.notEqual(replacement, binding)
+    assert.equal(replacement.session.getSnapshot().running, false)
+    assert.deepEqual(foldSessionWindow(replacement.eventSource.getSnapshot()), { records: [], stream: null })
+  } finally { ctx.dispose() }
+})
+
+test('停止後の待機列タイマーは削除した会話を復活させない', async () => {
+  const ctx = createMockContext()
+  try {
+    const sessionId = MOCK_IDS.sessions.approval
+    const binding = ctx.sessions.binding(sessionId)!
+    await binding.session.prompt([{ type: 'text', text: '削除前の待機列' }], 'queue')
+    await binding.session.cancel()
+    ctx.mock.removeSession(sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    assert.equal(ctx.sessions.binding(sessionId), undefined)
+    assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId], undefined)
+    assert.equal(binding.session.getSnapshot().queue.length, 0)
+    assert.equal(binding.session.getSnapshot().running, false)
+    assert.equal(binding.session.getSnapshot().removed, true)
+  } finally { ctx.dispose() }
+})
+
+test('サブエージェントの親または選択中の子を削除すると選択アドレスも解除する', () => {
+  const ctx = createMockContext()
+  try {
+    const parentSessionId = MOCK_IDS.sessions.readme
+    ctx.mock.addSession({ id: 'child', parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: true, updatedAt: 0 }, [])
+    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child' })
+    assert.equal(ctx.sessions.list.getSnapshot().currentAddress?.childSessionId, 'child')
+    ctx.mock.removeSession(parentSessionId)
+    assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    assert.equal(ctx.sessions.binding('child')!.session.getSnapshot().subagent?.parentAvailable, false)
+    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child' })
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    ctx.mock.addSession({ id: 'second-child', parentId: MOCK_IDS.sessions.approval, origin: 'subagent', displayTitle: '別の子の会話', running: false, blank: true, updatedAt: 0 }, [])
+    ctx.sessions.openSubagent({ parentSessionId: MOCK_IDS.sessions.approval, childSessionId: 'second-child' })
+    ctx.mock.removeSession('second-child')
+    assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+  } finally { ctx.dispose() }
+})
+
+test('機能の空状態シナリオで共通の全セッションと全ワークスペースを除去できる', () => {
+  const ctx = createMockContext({ scenario: 'empty', extensions: [{ extendMock(kit) {
+    kit.scenario('empty', () => {
+      for (const sessionId of Object.values(MOCK_IDS.sessions)) kit.removeSession(sessionId)
+      for (const workspaceId of Object.values(MOCK_IDS.workspaces)) kit.removeWorkspace(workspaceId)
+    })
+  } }] })
+  try {
+    assert.deepEqual(ctx.sessions.list.getSnapshot().ids, [])
+    assert.deepEqual(ctx.sessions.list.getSnapshot().byId, {})
+    assert.deepEqual(ctx.workspaces.list.getSnapshot().items, [])
+    for (const sessionId of Object.values(MOCK_IDS.sessions)) {
+      assert.equal(ctx.sessions.scope(sessionId), undefined)
+      assert.equal(ctx.sessions.binding(sessionId), undefined)
+    }
   } finally { ctx.dispose() }
 })

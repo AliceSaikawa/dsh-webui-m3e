@@ -17,6 +17,10 @@ export interface MockKit {
   emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
   streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number }): Promise<void>
   setProjection(sessionId: string, key: string, value: unknown): void
+  /** Set lifecycle/error scenarios without changing a session's stable identity. */
+  setSessionState(sessionId: string, patch: Partial<SessionSnapshot>): void
+  removeSession(sessionId: string): void
+  removeWorkspace(workspaceId: string): void
   patch(path: string, impl: unknown): void
   updateList(update: (state: SessionListState) => SessionListState | void): void
   scenario(name: string, setup: (kit: MockKit) => void): void
@@ -50,7 +54,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const id = (prefix: string) => `${prefix}-${++serial}`
   const models = new Map<string, SessionModel>()
   const handlers = new Map<string, Set<EventHandler>>()
-  const timers = new Map<ReturnType<typeof setTimeout>, () => void>()
+  const timers = new Map<ReturnType<typeof setTimeout>, { resolve(): void; owner?: SessionModel }>()
   const scenarios = new Map<string, (kit: MockKit) => void>()
   const attachments = new Map<string, { attachment: ImageAttachmentRef; data: Uint8Array }>([
     [imageAttachment.attachmentId, { attachment: imageAttachment, data: Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0)) }],
@@ -61,21 +65,32 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const list = observable<SessionListState>({ ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
   const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null })
 
-  const delay = (ms: number) => new Promise<void>((resolve) => {
-    if (disposed) { resolve(); return }
+  const isActive = (model: SessionModel) => !disposed && models.get(model.summary.id) === model
+  const delay = (ms: number, owner?: SessionModel) => new Promise<void>((resolve) => {
+    if (disposed || (owner && !isActive(owner))) { resolve(); return }
     const timer = setTimeout(() => { timers.delete(timer); resolve() }, Math.max(0, ms))
-    timers.set(timer, resolve)
+    timers.set(timer, { resolve, owner })
   })
+  function cancelTimers(owner: SessionModel) {
+    for (const [timer, pending] of timers) {
+      if (pending.owner !== owner) continue
+      clearTimeout(timer)
+      timers.delete(timer)
+      pending.resolve()
+    }
+  }
   const getModel = (sessionId: string): SessionModel => {
     const model = models.get(sessionId)
     if (!model) throw new Error(`偽のセッションが見つかりません: ${sessionId}`)
     return model
   }
   function updateSummary(model: SessionModel, patch: Partial<SessionSummary>) {
+    if (!isActive(model)) return
     model.summary = { ...model.summary, ...patch }
     list.update((state) => ({ ...state, byId: { ...state.byId, [model.summary.id]: model.summary } }))
   }
   function publish(model: SessionModel, entries: readonly SessionEventLikeEntry[], change: SessionEventChange) {
+    if (!isActive(model)) return
     model.events.update((window) => ({ entries, change, hasMore: model.start > 0, revision: window.revision + 1 }))
   }
   function replaceWindow(model: SessionModel) {
@@ -89,12 +104,14 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   function append(model: SessionModel, type: string, data: unknown): SessionWireEvent {
     const event: SessionWireEvent = { type, data: json(data), seq: (model.records.at(-1)?.seq ?? -1) + 1, time: Date.now(), ...(['user/message', 'assistant/message', 'tool/result', 'system/message'].includes(type) ? { surfaceOp: 'append' } : {}) }
+    if (!isActive(model)) return event
     model.records.push(event)
     const entry: SessionEventLikeEntry = { type: 'event', event }
     publish(model, [...model.events.getSnapshot().entries, entry], { kind: 'append', entries: [entry] })
     return event
   }
   function running(model: SessionModel, value: boolean) {
+    if (!isActive(model)) return
     model.snapshot.update((state) => ({ ...state, running: value, blank: false }))
     updateSummary(model, { running: value, blank: false, updatedAt: Date.now() })
   }
@@ -126,10 +143,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     publish(model, entry ? [...entries, entry] : entries, { kind: 'settle-assistant', attemptId, ...(entry ? { entry } : {}) })
   }
   function advanceQueue(model: SessionModel) {
+    if (!isActive(model)) return
     const first = model.snapshot.getSnapshot().queue[0]
     if (!first) return
     model.snapshot.update((state) => ({ ...state, queue: state.queue.slice(1) }))
     beginTurn(model, first.content, first.rpcId)
+    if (!isActive(model)) return
     void kit.streamAssistant(model.summary.id, '順番待ちのメッセージを受け取りました。', { chunkMs: 30 })
   }
   function project(model: SessionModel, key: string): MutableSnapshot<unknown> {
@@ -155,7 +174,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       workspaceList.update((state) => ({ ...state, items: state.items.map((item) => item.workspaceId === workspaceId ? next : item) }))
       return next
     },
-    async delete(workspaceId) { workspaceList.update((state) => ({ ...state, items: state.items.filter((item) => item.workspaceId !== workspaceId) })) },
+    async delete(workspaceId) { kit.removeWorkspace(workspaceId) },
     async insertBefore(workspaceId, beforeWorkspaceId) {
       workspaceList.update((state) => {
         const target = state.items.find((item) => item.workspaceId === workspaceId)
@@ -198,7 +217,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       model.snapshot.update((state) => ({ ...state, openState: 'open' }))
       list.update((state) => ({ ...state, current: sessionId, currentAddress: undefined }))
     },
-    openSubagent(address) { sessions.open(address.childSessionId); list.update((state) => ({ ...state, currentAddress: address })) },
+    openSubagent(address) {
+      if (!models.has(address.childSessionId) || !models.has(address.parentSessionId)) return
+      sessions.open(address.childSessionId)
+      list.update((state) => ({ ...state, currentAddress: address }))
+    },
     subagentAddress(sessionId) { const parentSessionId = models.get(sessionId)?.summary.parentId; return parentSessionId ? { parentSessionId, childSessionId: sessionId } : undefined },
     setSubagentCatalogOpen() { /* The in-memory catalog has no subscription cost. */ },
     async refreshSubagents() { list.update((state) => ({ ...state })) },
@@ -236,7 +259,6 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     listeners.add(handler)
     return () => { listeners.delete(handler) }
   }
-  remote.workspace = workspaces
 
   const ctx: MockContext = {
     connection: {
@@ -256,7 +278,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     get mock() { return kit },
     dispose() {
       disposed = true
-      for (const [timer, resolve] of timers) { clearTimeout(timer); resolve() }
+      for (const [timer, pending] of timers) { clearTimeout(timer); pending.resolve() }
       timers.clear()
       handlers.clear()
       for (const model of models.values()) {
@@ -285,11 +307,16 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         projections: { faceOf: (key) => project(model, key) },
         beginSubmission(input) {
           const requestId = id('request')
+          if (!isActive(model)) {
+            input.onRetire?.({ reason: 'failed' })
+            return { requestId, abandon() {} }
+          }
           model.submissions.set(requestId, input)
           snapshot.update((state) => ({ ...state, pendingSubmissions: [...state.pendingSubmissions, { requestId, placement: state.running ? (input.mode === 'steer' ? 'steering' : 'queued') : 'transcript', time: Date.now(), text: input.text, attachments: input.attachments }] }))
           return { requestId, abandon: () => retire(model, requestId, { reason: 'failed' }) }
         },
         async prompt(parts, mode, signal, requestId) {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           snapshot.update((state) => ({ ...state, promptAttempted: true, promptError: null }))
           if (signal?.aborted || connectionState.getSnapshot() !== 'connected') {
             const result = failure(signal?.aborted ? 'rpc/aborted' : 'connection/disconnected', signal?.aborted ? '送信を取り消しました。' : '接続が切れています。')
@@ -322,12 +349,13 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           } else {
             if (snapshot.getSnapshot().running) { settleAttempt(model); append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } }) }
             beginTurn(model, content, requestId)
-            void kit.streamAssistant(summary.id, 'メッセージを受け取りました。これは偽データによる応答です。', { chunkMs: 30 })
+            if (isActive(model)) void kit.streamAssistant(summary.id, 'メッセージを受け取りました。これは偽データによる応答です。', { chunkMs: 30 })
           }
           retire(model, requestId, { reason: 'observed', attachments: content.flatMap((block) => block.type === 'image' || block.type === 'file' ? [block.attachment] : []) })
           return accepted()
         },
         async updateQueue(itemId, action) {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const item = snapshot.getSnapshot().queue.find((row) => row.id === itemId)
           if (!item) return failure('session/queue-not-found', '順番待ちのメッセージが見つかりません。')
           if (action.kind === 'edit') snapshot.update((state) => ({ ...state, queue: state.queue.map((row) => row.id === itemId ? { ...row, content: action.content, text: textOf(action.content), preview: textOf(action.content) } : row) }))
@@ -337,19 +365,21 @@ export function createMockContext(options: MockOptions = {}): MockContext {
               settleAttempt(model)
               append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
               beginTurn(model, item.content, item.rpcId)
-              void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
+              if (isActive(model)) void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
             }
           }
           return accepted()
         },
         async cancel() {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           settleAttempt(model)
           if (snapshot.getSnapshot().running) append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
           running(model, false)
-          void delay(0).then(() => { if (!disposed) advanceQueue(model) })
+          void delay(0, model).then(() => { if (isActive(model)) advanceQueue(model) })
           return accepted()
         },
         async rename(title) {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const normalized = title.trim()
           if (!normalized) return failure('session/invalid-title', '題名を入力してください。')
           updateSummary(model, { title: normalized, displayTitle: normalized })
@@ -357,17 +387,19 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           return success({ title: normalized, seq: event.seq })
         },
         async loadOlder() {
-          if (model.start === 0 || snapshot.getSnapshot().loadingOlder) return
+          if (!isActive(model) || model.start === 0 || snapshot.getSnapshot().loadingOlder) return
           snapshot.update((state) => ({ ...state, loadingOlder: true }))
           await Promise.resolve()
+          if (!isActive(model)) return
           const previousStart = model.start
           model.start = Math.max(0, model.start - pageSize)
           const older: SessionEventLikeEntry[] = model.records.slice(model.start, previousStart).map((event) => ({ type: 'event', event }))
           publish(model, [...older, ...eventSource.getSnapshot().entries], { kind: 'prepend', entries: older })
           snapshot.update((state) => ({ ...state, hasMore: model.start > 0, loadingOlder: false }))
         },
-        async loadThrough(seq) { while (model.start > 0 && (model.records[model.start]?.seq ?? 0) > seq) await face.loadOlder() },
+        async loadThrough(seq) { while (isActive(model) && model.start > 0 && (model.records[model.start]?.seq ?? 0) > seq) await face.loadOlder() },
         async command(line) {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
           if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
           const commandId = id('command')
@@ -378,6 +410,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           return success({ matched: true })
         },
         async readAttachment(attachmentId) {
+          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const value = attachments.get(attachmentId)
           return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('attachment/not-found', '画像が見つかりません。')
         },
@@ -392,11 +425,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       remote[namespace] = impl
     },
     async emit(event, payload, options = {}) {
-      if (options.afterMs !== undefined) await delay(options.afterMs)
-      if (disposed) return undefined
       const input = payload as { agent?: string | { id?: string }; sessionId?: string } | null
       const sessionId = typeof input?.agent === 'string' ? input.agent : input?.agent?.id ?? input?.sessionId
-      const scope = sessionId ? sessions.scope(sessionId) : undefined
+      const owner = sessionId ? models.get(sessionId) : undefined
+      if (options.afterMs !== undefined) await delay(options.afterMs, owner)
+      if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
+      const scope = owner?.binding.ctx
       const selected = [...(handlers.get(event) ?? [])]
       if (event !== 'approval/request' && event !== 'user-questions/request') {
         return Promise.all(selected.map((handler) => handler.call(scope ?? { remote }, payload, async () => undefined)))
@@ -414,18 +448,20 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       model.attempt = attempt
       running(model, true)
       const chunk = (value: StreamChunk) => {
+        if (!isActive(model) || model.attempt !== attempt) return false
         attempt.chunks.push(value)
         const entry: SessionEventLikeEntry = { type: 'transient', event: { type: 'assistant/live-chunk', seq: (model.records.at(-1)?.seq ?? -1) + attempt.chunks.length / (attempt.chunks.length + 1), time: Date.now(), data: { attemptId: attempt.id, turn: attempt.turn, step: attempt.step, chunk: value } } }
         publish(model, [...model.events.getSnapshot().entries, entry], { kind: 'append', entries: [entry] })
+        return isActive(model) && model.attempt === attempt
       }
-      chunk({ type: 'block-start', index: 0, blockType: 'text' })
+      if (!chunk({ type: 'block-start', index: 0, blockType: 'text' })) return
       for (const character of text) {
-        await delay(streamOptions.chunkMs ?? 40)
-        if (disposed || model.attempt !== attempt) return
-        chunk({ type: 'text-delta', index: 0, text: character })
+        await delay(streamOptions.chunkMs ?? 40, model)
+        if (!isActive(model) || model.attempt !== attempt) return
+        if (!chunk({ type: 'text-delta', index: 0, text: character })) return
       }
-      chunk({ type: 'block-end', index: 0, block: { type: 'text', text } })
-      chunk({ type: 'finish', reason: { kind: 'stop' } })
+      if (!chunk({ type: 'block-end', index: 0, block: { type: 'text', text } })) return
+      if (!chunk({ type: 'finish', reason: { kind: 'stop' } })) return
       const event: SessionWireEvent = { type: 'assistant/message', seq: (model.records.at(-1)?.seq ?? -1) + 1, time: Date.now(), surfaceOp: 'append', data: json({ turn: attempt.turn, step: attempt.step, message: { id: id('message'), role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text }] }, stream: attempt.chunks.map((value) => ({ type: 'chunk', time: Date.now(), chunk: value })) }) }
       model.records.push(event)
       settleAttempt(model, event)
@@ -438,6 +474,60 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const model = getModel(sessionId)
       project(model, key).set(value)
       updateSummary(model, { projectionValues: { ...model.summary.projectionValues, [key]: value } })
+    },
+    setSessionState(sessionId, patch) {
+      const model = getModel(sessionId)
+      const next = structuredClone(patch)
+      if (next.running === false) settleAttempt(model)
+      model.snapshot.update((state) => ({ ...state, ...next, sessionId }))
+      if (next.running !== undefined || next.blank !== undefined) {
+        updateSummary(model, {
+          ...(next.running === undefined ? {} : { running: next.running }),
+          ...(next.blank === undefined ? {} : { blank: next.blank }),
+        })
+      }
+    },
+    removeSession(sessionId) {
+      const model = models.get(sessionId)
+      if (!model) return
+      // Invalidate the instance before waking async work or invoking retirement callbacks.
+      models.delete(sessionId)
+      model.attempt = undefined
+      cancelTimers(model)
+      model.start = 0
+      model.snapshot.update((state) => ({
+        ...state, removed: true, running: false, queue: [], loadingOlder: false,
+        awaitingFirstTurn: false, hasMore: false, openState: 'error',
+        openError: { code: 'session/not-found', message: '会話が見つかりません。', details: {} },
+      }))
+      model.events.update((window) => ({ entries: [], hasMore: false, revision: window.revision + 1, change: { kind: 'replace', entries: [] } }))
+      workspaceList.update((state) => ({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter((id) => id !== sessionId),
+        items: state.items.map((item) => ({ ...item, sessionIds: item.sessionIds.filter((id) => id !== sessionId) })),
+      }))
+      list.update((state) => {
+        const byId = { ...state.byId }
+        const jobsBySession = { ...state.jobsBySession }
+        const subagentsByParent = { ...state.subagentsByParent }
+        delete byId[sessionId]
+        delete jobsBySession[sessionId]
+        delete subagentsByParent[sessionId]
+        if (model.summary.parentId) delete subagentsByParent[model.summary.parentId]
+        const selectedAddressRemoved = state.currentAddress?.parentSessionId === sessionId || state.currentAddress?.childSessionId === sessionId
+        return {
+          ...state, ids: state.ids.filter((id) => id !== sessionId), byId, jobsBySession, subagentsByParent,
+          current: state.current === sessionId || selectedAddressRemoved ? undefined : state.current,
+          currentAddress: selectedAddressRemoved ? undefined : state.currentAddress,
+        }
+      })
+      for (const other of models.values()) {
+        if (other.summary.parentId === sessionId) other.snapshot.update((state) => ({ ...state, subagent: state.subagent ? { ...state.subagent, parentAvailable: false } : null }))
+      }
+      for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
+    },
+    removeWorkspace(workspaceId) {
+      workspaceList.update((state) => ({ ...state, items: state.items.filter((item) => item.workspaceId !== workspaceId) }))
     },
     patch(path, impl) {
       const segments = path.split('.')

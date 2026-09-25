@@ -1,5 +1,5 @@
 import type {
-  ContentBlock, FinishReason, ISessions, ObservableSnapshot, SessionBinding, SessionEventWindow,
+  ContentBlock, FinishReason, ObservableSnapshot, SessionBinding, SessionEventWindow,
   SessionWireEvent, StreamChunk, TokenUsage,
 } from './services.ts'
 
@@ -30,17 +30,33 @@ export const emptyJournalSource: ObservableSnapshot<SessionJournal> = {
  * block-end is authoritative; stream indices are block indices, not append order.
  */
 export function foldSessionWindow(window: SessionEventWindow): SessionJournal {
-  const records: SessionWireEvent[] = []
+  return { records: readRecords(window), stream: foldStream(window) }
+}
+
+function readRecords(window: SessionEventWindow): readonly SessionWireEvent[] {
+  return window.entries.flatMap(entry => entry.type === 'event' ? [entry.event] : [])
+    .sort((a, b) => a.seq - b.seq)
+}
+
+/** Check the complete ordered window when the latest delta cannot cover a gap. */
+function hasSameRecords(window: SessionEventWindow, records: readonly SessionWireEvent[]): boolean {
+  let index = 0
+  for (const entry of window.entries) {
+    if (entry.type !== 'event') continue
+    if (entry.event !== records[index]) return false
+    index++
+  }
+  return index === records.length
+}
+
+function foldStream(window: SessionEventWindow): AssistantStream | null {
   const blocks = new Map<number, ContentBlock>()
   let active: { attemptId: string; turn: number; step: number } | undefined
   let chunks: StreamChunk[] = []
   let usage: TokenUsage | undefined
   let finishReason: FinishReason | undefined
   for (const entry of window.entries) {
-    if (entry.type === 'event') {
-      records.push(entry.event)
-      continue
-    }
+    if (entry.type === 'event') continue
     const { attemptId, turn, step, chunk } = entry.event.data
     if (active?.attemptId !== attemptId) {
       active = { attemptId, turn, step }
@@ -86,15 +102,11 @@ export function foldSessionWindow(window: SessionEventWindow): SessionJournal {
         break
     }
   }
-  records.sort((a, b) => a.seq - b.seq)
-  return {
-    records,
-    stream: active === undefined ? null : {
-      ...active, chunks,
-      content: [...blocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block),
-      ...(usage === undefined ? {} : { usage }),
-      ...(finishReason === undefined ? {} : { finishReason }),
-    },
+  return active === undefined ? null : {
+    ...active, chunks,
+    content: [...blocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block),
+    ...(usage === undefined ? {} : { usage }),
+    ...(finishReason === undefined ? {} : { finishReason }),
   }
 }
 
@@ -107,7 +119,17 @@ export function createSessionJournal(source: ObservableSnapshot<SessionEventWind
   const getSnapshot = () => {
     const window = source.getSnapshot()
     if (window !== lastWindow) {
-      value = foldSessionWindow(window)
+      // A change describes only the latest revision. If revisions were missed,
+      // check every durable reference before reusing records; an earlier delta
+      // may have added or replaced a durable event. First reads always rebuild.
+      const transientAppend = lastWindow !== undefined
+        && window.change.kind === 'append'
+        && window.change.entries.every(entry => entry.type === 'transient')
+        && (window.revision === lastWindow.revision + 1 || hasSameRecords(window, value.records))
+      value = {
+        records: transientAppend ? value.records : readRecords(window),
+        stream: foldStream(window),
+      }
       lastWindow = window
     }
     return value
@@ -145,13 +167,4 @@ export function journalOf(binding: SessionBinding | undefined): ObservableSnapsh
     journals.set(binding.eventSource, journal)
   }
   return journal
-}
-
-/** Opening the selection is the controller's follow signal, never a second RPC. */
-export function ensureSessionOpen(sessions: ISessions, binding: SessionBinding | undefined): void {
-  if (binding === undefined) return
-  const snapshot = binding.session.getSnapshot()
-  if (sessions.list.getSnapshot().current !== binding.sessionId || snapshot.openState === 'cold' || snapshot.openState === 'error') {
-    sessions.open(binding.sessionId)
-  }
 }
