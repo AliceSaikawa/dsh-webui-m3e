@@ -267,10 +267,12 @@ web/src/
 - OverlayHost はいちばん上の 1 枚だけを描く。シートから別のシートやダイアログを開くと、下のシートは閉じて開き直し、中の状態は保たれない。別のシートやダイアログを開く前に、下のシートを閉じる。
 - `TextPromptDialog({ title, initialValue?, label?, multiline?, rows?, onConfirm, onCancel })` の `onConfirm(value)` は `void` または `Promise<void>`。既定は従来の単行 input で、前後の空白を除いた値を渡す。03 の順番待ち編集では `multiline: true` を指定すると textarea になり、Enter は改行、字下げ・改行を含む原文を渡す。`rows` は任意で既定 4。空白だけの値はどちらも送らない。保存失敗は `remoteErrorMessage` の日本語文言を出す。保存成功後に閉じる責任は呼び出し元が持つ。`Markdown({ children, className? })` の children は Markdown 文字列。
 - `app/theme/index.ts`：`useAppearance()` は `system | light | dark`、`setAppearance(value)` と `backToClassic()`。`app/icons/Icon.tsx`：`Icon({ name, slot?, filled?, className? })`。
+- テーマの html 側と M3eTheme 側は同じ色種 `#6750A4`・`tonal-spot`・標準コントラストで、同梱 M3e 2.8.2 と同じ DynamicScheme へ 6 パレットを渡して計算する。surface / background はライト `#fdf8fd`、ダーク `#141316`。10 は manifest の background_color / theme_color と index.html の明暗 theme-color をこの値へ更新する（00 では 10 のファイルを変更しない）。外観 API と Theme の引数は維持する。
 - `dsh/services.ts`：`DshProvider / useDsh` と共有型。`dsh/session.ts`：`useSession(id)` は `face / snapshot / records / stream / projection / ctx`。開けない ID の `face` は undefined。`projection<T>(key)` はフックなので、最上位で無条件に呼ぶ。別名の `useSessionProjection(face, key)` も用意した。
-- `useSession(id)` は読むだけで、`sessions.open` を呼ばない。会話の選択は App の Frame に置いた `useConversationSelection(pathname)` が URL で管理する。履歴や projection を読む部品自身には、選択・解除の責任を持たせない。
-- `#/s/<id>` とその下のチャット・トレース・09 の全補助画面は同じ選択を保つ。URL の ID または「存在し、削除済みでなく開ける」という boolean が変わったとき、`current !== id` なら `sessions.open(id)` を呼ぶ。face の参照変更だけでは選び直さず、`openSubagent` の直後の移動でも open を重ねない。会話 URL 以外では、一覧が ready になり選択が残っている場合だけ `sessions.clear()` を呼ぶ。部品単位の unmount cleanup では解除しない。
+- `useSession(id)` は読むだけで、`sessions.open` を呼ばない。会話の選択は App の Frame 内に置いた、null を返す `ConversationSelection({ pathname })` が URL で管理する。`useConversationSelection(pathname)` の一覧・face の購読はこの小さな部品内に閉じ、一覧の更新だけでは Frame・画面の描画関数・OverlayHost を描き直さない。履歴や projection を読む部品自身には、選択・解除の責任を持たせない。
+- `#/s/<id>` とその下のチャット・トレース・09 の全補助画面は同じ選択を保つ。URL の ID、「存在し、削除済みでなく開ける」という boolean、または一覧の phase が変わったとき、`phase === 'ready' && current !== id` なら `sessions.open(id)` を呼ぶ。要求から scope だけ先に作られていても基準データ前には選択しない。open の同期例外は会話 ID とともに console.error へ出し、画面全体へ投げない。face の参照変更だけでは選び直さず、`openSubagent` の直後の移動でも open を重ねない。会話 URL 以外では、一覧が ready になり選択が残っている場合だけ `sessions.clear()` を呼ぶ。部品単位の unmount cleanup では解除しない。
 - 取得エラーでも有効な会話は選択の対象とし、mock のエラー状態は mock 側で保持する。同じ会話を一覧から開き直すだけでは実物の再取得を保証できないため、取得エラー画面の「読み直す」でページを再読み込みする。実物で起動時の選択が復元されるかは段階 3 で確かめる。
+- **01・02・04 への失敗通知の契約**：初回取得・背景 follow の失敗は既存の `useSession(id).snapshot.openState / openError` を使う。mock は `kit.setSessionState(id, { openState: 'error', openError: failure })` で再現する。一覧の通常の取得失敗と、手動の `loadOlder / loadThrough` の取得失敗は、実物の API では知る手段がない（2026-09-26 の調査根拠を下記に記載）。sessions.list や SessionSnapshot に架空のエラー欄を足さず、mock にもその失敗通知を足さない。`loadingOlder === false` や履歴件数が増えないことは成功・枯渇時にも起こり、失敗の判定に使わない。mock の `updateList` による phase の変更は読み込み状態の再現で、失敗の通知ではない。
 - `SubagentAddress` は `{ parentSessionId, childSessionId, mode: 'one-shot' | 'continuable' }`。09 は子のカタログ行の mode をそのまま渡す。ID だけから mode を推測しない。mock の `openSubagent` も親のカタログの子 ID・kind・mode を照合し、不一致なら選択を変えずに例外にする。シナリオでは `addSession` で子の履歴を用意し、`updateList` で `subagentsByParent[parentSessionId].entries` に `{ kind: 'child', id, mode, ... }` を登録する。
 - **02・04 の入口変更**：`ChatView({ sessionId, active })` と `TraceView({ sessionId, active })` に必須の `active: boolean` を追加した。正常な会話では両方をマウントしたまま、非表示側のパネルに `hidden` と `inert` を付ける。同じ会話のタブ切り替えでは部品と DOM を再作成せず、展開状態・検索条件と閲覧位置を保持する。別の会話へ移る、会話画面から出る、会話を開けない状態になる場合の保持は対象外。
 - 両パネルは独立した高さ 100% のスクロール領域を持ち、共通の `main` 自体はスクロールしない。02・04 は各パネル、またはその中で高さ 100% に収まる専用要素をスクロール対象にし、二重のスクロールを作らない。土台の `data-scroll-area` は表示中のパネルだけに付く。非表示側はレイアウト・フォーカス・アクセシビリティツリーの対象外とし、隠れる本文や消える入力欄にフォーカスが残る場合は表示先のタブへ移す。
@@ -456,3 +458,36 @@ web/src/
 - 回帰テストは計 10 件追加した。承認の保留・回答・取消、質問とプランの保留、他の会話・シートとの分離、ワークスペースの順序・通知・ID の固定・複数機能の追記・値の分離・例外時の無変更を検証した。変更前は承認の判定テスト 3 件が失敗し、最初のワークスペース更新テスト 3 件も関数未実装で失敗することを確認してから修正した。
 - `pnpm typecheck`：成功。`pnpm test`：103 件すべて成功。`pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 887 KB、同梱フォント約 4 MB）。オーケストレーターがブラウザで、05 の「トレースで見る」からチャットへ戻ったときの入力欄と、01 の更新関数利用後のワークスペースの並びを確かめる。
 - 担当外への引き継ぎ：01 の mock が行っているワークスペースの削除・再追加を updateWorkspace に切り替える。01 のファイルは変更していない。今回変更したのは担当ファイルと本書の実装メモだけで、main には触れていない。DSH・開発サーバーの起動、HTTP 確認、ブラウザー操作は行っていない。今回の操作拒否はない。
+
+### 2026-09-26：main 取り込み後の土台の残りを修正
+
+#### 会話選択の開始時期と購読の分離（1・2）
+
+- `feat/00-foundation-2` のクリーンな状態から開始した。承認などから scope だけが先に存在し、一覧が pending で空の場合にも open が走ることと、open の例外が外へ漏れることを、新規 Node テスト 2 件の失敗で確認してから修正した。
+- 選択・解除とも一覧の ready を待つ。会話 URL 内でも list.phase を effect の依存にし、基準データが届いたら有効な会話を一度だけ open する。現在選択中の ID は開き直さず、face の参照変更や同じ会話の補助画面への移動でも再選択しない。ready 後の open が同期例外を投げても、会話 ID と例外を console.error に記録するだけにし、ErrorBoundary へ流さない。
+- Frame が直接選択フックを呼ぶ形をやめ、null を返す ConversationSelection 部品を置いた。この部品だけが選択管理用の一覧・face を購読する。URL の所有者は引き続き Frame で、一覧更新による選択部品の描き直しは、画面の render 呼び出しとシートの置き場には波及しない。React の再描画回数そのものは Node の検証対象にせず、オーケストレーターがブラウザで確かめる。
+
+#### 一覧・履歴の失敗を実物から知れる範囲（3）
+
+参照元は、`npm root -g` の下にある `@deepseek-ai/dsh/node_modules/@deepseek-ai/`。以下の controller は `dsh-api-session-controller/lib/types/client/`、Gateway は `dsh-api-gateway/lib/types/client/` を指す。読み取りのみで、実物を起動・変更していない。
+
+- **初期読み込み・背景 follow**：controller の `sessions/session.js:530–563` は初回取得の RemoteFailure を `openState: 'error' / openError` に保存する。同 `534–542,702–713` は follow の failed 通知を同じ状態へ反映する。既存の SessionSnapshot と useSession がそのまま公開済みなので、型と戻り値は追加しない。未知の例外まで必ずこの状態になるという契約ではない。
+- **手動の古い履歴取得**：controller の `sessions/session.js:313–333`（loadOlder）、`335–384`（loadThrough）は追加取得の例外を吸収し、loadingOlder を解除して Promise<void> を解決する。Gateway の `journal-stream.js:80–106`（prepend）は取得例外を投げるだけで failed を呼ばないため、この失敗は openError にも出ない。**手動ページ取得の失敗は実物の API では知る手段がない。** 履歴が増えないことは、枯渇・中断・進捗なしでも起きるので失敗に変換しない。
+- **背景 follow との違い**：Gateway の `journal-stream.js:127–151` は背景 consume の失敗だけを failed に通知する。同 `186–209,244–257` の欠落補修ページ取得はその背景処理に属し、失敗は controller の openError に伝わる。手動の追加読み込みと同じ扱いにしない。
+- **一覧取得・更新**：controller の `sessions/manager.js:354–431` は通常の RemoteFailure を内部の listState/error に保存し、refreshList の Promise<void> は解決する。しかし `sessions/service.js:200–202,434–505` は refresh を委譲し、公開 sessions.list へ state/error を投影しない。公開型の `sessions/service.d.ts:61–79` にもその項目はなく、内部 manager は同 `125` で private。**一覧の通常の取得失敗は実物の API では知る手段がない。** 未知の例外だけ reject し得るため catch 自体は無意味ではないが、すべての取得失敗を検出できる手段ではない。
+- **一覧の購読失敗と Agent の失敗**：controller の `index.js:36–40` の control/watch 終端失敗は console.error のみで、公開の失敗状態・イベントには変換されない。`index.js:33–34`、`sessions/manager.js:670–675`、`sessions/session.js:505–510` の api-session/error は実行中 Agent の失敗を lastAgentError へ反映するもので、一覧・履歴取得の失敗通知として使わない。
+- mock の初期取得・follow エラー表示は、既存の setSessionState で openState/openError を設定し、会話の再選択後も保持できる。refresh/loadOlder/loadThrough は従来の成功経路を維持し、実物にない失敗欄・失敗戻り値を追加しない。01・02・04 にはこの区別を「段階 2 が使う公開入口」から引き継ぐ。各担当の実装メモはこの checkout では未記入のため、他ブランチの待ち記録は書き換えていない。確実な一覧・手動ページ取得エラー表示には DSH 側の公開 API 追加が必要。
+
+#### テーマの色生成の統一（4）
+
+- html に設定する旧 Scheme の applyTheme と、内側の M3eTheme の DynamicScheme が異なる値を生成していた。M3e 2.8.2 の `dist/theme.js` を読み、html 側を内側と同じ方式へそろえた。色種・variant・contrast は共通の定数から渡し、themeFromSourceColor の 6 パレットを DynamicScheme（TONAL_SPOT、contrast 0、specVersion 2021、platform phone）へ指定する。既存の外観設定と強調フォーカス・モーションの指定は保った。
+- 単純な SchemeTonalSpot の既定パレットへの置換ではなく、M3e の生成方法と同じパレットを使う。通常の全色に加え surfaceVariant / shadow / scrim / surfaceTint を含む 53 色を html へ設定する。明暗の切り替えでは全色と color-scheme を更新し、ほかの html のスタイルを変更しない。
+- Node テストは同梱 M3e の純粋な色生成部分を読み取って隔離実行し、html 用関数の全 53 色とライト・ダークそれぞれで比較する。旧方式では 3 件失敗し、統一後はすべて一致した。React や DOM の描画は行っていない。
+- **10 への引き継ぎ**：surface / background の新しい値はライト `#fdf8fd`（旧 `#fffbff`）、ダーク `#141316`（旧 `#1c1b1e`）。manifest の background_color / theme_color は新ライト値へ、index.html の明暗 theme-color はそれぞれの新値へ、10 側で変更する。対応する tests/10-pwa.test.ts の期待値も 10 側で更新する。今回 10 のファイルには触れず、起動前のメタデータの色との差はこの引き継ぎまで残る。
+
+#### 検証と担当外への引き継ぎ
+
+- `pnpm typecheck`：成功。`pnpm test`：245 件すべて成功。`pnpm build`：成功。既存の Vite chunk サイズ警告は残る（今回の本番 JavaScript 約 1,283 KB、同梱フォント約 4 MB）。
+- 新規回帰は会話選択 2 件、06・07・09 の統合 1 件、テーマ 3 件。統合テストでは 3 機能の本物の mock 拡張を同時登録し、基準データ前の承認要求、ready 後の選択、完了の未読件数、検索、子の会話の mode と選択、ゴールの projection 更新を検証した。06・07・09 各機能の既存テストと 10 の PWA・キャッシュ・登録処理の既存テストも変更せず成功した。
+- 担当外で必要な変更は、上記の 10 の色メタデータ・テスト期待値の更新。一覧と手動履歴取得の失敗通知を実現するには DSH の公開 API の変更が必要で、土台側では追加していない。01・02・04 には既存 openError で分かる失敗と、公開されない失敗の範囲を引き継ぐ。仮の部品の引数・戻り値、共有の services 型、MockKit の既存契約は変更していない。
+- オーケストレーターがブラウザで、基準データが遅れる起動時の会話選択、一覧更新時に Frame・シートの置き場が描き直されないこと、明暗の画面とスナックバーの色の一致を確かめる。DSH・開発サーバーの起動、HTTP 確認、ブラウザー操作はしていない。main への変更、merge、rebase、担当外ファイルの変更、操作拒否はない。

@@ -197,3 +197,51 @@ test('補助画面への直接アクセスでも、会話が開けるように�
     assert.deepEqual(calls, [`open:${id}`])
   } finally { ctx.dispose() }
 })
+
+test('承認から scope だけ先に作られても基準データを待ち、ready 後に一度だけ開く', () => {
+  const ctx = createMockContext()
+  const id = MOCK_IDS.sessions.readme
+  const baseline = ctx.sessions.list.getSnapshot()
+  const calls: string[] = []
+  const open = ctx.sessions.open
+  ctx.mock.patch('sessions.open', (sessionId: string) => {
+    calls.push(sessionId)
+    if (!ctx.sessions.list.getSnapshot().byId[sessionId]) throw new Error('一覧に存在しない会話です。')
+    open(sessionId)
+  })
+  try {
+    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
+    assert.ok(ctx.sessions.scope(id))
+    assert.equal(ctx.sessions.binding(id)!.session.getSnapshot().removed, false)
+    syncPath(ctx, `/s/${id}`)
+    syncPath(ctx, `/s/${id}/goal`)
+    assert.deepEqual(calls, [])
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    ctx.mock.updateList(() => ({ ...baseline, phase: 'ready' }))
+    syncPath(ctx, `/s/${id}`)
+    syncPath(ctx, `/s/${id}/trace`)
+    syncPath(ctx, `/s/${id}/goal`)
+    assert.deepEqual(calls, [id])
+    assert.equal(ctx.sessions.list.getSnapshot().current, id)
+  } finally { ctx.dispose() }
+})
+
+test('ready 後の選択例外はログに残して外へ投げず、別の会話への移動を妨げない', (t) => {
+  const errors = t.mock.method(console, 'error', () => {})
+  const ctx = createMockContext()
+  const a = MOCK_IDS.sessions.readme
+  const b = MOCK_IDS.sessions.approval
+  const failure = new Error('基準データから会話が消えました。')
+  const open = ctx.sessions.open
+  ctx.mock.patch('sessions.open', (id: string) => { if (id === a) throw failure; open(id) })
+  try {
+    assert.doesNotThrow(() => syncPath(ctx, `/s/${a}`))
+    assert.equal(errors.mock.callCount(), 1)
+    assert.ok(String(errors.mock.calls[0]!.arguments[0]).includes(a))
+    assert.equal(errors.mock.calls[0]!.arguments[1], failure)
+    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    syncPath(ctx, `/s/${b}/files`)
+    assert.equal(ctx.sessions.list.getSnapshot().current, b)
+    assert.equal(errors.mock.callCount(), 1)
+  } finally { ctx.dispose() }
+})
