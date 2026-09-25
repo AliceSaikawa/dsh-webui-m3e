@@ -67,6 +67,23 @@ test('replacement summaries never enter chat rows, tool result matching, or call
   assert.equal(tools[2]?.durationMs, undefined)
 })
 
+test('string replacement operations are excluded just like object replacement operations', () => {
+  const call = event(1, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'call', name: 'bash', arguments: '{}' }] } })
+  const replaced = [
+    event(2, 'user/message', { content: [{ type: 'text', text: 'モデル用の要約' }] }),
+    event(3, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '置換された検討' }] } }),
+    event(4, 'system/message', { message: { content: [{ type: 'text', text: '置換された通知' }] } }),
+    event(5, 'tool/result', { callId: 'call', content: [{ type: 'text', text: '置換された結果' }] }),
+  ]
+  for (const surfaceOp of ['replace', { op: 'replace', startSeq: 1, endSeq: 2 }] as const) {
+    const rows = buildChatRows([call, ...replaced.map(record => ({ ...record, surfaceOp }))])
+    assert.equal(rows.length, 1)
+    assert.ok(rows[0]?.kind === 'tool')
+    assert.equal(rows[0].status, 'running')
+    assert.deepEqual(rows[0].result, [])
+  }
+})
+
 test('tool calls are matched by callId across interleaved records and keep the assistant fork point', () => {
   const records = [
     event(8, 'tool/result', { message: { source: { callId: 'b' }, content: [{ type: 'tool-result', toolCallId: 'b', content: [{ type: 'text', text: 'B の結果' }], isError: true }] } }, 2500),

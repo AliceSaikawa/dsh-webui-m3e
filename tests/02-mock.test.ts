@@ -67,3 +67,27 @@ test('偽の生成が始まり、途中の本文を表示できる', { timeout: 
     assert.ok(buildChatRows(journal.records, journal.stream).some(row => row.kind === 'assistant' && row.streaming && row.text.length > 0))
   } finally { ctx.dispose() }
 })
+
+test('長い会話の偽生成は履歴を2回追加しても過去の返事と重ならず表示できる', { timeout: 1000 }, async () => {
+  const ctx = createMockContext({ scenario: 'chat-long-streaming', extensions: [{ extendMock }] })
+  try {
+    const binding = ctx.sessions.binding('chat-long-streaming')!
+    const journal = () => foldSessionWindow(binding.eventSource.getSnapshot())
+    assert.equal(journal().records.length, 100)
+    await binding.session.loadOlder()
+    await binding.session.loadOlder()
+    assert.equal(journal().records.length, 300)
+    await new Promise<void>(resolve => {
+      const stop = binding.eventSource.subscribe(() => {
+        if (journal().stream?.content.some(block => block.type === 'text' && block.text)) { stop(); resolve() }
+      })
+    })
+    const { records, stream } = journal()
+    assert.equal(stream?.turn, 76)
+    const rows = buildChatRows(records, stream)
+    assert.ok(rows.some(row => row.kind === 'assistant' && row.streaming && row.text))
+    assert.equal(new Set(rows.map(row => row.key)).size, rows.length)
+    assert.ok(rows.filter(row => row.kind === 'assistant' && !row.streaming).length >= 74)
+    assert.ok(ctx.workspaces.list.getSnapshot().items.find(workspace => workspace.workspaceId === 'ws-chat-check')?.sessionIds.includes('chat-long-streaming'))
+  } finally { ctx.dispose() }
+})

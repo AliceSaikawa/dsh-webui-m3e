@@ -18,27 +18,36 @@ test('非表示の初回履歴・生成更新では初回表示済みにせず�
   assert.equal(enterChatVisibility(shown.state, true, true).action, 'none')
 })
 
-test('再表示時は土台の復元を待ち、隠れている間に伸びた末尾へ移動しない', () => {
+test('過去を読んでから隠した場合は、土台の復元後もその位置を保つ', () => {
   const initialized = enterChatVisibility(initialChatScrollState, true, true).state
-  const hidden = enterChatVisibility(initialized, false, true).state
+  const hidden = enterChatVisibility({ ...initialized, following: false }, false, true).state
   const resume = enterChatVisibility(hidden, true, true)
   assert.equal(resume.action, 'resume')
   assert.equal(canObserveChatScroll(resume.state), false)
   assert.equal(decideChatScroll(resume.state, false, false), 'none')
-  const restored = finishChatRestore(resume.state, { scrollTop: 300, clientHeight: 400, scrollHeight: 1300 })
+  const result = finishChatRestore(resume.state)
+  assert.equal(result.action, 'preserve')
+  const restored = result.state
   assert.equal(restored.following, false)
   assert.equal(canObserveChatScroll(restored), true)
   assert.equal(decideChatScroll(restored, false, false), 'none')
 })
 
-test('復元した位置が末尾なら、その後の新しい更新から追従を再開できる', () => {
+test('追従したまま隠した場合は、復元後の最初のフレームで新しい末尾へ進む', () => {
   const initialized = enterChatVisibility(initialChatScrollState, true, true).state
   const hidden = enterChatVisibility(initialized, false, true).state
   const resume = enterChatVisibility(hidden, true, true).state
-  const restored = finishChatRestore(resume, { scrollTop: 896, clientHeight: 400, scrollHeight: 1300 })
+  // Content can grow by any amount while hidden: old distance from the end does
+  // not override the following mode. No writes are allowed before this finish.
+  assert.equal(decideChatScroll(hidden, false, false), 'none')
+  assert.equal(decideChatScroll(resume, false, false), 'none')
+  const result = finishChatRestore(resume)
+  assert.equal(result.action, 'bottom')
+  const restored = result.state
   assert.equal(restored.following, true)
   assert.equal(decideChatScroll(restored, false, false), 'bottom')
-  assert.equal(finishChatRestore(hidden, { scrollTop: 900, clientHeight: 400, scrollHeight: 1300 }), hidden)
+  assert.deepEqual(finishChatRestore(hidden), { state: hidden, action: 'none' })
+  assert.deepEqual(finishChatRestore(restored), { state: restored, action: 'none' })
 })
 
 test('ページング中に隠れたら古いアンカーを捨て、非表示中の完了で復元待ちに詰まらない', () => {
@@ -51,7 +60,9 @@ test('ページング中に隠れたら古いアンカーを捨て、非表示�
   assert.equal(decideChatScroll(hidden, true, false), 'none')
   const resume = enterChatVisibility(hidden, true, true).state
   assert.equal(shouldDiscardChatAnchor(resume.active, resume.restoring), true)
-  const restored = finishChatRestore(resume, { scrollTop: 10, clientHeight: 400, scrollHeight: 1800 })
+  const result = finishChatRestore(resume)
+  assert.equal(result.action, 'preserve')
+  const restored = result.state
   assert.equal(restored.restoring, false)
   assert.equal(shouldDiscardChatAnchor(restored.active, restored.restoring), false)
   assert.equal(canObserveChatScroll(restored), true)
@@ -64,8 +75,25 @@ test('再表示フレームより先に再び非表示になっても、古い�
   const initialized = enterChatVisibility(initialChatScrollState, true, true).state
   const resume = enterChatVisibility(enterChatVisibility(initialized, false, true).state, true, true).state
   const hiddenAgain = enterChatVisibility(resume, false, true).state
-  const late = finishChatRestore(hiddenAgain, { scrollTop: 900, clientHeight: 400, scrollHeight: 1300 })
-  assert.equal(late, hiddenAgain)
-  assert.equal(decideChatScroll(late, false, false), 'none')
-  assert.equal(enterChatVisibility(late, true, true).action, 'resume')
+  const late = finishChatRestore(hiddenAgain)
+  assert.equal(late.state, hiddenAgain)
+  assert.equal(late.action, 'none')
+  assert.equal(decideChatScroll(late.state, false, false), 'none')
+  const next = enterChatVisibility(late.state, true, true)
+  assert.equal(next.action, 'resume')
+  assert.equal(finishChatRestore(next.state).action, 'bottom')
+})
+
+test('復元フレームを待つ間の再評価・高さ待ちでも非表示前の追従状態を変えない', () => {
+  for (const following of [true, false]) {
+    const initialized = { ...enterChatVisibility(initialChatScrollState, true, true).state, following }
+    const hidden = enterChatVisibility(initialized, false, true).state
+    const waiting = enterChatVisibility(hidden, true, false)
+    assert.equal(waiting.action, 'wait')
+    const resuming = enterChatVisibility(waiting.state, true, true).state
+    const repeated = enterChatVisibility(resuming, true, true).state
+    assert.equal(repeated.following, following)
+    assert.equal(decideChatScroll(repeated, false, false), 'none')
+    assert.equal(finishChatRestore(repeated).action, following ? 'bottom' : 'preserve')
+  }
 })

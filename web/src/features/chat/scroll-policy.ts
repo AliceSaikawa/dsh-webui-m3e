@@ -1,5 +1,3 @@
-import { isNearBottom, type ScrollMetrics } from './model.ts'
-
 export interface ChatScrollState {
   readonly active: boolean
   readonly initialized: boolean
@@ -8,20 +6,21 @@ export interface ChatScrollState {
 }
 export const initialChatScrollState: ChatScrollState = { active: false, initialized: false, restoring: false, following: true }
 
-/** Resume is read-only until the parent's retained DOM positions have been restored. */
+/** Keep the reader's following mode while the parent restores its retained position. */
 export function enterChatVisibility(state: ChatScrollState, active: boolean, ready: boolean): {
   state: ChatScrollState; action: 'suspend' | 'wait' | 'initialize' | 'resume' | 'none'
 } {
   if (!active) return { state: { ...state, active: false, restoring: false }, action: 'suspend' }
   if (!ready) return { state, action: 'wait' }
   if (!state.initialized) return { state: { active: true, initialized: true, restoring: false, following: true }, action: 'initialize' }
-  if (!state.active || state.restoring) return { state: { ...state, active: true, restoring: true, following: false }, action: 'resume' }
+  if (!state.active || state.restoring) return { state: { ...state, active: true, restoring: true }, action: 'resume' }
   return { state, action: 'none' }
 }
 
-export function finishChatRestore(state: ChatScrollState, metrics: ScrollMetrics): ChatScrollState {
-  if (!state.active || !state.restoring) return state
-  return { ...state, restoring: false, following: isNearBottom(metrics, 4) }
+/** Call only after the parent's restore: resume following or keep the reading position. */
+export function finishChatRestore(state: ChatScrollState): { state: ChatScrollState; action: 'bottom' | 'preserve' | 'none' } {
+  if (!state.active || !state.restoring) return { state, action: 'none' }
+  return { state: { ...state, restoring: false }, action: state.following ? 'bottom' : 'preserve' }
 }
 
 export function canObserveChatScroll(state: ChatScrollState): boolean {

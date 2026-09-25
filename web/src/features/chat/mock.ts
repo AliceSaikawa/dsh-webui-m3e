@@ -36,6 +36,16 @@ export function extendMock(kit: MockKit): void {
   kit.scenario('streaming', active => {
     void active.streamAssistant('approval-sheet', Array.from({ length: 8 }, (_, index) => `### 確認 ${index + 1}\n\n承認シートの表示とテストを確認しています。返事は少しずつ届きます。上へスクロールすると、読んでいる位置で止まります。\n\n`).join(''), { chunkMs: 35 })
   })
+  kit.scenario('chat-long-streaming', active => {
+    const sessionId = 'chat-long-streaming'
+    active.addSession({ ...summary(sessionId, '長い会話（生成中）'), running: true }, [...records,
+      event(300, 'turn/start', { turn: 76 }),
+      event(301, 'user/message', { role: 'user', content: [{ type: 'text', text: '長い会話の続きも確認して' }] }),
+      event(302, 'step/start', { turn: 76, step: 1 }),
+    ])
+    active.updateWorkspace('ws-chat-check', workspace => ({ sessionIds: [...workspace.sessionIds, sessionId] }))
+    void active.streamAssistant(sessionId, Array.from({ length: 10 }, (_, index) => `### 続きの確認 ${index + 1}\n\n長い履歴を表示したまま返事を生成しています。トレースへ移り、戻ったときも表示前の追いかけ方を引き継ぎます。\n\n`).join(''), { chunkMs: 35 })
+  })
   kit.scenario('chat-error', active => {
     active.addSession(summary('chat-error', '処理が止まった会話'), [event(0, 'user/message', { role: 'user', content: [{ type: 'text', text: 'README の手順を確認して' }] })])
     active.setSessionState('chat-error', { lastAgentError: '応答の生成中に接続が切れました。接続を確認してから、続きのメッセージを送ってください。', running: false })

@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { Markdown } from '../../app/Markdown.tsx'
+import { ChatMarkdown } from './ChatMarkdown.tsx'
 import { openSheet, showSnackbar } from '../../app/overlay/index.ts'
 import { back } from '../../app/router.ts'
 import { useSession } from '../../dsh/session.ts'
@@ -27,10 +27,10 @@ function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string
         : block.type === 'file' ? <FileAttachment key={index} attachment={block.attachment} /> : null)}</div>
     </MessageActions></article>
   if (row.kind === 'assistant') return row.text ? <article className="chat-assistant" aria-label="AI のメッセージ" aria-busy={row.streaming}>
-    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}><Markdown>{row.text}</Markdown></MessageActions>
+    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}><ChatMarkdown>{row.text}</ChatMarkdown></MessageActions>
   </article> : null
   if (row.kind === 'reasoning') return <details className="chat-reasoning"><summary><Icon name="psychology" />{row.streaming ? '考えています…' : '考えた内容'}<Icon className="chat-chevron" name="expand_more" /></summary>
-    <Markdown>{row.text || '内容を待っています…'}</Markdown></details>
+    <ChatMarkdown>{row.text || '内容を待っています…'}</ChatMarkdown></details>
   if (row.kind === 'tool') {
     const summary = summarizeToolArguments(row.arguments)
     const label = row.status === 'running' ? '実行中' : row.status === 'error' ? '失敗' : '完了'
@@ -45,8 +45,8 @@ function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string
   if (row.kind === 'command') {
     const presentation = commandPresentation(row)
     if (row.status === 'error') return <aside className="chat-error-card" role="alert"><Icon name={presentation.icon} />
-      <div><h3>{presentation.label}</h3><Markdown>{presentation.failureReason ?? row.text}</Markdown></div></aside>
-    return row.text ? <details className="chat-command"><summary><Icon name={presentation.icon} />{presentation.label}<Icon name="expand_more" /></summary><Markdown>{row.text}</Markdown></details>
+      <div><h3>{presentation.label}</h3><ChatMarkdown>{presentation.failureReason ?? row.text}</ChatMarkdown></div></aside>
+    return row.text ? <details className="chat-command"><summary><Icon name={presentation.icon} />{presentation.label}<Icon name="expand_more" /></summary><ChatMarkdown>{row.text}</ChatMarkdown></details>
       : <p className="chat-system">{presentation.label}</p>
   }
   if (row.kind !== 'pending') return null

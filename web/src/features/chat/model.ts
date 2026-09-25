@@ -57,7 +57,7 @@ const stringOf = (value: unknown): string | undefined => typeof value === 'strin
 
 /** Replacement messages summarize model context; they are not chat history. */
 function isChatEvent(event: SessionWireEvent): boolean {
-  return event.ignorable !== true && objectOf(event.surfaceOp)?.op !== 'replace'
+  return event.ignorable !== true && event.surfaceOp !== 'replace' && objectOf(event.surfaceOp)?.op !== 'replace'
 }
 
 /** A step has one accepted assistant message; retries remain attempt events. */

@@ -78,6 +78,16 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
     setLatestVisible(!state.current.following)
     if (node.scrollTop <= 24 && !state.current.following) void loadOlder()
   }
+  const completeRestore = (node: HTMLDivElement) => {
+    const restored = finishChatRestore(state.current)
+    state.current = restored.state
+    if (restored.action === 'none') return
+    if (restored.action === 'bottom') toLatest()
+    readingAnchor.current = captureAnchor(node)
+    dimensions.current = `${node.scrollHeight}:${node.clientHeight}:${node.clientWidth}`
+    setLatestVisible(!state.current.following)
+    if (pendingError.current) { pendingError.current = false; onLoadError() }
+  }
   useLayoutEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
@@ -95,18 +105,15 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
     if (transition.action === 'initialize') toLatest()
     if (transition.action !== 'resume') return
     // Child layout effects run before the parent's componentDidUpdate restore.
-    // The first visible frame only adopts that restored position; it never writes.
+    // The first visible frame resumes the mode held before hiding. Only a reader
+    // who was following moves to the now-current end; manual reading stays put.
     const frame = requestAnimationFrame(() => {
       if (!mounted.current || !state.current.active || !state.current.restoring) return
       if (node.clientHeight === 0) {
         state.current = { ...state.current, active: false, restoring: false }
         return
       }
-      state.current = finishChatRestore(state.current, node)
-      readingAnchor.current = captureAnchor(node)
-      dimensions.current = `${node.scrollHeight}:${node.clientHeight}:${node.clientWidth}`
-      setLatestVisible(!state.current.following)
-      if (pendingError.current) { pendingError.current = false; onLoadError() }
+      completeRestore(node)
     })
     return () => cancelAnimationFrame(frame)
   }, [active, ready, toLatest])
@@ -141,10 +148,7 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
         else if (transition.action === 'resume') {
           // ResizeObserver runs after the parent's commit and restoration.
           anchor.current = null
-          state.current = finishChatRestore(state.current, node)
-          readingAnchor.current = captureAnchor(node)
-          setLatestVisible(!state.current.following)
-          if (pendingError.current) { pendingError.current = false; onLoadError() }
+          completeRestore(node)
         }
         dimensions.current = `${node.scrollHeight}:${node.clientHeight}:${node.clientWidth}`
         return
