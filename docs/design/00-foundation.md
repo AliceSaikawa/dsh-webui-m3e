@@ -247,3 +247,46 @@ web/src/
 - 現在の保護フックは、編集先だけでなく差分本文の文字列も部分一致で判定する。今回の差分では、Vite の開発モード判定式に含まれるプロパティ名が禁止ファイル名の文字列に一致する。保護対象ファイルの読み書きを要求した操作ではない。
 - 拒否されたコード編集は適用されていない。別表記・別ツールでの回避はせず、実装を再度停止した。DSH は起動していない。実装、3 つの検証コマンド、画面操作は引き続き未完了。
 - 担当外で必要になった対応：個人の保護フックの誤検知への対応。実際の禁止パスへのアクセス制限を保ちつつ、許可されたソースの開発モード判定式を編集できる必要がある。フックは担当範囲外のため変更していない。
+
+### 2026-09-25：明示許可後の実装
+
+上の停止記録はその時点の記録として残す。その後、ユーザーが個人フックの誤検知修正を許可したため、禁止パスの判定を維持したまま、この worktree の TypeScript ソース差分にある Vite の開発判定式だけを認識する修正を行った。修正前のバックアップを保存し、構文と 65 件のポリシー確認が成功した。実際の禁止対象にはアクセスしていない。修正対象は `/Users/user/.codex/hooks/protect_sensitive_paths.rb`。プロジェクトの AGENTS.md や権限設定は変更していない。
+
+#### 実装した共通基盤
+
+- ハッシュルーター、画面の自動収集、4 タブの枠、戻る画面、左端スワイプ、接続状態、会話のチャット／トレース枠を作った。タブ間の移動は履歴を置換し、直接開いた詳細画面の戻り先は一覧にする。
+- safe-area と visualViewport に対応した固定の画面枠、紫を種にした明暗テーマ、端末別の外観保存、ローカル同梱の Material Symbols、HTML を描画しない Markdown 部品を作った。Markdown 内の画像は代替テキストとし、外部画像を自動取得しない。
+- シート・全画面シート・ダイアログ・文字入力ダイアログ・スナックバーを共通化した。シートは URL の履歴に追加しない。応答必須のシートは取り消し操作を拒否し、表示中は背景操作と入力欄を止める。
+- 全担当の仮の部品と空の `mock.ts` を作った。会話画面の枠以外の機能は段階 2 が置き換える。
+
+#### 段階 2 が使う公開入口
+
+- `app/router.ts`：`useRoute()` は `path`（登録パターンまたは null）、`pathname`、`params`、`query`、`tab`、`definition` を返す。`params` はクエリー引数も含むが、パス引数を優先する。`RouteDef.render(params)` は ReactNode を返す。
+- `app/shell/index.ts`：`TabScaffold({ title?, topBar?, children, fab?, tab? })`、`PageScaffold({ title, children, actions?, footer? })`、`useConnection()`。後者は `state / connected / lastConnectedAt / reconnect` を返す。接続成功時刻が不明の切断画面では、架空の経過時間を出さず、保存済みデータと表示する。
+- `app/overlay/index.ts`：`openSheet / openFullSheet / openDialog` は `ReactNode` または `(close) => ReactNode` と任意の options を受け、何度呼んでも安全な `close(): void` を返す。options は `dismissible / label / interactionKey / sessionId`。応答シートは後の 2 項目も指定する。
+- `TextPromptDialog({ title, initialValue?, label?, onConfirm, onCancel })` の `onConfirm(value)` は `void` または `Promise<void>`。保存成功後に閉じる責任は呼び出し元が持つ。`Markdown({ children, className? })` の children は Markdown 文字列。
+- `app/theme/index.ts`：`useAppearance()` は `system | light | dark`、`setAppearance(value)` と `backToClassic()`。`app/icons/Icon.tsx`：`Icon({ name, slot?, filled?, className? })`。
+- `dsh/services.ts`：`DshProvider / useDsh` と共有型。`dsh/session.ts`：`useSession(id)` は `face / snapshot / records / stream / projection / ctx`。開けない ID の `face` は undefined。`projection<T>(key)` はフックなので、最上位で無条件に呼ぶ。別名の `useSessionProjection(face, key)` も用意した。
+- `stream` は `{ attemptId, turn, step, chunks, content, usage?, finishReason? } | null`。`content` は復元済みの ContentBlock 配列。`finishReason` は文字列でなく `{ kind: ... }`。
+- `dsh/interactions.ts`：`initializeInteractions(ctx)` を描画前に一度呼ぶ。`usePendingInteractions / defer / resetDeferred / isPlanReview` を公開。pending の `deferred` は boolean、`answer()` は `Promise<void>`。`presentInteraction(pending, { from })` の戻り値は `close(): void`。会話に再入場したときだけ deferred を解除し、チャット／トレース切り替えでは解除しない。
+- `dsh/mock/kit.ts`：MockKit の型入口。すべての指定関数を実装した。`emit` と `streamAssistant` は Promise を返す。`emit` の宛先は payload の `agent`（セッション ID）または `sessionId` で指定する。`addWorkspace` は WorkspaceView、`addSession` は SessionSummary と履歴を受け取る。`updateList` は新しい一覧を返す形と渡された一覧を変更する形の両方に対応する。`scenario` は名前に合う URL のときだけ実行する。
+
+#### 未確認事項を静的に照合した結果と判断
+
+参照元はインストール済み DSH の `node_modules/@deepseek-ai/` 以下。参照だけで、DSH 本体の変更・起動はしていない。
+
+1. `scope(id)` → `sessionOf(scope)` は設計どおり。SessionFace 自身が `getSnapshot / subscribe` を持つ。履歴は `binding(id).eventSource`。根拠は `dsh-api-session-controller/lib/types/client/contract/sessions.d.ts`、`session.d.ts`、`events.d.ts`。
+2. follow・再接続の baseline と nextIndex は既存 controller が管理する。二重に follow RPC を始めず、復元された eventSource を共有購読する。根拠は同 `sessions/session.js` と `sessions/assistant-stream.js`。複数 consumer は同じ派生キャッシュを使う。
+3. ワークスペースの設計上のパスは実物と異なった。observable の一覧と操作は `ctx.workspaces` で、`ctx.remote.workspace` は RPC 名前空間。`useDsh().workspaces` は実物に合わせた。根拠は `dsh-api-workspace-controller/lib/types/client/service.js` のサービス登録と同 `client/index.js`。
+4. 既存 UI は承認・質問の宛先を `ctx.sessions.scopeOf(this)` で解決し、解決できなければ次の waterfall へ渡す。質問の wire payload は `questions`、公開 pending は設計どおり `items`。取消時は承認が signal.reason、質問が UserQuestionError / ASK_ABORTED。根拠は既存 `dsh-client-ui-approval` と `dsh-client-ui-user-questions` の client 実装。
+5. `beginSubmission` は送信前 echo の登録で、実送信は `prompt` に requestId を渡して行う。偽データもこの順序にし、履歴の重複を避けた。ツール結果の入れ子、ターン開始とユーザーメッセージの順序、保存された stream の chunk 種別も実物に合わせた。
+6. 共通の偽データは Canvas の chatDetail / trace の内容を使い、ID は `readme-review / approval-sheet`、ワークスペースは `ws-m3e / ws-harness / ws-notes`。承認デモは `approval-demo` とし、前者の会話に 1 秒後に要求を出す。
+7. 追加で調べようとした `$on` の解除関数の詳細型は、型ディレクトリの内容検索に付けた禁止パス除外指定をフックが拒否したため未確認。該当調査を止め、代替の検索はしていない。登録戻り値が関数の場合だけ呼べる契約と、解除を持たない場合を扱い、偽の waterfall で一度だけの登録・解除を検証した。実接続での確認は段階 3 に残す。
+
+#### 依存と検証
+
+- 指定の依存は確認時の安定版に固定：M3E 両パッケージ 2.8.2、material-symbols 0.47.5、react-markdown 10.1.0、remark-gfm 4.0.1。
+- 追加依存は `@material/material-color-utilities` 0.4.0（命令的スナックバーを含む document 全体の明暗色）と `@playwright/test` 1.63.0（段階 2 以降も使えるスマートフォン幅の操作検証）。Playwright の Chromium も検証用キャッシュに導入した。
+- `pnpm typecheck` 成功、`pnpm test` は 45 件成功、`pnpm build` 成功。起動グラフなどの既存テストも維持。本番 JavaScript に偽データの固有文字列が含まれないことを確認した。
+- 390×664 の Chromium で `?mock` の一覧表示と実行エラーがないことを確認した。続く一連の画面操作の検証コマンドは「Opaque shell wrappers」として拒否され、停止。検証内容を一時スクリプトとして実行する再試行の許可を確認中。
+- 残る注意：既存 DSH store 配下の use-sync-external-store 1.2.0 には React 19 の peer 範囲警告がある。本番 JavaScript は約 881 KB、同梱フォントは約 4 MB で、Vite の chunk サイズ警告がある。実物の DSH 接続と iOS 実機・Simulator のキーボード検証は段階 3 に残す。

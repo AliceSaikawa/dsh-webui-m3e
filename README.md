@@ -4,7 +4,9 @@ DeepSeek Harness（DSH）のスマートフォン向け Web UI を、Material 3 
 
 ## 今の状態
 
-`/m3e` で画面を配信し、DSH と接続して、接続状態とセッション一覧を表示するところまでできています。端末ごとの切り替えも動きます。M3E の見た目と PWA の設定はまだありません。
+段階 1 の共通基盤を実装しています。M3E の画面枠、ハッシュによる画面遷移、会話のチャット／トレース切り替え、シート・ダイアログ、外観、DSH の共有窓口、機能ごとに拡張できる偽データが揃いました。各機能の中身は段階 2 用の仮の部品です。PWA の設定と実物の DSH での統合確認は後の段階で行います。
+
+開発中は `pnpm dev` のあと `http://localhost:5173/m3e/?mock` を開きます。DSH の起動は不要です。偽データは開発時だけ読み込まれ、本番ビルドには含まれません。`features/*/routes.tsx` と `features/*/mock.ts` は自動で集めるので、機能の担当は共有登録ファイルを編集する必要がありません。
 
 ## 端末ごとの切り替え
 
@@ -32,12 +34,23 @@ DeepSeek Harness（DSH）のスマートフォン向け Web UI を、Material 3 
 
 ```bash
 pnpm install
-pnpm test        # 起動データの絞り込み、サーバーの経路、切り替えの判定の単体テスト
+pnpm dev         # http://localhost:5173/m3e/?mock（DSH は起動しない）
+pnpm test        # 既存のテストと、ルーター・承認/質問・セッション・偽データの単体テスト
 pnpm typecheck
 pnpm build       # dist/（M3E の画面）、lib/index.js（サーバー側）、lib/client.js（今の画面に入る部品）
 ```
 
-DSH に入れる手順は次のとおりです。
+開発用の状態は URL で選べます。
+
+- `?mock`：3 ワークスペース、待機中と実行中の 2 セッション
+- `?mock&scenario=disconnected`：接続切れ
+- `?mock&scenario=reconnecting`：再接続中
+- `?mock&scenario=approval-demo#/s/readme-review`：1 秒後に仮の承認シート
+- `?mock&scenario=approval-demo#/s/readme-review/trace`：トレース表示中の承認
+
+各機能は `web/src/dsh/mock/kit.ts` の `MockKit` を使い、自分の `mock.ts` の `extendMock(kit)` でデータやシナリオを追加できます。共通セッション `readme-review` と `approval-sheet` の履歴は変更せず、必要なセッションを追加してください。共有部品の引数と戻り値、静的調査の結果は [00 の実装メモ](docs/design/00-foundation.md#実装メモ) にあります。
+
+以下は段階 3 の統合担当が DSH に入れるときの手順です。段階 1 と 2 では実行しません。
 
 ```bash
 pnpm pack
