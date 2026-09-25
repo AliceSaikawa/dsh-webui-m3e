@@ -21,11 +21,13 @@ export function isNativeUnavailable(error: unknown): boolean {
 
 export interface DirectoryAvailability { ready: boolean; canAdd: boolean; homePath?: string }
 function failedAvailability(error: unknown): DirectoryAvailability {
-  return { ready: true, canAdd: isNativeUnavailable(error) || remoteFailureOf(error)?.code === 'directory-picker/unreadable' }
+  const unavailable = remoteFailureOf(error)?.code === 'directory-picker/unavailable'
+  // A failed probe is not evidence of missing support; keep the screen available for retry.
+  return { ready: true, canAdd: !unavailable || isNativeUnavailable(error) }
 }
 export async function probeDirectory(remote: DshRemote, signal?: AbortSignal): Promise<DirectoryAvailability> {
   const picker = directoryPicker(remote)
-  if (!picker) return { ready: true, canAdd: false }
+  if (!picker) return { ready: true, canAdd: remote.directoryPicker != null }
   try {
     const listing = unwrapRemoteResult(await picker.list(undefined, signal))
     return { ready: true, canAdd: true, homePath: listing.home }

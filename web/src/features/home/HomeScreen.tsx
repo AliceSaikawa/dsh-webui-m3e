@@ -18,6 +18,8 @@ import { attempt, renameWorkspace, sessionActions, workspaceActions } from './ac
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
 import { SessionRow } from './SessionRow.tsx'
 import { useDirectoryAvailability } from './directory.ts'
+import { normalizeWorkspaceError } from './workspace-errors.ts'
+import { canEditHomeSession } from './session-navigation.ts'
 import './home.css'
 
 type Mode = 'normal' | 'sort' | 'select'
@@ -37,6 +39,8 @@ export function HomeScreen() {
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
+  const refreshPending = useRef(false)
   const [pull, setPull] = useState(0)
   const pullStart = useRef<{ x: number; y: number } | null>(null)
   const pullDistance = useRef(0)
@@ -48,8 +52,9 @@ export function HomeScreen() {
     if (snapshot.phase === 'ready' && preferences.workspaceId !== (workspace?.workspaceId ?? null)) setCurrentWorkspace(workspace?.workspaceId ?? null)
   }, [snapshot.phase, workspace?.workspaceId, preferences.workspaceId])
   useEffect(() => { setMode('normal'); setSelected(new Set()) }, [workspace?.workspaceId])
-  const selectedIds = rows.filter(row => selected.has(row.id)).map(row => row.id)
+  const selectedIds = rows.filter(row => selected.has(row.id) && canEditHomeSession(row)).map(row => row.id)
   async function archive(ids: readonly string[]) {
+    ids = ids.filter(id => canEditHomeSession(dsh.sessions.list.getSnapshot().byId[id]))
     if (busyRef.current || !connected || !ids.length) return
     busyRef.current = true; setBusy(true)
     const completed: string[] = []
@@ -58,23 +63,24 @@ export function HomeScreen() {
       showSnackbar(ids.length === 1 ? 'アーカイブしました' : `${completed.length} 件をアーカイブしました`)
       setMode('normal')
     } catch (error) {
-      showSnackbar(`${completed.length ? `${completed.length} 件をアーカイブしました。` : ''}${remoteErrorMessage(error)}`)
+      showSnackbar(`${completed.length ? `${completed.length} 件をアーカイブしました。` : ''}${remoteErrorMessage(normalizeWorkspaceError(error))}`)
     } finally {
       setSelected(value => new Set([...value].filter(id => !completed.includes(id))))
       busyRef.current = false; setBusy(false)
     }
   }
   async function move(id: string, before?: string) {
-    if (!workspace || busyRef.current || !connected || id === before) return
+    if (!workspace || busyRef.current || !connected || id === before || !canEditHomeSession(dsh.sessions.list.getSnapshot().byId[id])) return
     busyRef.current = true; setBusy(true)
     await attempt(() => dsh.workspaces.insertSessionBefore(workspace.workspaceId, id, before))
     busyRef.current = false; setBusy(false)
   }
   async function refresh() {
-    if (refreshing || !connected) return
-    setRefreshing(true)
-    await attempt(() => dsh.sessions.refresh())
-    setRefreshing(false)
+    if (refreshPending.current || !connected) return
+    refreshPending.current = true; setRefreshing(true); setRefreshError('')
+    try { await dsh.sessions.refresh() }
+    catch (error) { setRefreshError(remoteErrorMessage(error, 'セッション一覧を読み込めませんでした。もう一度お試しください。')) }
+    finally { refreshPending.current = false; setRefreshing(false) }
   }
   const changeMode = (value: Mode) => { menu.current?.hide(); setMode(value); setSelected(new Set()) }
   const toolbar = <>
@@ -110,6 +116,12 @@ export function HomeScreen() {
       }} onTouchCancel={() => { pullStart.current = null; pullDistance.current = 0; setPull(0) }}>
         {(pull > 20 || refreshing) && <p className="home-refresh" role="status">{refreshing ? '読み直しています…' : pull >= 72 ? '離して読み直す' : '下に引っぱって読み直す'}</p>}
         {snapshot.error && <p className="home-error" role="alert">{remoteErrorMessage(snapshot.error)}</p>}
+        {refreshError && <p className="home-error" role="alert">{refreshError}</p>}
+        {(loading || snapshot.error || refreshError) && <div className="home-list-recovery">
+          {loading && !refreshError && !snapshot.error && <p role="status">一覧の読み込みが完了していません。</p>}
+          {list.phase === 'pending' || refreshError ? <M3eButton disabled={!connected || refreshing} onClick={() => { void refresh() }}>セッション一覧を読み直す</M3eButton> : null}
+          <M3eButton onClick={() => window.location.reload()}>画面を再読み込み</M3eButton>
+        </div>}
         {loading ? <div aria-label="セッションを読み込み中" role="status" className="home-skeletons">{[1, 2, 3, 4].map(id => <div className="home-skeleton" key={id}><span /><div><i /><i /></div></div>)}</div>
           : !workspace ? <div className="home-empty"><Icon name="create_new_folder" /><h2>ワークスペースがありません</h2><p>作業するフォルダを追加してください。</p>
             {directory.canAdd && <M3eButton variant="filled" disabled={!connected} onClick={() => navigate('/workspaces/add')}>ワークスペースを追加</M3eButton>}
@@ -118,7 +130,7 @@ export function HomeScreen() {
           : <><p className="home-list-caption">{mode === 'sort' ? 'つまみをドラッグして順番を変更' : mode === 'select' ? 'アーカイブするセッションを選択' : `${rows.length} 件のセッション`}</p>
             <ul className="home-sessions" aria-label="セッション一覧">{rows.map((row, index) => <SessionRow key={row.id} row={row} mode={mode}
               selected={selected.has(row.id)} disabled={busy} canMutate={connected} first={index === 0} last={index === rows.length - 1}
-              onToggle={() => setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next })}
+              onToggle={() => { if (canEditHomeSession(row)) setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) }}
               onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) })} onArchive={() => { void archive([row.id]) }}
               onMove={before => { void move(row.id, before) }} onMoveUp={() => { void move(row.id, rows[index - 1]?.id) }}
               onMoveDown={() => { void move(row.id, rows[index + 2]?.id) }} />)}</ul></>}

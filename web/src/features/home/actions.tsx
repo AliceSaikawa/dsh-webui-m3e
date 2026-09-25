@@ -4,22 +4,24 @@ import { openDialog, openSheet, showSnackbar, TextPromptDialog } from '../../app
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { DshServices, WorkspaceView, SessionSummary } from '../../dsh/services.ts'
 import { Icon } from '../../app/icons/Icon.tsx'
+import { normalizeWorkspaceError, workspaceOperation } from './workspace-errors.ts'
 
 export async function attempt(action: () => Promise<unknown>): Promise<boolean> {
   try { await action(); return true }
-  catch (error) { showSnackbar(remoteErrorMessage(error)); return false }
+  catch (error) { showSnackbar(remoteErrorMessage(normalizeWorkspaceError(error))); return false }
 }
 
 function prompt(title: string, initialValue: string, save: (value: string) => Promise<unknown>) {
   openDialog(close => <TextPromptDialog title={title} initialValue={initialValue} onCancel={close}
-    onConfirm={async value => { if (await attempt(() => save(value))) close() }} />, { label: title })
+    onConfirm={async value => { await save(value); close() }} />, { label: title })
 }
 
 export function renameWorkspace(dsh: DshServices, workspace: WorkspaceView) {
-  prompt('ワークスペースの名前を変える', workspace.title, title => dsh.workspaces.rename(workspace.workspaceId, title))
+  prompt('ワークスペースの名前を変える', workspace.title, title => workspaceOperation(() => dsh.workspaces.rename(workspace.workspaceId, title)))
 }
 
 export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void) {
+  if (row.origin === 'subagent') return
   openSheet(close => <div className="home-actions"><h2>セッションの操作</h2><p className="muted">{row.displayTitle}</p>
     <M3eButton onClick={() => {
       close()

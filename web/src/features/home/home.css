@@ -39,6 +39,8 @@
 .home-empty p { font-size: 14px; color: var(--md-sys-color-on-surface-variant); }
 .home-refresh { text-align: center; font-size: 13px; color: var(--md-sys-color-primary); }
 .home-error, .home-picker-error { color: var(--md-sys-color-error); padding: 12px; }
+.home-list-recovery { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; }
+.home-list-recovery p { width: 100%; margin-block: 4px; color: var(--md-sys-color-on-surface-variant); font-size: 14px; }
 .home-skeletons { display: grid; gap: 8px; }
 .home-skeleton { display: flex; align-items: center; gap: 16px; padding: 16px; min-height: 84px; }
 .home-skeleton > span { width: 44px; height: 44px; border-radius: 50%; background: var(--md-sys-color-surface-container-highest); }

@@ -42,14 +42,34 @@ function removeAllSessions(kit: MockKit): void {
 
 export function extendMock(kit: MockKit): void {
   for (const row of rows) kit.addSession(row, recordsFor(row))
-  // Rebuild only the shared workspace envelopes, preserving their ids and order.
-  for (const workspace of sharedWorkspaces) kit.removeWorkspace(workspace.workspaceId)
-  for (const workspace of sharedWorkspaces) kit.addWorkspace({
-    ...workspace,
-    sessionIds: workspace.workspaceId === MOCK_IDS.workspaces.m3e
-      ? [...workspace.sessionIds, HOME_MOCK_IDS.completed, HOME_MOCK_IDS.waiting, HOME_MOCK_IDS.child, HOME_MOCK_IDS.idle]
-      : workspace.workspaceId === MOCK_IDS.workspaces.harness ? [HOME_MOCK_IDS.harness] : workspace.sessionIds,
+  const workspaceSessions: readonly [string, readonly string[]][] = [
+    [MOCK_IDS.workspaces.m3e, [HOME_MOCK_IDS.completed, HOME_MOCK_IDS.waiting, HOME_MOCK_IDS.child, HOME_MOCK_IDS.idle]],
+    [MOCK_IDS.workspaces.harness, [HOME_MOCK_IDS.harness]],
+  ]
+  for (const [workspaceId, additions] of workspaceSessions) {
+    kit.updateWorkspace(workspaceId, (workspace) => ({
+      sessionIds: [...workspace.sessionIds, ...additions.filter((sessionId) => !workspace.sessionIds.includes(sessionId))],
+    }))
+  }
+  let parentAvailable = true
+  kit.updateList((state) => {
+    const previous = state.subagentsByParent[MOCK_IDS.sessions.readme]
+    parentAvailable = previous?.parentAvailable ?? true
+    state.subagentsByParent = {
+      ...state.subagentsByParent,
+      [MOCK_IDS.sessions.readme]: {
+        ...previous,
+        state: 'ready', error: null, parentAvailable,
+        entries: [
+          ...(Array.isArray(previous?.entries) ? previous.entries : []),
+          { kind: 'child', id: HOME_MOCK_IDS.child, mode: 'one-shot', label: '一覧の表示をレビュー', activity: 'inactive', hasChildren: false },
+        ],
+      },
+    }
   })
+  kit.setSessionState(HOME_MOCK_IDS.child, { subagent: {
+    address: { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode: 'one-shot' }, parentAvailable,
+  } })
   kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
   kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } })
   kit.addRemote('directoryPicker', createDirectoryMock())

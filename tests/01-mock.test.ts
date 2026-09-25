@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
-import { MOCK_IDS, approvalRecords, readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
+import { MOCK_IDS, approvalRecords, readmeRecords, sharedWorkspaces } from '../web/src/dsh/mock/fixtures.ts'
+import type { MockExtension } from '../web/src/dsh/mock/kit.ts'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext } from '../web/src/dsh/interactions-store.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { createDirectoryMock } from '../web/src/features/home/directory-mock.ts'
@@ -25,6 +26,93 @@ test('ホームの偽データは共有履歴を保ち、3 ワークスペース
     assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
     assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.approval)!.eventSource.getSnapshot()).records, approvalRecords)
     assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
+  } finally { ctx.dispose() }
+})
+
+test('先の拡張が追加・並べ替えしたワークスペースと会話順を保ってホームの会話を足す', () => {
+  const prior: MockExtension = { extendMock(kit) {
+    const harness = sharedWorkspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
+    kit.addSession({ id: 'other-home-session', displayTitle: '別担当の作業', running: false, blank: true, updatedAt: 1 }, [])
+    kit.addSession({ id: 'other-harness-session', displayTitle: '別担当の接続確認', running: false, blank: true, updatedAt: 2 }, [])
+    kit.addWorkspace({ ...harness, workspaceId: 'other-workspace', title: '別担当の場所', path: '/mock/other', sessionIds: [] })
+    // The preceding extension has already moved and customized this workspace.
+    kit.removeWorkspace(harness.workspaceId)
+    kit.addWorkspace({ ...harness, title: '変更済みの接続先', sessionIds: ['other-harness-session'] })
+    kit.updateWorkspace(MOCK_IDS.workspaces.m3e, {
+      title: '変更済みの作業場所', updatedAt: '2026-09-26T00:00:00.000Z',
+      sessionIds: [MOCK_IDS.sessions.approval, 'other-home-session', HOME_MOCK_IDS.idle, MOCK_IDS.sessions.readme],
+    })
+  } }
+  const ctx = createMockContext({ extensions: [prior, extension] })
+  try {
+    const workspaces = ctx.workspaces.list.getSnapshot().items
+    assert.deepEqual(workspaces.map((workspace) => workspace.workspaceId), [MOCK_IDS.workspaces.m3e, MOCK_IDS.workspaces.notes, 'other-workspace', MOCK_IDS.workspaces.harness])
+    const home = workspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.m3e)!
+    assert.equal(home.title, '変更済みの作業場所')
+    assert.equal(home.updatedAt, '2026-09-26T00:00:00.000Z')
+    assert.deepEqual(home.sessionIds, [MOCK_IDS.sessions.approval, 'other-home-session', HOME_MOCK_IDS.idle, MOCK_IDS.sessions.readme, HOME_MOCK_IDS.completed, HOME_MOCK_IDS.waiting, HOME_MOCK_IDS.child])
+    const harness = workspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
+    assert.equal(harness.title, '変更済みの接続先')
+    assert.deepEqual(harness.sessionIds, ['other-harness-session', HOME_MOCK_IDS.harness])
+    assert.ok(ctx.sessions.binding('other-home-session'))
+    assert.ok(ctx.sessions.binding('other-harness-session'))
+    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.approval)!.eventSource.getSnapshot()).records, approvalRecords)
+  } finally { ctx.dispose() }
+})
+
+test('ホームの子は読み込み済みカタログに登録され、一度限りの子として開ける', () => {
+  const ctx = createMockContext({ extensions: [extension] })
+  try {
+    const parentSessionId = MOCK_IDS.sessions.readme
+    const childSessionId = HOME_MOCK_IDS.child
+    const catalog = ctx.sessions.list.getSnapshot().subagentsByParent[parentSessionId]
+    assert.equal(catalog?.state, 'ready')
+    assert.equal(catalog?.error, null)
+    assert.equal(catalog?.parentAvailable, true)
+    assert.deepEqual(catalog?.entries, [{ kind: 'child', id: childSessionId, mode: 'one-shot', label: '一覧の表示をレビュー', activity: 'inactive', hasChildren: false }])
+    assert.deepEqual(ctx.sessions.binding(childSessionId)!.session.getSnapshot().subagent, {
+      address: { parentSessionId, childSessionId, mode: 'one-shot' }, parentAvailable: true,
+    })
+    ctx.sessions.open(parentSessionId)
+    const parentSelection = ctx.sessions.list.getSnapshot()
+    assert.throws(() => ctx.sessions.openSubagent({ parentSessionId, childSessionId, mode: 'continuable' }), /カタログとアドレス/)
+    assert.equal(ctx.sessions.list.getSnapshot(), parentSelection)
+    const address = { parentSessionId, childSessionId, mode: 'one-shot' } as const
+    ctx.sessions.openSubagent(address)
+    assert.equal(ctx.sessions.list.getSnapshot().current, childSessionId)
+    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+    assert.deepEqual(ctx.sessions.subagentAddress(childSessionId), address)
+    assert.deepEqual(ctx.sessions.binding(childSessionId)!.session.getSnapshot().subagent, { address, parentAvailable: true })
+    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(parentSessionId)!.eventSource.getSnapshot()).records, readmeRecords)
+  } finally { ctx.dispose() }
+})
+
+test('子の追加は同じ親の既存の行・補助情報と別の親のカタログを保つ', () => {
+  const previousEntry = { kind: 'child', id: 'other-review-child', mode: 'continuable', label: '別担当の子', activity: 'running', hasChildren: true }
+  const diagnostic = { kind: 'diagnostic', id: 'other-diagnostic', reason: 'missing' }
+  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, parentAvailable: false, entries: [] }
+  const prior: MockExtension = { extendMock(kit) {
+    kit.addSession({ id: previousEntry.id, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: previousEntry.label, running: true, blank: true, updatedAt: 1 }, [])
+    kit.updateList((state) => {
+      state.subagentsByParent = {
+        [MOCK_IDS.sessions.readme]: { state: 'loading', error: null, parentAvailable: false, revision: 7, entries: [previousEntry, diagnostic] },
+        [MOCK_IDS.sessions.approval]: otherParentCatalog,
+      }
+    })
+  } }
+  const ctx = createMockContext({ extensions: [prior, extension] })
+  try {
+    const catalogs = ctx.sessions.list.getSnapshot().subagentsByParent
+    const homeCatalog = catalogs[MOCK_IDS.sessions.readme]!
+    assert.equal(homeCatalog.state, 'ready')
+    assert.equal(homeCatalog.parentAvailable, false)
+    assert.equal(homeCatalog.revision, 7)
+    assert.deepEqual(homeCatalog.entries, [previousEntry, diagnostic, { kind: 'child', id: HOME_MOCK_IDS.child, mode: 'one-shot', label: '一覧の表示をレビュー', activity: 'inactive', hasChildren: false }])
+    assert.deepEqual(catalogs[MOCK_IDS.sessions.approval], otherParentCatalog)
+    const address = { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: previousEntry.id, mode: 'continuable' } as const
+    ctx.sessions.openSubagent(address)
+    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
   } finally { ctx.dispose() }
 })
 
