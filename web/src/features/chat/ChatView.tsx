@@ -1,3 +1,4 @@
-export function ChatView({ sessionId }: { sessionId: string }) {
+/** active is false while the mounted view is hidden; suspend scroll/focus effects. */
+export function ChatView({ sessionId }: { sessionId: string; active: boolean }) {
   return <div className="placeholder" data-session={sessionId}><h2>チャット</h2><p>会話の表示を準備しています</p></div>
 }
