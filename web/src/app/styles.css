@@ -25,6 +25,8 @@ input, textarea { width: 100%; font-size: 16px; border-radius: 12px; border: 1px
 label { display: block; margin-block: 8px; }
 .app-viewport { position: fixed; left: 0; right: 0; height: 100dvh; overflow: hidden; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); }
 .route-layer, .edge-swipe-root { height: 100%; min-height: 0; }
+.app-error-screen { position: fixed; inset: 0; overflow: auto; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 16px; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: var(--md-sys-color-surface, #fef7ff); color: var(--md-sys-color-on-surface, #1d1b20); }
+.app-error-screen button { min-height: 44px; padding: 10px 20px; border: 0; border-radius: 999px; background: var(--md-sys-color-primary, #6750a4); color: var(--md-sys-color-on-primary, #fff); }
 .screen { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
 .top-bar { display: flex; flex: none; align-items: center; gap: 8px; min-height: calc(64px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); background: var(--md-sys-color-surface); }
 .top-bar h1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

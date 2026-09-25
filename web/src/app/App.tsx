@@ -7,6 +7,7 @@ import { EdgeSwipeBack } from './shell/EdgeSwipeBack.tsx'
 import { registerRoutes, useRoute } from './router.ts'
 import { routes } from './routes.ts'
 import { useViewport } from './viewport.ts'
+import { ErrorBoundary } from './ErrorBoundary.tsx'
 import './styles.css'
 
 registerRoutes(routes)
@@ -19,4 +20,4 @@ function Frame() {
     <OverlayHost />
   </div>
 }
-export function App({ ctx }: { ctx: unknown }) { return <DshProvider ctx={ctx}><Theme><Frame /></Theme></DshProvider> }
+export function App({ ctx }: { ctx: unknown }) { return <ErrorBoundary><DshProvider ctx={ctx}><Theme><Frame /></Theme></DshProvider></ErrorBoundary> }

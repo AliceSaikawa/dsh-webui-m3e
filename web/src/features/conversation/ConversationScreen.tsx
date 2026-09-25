@@ -4,11 +4,13 @@ import { M3eTabs, M3eTab } from '@m3e/react/tabs'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { ConnectionBanner } from '../../app/shell/ConnectionBanner.tsx'
+import { RetainedScrollPanel } from '../../app/shell/RetainedScrollPanel.tsx'
 import { back, navigate } from '../../app/router.ts'
 import { useOverlays } from '../../app/overlay/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { useSession } from '../../dsh/session.ts'
+import { enterConversation } from '../../dsh/conversation-selection.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { usePendingInteractions, resetDeferred } from '../../dsh/interactions.ts'
 import { ChatView } from '../chat/ChatView.tsx'
@@ -43,12 +45,9 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
       selectedTab.current?.focus({ preventScroll: true })
     }
   }, [tab])
-  useEffect(() => {
-    // Selection consumes the unread completion mark, so only this screen opens a session.
-    // Missing or failed sessions show the error below instead of attempting an ineffective retry.
-    if (!face || face.getSnapshot().removed || face.getSnapshot().openState === 'error') return
-    if (sessions.list.getSnapshot().current !== sessionId) sessions.open(sessionId)
-  }, [face, sessionId, sessions])
+  // Chat/trace share this effect. Clear during navigation's commit, before a
+  // completion event can arrive while the non-conversation screen is visible.
+  useLayoutEffect(() => enterConversation(sessions, sessionId, face), [face, sessionId, sessions])
   useEffect(() => { resetDeferred(sessionId) }, [sessionId])
   useEffect(() => {
     if (!current) return
@@ -66,12 +65,12 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
     <main ref={contentRef} className="screen-content conversation-content">
       {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><div className="placeholder"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><M3eButton onClick={back}>一覧に戻る</M3eButton></div></div>
         : <>
-          <div className="conversation-panel" role="tabpanel" aria-label="チャット" hidden={tab !== 'chat'} inert={tab !== 'chat'} data-scroll-area={tab === 'chat' ? true : undefined}>
+          <RetainedScrollPanel active={tab === 'chat'} label="チャット">
             <ChatView sessionId={sessionId} active={tab === 'chat'} />
-          </div>
-          <div className="conversation-panel" role="tabpanel" aria-label="トレース" hidden={tab !== 'trace'} inert={tab !== 'trace'} data-scroll-area={tab === 'trace' ? true : undefined}>
+          </RetainedScrollPanel>
+          <RetainedScrollPanel active={tab === 'trace'} label="トレース">
             <TraceView sessionId={sessionId} active={tab === 'trace'} />
-          </div>
+          </RetainedScrollPanel>
         </>}
     </main>
     {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!answering && <Composer target={{ kind: 'session', sessionId }} />}</footer>}

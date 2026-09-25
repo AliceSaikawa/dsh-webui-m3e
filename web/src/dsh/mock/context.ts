@@ -42,7 +42,7 @@ interface SessionModel {
 }
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
-const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
+const failure = (code: string, message: string, details: Readonly<Record<string, unknown>> = {}): RemoteResult<never> => ({ ok: false, error: { code, message, details } })
 const accepted = () => success({ accepted: true as const })
 const textOf = (content: readonly ContentBlock[]) => content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')
 const json = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value)) as JsonValue
@@ -128,7 +128,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   function running(model: SessionModel, value: boolean) {
     if (!isActive(model)) return
     model.snapshot.update((state) => ({ ...state, running: value, blank: false }))
-    updateSummary(model, { running: value, blank: false, updatedAt: Date.now() })
+    updateSummary(model, { running: value, blank: false, updatedAt: Date.now(), ...(value ? { completed: false } : {}) })
   }
   function turnOf(model: SessionModel): number {
     const start = [...model.records].reverse().find((event) => event.type === 'turn/start')
@@ -229,8 +229,9 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     open(sessionId) {
       const model = models.get(sessionId)
       if (!model) return
-      model.snapshot.update((state) => ({ ...state, openState: 'open' }))
-      list.update((state) => ({ ...state, current: sessionId, currentAddress: model.snapshot.getSnapshot().subagent?.address }))
+      model.snapshot.update((state) => state.openState === 'error' ? state : { ...state, openState: 'open' })
+      model.summary = { ...model.summary, completed: false }
+      list.update((state) => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, current: sessionId, currentAddress: model.snapshot.getSnapshot().subagent?.address }))
     },
     openSubagent(address) {
       const catalog = list.getSnapshot().subagentsByParent[address.parentSessionId]
@@ -322,11 +323,17 @@ export function createMockContext(options: MockOptions = {}): MockContext {
 
   const kit: MockKit = {
     addWorkspace(workspace) {
-      if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) throw new Error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
+      if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) {
+        console.error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
+        return
+      }
       workspaceList.update((state) => ({ ...state, items: [...state.items, structuredClone(workspace)] }))
     },
     addSession(summary, inputRecords) {
-      if (models.has(summary.id)) throw new Error(`偽のセッションが重複しています: ${summary.id}`)
+      if (models.has(summary.id)) {
+        console.error(`偽のセッションが重複しています: ${summary.id}`)
+        return
+      }
       const records = structuredClone([...inputRecords]).sort((a, b) => a.seq - b.seq)
       const start = Math.max(0, records.length - pageSize)
       const entries: SessionEventLikeEntry[] = records.slice(start).map((event) => ({ type: 'event', event }))
@@ -389,7 +396,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         async updateQueue(itemId, action) {
           if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const item = snapshot.getSnapshot().queue.find((row) => row.id === itemId)
-          if (!item) return failure('session/queue-not-found', '順番待ちのメッセージが見つかりません。')
+          if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
           if (action.kind === 'edit') snapshot.update((state) => ({ ...state, queue: state.queue.map((row) => row.id === itemId ? { ...row, content: action.content, text: textOf(action.content), preview: textOf(action.content) } : row) }))
           else {
             snapshot.update((state) => ({ ...state, queue: state.queue.filter((row) => row.id !== itemId) }))
@@ -413,7 +420,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         async rename(title) {
           if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const normalized = title.trim()
-          if (!normalized) return failure('session/invalid-title', '題名を入力してください。')
+          if (!normalized) return failure('session/title-invalid', '題名を入力してください。', { sessionId: model.summary.id })
           updateSummary(model, { title: normalized, displayTitle: normalized })
           const event = append(model, 'session/title', { title: normalized })
           return success({ title: normalized, seq: event.seq })
@@ -496,6 +503,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       append(model, 'step/end', { turn: attempt.turn, step: attempt.step })
       append(model, 'turn/end', { turn: attempt.turn, reason: { kind: 'completed' } })
       running(model, false)
+      updateSummary(model, { completed: list.getSnapshot().current !== sessionId })
       advanceQueue(model)
     },
     setProjection(sessionId, key, value) {

@@ -265,19 +265,22 @@ web/src/
 - `app/shell/index.ts`：`TabScaffold({ title?, topBar?, children, fab?, tab? })`、`PageScaffold({ title, children, actions?, footer? })`、`useConnection()`。後者は `state / connected / lastConnectedAt / reconnect` を返す。接続成功時刻が不明の切断画面では、架空の経過時間を出さず、保存済みデータと表示する。
 - `app/overlay/index.ts`：`openSheet / openFullSheet / openDialog` は `ReactNode` または `(close) => ReactNode` と任意の options を受け、何度呼んでも安全な `close(): void` を返す。options は `dismissible / label / interactionKey / sessionId`。応答シートは後の 2 項目も指定する。
 - OverlayHost はいちばん上の 1 枚だけを描く。シートから別のシートやダイアログを開くと、下のシートは閉じて開き直し、中の状態は保たれない。別のシートやダイアログを開く前に、下のシートを閉じる。
-- `TextPromptDialog({ title, initialValue?, label?, onConfirm, onCancel })` の `onConfirm(value)` は `void` または `Promise<void>`。保存成功後に閉じる責任は呼び出し元が持つ。`Markdown({ children, className? })` の children は Markdown 文字列。
+- `TextPromptDialog({ title, initialValue?, label?, multiline?, rows?, onConfirm, onCancel })` の `onConfirm(value)` は `void` または `Promise<void>`。既定は従来の単行 input で、前後の空白を除いた値を渡す。03 の順番待ち編集では `multiline: true` を指定すると textarea になり、Enter は改行、字下げ・改行を含む原文を渡す。`rows` は任意で既定 4。空白だけの値はどちらも送らない。保存失敗は `remoteErrorMessage` の日本語文言を出す。保存成功後に閉じる責任は呼び出し元が持つ。`Markdown({ children, className? })` の children は Markdown 文字列。
 - `app/theme/index.ts`：`useAppearance()` は `system | light | dark`、`setAppearance(value)` と `backToClassic()`。`app/icons/Icon.tsx`：`Icon({ name, slot?, filled?, className? })`。
 - `dsh/services.ts`：`DshProvider / useDsh` と共有型。`dsh/session.ts`：`useSession(id)` は `face / snapshot / records / stream / projection / ctx`。開けない ID の `face` は undefined。`projection<T>(key)` はフックなので、最上位で無条件に呼ぶ。別名の `useSessionProjection(face, key)` も用意した。
 - `useSession(id)` は読むだけで、`sessions.open` を呼ばない。会話の選択は `ConversationScreen` が行う。会話画面以外で状態や履歴を読んでも、選択中の会話と完了の未読印を変えない。
+- 有効な会話へ入ると、取得エラーの状態でも `sessions.open(id)` で選び直す。存在しない・削除済みの会話は選ばない。会話の枠を離れると `sessions.clear()` で選択を解除する。チャット／トレース間では同じ枠と選択を保つ。別の操作がすでに次の会話を選んでいた場合、その選択を古い枠の後片付けが消さない。mock の取得エラーは mock 側で保持するので、画面側でエラーを理由に選択を止めない。
 - `SubagentAddress` は `{ parentSessionId, childSessionId, mode: 'one-shot' | 'continuable' }`。09 は子のカタログ行の mode をそのまま渡す。ID だけから mode を推測しない。mock の `openSubagent` も親のカタログの子 ID・kind・mode を照合し、不一致なら選択を変えずに例外にする。シナリオでは `addSession` で子の履歴を用意し、`updateList` で `subagentsByParent[parentSessionId].entries` に `{ kind: 'child', id, mode, ... }` を登録する。
 - **02・04 の入口変更**：`ChatView({ sessionId, active })` と `TraceView({ sessionId, active })` に必須の `active: boolean` を追加した。正常な会話では両方をマウントしたまま、非表示側のパネルに `hidden` と `inert` を付ける。同じ会話のタブ切り替えでは部品と DOM を再作成せず、展開状態・検索条件と閲覧位置を保持する。別の会話へ移る、会話画面から出る、会話を開けない状態になる場合の保持は対象外。
 - 両パネルは独立した高さ 100% のスクロール領域を持ち、共通の `main` 自体はスクロールしない。02・04 は各パネル、またはその中で高さ 100% に収まる専用要素をスクロール対象にし、二重のスクロールを作らない。土台の `data-scroll-area` は表示中のパネルだけに付く。非表示側はレイアウト・フォーカス・アクセシビリティツリーの対象外とし、隠れる本文や消える入力欄にフォーカスが残る場合は表示先のタブへ移す。
+- 土台の `RetainedScrollPanel` が非表示の直前にパネルと内部要素の縦・横スクロール位置を保存し、再表示時に同じ DOM 要素へ即時復元する。非表示中に消えた要素には復元しない。02・04 の引数は前回追加した `active` のままで、保存のための引数は増やさない。実ブラウザでの位置保持とフォーカスはオーケストレーターがブラウザで確かめる。
 - **02・04 が守ること**：`active === false` の間は末尾への自動移動・寸法による末尾判定・フォーカス移動を行わない。タイマー、スクロール監視、予約済みのフレーム処理も停止する。初回の末尾移動は初めて `active === true` になり履歴を表示できたときだけ行い、非表示中に初回表示済みの印を付けない。再表示だけを理由に初回の移動を繰り返さず、保持した閲覧位置・表示状態から再開する。非表示中も履歴データの購読は続けてよい。
 - `stream` は `{ attemptId, turn, step, chunks, content, usage?, finishReason? } | null`。`content` は復元済みの ContentBlock 配列。`finishReason` は文字列でなく `{ kind: ... }`。
 - `dsh/interactions.ts`：`initializeInteractions(ctx)` を描画前に一度呼ぶ。`usePendingInteractions / defer / resetDeferred / isPlanReview` を公開。pending の `deferred` は boolean、`answer()` は `Promise<void>`。`presentInteraction(pending, { from })` の戻り値は `close(): void`。会話に再入場したときだけ deferred を解除し、チャット／トレース切り替えでは解除しない。
 - `dsh/mock/kit.ts`：MockKit の型入口。すべての指定関数を実装した。`emit` と `streamAssistant` は Promise を返す。`emit` の宛先は payload の `agent`（セッション ID）または `sessionId` で指定する。`addWorkspace` は WorkspaceView、`addSession` は SessionSummary と履歴を受け取る。`updateList` は新しい一覧を返す形と渡された一覧を変更する形の両方に対応する。`scenario` は名前に合う URL のときだけ実行する。
 - **06 の即時シナリオ**：ctx 構築中の `extendMock` / シナリオ内で遅延なしの `kit.emit()` を使える。受け手が未登録なら、そのイベントの最初の `$on` 登録後の microtask で一度だけ配送し、承認・質問・プランを対応待ちへ入れる。シナリオの状態設定は引き続き同期実行する。`emit()` の Promise は承認・質問への回答まで待つ。構築完了後の通常の未登録イベントは保留・後日再生しない。配送前の ctx 破棄・対象セッション削除で保留要求を片付ける。
 - MockKit に `setSessionState(sessionId, patch: Partial<SessionSnapshot>): void`、`removeSession(sessionId): void`、`removeWorkspace(workspaceId): void` を追加した。`lastAgentError`、`openState: 'error'` と `openError`、`promptError` は `setSessionState` で設定できる。共通データを消すシナリオには後の 2 関数を使う。既存の 9 関数の引数と戻り値は維持した。偽データに `ctx.remote.workspace` は置かない。
+- mock は会話を選ぶと通常・子とも完了の未読印を解除する。生成開始で前回の印を解除し、正常完了時に未選択の会話だけ印を付ける。`addSession` / `addWorkspace` の ID 重複は `console.error` で知らせ、その 1 件だけを無視する。既存データと後続の拡張登録は保持し、引数・戻り値は変えない。
 
 #### 未確認事項を静的に照合した結果と判断
 
@@ -381,3 +384,34 @@ web/src/
 - `pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 885 KB、同梱フォント約 4 MB）。依存・ロックファイルは変更していない。
 - 画面は未検証。ユーザー指示に従いオーケストレーターへ引き継ぐ。`?mock` で同じ会話のチャット／トレース間を切り替えた際の閲覧位置・表示状態、非表示側のフォーカス除外とスクロール独立性を確認する。02・04 は本実装で `active` の契約を守った上で、初回表示と再表示を確認する。React の描画テストは追加していない。
 - 担当外で必要になった変更：なし。変更は 00 の担当ファイルと本書の実装メモ内のみ。main、DSH 本体、保護フック・権限設定は変更せず、DSH も起動していない。
+
+### 2026-09-25：cdce8e7 の二者レビュー指摘 1〜9 を修正
+
+#### 会話の選択と完了の印（1・2・3）
+
+- `ConversationScreen` の選択処理を `dsh/conversation-selection.ts` へ分けた。存在する未削除の会話なら、openState が error でも入場時に `sessions.open(id)` を呼ぶ。mock の `open` は意図したエラーシナリオを上書きしないようにした。Node で取得失敗の A → B → A の選択呼び出しと、mock のエラー保持を確認した。
+- 会話画面の layout effect の後片付けで、まだその会話が選択中の場合に `sessions.clear()` を呼ぶ。画面切り替えの commit 中に解除するので、一覧が見えた後の完了イベントを選択中として扱わない。チャット／トレースは同じ枠で、effect の依存に tab を含めないため解除しない。次の会話がすでに選ばれていれば古い後片付けは解除しない。
+- 実物の根拠は、インストール済み `dsh-api-session-controller/lib/types/client/sessions/service.js:193` の clear → manager.clearSelection と、`manager.js:121` の selected の解除。clear は保存された選択も解除する API。`service.js:378` の followCurrent は別の会話から選び直すと session.open を呼ぶ。実物は読み取りだけで起動していない。
+- mock の選択では内部モデルの summary と一覧の completed をともに false にする。通常・子の両方について、選択後の projection 更新や rename でも印が復活しないことを検証した。実物の select / selectSubagent が完了通知を消す根拠は `manager.js:85–117`。
+- 回帰テストの過程で mock の正常完了が未読印を付けないことも分かったため、生成開始時は前回の印を消し、正常完了時は未選択の会話だけ印を付けるようにした。会話を離れてから完了すると印が付き、選択したままの完了では付かず、次の生成開始で以前の印が消えることを Node で確認した。
+
+#### 複数行ダイアログ・失敗表示（4・7・8）
+
+- 03 の順番待ち編集に必要な `TextPromptDialog` の任意の multiline と rows を追加した。既存の呼び方は単行のまま。複数行では textarea を使い、Enter で改行し、字下げ・改行を含む値を onConfirm に渡す。公開入口の引数と扱いを上の「段階 2 が使う公開入口」に更新した。
+- 保存失敗は `remoteErrorMessage` で共通のエラーコードに応じた日本語を出す。未知の例外には従来の「保存できませんでした。もう一度お試しください。」を使い、再送信を始めると古いエラーを消す。
+- App の最外層に ErrorBoundary を置いた。Provider、テーマ、画面、シートを含む描画中の例外を受け、日本語の案内と「読み直す」のボタンを表示する。ボタンはページを再読み込みする。テーマが壊れた場合も読める色の既定値、safe-area、44px 以上のボタンを用意した。イベントハンドラや非同期処理の失敗は各処理のエラー表示が扱う。
+
+#### mock の契約・重複登録（5・9）
+
+- 待機列項目のエラーを `session/queue-item-not-found` と `{ itemId }`、不正な題名を `session/title-invalid` と `{ sessionId }` に合わせた。根拠はインストール済み controller の `lib/types/types.d.ts:193–200` と `lib/types/commands.js:177,415`。誤った操作で待機列や題名・履歴が変わらないことも確認した。
+- 重複する session / workspace ID は例外を投げず、console.error の後にその行だけを無視する。元の履歴・一覧を上書きせず、続く拡張の登録も実行する。既存の重複時例外を期待するテストを更新し、起動継続のテストを追加した。
+- mock の選択・エラーコード・重複登録に対する新規 7 テストは、修正前にすべて失敗し、修正後に成功した。
+
+#### スクロール保持（6）と検証範囲
+
+- display:none で位置が失われるというブラウザ差は、今回の環境では未確認。明示的に位置を保存・復元する処理を土台に追加した。`RetainedScrollPanel` の getSnapshotBeforeUpdate で hidden 適用前の位置を読み、再表示後に同じ DOM 要素へ戻す。各機能が内側に作るスクロール領域も対象にし、取り外された要素は除外する。初回の表示では復元を行わない。
+- Node の 2 テストで、非表示中に位置が 0 になった状況を模擬し、外側・内側の縦横位置が復元されること、削除された要素と別のパネルに干渉しないことを確認した。これはブラウザでの検証の代わりではない。
+- **オーケストレーターがブラウザで確かめる**：チャット／トレースの往復時の実際のスクロール位置と表示状態、非表示側のフォーカス除外、複数行ダイアログの改行と保存失敗表示、描画エラー時の画面と「読み直す」。DSH の A → B → A の再取得と完了通知は段階 3 でも確認する。開発サーバー・DSH の起動、HTTP 確認、ブラウザー操作は行っていない。
+- `pnpm typecheck`：成功。`pnpm test`：83 件すべて成功（従来 69 件と新規 14 件）。`pnpm build`：成功。既存の Vite chunk サイズ警告は残る（JavaScript 約 886 KB、同梱フォント約 4 MB）。React の描画テストは追加していない。
+- 今回の新しい公開引数は TextPromptDialog の任意の multiline / rows だけ。仮の ChatView / TraceView を含む段階 2 の部品の引数・戻り値に追加変更はない。
+- 担当外で必要になった変更：なし。担当ファイルと本書の実装メモだけを変更した。main、依存・ロックファイル、DSH 本体、保護フック・権限設定は変更していない。今回の操作拒否はない。実物の型の最初の読み取り先はファイル不在だったため、許可された同パッケージの lib 内で実際の配置を確認した。

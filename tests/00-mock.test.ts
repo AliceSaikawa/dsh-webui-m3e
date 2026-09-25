@@ -5,7 +5,7 @@ import { imageBase64, MOCK_IDS, readmeRecords } from '../web/src/dsh/mock/fixtur
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import type { PendingSubmissionRetirement, SessionWireEvent } from '../web/src/dsh/services.ts'
 
-test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の controller 契約で公開する', () => {
+test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の controller 契約で公開する', (t) => {
   const ctx = createMockContext()
   try {
     assert.equal(ctx.remote.workspace, undefined)
@@ -27,7 +27,12 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     const running = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
     assert.equal(running.session.getSnapshot().running, true)
     assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 3)
-    assert.throws(() => ctx.mock.addSession(ctx.sessions.list.getSnapshot().byId[binding.sessionId]!, []), /重複/)
+    const errors = t.mock.method(console, 'error', () => {})
+    assert.doesNotThrow(() => ctx.mock.addSession(ctx.sessions.list.getSnapshot().byId[binding.sessionId]!, []))
+    assert.equal(errors.mock.callCount(), 1)
+    assert.match(String(errors.mock.calls[0]!.arguments[0]), /重複/)
+    assert.equal(ctx.sessions.binding(binding.sessionId), binding)
+    assert.deepEqual(foldSessionWindow(binding.eventSource.getSnapshot()).records, readmeRecords)
   } finally { ctx.dispose() }
 })
 
