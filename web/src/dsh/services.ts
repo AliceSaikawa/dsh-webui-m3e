@@ -44,7 +44,11 @@ export type QueueAction =
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
 
-export interface SubagentAddress { readonly parentSessionId: string; readonly childSessionId: string }
+export interface SubagentAddress {
+  readonly parentSessionId: string
+  readonly childSessionId: string
+  readonly mode: 'one-shot' | 'continuable'
+}
 export interface SessionSummary {
   id: string
   title?: string
