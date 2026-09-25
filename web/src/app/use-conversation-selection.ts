@@ -3,7 +3,7 @@ import { useDsh } from '../dsh/services.ts'
 import { useSnapshot } from '../dsh/use-snapshot.ts'
 import { conversationSessionId, syncConversationSelection } from '../dsh/conversation-selection.ts'
 
-/** Frame owns URL selection across chat, trace and independently mounted tools. */
+/** URL selection spans chat, trace and independently mounted tools. */
 export function useConversationSelection(pathname: string): void {
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
@@ -18,8 +18,14 @@ export function useConversationSelection(pathname: string): void {
   // Observe restored selection outside a conversation. Inside one, a menu can
   // select a child before navigation; do not undo that selection in between.
   const outsideSelection = sessionId === undefined ? list.current : undefined
-  const outsidePhase = sessionId === undefined ? list.phase : undefined
+  const phase = list.phase
   useLayoutEffect(() => {
     syncConversationSelection(sessions, sessionId, canOpen)
-  }, [sessions, sessionId, canOpen, outsidePhase, outsideSelection])
+  }, [sessions, sessionId, canOpen, phase, outsideSelection])
+}
+
+/** Keep list and face subscriptions out of Frame and the visible screen tree. */
+export function ConversationSelection({ pathname }: { pathname: string }): null {
+  useConversationSelection(pathname)
+  return null
 }
