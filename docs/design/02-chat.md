@@ -109,4 +109,57 @@
 
 ## 実装メモ
 
-（実装した担当が書き足します）
+### 2026-09-25：チャットタブの実装
+
+#### 実装したこと
+
+- `ChatView({ sessionId })` の公開入口を維持し、本文のスクロール領域を実装した。変更は `web/src/features/chat/`、`tests/02-*.test.ts`、本書の実装メモだけ。`feat/02-chat` で作業し、main、共有の土台、依存、DSH 本体は変更していない。merge / rebase もしていない。
+- `model.ts` に records / stream / pendingSubmissions から表示行を作る純粋関数を分離した。4 種類の表示イベントに加え、設計で例外として指定された `command/done` を表示する。`command/run` と `tool/call` は名前・時刻の対応付けにだけ使用し、独立した行にしない。未知のイベント、ignorable、assistant/attempt は表示しない。
+- 自分の吹き出し、AI の Markdown、開閉する「考えた内容」、ツール行、システム文、コマンド結果、送信前表示、初回応答待ち、処理エラーのカードを実装した。ツール結果だけが読み込み範囲にある場合も結果を残し、名前が分からなければ「ツール」とする。
+- stream は block index ごとに復元し、並行する reasoning / text / tool-call を別々に追記する。block-end はそのブロックの確定内容で置き換える。元の index を描画キーに含め、後から小さい index のブロックが現れても別の行の状態を流用しない。復元済み content と chunks を二重に足さない。
+- 初回は末尾を表示し、上向きのスクロール操作で追従を止める。「最新へ」で再開し、自分で末尾へ戻った場合も再開する。ResizeObserver で本文と表示領域を監視し、画像の読込・高さ変更・非表示タブからの復帰を扱う。古い履歴は上端またはボタンから読み、表示中の行と画面内の位置を保存して復元する。画像が後から届く場合もその行を基準に保つ。
+- ツール詳細は引数の整形、結果、既知の所要時間、失敗表示を出す。開いたまま結果が届けば更新する。入れ子全体のテキストを合計 200 行で切り、「続きを表示」で展開する。画像は添付の窓口から読み、それ以外の結果ブロックは種類を表示する。
+- 添付画像は `readAttachment` の bytes / mediaType から Blob URL を作り、不要時に解放する。全画面の画像は独立して読み込むため、元の詳細シートを閉じても参照先が失効しない。ファイルは名前とサイズを表示する。
+- 本文の 550ms の長押し、コンテキストメニュー、操作ボタンから「コピー」「ここから分岐」を開く。10px を超える移動や pointer cancel は長押しを取り消す。分岐には元イベントの seq を渡し、成功後に新しい会話へ移る。クリップボード・分岐・履歴読込の失敗は日本語で通知する。
+
+#### 未確認事項を既存 DSH で照合した結果
+
+以下はインストール済み `@deepseek-ai/dsh/node_modules/@deepseek-ai/` 以下を読み取りだけで調べた結果。DSH は起動していない。
+
+- **所要時間**：`dsh-client-ui-chat/lib/client.js:3883,6290-6322` は同 callId の tool/call と tool/result の時刻差を使う。`dsh-client-ui-conversation/lib/types/client/contract/records.d.ts:154-172` も callTime と meta を別に持つ。本実装も `max(0, result.time - call.time)` とし、開始イベントが読み込み範囲になければ不明とする。assistant/message の時刻から推測せず、実行中の時間も数えない。
+- **meta**：`dsh-client-ui-tool/lib/client.js:134-149,283-307,370-400` では read の範囲情報、編集の diffs、検索の truncated / total / shape など、ツールごとに形が異なる。共通の duration として使える根拠はなかった。今回の汎用表示では meta を解釈しない。
+- **イベントの形**：`dsh-api-session-controller/lib/typert.host.js:1717,2021,2037-2041` と `dsh-client-ui-chat/lib/client.js:4266-4289,6304-6322` で確認。user/message は data 自体、assistant/system は data.message がメッセージ。tool/result は data.message.content 内の tool-result ブロックに toolCallId / content / isError が入り、error / meta は data の直下にある。isError と error の双方で失敗と判定する。
+- **複数ブロック**：`dsh-client-ui-chat/lib/client.js:4395-4447` も chunk.index ごとに蓄積し、block-end で確定内容へ置き換える。
+- **コマンド名**：同 `client.js:5715-5744` の command/done には name がなく、commandId で command/run と対応付ける。名前が読み込み範囲にない場合は架空の名前を付けず「コマンドを実行しました」とする。
+- **添付**：`dsh-api-session-controller/lib/types/client/contract/session.d.ts:84-92`、同 `sessions/session.js:235-244`、`dsh-client-ui-conversation/lib/client.js:2389-2412` で readAttachment の戻り値と Blob URL の解放を確認した。
+- **分岐**：`dsh-client-ui-chat/lib/client.js:8338-8345` はメッセージの seq を atSeq に渡す。ただし `dsh-api-session-controller/lib/types/commands.js:184-227` の実処理は、その seq 以上の最初の turn/end を境界にする。未完了ターンは session/fork-unavailable。画面側で成功を仮定せず、失敗を表示する。共通 mock の分岐は指定 seq までを複製するため、この境界の違いは実接続での確認が必要。
+
+#### 自分で決めたこと・土台との境界
+
+- 送信前表示は placement が transcript のものを会話末尾に追加する。queued / steering の未確定表示は入力欄側の領域として重複させない。生成途中には確定 seq がないため分岐を無効にし、コピーはできるようにした。
+- 古い履歴の自動読込に加え、ボタンでも読めるようにした。画面内に収まる短いページでも次の履歴に進める。reasoning / command を展開したときも追従を止め、開いた内容を読み続けられるようにした。
+- **「もう一度開く」は未実装**。00 の実装メモと現在の ConversationScreen は、同じ ID の sessions.open では再読込できる保証がないため、読込エラー時に ChatView を描かず「一覧に戻る」を出す。ChatView 単独のエラー表示もこれに合わせた。仕様通りの再試行を実現するには、00 側で有効な再試行 API を確認し、共通画面の導線を変更する必要がある。担当外のため変更せず、この項目だけ保留した。
+- タブ切替時に ChatView を描いたまま隠す変更は、オーケストレーターが 00 から取り込む予定との指示に従った。本担当では共有画面を変更していない。取込前の土台ではタブ切替がアンマウントになるため、展開状態・スクロール状態の保持はその変更の取込後に確認する。
+- 拒否された操作はなし。最初のパッチの形式エラーと実装途中の型エラーは修正済み。保護フック・権限・禁止操作の回避はしていない。
+
+#### 偽データと検証
+
+- 共通の「README の見直し」は変更せず、その履歴を使うテストを追加した。「チャットの確認」ワークスペースに「長い会話」（300 records、75 ターン、既定の窓から 2 回の loadOlder）と「添付と長い結果」（ファイル、システム文、210 行の結果、入れ子、画像）を追加した。
+- 最終 `pnpm typecheck`：成功。
+- 最終 `pnpm test`：75 件すべて成功（本担当の追加 20 件）。表示行の絞込み、callId 対応、引数概要、並行ブロック、block-end、再接続の置換、送信前表示、スクロールの距離判定と追加高さの計算、200 行制限、共有履歴の保持、2 回のページング、エラーと生成シナリオを確認した。React の描画テストは追加していない。
+- 最終 `pnpm build`：成功。既存の Vite chunk サイズ警告は残る（本番 JavaScript 約 1,063 KB、gzip 約 268 KB）。`git diff --check` も成功。
+- **ブラウザーで操作した画面はなし**。今回の指示に従い、開発サーバー、HTTP 確認、DSH を起動せず、ブラウザー確認はオーケストレーターに残した。以下は起動済み環境で使う確認用パスであり、この実行ではアクセスしていない。
+
+| 確認用パス | 操作・期待すること |
+|---|---|
+| `/m3e/?mock#/s/readme-review` | reasoning の開閉、成功・失敗のツール詳細、画像拡大、コマンド結果、本文長押し・コピー・分岐 |
+| `/m3e/?mock&scenario=streaming#/s/approval-sheet` | 末尾追従、上へ移動して停止、「最新へ」で復帰、生成が確定しても本文が重複しない |
+| `/m3e/?mock#/s/chat-long` | 上端から 2 回の古い履歴の追加と、表示中の行の位置の保持 |
+| `/m3e/?mock#/s/chat-samples` | ファイル・システム文、ツール結果 200 行からの展開、結果内の画像拡大 |
+| `/m3e/?mock&scenario=chat-error#/s/chat-error` | 会話末尾の「AI の処理が止まりました」 |
+| `/m3e/?mock&scenario=open-error#/s/chat-open-error` | 共通画面の読込エラーと「一覧に戻る」 |
+
+#### 担当外で必要な対応
+
+- 新たな担当外のソース変更は行っていない。再試行導線は上記の 00 側の API 確認・共通画面対応が必要で、保留した。タブ保持の土台変更は予定されている取込待ち。
+- 実接続での添付・分岐・再接続、390px 幅の表示、長押し、実際のスクロール位置、クリップボード、シート操作は未確認。Node の純粋関数テストだけでこれらの操作を成功扱いしていない。
