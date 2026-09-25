@@ -1,4 +1,14 @@
 import type { RouteDef } from '../../app/router.ts'
-import { PageScaffold } from '../../app/shell/PageScaffold.tsx'
-const pages = [['files', 'ファイル'], ['file', 'ファイルの中身'], ['jobs', 'ジョブ'], ['subagents', 'サブエージェント'], ['goal', 'ゴール']] as const
-export const routes: RouteDef[] = pages.map(([page, title]) => ({ path: `/s/:id/${page}`, render: () => <PageScaffold title={title}><p className="page-padding">準備中です</p></PageScaffold> }))
+import { FilesScreen } from './FilesScreen.tsx'
+import { FileScreen } from './FileScreen.tsx'
+import { JobsScreen } from './JobsScreen.tsx'
+import { GoalScreen } from './GoalScreen.tsx'
+import { SubagentsScreen } from './SubagentsScreen.tsx'
+import './session-tools.css'
+export const routes: RouteDef[] = [
+  { path: '/s/:id/files', render: ({ id }) => <FilesScreen key={id} sessionId={id!} /> },
+  { path: '/s/:id/file', render: ({ id }) => <FileScreen key={id} sessionId={id!} /> },
+  { path: '/s/:id/jobs', render: ({ id }) => <JobsScreen key={id} sessionId={id!} /> },
+  { path: '/s/:id/subagents', render: ({ id }) => <SubagentsScreen key={id} sessionId={id!} /> },
+  { path: '/s/:id/goal', render: ({ id }) => <GoalScreen key={id} sessionId={id!} /> },
+]
