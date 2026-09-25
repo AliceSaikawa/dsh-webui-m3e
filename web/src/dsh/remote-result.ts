@@ -18,6 +18,8 @@ export function remoteFailureOf(value: unknown): RemoteFailure | undefined {
 }
 
 const messages: Record<string, string> = {
+  'gateway/bad-request': '送信内容を確認して、もう一度お試しください。',
+  'gateway/internal': 'サーバーでエラーが発生しました。しばらく待ってから、もう一度お試しください。',
   'session/not-found': '会話が見つかりません。',
   'session/title-invalid': '会話の題名を入力してください。',
   'session/agent-busy': '実行中の処理が終わってから、もう一度お試しください。',
