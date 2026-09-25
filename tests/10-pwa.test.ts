@@ -70,7 +70,7 @@ test('PWA manifest stays in /m3e/ and references the required PNG sizes', async 
   assert.equal(manifest.start_url, '/m3e/')
   assert.equal(manifest.scope, '/m3e/')
   assert.equal(manifest.display, 'standalone')
-  assert.equal(manifest.background_color, '#fffbff')
+  assert.equal(manifest.background_color, '#fdf8fd')
   assert.equal(manifest.theme_color, manifest.background_color)
   assert.deepEqual(manifest.icons.map((icon: { sizes: string; purpose: string }) => [icon.sizes, icon.purpose]), [
     ['192x192', 'any'], ['512x512', 'any'], ['512x512', 'maskable'],
@@ -93,8 +93,8 @@ test('the head supplies Apple metadata and keeps the app entry and body intact',
   assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/)
   assert.match(html, /name="apple-mobile-web-app-title" content="DSH"/)
   assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="default"/)
-  assert.match(html, /name="theme-color" content="#fffbff" media="\(prefers-color-scheme: light\)"/)
-  assert.match(html, /name="theme-color" content="#1c1b1e" media="\(prefers-color-scheme: dark\)"/)
+  assert.match(html, /name="theme-color" content="#fdf8fd" media="\(prefers-color-scheme: light\)"/)
+  assert.match(html, /name="theme-color" content="#141316" media="\(prefers-color-scheme: dark\)"/)
   assert.match(html, /<script type="module" src="\.\/src\/main.tsx"><\/script>/)
   assert.equal(html.match(/<body>[\s\S]*<\/body>/)?.[0], '<body>\n    <div id="app"></div>\n  </body>')
 })
