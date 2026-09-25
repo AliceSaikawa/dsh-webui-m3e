@@ -10,5 +10,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (!isCacheableRequest(event.request, self.location.origin)) return
-  event.respondWith(cacheFirst(event.request, caches, (request) => fetch(request)))
+  const result = cacheFirst(event.request, caches, (request) => fetch(request))
+  event.respondWith(result.response)
+  event.waitUntil(result.cacheDone)
 })

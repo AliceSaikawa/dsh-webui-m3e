@@ -5,13 +5,16 @@ import { runInNewContext } from 'node:vm'
 import { test } from 'node:test'
 import { build } from 'esbuild'
 
+type CacheBucket = {
+  match(request: Request): Promise<Response | undefined>
+  put(request: Request, response: Response): Promise<void>
+  keys(): Promise<Request[]>
+  delete(request: Request): Promise<boolean>
+}
 type CacheStore = {
   keys(): Promise<string[]>
   delete(name: string): Promise<boolean>
-  open(name: string): Promise<{
-    match(request: Request): Promise<Response | undefined>
-    put(request: Request, response: Response): Promise<void>
-  }>
+  open(name: string): Promise<CacheBucket>
 }
 const policy = await import(new URL('../web/public/sw-cache.js', import.meta.url).href) as {
   CACHE_NAME: string
@@ -19,7 +22,10 @@ const policy = await import(new URL('../web/public/sw-cache.js', import.meta.url
   isCacheableRequest(request: Request, origin: string): boolean
   isCacheableResponse(request: Request, response: Response): boolean
   removeOldCaches(storage: CacheStore): Promise<void>
-  cacheFirst(request: Request, storage: CacheStore, fetcher: (request: Request) => Promise<Response>): Promise<Response>
+  cacheFirst(request: Request, storage: CacheStore, fetcher: (request: Request) => Promise<Response>): {
+    response: Promise<Response>
+    cacheDone: Promise<void>
+  }
 }
 const origin = 'https://pwa.example'
 const asset = '/m3e/assets/index-Ab12_cd3.js'
@@ -29,21 +35,30 @@ const javascript = (body = 'export {}') => new Response(body, { headers: { 'cont
 
 function memoryStorage() {
   const entries = new Map<string, Response>()
-  const names = new Set([policy.CACHE_NAME, `${policy.CACHE_PREFIX}v0`, 'standard-ui-cache', 'another-app'])
+  const names = new Set([policy.CACHE_NAME, `${policy.CACHE_PREFIX}v1`, `${policy.CACHE_PREFIX}v0`, 'standard-ui-cache', 'another-app'])
   const writes: string[] = []
   const deleted: string[] = []
+  const cache: CacheBucket = {
+    match: async (value) => entries.get(value.url)?.clone(),
+    put: async (value, response) => { writes.push(value.url); entries.set(value.url, response) },
+    keys: async () => [...entries.keys()].map((url) => new Request(url)),
+    delete: async (value) => entries.delete(value.url),
+  }
   const storage: CacheStore = {
     keys: async () => [...names],
     delete: async (name) => { deleted.push(name); return names.delete(name) },
     open: async (name) => {
       assert.equal(name, policy.CACHE_NAME)
-      return {
-        match: async (value) => entries.get(value.url)?.clone(),
-        put: async (value, response) => { writes.push(value.url); entries.set(value.url, response) },
-      }
+      return cache
     },
   }
-  return { storage, entries, writes, deleted }
+  return { storage, cache, entries, writes, deleted }
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
 }
 
 test('PWA manifest stays in /m3e/ and references the required PNG sizes', async () => {
@@ -118,14 +133,18 @@ test('registration runs only in production with /m3e/ scope and handles failure'
   }
 })
 
-test('cache selection allows hashed static assets and local fonts only', () => {
+test('cache selection requires eight-character hashes for static assets and local fonts', () => {
   for (const path of [asset, '/m3e/assets/nested/theme-12345678.css', '/m3e/assets/picture-Abcd1234.webp',
-    '/m3e/assets/material-symbols.woff2', '/m3e/fonts/text.woff2', '/m3e/fonts/text.ttf']) {
+    '/m3e/assets/material-symbols-AB-CD_12.woff2', '/m3e/fonts/text-Ab12_cd3.woff2', '/m3e/fonts/text-12345678.ttf',
+    '/m3e/assets/chunk-vendor--B12_cd3.js']) {
     assert.equal(policy.isCacheableRequest(request(path), origin), true, path)
   }
   for (const path of ['/m3e', '/m3e/', '/m3e/?mock', '/m3e/index.html', '/m3e/index.html?ui=classic',
     '/', '/index.html', '/assets/index-Ab12_cd3.js', '/m3e/sw.js', '/m3e/sw-cache.js',
     '/m3e/manifest.webmanifest', '/m3e/apple-touch-icon.png', '/m3e/assets/index.js',
+    '/m3e/assets/index-1234567.js', '/m3e/assets/index-123456789.js',
+    '/m3e/assets/material-symbols.woff2', '/m3e/fonts/text.woff2', '/m3e/fonts/text.ttf',
+    '/m3e/fonts/text-1234567.woff2', '/m3e/fonts/text-123456789.woff2',
     '/m3e/assets/index-Ab12_cd3.html', '/m3e/assets/data-Ab12_cd3.json', '/m3e/fonts/login.html',
     '/m3e/rpc', '/m3e/socket', '/m3e-other/assets/index-Ab12_cd3.js', `${asset}?refresh=1`,
     '/M3E/assets/index-Ab12_cd3.js', '/m3e/ASSETS/index-Ab12_cd3.js',
@@ -146,8 +165,8 @@ test('styles, images and fonts require their own content types', () => {
   for (const [path, type] of [
     ['/m3e/assets/theme-12345678.css', 'text/css'],
     ['/m3e/assets/picture-Abcd1234.svg', 'image/svg+xml'],
-    ['/m3e/fonts/symbols.woff2', 'font/woff2'],
-    ['/m3e/fonts/text.ttf', 'application/octet-stream'],
+    ['/m3e/fonts/symbols-Ab12_cd3.woff2', 'font/woff2'],
+    ['/m3e/fonts/text-Ab12_cd3.ttf', 'application/octet-stream'],
   ]) {
     assert.equal(policy.isCacheableResponse(request(path!), new Response('static', { headers: { 'content-type': type! } })), true)
     assert.equal(policy.isCacheableResponse(request(path!), new Response('<html>', { headers: { 'content-type': 'text/html' } })), false)
@@ -158,12 +177,16 @@ test('cache misses are stored, cache hits avoid the network, and only our old ca
   const state = memoryStorage()
   let fetched = 0
   const fetcher = async () => { fetched++; return javascript('static content') }
-  assert.equal(await (await policy.cacheFirst(request(asset), state.storage, fetcher)).text(), 'static content')
-  assert.equal(await (await policy.cacheFirst(request(asset), state.storage, fetcher)).text(), 'static content')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = policy.cacheFirst(request(asset), state.storage, fetcher)
+    assert.equal(await (await result.response).text(), 'static content')
+    await result.cacheDone
+  }
   assert.equal(fetched, 1)
   assert.equal(state.writes.length, 1)
   await policy.removeOldCaches(state.storage)
-  assert.deepEqual(state.deleted, [`${policy.CACHE_PREFIX}v0`])
+  assert.equal(policy.CACHE_NAME, `${policy.CACHE_PREFIX}v2`)
+  assert.deepEqual(state.deleted, [`${policy.CACHE_PREFIX}v1`, `${policy.CACHE_PREFIX}v0`])
   assert.deepEqual(await state.storage.keys(), [policy.CACHE_NAME, 'standard-ui-cache', 'another-app'])
 })
 
@@ -181,12 +204,16 @@ test('HTML, login failures, redirects and uncacheable responses are never saved 
     new Response('wrong type', { headers: { 'content-type': 'image/png' } }),
   ]) {
     const state = memoryStorage()
-    assert.equal(await policy.cacheFirst(request(asset), state.storage, async () => response), response)
+    const result = policy.cacheFirst(request(asset), state.storage, async () => response)
+    assert.equal(await result.response, response)
+    await result.cacheDone
     assert.equal(state.writes.length, 0)
   }
   const state = memoryStorage()
   state.entries.set(request(asset).url, new Response('<html>old page</html>', { headers: { 'content-type': 'text/html' } }))
-  assert.equal(await (await policy.cacheFirst(request(asset), state.storage, async () => javascript('fresh'))).text(), 'fresh')
+  const result = policy.cacheFirst(request(asset), state.storage, async () => javascript('fresh'))
+  assert.equal(await (await result.response).text(), 'fresh')
+  await result.cacheDone
 })
 
 test('storage failures preserve network access, while an offline miss has no index fallback', async () => {
@@ -194,18 +221,121 @@ test('storage failures preserve network access, while an offline miss has no ind
     const broken: CacheStore = { ...memoryStorage().storage, open: async () => {
       if (stage === 'open') throw new Error('storage unavailable')
       return {
+        ...memoryStorage().cache,
         match: async () => { if (stage === 'match') throw new Error('read failed'); return undefined },
         put: async () => { throw new Error('quota exceeded') },
       }
     } }
-    assert.equal(await (await policy.cacheFirst(request(asset), broken, async () => javascript('online'))).text(), 'online')
+    const result = policy.cacheFirst(request(asset), broken, async () => javascript('online'))
+    assert.equal(await (await result.response).text(), 'online')
+    await result.cacheDone
   }
-  await assert.rejects(policy.cacheFirst(request(asset), memoryStorage().storage, async () => {
+  const offline = policy.cacheFirst(request(asset), memoryStorage().storage, async () => {
     throw new Error('offline')
-  }), /offline/)
+  })
+  await assert.rejects(offline.response, /offline/)
+  await offline.cacheDone
 })
 
-test('worker lifecycle claims immediately and fetch ignores all entry and standard UI requests', async () => {
+test('saving a new version removes only older hashes in the same origin, folder, name and extension', async () => {
+  const state = memoryStorage()
+  const old = ['/m3e/assets/chunk-vendor-Ab12_cd3.js', '/m3e/assets/chunk-vendor-12345678.js']
+  const retained = [
+    '/m3e/assets/other-Ab12_cd3.js',
+    '/m3e/assets/nested/chunk-vendor-Ab12_cd3.js',
+    '/m3e/fonts/chunk-vendor-Ab12_cd3.js',
+    '/m3e/assets/chunk-vendor-Ab12_cd3.css',
+    '/m3e/assets/chunk-vendor.js',
+    'https://elsewhere.example/m3e/assets/chunk-vendor-Ab12_cd3.js',
+  ]
+  for (const path of [...old, ...retained]) state.entries.set(request(path).url, javascript('old'))
+  const fresh = '/m3e/assets/chunk-vendor-Xy98_zz9.js'
+  const result = policy.cacheFirst(request(fresh), state.storage, async () => javascript('new'))
+  assert.equal(await (await result.response).text(), 'new')
+  await result.cacheDone
+  assert.deepEqual([...state.entries.keys()].sort(), [...retained, fresh].map((path) => request(path).url).sort())
+  assert.equal(await state.entries.get(request(fresh).url)!.clone().text(), 'new')
+})
+
+test('font generations in assets and fonts are replaced even when their hashes contain hyphens', async () => {
+  for (const directory of ['assets', 'fonts']) {
+    const state = memoryStorage()
+    const old = `/m3e/${directory}/material-symbols-AB-CD_12.woff2`
+    const fresh = `/m3e/${directory}/material-symbols-CD-EF_34.woff2`
+    const other = `/m3e/${directory}/material-icons-AB-CD_12.woff2`
+    const font = (body: string) => new Response(body, { headers: { 'content-type': 'font/woff2' } })
+    state.entries.set(request(old).url, font('old'))
+    state.entries.set(request(other).url, font('other'))
+    const result = policy.cacheFirst(request(fresh), state.storage, async () => font('new'))
+    assert.equal(await (await result.response).text(), 'new')
+    await result.cacheDone
+    assert.deepEqual([...state.entries.keys()].sort(), [other, fresh].map((path) => request(path).url).sort())
+  }
+})
+
+test('the network response arrives while cache writing is still pending', { timeout: 2000 }, async () => {
+  const state = memoryStorage()
+  const started = deferred()
+  const finish = deferred()
+  const put = state.cache.put
+  state.cache.put = async (value, response) => {
+    started.resolve()
+    await finish.promise
+    await put(value, response)
+  }
+  const result = policy.cacheFirst(request(asset), state.storage, async () => javascript('ready'))
+  let saved = false
+  void result.cacheDone.then(() => { saved = true })
+  assert.equal(await (await result.response).text(), 'ready')
+  await started.promise
+  assert.equal(saved, false)
+  assert.equal(state.entries.size, 0)
+  finish.resolve()
+  await result.cacheDone
+  assert.equal(saved, true)
+  assert.equal(await state.entries.get(request(asset).url)!.clone().text(), 'ready')
+})
+
+test('a failed new write retains the old generation and cleanup failures do not reject cacheDone', async () => {
+  for (const stage of ['put', 'keys', 'delete'] as const) {
+    const state = memoryStorage()
+    const old = '/m3e/assets/index-12345678.js'
+    state.entries.set(request(old).url, javascript('old'))
+    state.cache[stage] = async () => { throw new Error(`${stage} unavailable`) }
+    const result = policy.cacheFirst(request(asset), state.storage, async () => javascript('new'))
+    assert.equal(await (await result.response).text(), 'new')
+    await result.cacheDone
+    assert.equal(await state.entries.get(request(old).url)!.clone().text(), 'old')
+    assert.equal(state.entries.has(request(asset).url), stage !== 'put')
+  }
+})
+
+test('concurrent saves of one asset family cannot remove both new versions', { timeout: 2000 }, async () => {
+  const state = memoryStorage()
+  const firstStarted = deferred()
+  const finishFirst = deferred()
+  const put = state.cache.put
+  const secondAsset = '/m3e/assets/index-Zy98_wv7.js'
+  state.cache.put = async (value, response) => {
+    await put(value, response)
+    if (value.url === request(asset).url) {
+      firstStarted.resolve()
+      await finishFirst.promise
+    }
+  }
+  const first = policy.cacheFirst(request(asset), state.storage, async () => javascript('first'))
+  await firstStarted.promise
+  const second = policy.cacheFirst(request(secondAsset), state.storage, async () => javascript('second'))
+  assert.equal(await (await first.response).text(), 'first')
+  assert.equal(await (await second.response).text(), 'second')
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  finishFirst.resolve()
+  await Promise.all([first.cacheDone, second.cacheDone])
+  assert.deepEqual([...state.entries.keys()], [request(secondAsset).url])
+  assert.equal(await state.entries.get(request(secondAsset).url)!.clone().text(), 'second')
+})
+
+test('worker lifecycle claims immediately and fetch registers response and cache lifetime synchronously', async () => {
   const output = await build({ entryPoints: [fileURLToPath(publicFile('sw.js'))], bundle: true, write: false, format: 'iife' })
   type WorkerEvent = { request?: Request; waitUntil?: (promise: Promise<unknown>) => void; respondWith?: (promise: Promise<Response>) => void }
   const listeners = new Map<string, (event: WorkerEvent) => void>()
@@ -233,15 +363,30 @@ test('worker lifecycle claims immediately and fetch ignores all entry and standa
   }
   assert.equal(skipped, 1)
   assert.equal(claimed, 1)
-  assert.deepEqual(state.deleted, [`${policy.CACHE_PREFIX}v0`])
+  assert.deepEqual(state.deleted, [`${policy.CACHE_PREFIX}v1`, `${policy.CACHE_PREFIX}v0`])
   const handle = listeners.get('fetch')!
-  for (const path of ['/m3e/', '/m3e/index.html', '/m3e/?mock', '/', '/m3e/sw.js', '/m3e/rpc', '/plugins/stock.js']) {
-    handle({ request: request(path), respondWith: () => assert.fail(`unexpected interception: ${path}`) })
+  for (const path of ['/m3e/', '/m3e/index.html', '/m3e/?mock', '/', '/m3e/sw.js', '/m3e/rpc', '/plugins/stock.js',
+    '/m3e/fonts/text.woff2', '/m3e/assets/material-symbols.woff2']) {
+    handle({
+      request: request(path),
+      respondWith: () => assert.fail(`unexpected interception: ${path}`),
+      waitUntil: () => assert.fail(`unexpected background work: ${path}`),
+    })
   }
   assert.equal(fetched, 0)
   let response: Promise<Response> | undefined
-  handle({ request: request(asset), respondWith: (promise) => { response = promise } })
+  let lifetime: Promise<unknown> | undefined
+  let dispatching = true
+  handle({
+    request: request(asset),
+    respondWith: (promise) => { assert.equal(dispatching, true); response = promise },
+    waitUntil: (promise) => { assert.equal(dispatching, true); lifetime = promise },
+  })
+  dispatching = false
   assert.ok(response)
+  assert.ok(lifetime)
   assert.equal((await response).status, 200)
+  await lifetime
   assert.equal(fetched, 1)
+  assert.equal(state.entries.has(request(asset).url), true)
 })
