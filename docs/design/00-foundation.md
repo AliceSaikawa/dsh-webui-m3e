@@ -226,4 +226,16 @@ web/src/
 
 ## 実装メモ
 
-（実装した担当が書き足します）
+### 2026-09-25：読み取り調査の拒否により着手前に停止
+
+- 作業場所が `feat/00-foundation` で、開始時に未コミットの変更がないことを確認した。共通・プロジェクトの AGENTS.md、設計 README、本設計書、画面仕様と既存の起動処理を読んだ。
+- 次の読み取り操作が PreToolUse フックに拒否されたため、依頼の「拒否された操作は回避せず止める」に従い、実装と並列の調査を停止した。別コマンド・別ツールでの再試行はしていない。
+  - `README.md`、`web/index.html`、`pnpm-workspace.yaml` の読み取りと、段階 2 の設計書内の依存・未確認事項などの検索をまとめたコマンド。拒否理由は `Opaque shell wrappers are blocked unless Codex can split them into allowed commands.`。
+  - インストール済み DSH の session controller・既存 UI 配下の型ファイルを、禁止パスの除外指定付きで列挙する調査。拒否理由は `tool input references a protected path or sensitive filename pattern`。この操作とまとめていた API 調査メモの続きの読み取りも取得できなかった。
+- 未確認のこと：実物の `sessions.scope` / `sessionOf`、履歴の follow・baseline・nextIndex、waterfall イベントの現行契約は確認が完了していない。推測で実装せず、未確認のまま残した。DSH は起動していない。
+- API 調査メモ §9.1 / §9.2 では、承認の答えが `allowed-once | rejected | cancelled | unavailable` で、要求にツールの引数がないこと、質問の `intent.kind === 'plan-review'` がプラン確認を示すことを確認した。ただし、インストール済みプラグインとの照合は未完了。
+- 依存の候補は npm registry の `version` で、`@m3e/web` / `@m3e/react` が `2.8.2`、`material-symbols` が `0.47.5`、`react-markdown` が `10.1.0`、`remark-gfm` が `4.0.1` と確認できた。導入・互換性検証は行っていない。
+- 自分で決めたこと：共有契約を未検証のまま固定しない。実装ファイルと依存を変更せず、この停止記録だけを残す。
+- 検証：実装前の停止のため、`pnpm typecheck`、`pnpm test`、`pnpm build` と `?mock` の画面操作は未実施。
+- 全担当のファイル変更がないことを回収し、この実装メモだけが差分であることを確認した。停止記録に対する `git diff --check` は成功。
+- 担当外で必要になったソース変更：なし。再開には、上記の読み取りを許可された形で実行できることの確認が必要。フックや権限設定は変更していない。
