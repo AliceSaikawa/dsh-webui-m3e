@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test, { type TestContext } from 'node:test'
 import { setImmediate } from 'node:timers/promises'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext } from '../web/src/dsh/interactions-store.ts'
 import { extendMock } from '../web/src/features/interactions/mock.ts'
 
@@ -35,20 +36,36 @@ test('追加した質問とプランのセッションに日本語の題名と�
   assert.deepEqual(output, [])
 })
 
-test('05 専用ワークスペースの sessionIds から質問とプランの会話を取得できる', (t) => {
+test('ワークスペースを増やさず共通の sessionIds から質問とプランの会話を取得できる', (t) => {
   const { ctx } = scenario(t)
   const workspaces = ctx.workspaces.list.getSnapshot()
-  const workspace = workspaces.items.find(item => item.workspaceId === '05-interactions')
+  assert.deepEqual(workspaces.items.map(item => item.workspaceId), Object.values(MOCK_IDS.workspaces))
+  const workspace = workspaces.items.find(item => item.workspaceId === MOCK_IDS.workspaces.m3e)
   assert.ok(workspace)
-  assert.equal(workspace.title, '質問とプランの確認')
-  assert.deepEqual(workspace.sessionIds, ['05-db-choice', '05-auth-redesign'])
+  assert.equal(workspace.title, 'dsh-webui-m3e')
+  assert.deepEqual(workspace.sessionIds, [MOCK_IDS.sessions.readme, MOCK_IDS.sessions.approval, '05-db-choice', '05-auth-redesign'])
   const list = ctx.sessions.list.getSnapshot()
   const visible = workspace.sessionIds.filter(id => !workspaces.archivedSessionIds.includes(id)).map(id => list.byId[id])
-  assert.deepEqual(visible.map(session => session?.displayTitle), ['DB の選び直し', '認証の作り直し'])
+  assert.deepEqual(visible.map(session => session?.displayTitle), ['README の見直し', '承認シートの実装', 'DB の選び直し', '認証の作り直し'])
   for (const id of workspace.sessionIds) {
     assert.equal(list.byId[id]?.cwd, workspace.path)
     assert.deepEqual(workspaces.items.filter(item => item.sessionIds.includes(id)).map(item => item.workspaceId), [workspace.workspaceId])
   }
+})
+
+test('先に別の機能が共通ワークスペースへ追加した会話と並びを保つ', (t) => {
+  const earlierId = '05-existing-session'
+  const ctx = createMockContext({ extensions: [
+    { extendMock(kit) {
+      kit.addSession({ id: earlierId, displayTitle: '先に追加した会話', cwd: '/mock/dsh-webui-m3e', running: false, blank: true, updatedAt: 0 }, [])
+      kit.updateWorkspace(MOCK_IDS.workspaces.m3e, workspace => ({ sessionIds: [...workspace.sessionIds, earlierId] }))
+    } },
+    { extendMock },
+  ] })
+  t.after(() => ctx.dispose())
+  const workspace = ctx.workspaces.list.getSnapshot().items.find(item => item.workspaceId === MOCK_IDS.workspaces.m3e)
+  assert.deepEqual(workspace?.sessionIds, [MOCK_IDS.sessions.readme, MOCK_IDS.sessions.approval, earlierId, '05-db-choice', '05-auth-redesign'])
+  assert.equal(ctx.sessions.list.getSnapshot().byId[earlierId]?.displayTitle, '先に追加した会話')
 })
 
 for (const answer of ['allowed-once', 'rejected'] as const) {

@@ -1,12 +1,12 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
+import { MOCK_IDS } from '../../dsh/mock/fixtures.ts'
 import type { AskUserQuestionItem } from '../../dsh/interactions.ts'
 import type { SessionWireEvent } from '../../dsh/services.ts'
 
 const initialDelay = 100
 const approvalDelay = 3_000
 const origin = Date.parse('2026-09-25T09:00:00+09:00')
-const workspaceId = '05-interactions'
-const workspacePath = '/mock/05-interactions'
+const workspacePath = '/mock/dsh-webui-m3e'
 const databaseSessionId = '05-db-choice'
 const planSessionId = '05-auth-redesign'
 const planApproval = 'このプランで進める'
@@ -89,11 +89,9 @@ function requestApproval(kit: MockKit, cancel: boolean): void {
 export function extendMock(kit: MockKit): void {
   addConversation(kit, databaseSessionId, 'DB の選び直し', 'データベースの選び直しを相談したい')
   addConversation(kit, planSessionId, '認証の作り直し', '認証を作り直すプランを考えて')
-  kit.addWorkspace({
-    workspaceId, path: workspacePath, title: '質問とプランの確認',
-    sessionIds: [databaseSessionId, planSessionId],
-    createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString(),
-  })
+  kit.updateWorkspace(MOCK_IDS.workspaces.m3e, workspace => ({
+    sessionIds: [...workspace.sessionIds, databaseSessionId, planSessionId],
+  }))
 
   kit.scenario('approval', () => requestApproval(kit, false))
   kit.scenario('approval-cancel', () => requestApproval(kit, true))
