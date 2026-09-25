@@ -5,6 +5,11 @@ import type { SessionWireEvent } from '../../dsh/services.ts'
 const initialDelay = 100
 const approvalDelay = 3_000
 const origin = Date.parse('2026-09-25T09:00:00+09:00')
+const workspaceId = '05-interactions'
+const workspacePath = '/mock/05-interactions'
+const databaseSessionId = '05-db-choice'
+const planSessionId = '05-auth-redesign'
+const planApproval = 'このプランで進める'
 
 const databaseQuestions: AskUserQuestionItem[] = [
   {
@@ -42,7 +47,8 @@ const planQuestion: AskUserQuestionItem = {
     '3. 期限切れのときはログイン画面に戻す',
     '4. テストを 6 件足す',
   ].join('\n'),
-  intent: { kind: 'plan-review', approve: 'このプランで進める' },
+  options: [{ label: planApproval }],
+  intent: { kind: 'plan-review', approve: planApproval },
 }
 
 function addConversation(kit: MockKit, id: string, title: string, message: string): void {
@@ -50,7 +56,7 @@ function addConversation(kit: MockKit, id: string, title: string, message: strin
     type: 'user/message', seq: 0, time: origin, surfaceOp: 'append',
     data: { id: `${id}-message`, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: message }] },
   }]
-  kit.addSession({ id, title, displayTitle: title, cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: origin }, records)
+  kit.addSession({ id, title, displayTitle: title, cwd: workspacePath, running: false, blank: false, updatedAt: origin }, records)
 }
 
 async function reportReply(reply: Promise<unknown>, label: string): Promise<void> {
@@ -81,20 +87,25 @@ function requestApproval(kit: MockKit, cancel: boolean): void {
 }
 
 export function extendMock(kit: MockKit): void {
-  addConversation(kit, 'db-choice', 'DB の選び直し', 'データベースの選び直しを相談したい')
-  addConversation(kit, 'auth-redesign', '認証の作り直し', '認証を作り直すプランを考えて')
+  addConversation(kit, databaseSessionId, 'DB の選び直し', 'データベースの選び直しを相談したい')
+  addConversation(kit, planSessionId, '認証の作り直し', '認証を作り直すプランを考えて')
+  kit.addWorkspace({
+    workspaceId, path: workspacePath, title: '質問とプランの確認',
+    sessionIds: [databaseSessionId, planSessionId],
+    createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString(),
+  })
 
   kit.scenario('approval', () => requestApproval(kit, false))
   kit.scenario('approval-cancel', () => requestApproval(kit, true))
   // Keep the initial event after initializeInteractions on the current foundation.
   kit.scenario('question', () => {
     void reportReply(kit.emit('user-questions/request', {
-      agent: 'db-choice', questions: structuredClone(databaseQuestions),
+      agent: databaseSessionId, questions: structuredClone(databaseQuestions),
     }, { afterMs: initialDelay }), '質問')
   })
   kit.scenario('plan', () => {
     void reportReply(kit.emit('user-questions/request', {
-      agent: 'auth-redesign', questions: [structuredClone(planQuestion)],
+      agent: planSessionId, questions: [structuredClone(planQuestion)],
     }, { afterMs: initialDelay }), 'プランの確認')
   })
 }
