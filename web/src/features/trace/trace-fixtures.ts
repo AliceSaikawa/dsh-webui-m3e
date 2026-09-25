@@ -3,6 +3,7 @@ import { imageAttachment } from '../../dsh/mock/fixtures.ts'
 
 export const TRACE_EXAMPLE_SESSION_ID = 'trace-example'
 export const TRACE_EXAMPLE_WORKSPACE_ID = 'ws-trace-example'
+export const TRACE_FAILURE_SESSION_ID = 'trace-failure-example'
 const origin = Date.parse('2026-09-25T10:00:00+09:00')
 const workspacePath = '/mock/trace-example'
 const modelSource = { kind: 'model', provider: 'mock', model: 'mock-model' }
@@ -64,9 +65,9 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   }, advance)
 
   append('turn/start', { turn: 1 })
-  user([text('長い履歴の見本です。前の記録を読み込み、各ファイルの確認結果を調べてください。')])
   for (let step = 1; step <= 18; step += 1) {
     const started = append('step/start', { turn: 1, step }, 500)
+    if (step === 1) user([text('長い履歴の見本です。前の記録を読み込み、各ファイルの確認結果を調べてください。')])
     const callId = `trace-history-${step}`
     const args = JSON.stringify({ path: `docs/確認-${step}.md` })
     assistant(1, step, started.time, [text(`資料 ${step} の確認を進めます。`), { type: 'tool-call', id: callId, name: 'read_file', arguments: args }])
@@ -77,12 +78,12 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
   append('turn/start', { turn: 2 }, 1000)
+  append('step/start', { turn: 2, step: 1 }, 100)
   const request = user([
     text('再試行、入れ子のツール、要約、失敗した処理を確認してください。添付も参考にしてください。'),
     { type: 'image', attachment: imageAttachment },
     { type: 'file', attachment: { attachmentId: 'trace-checklist', name: '確認項目.txt', bytes: 128 } },
   ])
-  append('step/start', { turn: 2, step: 1 }, 100)
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const failure = { code: 'NETWORK', message: `接続を確認して、${attempt} 回目の再試行を行います。` }
     const attemptTime = clock + 100
@@ -139,8 +140,8 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   append('turn/end', { turn: 2, reason: { kind: 'completed' } })
 
   append('turn/start', { turn: 3 }, 1000)
-  user([text('最後の確認を続けてください。このターンは実行中の表示を確かめるための見本です。')])
   append('step/start', { turn: 3, step: 1 }, 100)
+  user([text('最後の確認を続けてください。このターンは実行中の表示を確かめるための見本です。')])
   return records
 }
 
@@ -150,8 +151,55 @@ export const traceExampleSession: SessionSummary = {
   cwd: workspacePath, running: true, blank: false,
   updatedAt: traceExampleRecords.at(-1)!.time,
 }
+
+const failedOrigin = origin + 20 * 60 * 1000
+const requestMessage = (id: string, value: string) => ({ id, role: 'user', source: { kind: 'user' }, content: [text(value)] })
+const failedConnection = { code: 'NETWORK', message: '接続先に到達できませんでした。' }
+const failureRows: readonly [number, string, unknown][] = [
+  [0, 'turn/start', { turn: 1 }],
+  [10, 'step/start', { turn: 1, step: 1 }],
+  [20, 'user/message', requestMessage('trace-error-input', '接続失敗の原因を確認してください。')],
+  [200, 'assistant/attempt', { turn: 1, step: 1, stream: [{ type: 'chunk', time: failedOrigin + 200, chunk: { type: 'finish', reason: { kind: 'error', failure: failedConnection } } }] }],
+  [210, 'step/end', { turn: 1, step: 1 }],
+  [220, 'turn/end', { turn: 1, reason: { kind: 'error', error: failedConnection } }],
+  [1000, 'turn/start', { turn: 2 }],
+  [1010, 'step/start', { turn: 2, step: 1 }],
+  [1020, 'user/message', requestMessage('trace-aborted-input', '途中で停止した出力も残してください。')],
+  [1300, 'assistant/message', {
+    turn: 2, step: 1, interrupted: true,
+    message: { id: 'trace-aborted-output', role: 'assistant', source: modelSource, content: [text('途中までの回答です。')] },
+    stream: [{ type: 'text-chunks', time0: failedOrigin + 1100, index: 0, dt: [50], texts: ['途中までの', '回答です。'] }],
+  }],
+  [1310, 'step/end', { turn: 2, step: 1 }],
+  [1320, 'turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } }],
+  [2000, 'turn/start', { turn: 3 }],
+  [2010, 'turn/end', { turn: 3, reason: { kind: 'blocked' } }],
+  [3000, 'turn/start', { turn: 4 }],
+  [3010, 'step/start', { turn: 4, step: 1 }],
+  [3020, 'user/message', requestMessage('trace-interrupted-input', '終了記録がない中断を確認してください。')],
+  [3300, 'turn/end', { turn: 4, reason: { kind: 'interrupted' } }],
+  [4000, 'turn/start', { turn: 5 }],
+  [4010, 'step/start', { turn: 5, step: 1 }],
+  [4020, 'user/message', requestMessage('trace-recovered-input', '過去の失敗を残したまま、次の確認を進めてください。')],
+  [4300, 'assistant/message', {
+    turn: 5, step: 1,
+    message: { id: 'trace-recovered-output', role: 'assistant', source: modelSource, content: [text('このターンは正常に完了しました。')] },
+    stream: [{ type: 'text-chunks', time0: failedOrigin + 4150, index: 0, dt: [], texts: ['このターンは正常に完了しました。'] },
+      { type: 'chunk', time: failedOrigin + 4300, chunk: { type: 'finish', reason: { kind: 'stop' } } }],
+  }],
+  [4310, 'step/end', { turn: 5, step: 1 }],
+  [4320, 'turn/end', { turn: 5, reason: { kind: 'completed' } }],
+]
+export const traceFailureRecords: readonly SessionWireEvent[] = failureRows.map(([offset, type, data], seq) => ({
+  type, seq, time: failedOrigin + offset, data: JSON.parse(JSON.stringify(data)) as JsonValue,
+  ...(['user/message', 'assistant/message'].includes(type) ? { surfaceOp: 'append' } : {}),
+}))
+export const traceFailureSession: SessionSummary = {
+  id: TRACE_FAILURE_SESSION_ID, title: '失敗と中断の見本', displayTitle: '失敗と中断の見本',
+  cwd: workspacePath, running: false, blank: false, updatedAt: traceFailureRecords.at(-1)!.time,
+}
 export const traceExampleWorkspace: WorkspaceView = {
   workspaceId: TRACE_EXAMPLE_WORKSPACE_ID, title: 'トレースの確認', path: workspacePath,
-  sessionIds: [TRACE_EXAMPLE_SESSION_ID],
-  createdAt: new Date(origin).toISOString(), updatedAt: new Date(traceExampleSession.updatedAt).toISOString(),
+  sessionIds: [TRACE_EXAMPLE_SESSION_ID, TRACE_FAILURE_SESSION_ID],
+  createdAt: new Date(origin).toISOString(), updatedAt: new Date(traceFailureSession.updatedAt).toISOString(),
 }

@@ -1,0 +1,16 @@
+{
+  "id": "/m3e/",
+  "name": "DSH",
+  "short_name": "DSH",
+  "lang": "ja",
+  "start_url": "/m3e/",
+  "scope": "/m3e/",
+  "display": "standalone",
+  "background_color": "#fffbff",
+  "theme_color": "#fffbff",
+  "icons": [
+    { "src": "/m3e/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/m3e/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/m3e/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

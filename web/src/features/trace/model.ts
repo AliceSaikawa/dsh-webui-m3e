@@ -3,6 +3,15 @@ import type { AssistantStream } from '../../dsh/session-journal.ts'
 
 type Data = Record<string, unknown>
 export type TraceKind = 'user' | 'assistant' | 'tool' | 'subtool' | 'compaction'
+export interface TraceTermination {
+  kind: 'error' | 'aborted' | 'interrupted' | 'blocked' | 'max-tokens'
+  message: string
+}
+export interface TraceAttempt {
+  seq: number
+  time: number
+  termination?: TraceTermination
+}
 export interface TraceRow {
   id: string
   kind: TraceKind
@@ -26,6 +35,8 @@ export interface TraceRow {
   running: boolean
   failed: boolean
   error?: string
+  termination?: TraceTermination
+  attempts?: TraceAttempt[]
 }
 export interface TraceTurn {
   id: string
@@ -37,6 +48,7 @@ export interface TraceTurn {
   partial: boolean
   usage?: TokenUsage
   rows: TraceRow[]
+  termination?: TraceTermination
 }
 
 export function object(value: unknown): Data {
@@ -92,6 +104,50 @@ function failure(value: unknown): string | undefined {
   if (value === undefined || value === null || value === false) return undefined
   return string(value) ?? string(object(value).message) ?? '処理に失敗しました。'
 }
+export function terminationLabel(termination: TraceTermination): string {
+  switch (termination.kind) {
+    case 'error': return '失敗'
+    case 'aborted': case 'interrupted': return '中断'
+    case 'blocked': return '実行見送り'
+    case 'max-tokens': return '上限到達'
+  }
+}
+/** Only raw chunk records carry the durable model finish reason. */
+function streamTermination(value: unknown): TraceTermination | undefined {
+  if (!Array.isArray(value)) return undefined
+  for (let i = value.length - 1; i >= 0; i--) {
+    const record = object(value[i]), chunk = object(record.chunk)
+    if (record.type !== 'chunk' || chunk.type !== 'finish') continue
+    const reason = object(chunk.reason)
+    if (reason.kind === 'error' || reason.kind === 'aborted') return {
+      kind: reason.kind, message: failure(reason.failure) ?? (reason.kind === 'error' ? 'モデルの実行に失敗しました。' : 'モデルの出力が中断されました。'),
+    }
+    if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: '出力トークンの上限に達しました。' }
+    return undefined
+  }
+  return undefined
+}
+function turnTermination(value: unknown): TraceTermination | undefined {
+  const reason = object(value)
+  if (reason.kind === 'error') return { kind: 'error', message: failure(reason.error) ?? 'ターンの実行に失敗しました。' }
+  if (reason.kind === 'interrupted') return { kind: 'interrupted', message: '終了が記録されないまま、実行が中断されました。' }
+  if (reason.kind === 'blocked') return { kind: 'blocked', message: '実行前の確認で処理が見送られました。' }
+  if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: '出力トークンの上限に達しました。' }
+  if (reason.kind !== 'aborted') return undefined
+  const cause = object(reason.reason)
+  const messages: Record<string, string> = {
+    user: 'ユーザーの操作で停止しました。', parent: '親セッションの操作で停止しました。',
+    disposed: 'セッションが閉じられたため停止しました。', legacy: '中断の理由は記録されていません。',
+  }
+  return { kind: 'aborted', message: cause.kind === 'hook'
+    ? `フックにより停止しました。${string(cause.reason) ? ` ${cause.reason}` : ''}`
+    : messages[String(cause.kind)] ?? '実行が中断されました。' }
+}
+function setTermination(row: TraceRow, termination: TraceTermination | undefined): void {
+  row.termination = termination
+  row.error = termination?.message
+  row.failed = termination?.kind === 'error'
+}
 /** Expand only timestamps, using the same delta semantics as dsh-llm. */
 export function firstOutputTime(value: unknown): number | undefined {
   if (!Array.isArray(value)) return undefined
@@ -128,6 +184,10 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
   const turns: TraceTurn[] = []
   const numbered = new Map<number, TraceTurn>()
   const assistants = new Map<string, TraceRow>()
+  const assistantOwners = new Map<TraceRow, TraceTurn>()
+  const shownAssistants = new Set<TraceRow>()
+  const committedAssistants = new Set<TraceRow>()
+  const interruptedAssistants = new Set<TraceRow>()
   const tools = new Map<string, TraceRow>()
   const summaries = new Map<string, TraceRow>()
   let current: TraceTurn | undefined
@@ -160,11 +220,26 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     const key = `${turn.id}:${step}`
     let row = assistants.get(key)
     if (!row) {
-      row = { ...rowOf(event, 'assistant', turn, 'アシスタント'), step, running: true, input: input() }
+      row = { ...rowOf(event, 'assistant', turn, 'アシスタント'), step, running: true }
       assistants.set(key, row)
-      turn.rows.push(row)
+      assistantOwners.set(row, turn)
     }
     return row
+  }
+  const showAssistant = (row: TraceRow, turn: TraceTurn) => {
+    if (shownAssistants.has(row)) return
+    row.input = input()
+    shownAssistants.add(row)
+    turn.rows.push(row)
+  }
+  const closeAssistant = (row: TraceRow, turn: TraceTurn, time: number, termination?: TraceTermination) => {
+    showAssistant(row, turn)
+    if (!committedAssistants.has(row)) {
+      const attempt = row.attempts?.at(-1)
+      row.completedAt ??= attempt?.time ?? time
+      setTermination(row, termination ?? attempt?.termination)
+    } else if (interruptedAssistants.has(row) && termination) setTermination(row, termination)
+    row.running = false
   }
   for (const event of records) {
     const data = object(event.data)
@@ -184,6 +259,10 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     if (event.type === 'turn/end') {
       const turn = turnFor(event)
       turn.completedAt = event.time
+      turn.termination = turnTermination(data.reason)
+      for (const [row, owner] of assistantOwners) {
+        if (owner === turn) closeAssistant(row, turn, event.time, turn.termination)
+      }
       for (const row of turn.rows) row.running = false
       current = undefined
       continue
@@ -202,25 +281,33 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       turn.rows.push({ ...rowOf(event, 'user', turn, 'ユーザー'), content, completedAt: event.time })
       recordInput(event, content)
     } else if (event.type === 'step/start') {
+      for (const [previous, owner] of assistantOwners) {
+        if (owner === turn && previous.step !== number(data.step) && !shownAssistants.has(previous)) showAssistant(previous, turn)
+      }
       const row = assistantFor(event, turn)
       row.startedAt = event.time
-      row.input = input()
     } else if (event.type === 'step/end') {
       const row = assistants.get(`${turn.id}:${number(data.step) ?? 0}`)
-      if (row) row.running = false
+      if (row) closeAssistant(row, turn, event.time)
     } else if (event.type === 'assistant/attempt') {
-      assistantFor(event, turn).retries++
+      const row = assistantFor(event, turn)
+      showAssistant(row, turn)
+      row.input = input()
+      row.retries++
+      row.attempts = [...row.attempts ?? [], { seq: event.seq, time: event.time, termination: streamTermination(data.stream) }]
     } else if (event.type === 'assistant/message') {
       const row = assistantFor(event, turn)
+      showAssistant(row, turn)
+      row.input = input()
       row.content = blocks(object(data.message).content)
       row.completedAt = event.time
       row.running = false
       row.usage = usageOf(data.usage)
+      committedAssistants.add(row)
       const first = firstOutputTime(data.stream)
       row.firstOutputMs = row.startedAt !== undefined && first !== undefined && first >= row.startedAt && first <= event.time ? first - row.startedAt : undefined
-      const reason = object(data.finishReason)
-      row.error = failure(reason.failure)
-      row.failed = reason.kind === 'error' || reason.kind === 'aborted'
+      if (data.interrupted === true) interruptedAssistants.add(row)
+      setTermination(row, streamTermination(data.stream) ?? (data.interrupted === true ? { kind: 'interrupted', message: '途中までの出力を残して中断しました。' } : undefined))
       recordInput(event, row.content)
     } else if (event.type === 'tool/call' || event.type === 'tool/ptc-dispatch-start') {
       const sub = event.type === 'tool/ptc-dispatch-start'
@@ -286,9 +373,18 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     const turn = turnFor(synthetic)
     const row = assistantFor(synthetic, turn)
     if (row.completedAt === undefined && turn.completedAt === undefined) {
+      showAssistant(row, turn)
+      row.input = input()
       row.content = [...stream.content]
       row.running = true
       row.usage = stream.usage
+    }
+  }
+  for (const [row, turn] of assistantOwners) {
+    showAssistant(row, turn)
+    if (!committedAssistants.has(row) && (!running || turn.completedAt !== undefined) && row.completedAt === undefined) {
+      const attempt = row.attempts?.at(-1)
+      if (attempt) closeAssistant(row, turn, attempt.time, turn.termination)
     }
   }
   for (const turn of turns) {
@@ -324,7 +420,8 @@ export function rowDescription(row: TraceRow): string {
     : row.running ? ['開始済み・実行中'] : [formatDuration(row.durationMs)]
   if (row.kind === 'assistant' && row.usage && !row.running) parts.push(`出力 ${formatCount(row.usage.outputTokens)} トークン`)
   if (row.retries) parts.push(`再試行 ${row.retries} 回`)
-  if (row.failed) parts.push('失敗')
+  if (row.termination) parts.push(terminationLabel(row.termination))
+  else if (row.failed) parts.push('失敗')
   return parts.join(' ・ ')
 }
 export function turnHeading(turn: TraceTurn): string {
@@ -332,5 +429,5 @@ export function turnHeading(turn: TraceTurn): string {
   if (turn.running) return `${label} ・ 実行中`
   const duration = turn.durationMs === undefined ? '時間未計測' : `合計 ${formatDuration(turn.durationMs)}`
   const tokens = turn.usage ? `${formatCount(turn.usage.totalTokens ?? 0)} トークン` : 'トークン未記録'
-  return `${label} ・ ${duration} ・ ${tokens}`
+  return `${label} ・ ${duration} ・ ${tokens}${turn.termination ? ` ・ ${terminationLabel(turn.termination)}` : ''}`
 }

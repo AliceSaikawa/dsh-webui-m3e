@@ -6,7 +6,7 @@ import { buildTrace, elapsed, filterTrace, firstOutputTime, rowDescription, turn
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { extendMock } from '../web/src/features/trace/mock.ts'
-import { TRACE_EXAMPLE_SESSION_ID, traceExampleRecords } from '../web/src/features/trace/trace-fixtures.ts'
+import { TRACE_EXAMPLE_SESSION_ID, TRACE_FAILURE_SESSION_ID, traceExampleRecords, traceFailureRecords } from '../web/src/features/trace/trace-fixtures.ts'
 
 function record(seq: number, type: string, time: number, data: SessionWireEvent['data'] = {}): SessionWireEvent {
   return { seq, type, time, data }
@@ -431,4 +431,173 @@ test('provider totalTokens does not override the four disjoint trajectory token 
   assert.equal(turn.rows[0].usage?.totalTokens, 64)
   assert.equal(turn.usage?.totalTokens, 64)
   assert.match(turnHeading(turn), /64 トークン/)
+})
+
+test('step start keeps a stable live row while later user messages precede the response and enter its input', () => {
+  const beginning = [record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 })]
+  const waiting = buildTrace(beginning, null, true)[0]?.rows[0]
+  assert.ok(waiting)
+  assert.equal(waiting.running, true)
+  assert.equal(waiting.startedAt, 110)
+  assert.deepEqual(waiting.input, [])
+  const entered = [...beginning,
+    record(3, 'user/message', 120, { content: [text('今回の質問')] }),
+    record(4, 'user/message', 130, { source: { kind: 'plugin', plugin: 'context' }, content: [text('追加の資料')] }),
+  ]
+  const pending = buildTrace(entered, null, true)[0]
+  assert.ok(pending)
+  assert.deepEqual(pending.rows.map(row => row.kind), ['user', 'user', 'assistant'])
+  assert.equal(pending.rows[2]?.id, waiting.id)
+  assert.equal(pending.rows[2]?.running, true)
+  assert.deepEqual(pending.rows[2]?.input, [text('今回の質問'), text('追加の資料')])
+  const settled = buildTrace([...entered, message(5, 200, 1, 1, '回答'), record(6, 'step/end', 210, { turn: 1, step: 1 })])[0]
+  assert.ok(settled)
+  assert.deepEqual(settled.rows.map(row => row.kind), ['user', 'user', 'assistant'])
+  assert.equal(settled.rows[2]?.id, waiting.id)
+  assert.equal(settled.rows[2]?.durationMs, 90)
+  assert.deepEqual(settled.rows[2]?.input, [text('今回の質問'), text('追加の資料')])
+})
+
+test('a later step captures entered input after prior tool results without changing the earlier response input', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('元の質問')] }), message(4, 140, 1, 1, '調べます'),
+    record(5, 'tool/result', 160, { turn: 1, step: 1, message: { source: { callId: 'read' }, content: [{ type: 'tool-result', toolCallId: 'read', content: [text('資料の内容')] }] } }),
+    record(6, 'step/end', 170, { turn: 1, step: 1 }), record(7, 'step/start', 180, { turn: 1, step: 2 }),
+    record(8, 'user/message', 190, { content: [text('この資料も確認して')] }), message(9, 220, 1, 2, '確認しました'),
+  ])
+  assert.ok(turn)
+  const responses = turn.rows.filter(row => row.kind === 'assistant')
+  assert.deepEqual(responses[0]?.input, [text('元の質問')])
+  assert.deepEqual(responses[1]?.input, [text('元の質問'), text('調べます'), { type: 'tool-result', toolCallId: 'read', content: [text('資料の内容')] }, text('この資料も確認して')])
+  assert.deepEqual(turn.rows.map(row => row.kind), ['user', 'assistant', 'tool', 'user', 'assistant'])
+})
+
+test('an unsuccessful model attempt retains its finish failure after the turn closes', () => {
+  const failure = { code: 'NETWORK', message: '接続できませんでした。' }
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('質問')] }),
+    record(4, 'assistant/attempt', 210, { turn: 1, step: 1, stream: [{ type: 'chunk', time: 210, chunk: { type: 'finish', reason: { kind: 'error', failure } } }] }),
+    record(5, 'step/end', 220, { turn: 1, step: 1 }), record(6, 'turn/end', 230, { turn: 1, reason: { kind: 'error', error: failure } }),
+  ])
+  assert.ok(turn)
+  const row = turn.rows.find(item => item.kind === 'assistant')
+  assert.ok(row)
+  assert.equal(row.failed, true)
+  assert.equal(row.error, failure.message)
+  assert.equal(row.durationMs, 100)
+  assert.equal(row.attempts?.[0]?.termination?.message, failure.message)
+  assert.deepEqual(row.input, [text('質問')])
+  assert.match(rowDescription(row), /失敗/)
+  assert.equal(turn.termination?.message, failure.message)
+  assert.match(turnHeading(turn), /失敗/)
+})
+
+test('retry history remains inspectable without making a running retry or its successful result fail', () => {
+  const records = [
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('質問')] }),
+    record(4, 'assistant/attempt', 150, { turn: 1, step: 1, stream: [{ type: 'chunk', time: 150, chunk: { type: 'finish', reason: { kind: 'error', failure: { code: 'NETWORK', message: '一時的に接続できませんでした。' } } } }] }),
+    record(5, 'llm/retry', 155, { turn: 1, step: 1, retry: 1, mode: 'normal', delayMs: 10, maxRetries: 3 }),
+  ]
+  const pending = buildTrace(records, null, true)[0]?.rows.find(row => row.kind === 'assistant')
+  assert.ok(pending)
+  assert.equal(pending.running, true)
+  assert.equal(pending.failed, false)
+  assert.equal(pending.termination, undefined)
+  const [turn] = buildTrace([...records, message(6, 200, 1, 1, '成功しました'), record(7, 'step/end', 210, { turn: 1, step: 1 }), record(8, 'turn/end', 220, { turn: 1, reason: { kind: 'completed' } })])
+  assert.ok(turn)
+  const row = turn.rows.find(item => item.kind === 'assistant')
+  assert.ok(row)
+  assert.equal(row.failed, false)
+  assert.equal(row.error, undefined)
+  assert.equal(row.termination, undefined)
+  assert.equal(turn.termination, undefined)
+  assert.equal(row.attempts?.[0]?.termination?.kind, 'error')
+  assert.equal(row.retries, 1)
+  assert.doesNotMatch(rowDescription(row), /失敗/)
+})
+
+test('an interrupted settled prefix preserves its content and displays the durable cancellation cause', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'user/message', 120, { content: [text('途中で止める質問')] }),
+    record(4, 'assistant/message', 150, { turn: 1, step: 1, interrupted: true, message: { content: [text('途中の回答')] }, stream: [{ type: 'text-chunks', time0: 140, dt: [], index: 0, texts: ['途中の回答'] }] }),
+    record(5, 'step/end', 160, { turn: 1, step: 1 }),
+    record(6, 'turn/end', 170, { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } }),
+  ])
+  assert.ok(turn)
+  const row = turn.rows.find(item => item.kind === 'assistant')
+  assert.ok(row)
+  assert.equal(row.failed, false)
+  assert.equal(row.termination?.kind, 'aborted')
+  assert.match(row.termination?.message ?? '', /ユーザー/)
+  assert.deepEqual(row.content, [text('途中の回答')])
+  assert.equal(row.firstOutputMs, 30)
+  assert.match(rowDescription(row), /中断/)
+  assert.match(turnHeading(turn), /中断/)
+})
+
+test('turn termination supplies model preparation errors while later tool errors do not relabel a successful response', () => {
+  const preparationFailure = { code: 'UNAVAILABLE', message: 'モデルを準備できませんでした。' }
+  const early = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
+    record(3, 'step/end', 150, { turn: 1, step: 1 }), record(4, 'turn/end', 160, { turn: 1, reason: { kind: 'error', error: preparationFailure } }),
+  ])[0]?.rows[0]
+  assert.equal(early?.failed, true)
+  assert.equal(early?.error, preparationFailure.message)
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 2 }), record(2, 'step/start', 110, { turn: 2, step: 1 }),
+    message(3, 150, 2, 1, 'ツールを実行します'), record(4, 'tool/call', 160, { turn: 2, step: 1, callId: 'tool', name: 'bash', arguments: '{}' }),
+    record(5, 'step/end', 180, { turn: 2, step: 1 }), record(6, 'turn/end', 190, { turn: 2, reason: { kind: 'error', error: { code: 'UNKNOWN', message: 'ツールの実行中に失敗しました。' } } }),
+  ])
+  assert.ok(turn)
+  assert.equal(turn.rows[0]?.failed, false)
+  assert.equal(turn.rows[0]?.termination, undefined)
+  assert.equal(turn.termination?.kind, 'error')
+})
+
+test('turn end distinguishes cancellation causes, recovered interruption, blocked work and output limits', () => {
+  const cases: { reason: SessionWireEvent['data']; label: string; cause: string }[] = [
+    { reason: { kind: 'aborted', reason: { kind: 'parent' } }, label: '中断', cause: '親セッション' },
+    { reason: { kind: 'aborted', reason: { kind: 'hook', reason: '確認が必要です。' } }, label: '中断', cause: '確認が必要' },
+    { reason: { kind: 'aborted', reason: { kind: 'disposed' } }, label: '中断', cause: '閉じられた' },
+    { reason: { kind: 'aborted', reason: { kind: 'legacy' } }, label: '中断', cause: '記録されていません' },
+    { reason: { kind: 'interrupted' }, label: '中断', cause: '終了が記録されない' },
+    { reason: { kind: 'blocked' }, label: '実行見送り', cause: '見送られました' },
+    { reason: { kind: 'max-tokens' }, label: '上限到達', cause: '上限に達しました' },
+  ]
+  for (const sample of cases) {
+    const [turn] = buildTrace([record(1, 'turn/start', 100, { turn: 1 }), record(2, 'turn/end', 200, { turn: 1, reason: sample.reason })])
+    assert.ok(turn)
+    assert.ok(turn.termination?.message.includes(sample.cause))
+    assert.ok(turnHeading(turn).includes(sample.label))
+    assert.equal(turn.rows.length, 0)
+  }
+})
+
+test('an orphaned terminal attempt keeps its recorded cause without a turn closer or a fabricated finishReason field', () => {
+  const [failed] = buildTrace([record(1, 'assistant/attempt', 200, { turn: 2, step: 3, stream: [{ type: 'chunk', time: 200, chunk: { type: 'finish', reason: { kind: 'aborted', failure: { code: 'ABORTED', message: '要求が中断されました。' } } } }] })])
+  assert.ok(failed)
+  assert.equal(failed.rows[0]?.termination?.kind, 'aborted')
+  assert.equal(failed.rows[0]?.durationMs, undefined)
+  const [successful] = buildTrace([record(1, 'assistant/message', 200, { turn: 1, step: 1, message: { content: [text('回答')] }, finishReason: { kind: 'error', failure: { message: '実際の形式にはない値' } } })])
+  assert.equal(successful?.rows[0]?.failed, false)
+})
+
+test('the mocks use entered-step input order and retain historical failure causes after a successful later turn', () => {
+  assert.deepEqual(traceExampleRecords.slice(0, 3).map(event => event.type), ['turn/start', 'step/start', 'user/message'])
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const binding = ctx.sessions.binding(TRACE_FAILURE_SESSION_ID)
+    assert.ok(binding)
+    const { records } = foldSessionWindow(binding.eventSource.getSnapshot())
+    assert.deepEqual(records, traceFailureRecords)
+    const turns = buildTrace(records)
+    assert.deepEqual(turns.map(turn => turn.termination?.kind), ['error', 'aborted', 'blocked', 'interrupted', undefined])
+    assert.equal(turns[0]?.rows.find(row => row.kind === 'assistant')?.failed, true)
+    assert.equal(turns[4]?.rows.find(row => row.kind === 'assistant')?.failed, false)
+    assert.ok(turns[1]?.rows.find(row => row.kind === 'assistant')?.termination?.message.includes('ユーザー'))
+  } finally { ctx.dispose() }
 })

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import type { ContentBlock, ImageAttachmentRef, SessionFace, TokenUsage } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
-import { buildTrace, formatCount, formatDuration, prettyJson, type TraceRow } from './model.ts'
+import { buildTrace, formatCount, formatDuration, prettyJson, terminationLabel, type TraceRow } from './model.ts'
 
 function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef; face: SessionFace | undefined }) {
   const [url, setUrl] = useState('')
@@ -72,11 +72,16 @@ export function RecordSheet({ sessionId, initialRow, close }: { sessionId: strin
   }
   return <article className="trace-record">
     <h2>{row.title}{row.turn === null ? '' : `（ターン ${row.turn}）`}</h2>
-    {row.failed && <p className="trace-error" role="status">失敗{row.error ? `：${row.error}` : ''}</p>}
+    {row.termination ? <p className={row.failed ? 'trace-error' : 'muted'} role="status">{terminationLabel(row.termination)}：{row.termination.message}</p>
+      : row.failed && <p className="trace-error" role="status">失敗{row.error ? `：${row.error}` : ''}</p>}
     {row.kind !== 'user' && <><h3>所要時間</h3><p>{row.running ? '開始済み・実行中' : formatDuration(row.durationMs)}
       {row.firstOutputMs !== undefined && <><br />最初の出力まで {formatDuration(row.firstOutputMs)}</>}
     </p></>}
     {row.retries > 0 && <p>再試行 {row.retries} 回<span className="trace-note">（記録に残った未確定の試行数）</span></p>}
+    {!!row.attempts?.length && <details><summary>確定しなかった試行</summary><ol>{row.attempts.map((attempt, index) =>
+      <li key={attempt.seq}>試行 {index + 1}：{attempt.termination
+        ? `${terminationLabel(attempt.termination)}・${attempt.termination.message}`
+        : '終了理由は記録されていません。'}</li>)}</ol></details>}
     {(row.kind === 'assistant' || row.kind === 'compaction') && <>
       <h3>トークン</h3><Usage usage={row.usage} />
       <details><summary>入力</summary><p className="trace-note">読み込み済みの入力記録です。未読み込みの履歴や内部の指示は含みません。</p><Content content={row.input} face={face} /></details>

@@ -7,6 +7,7 @@ import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { buildTrace, filterTrace, rowDescription, turnHeading, type TraceKind, type TraceRow } from './model.ts'
 import { RecordSheet } from './RecordSheet.tsx'
+import { isTraceAtBottom, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
 import './trace.css'
 
 const icons: Record<TraceKind, string> = { user: 'person', assistant: 'smart_toy', tool: 'terminal', subtool: 'subdirectory_arrow_right', compaction: 'summarize' }
@@ -17,11 +18,11 @@ function restoreAnchor(node: HTMLDivElement, saved: ScrollAnchor) {
     : saved.top + node.scrollHeight - saved.height
 }
 
-export function TraceView({ sessionId }: { sessionId: string }) {
-  return <TraceSession key={sessionId} sessionId={sessionId} />
+export function TraceView({ sessionId, active }: { sessionId: string; active: boolean }) {
+  return <TraceSession key={sessionId} sessionId={sessionId} active={active} />
 }
 
-function TraceSession({ sessionId }: { sessionId: string }) {
+function TraceSession({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { face, snapshot, records, stream } = useSession(sessionId)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,48 +37,74 @@ function TraceSession({ sessionId }: { sessionId: string }) {
   const anchor = useRef<ScrollAnchor | null>(null)
   const busy = useRef(false)
   const closeSheet = useRef<(() => void) | undefined>(undefined)
-  const queryRef = useRef(query)
-  queryRef.current = query
+  const current = useRef({ active, query, hasRows: false, loadingOlder: false })
+  current.current = { active, query, hasRows: turns.some(turn => turn.rows.length > 0), loadingOlder: loading || snapshot.loadingOlder }
+  const wasActive = useRef(false)
 
-  useEffect(() => () => closeSheet.current?.(), [])
-  useLayoutEffect(() => {
+  const updateScroll = (trigger: TraceScrollTrigger) => {
+    // Guard before accessing dimensions, including callbacks already in the queue.
+    const state = current.current
+    if (!state.active) return
     const node = scroll.current
-    if (!node || node.clientHeight === 0) return
-    if (anchor.current && !snapshot.loadingOlder && !loading) {
+    if (!node) return
+    const action = traceScrollAction({
+      active: state.active, initialized: initialized.current, hasRows: state.hasRows,
+      visible: node.clientHeight > 0, following: follow.current, searching: !!state.query.trim(),
+      hasAnchor: anchor.current !== null, loadingOlder: state.loadingOlder || busy.current,
+    }, trigger)
+    if (action === 'anchor' && anchor.current) {
       restoreAnchor(node, anchor.current)
       anchor.current = null
-    } else if (!anchor.current && (!initialized.current || (follow.current && !query))) {
+    } else if (action === 'bottom') {
       node.scrollTop = node.scrollHeight
       initialized.current = true
     }
-  }, [turns, query, loading, snapshot.loadingOlder])
+  }
+
+  useEffect(() => () => closeSheet.current?.(), [])
+  useLayoutEffect(() => {
+    const activating = active && !wasActive.current
+    wasActive.current = active
+    if (!active) {
+      // A pending prepend must not compete with the shell's restoration later.
+      anchor.current = null
+      return
+    }
+    // The parent restores its snapshot after child layout effects. Defer the
+    // first activation to passive setup so even a previously empty panel wins.
+    if (!activating) updateScroll('content')
+  }, [active, turns, query, loading, snapshot.loadingOlder])
 
   useEffect(() => {
+    if (!active) return
     const node = scroll.current, content = body.current
     if (!node || !content) return
-    // Hidden conversation panels have zero height. Initialize when first visible.
+    // Passive setup runs after the parent's synchronous scroll restoration.
+    // Read the restored position without writing it, then resume from there.
+    if (initialized.current) follow.current = isTraceAtBottom(node.scrollTop, node.scrollHeight, node.clientHeight)
+    updateScroll('activation')
+    let firstNotification = true
+    let disposed = false
     const observer = new ResizeObserver(() => {
-      if (!node.clientHeight) return
-      if (anchor.current) {
-        if (!busy.current) { restoreAnchor(node, anchor.current); anchor.current = null }
-        return
-      }
-      if (!initialized.current || (follow.current && !queryRef.current)) {
-        node.scrollTop = node.scrollHeight
-        initialized.current = true
-      }
+      if (disposed || !current.current.active) return
+      // observe() reports the initial size even when nothing changed. That
+      // notification must not undo a restored position on tab reactivation.
+      updateScroll(firstNotification ? 'activation' : 'resize')
+      firstNotification = false
     })
     observer.observe(node)
     observer.observe(content)
-    return () => observer.disconnect()
-  }, [])
+    return () => { disposed = true; observer.disconnect() }
+  }, [active])
 
   const changeQuery = (value: string) => {
+    if (!current.current.active) return
     setQuery(value)
     follow.current = false
     if (scroll.current) scroll.current.scrollTop = 0
   }
   const loadOlder = async () => {
+    if (!current.current.active) return
     const node = scroll.current
     if (!face || busy.current || snapshot.loadingOlder || !snapshot.hasMore || !node) return
     busy.current = true
@@ -92,18 +119,20 @@ function TraceSession({ sessionId }: { sessionId: string }) {
     finally { busy.current = false; setLoading(false) }
   }
   const showRecord = (row: TraceRow) => {
+    if (!current.current.active) return
     closeSheet.current?.()
     closeSheet.current = openSheet(close => <RecordSheet sessionId={sessionId} initialRow={row} close={close} />,
       { label: '記録の詳細', sessionId })
   }
 
   return <section className="trace-view" aria-label="トレース">
-    <div className="trace-scroll" ref={scroll} data-scroll-area onScroll={() => {
+    <div className="trace-scroll" ref={scroll} data-scroll-area onScroll={active ? () => {
+      if (!current.current.active) return
       const node = scroll.current
-      if (node && node.clientHeight > 0 && !anchor.current) follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48
-    }}>
+      if (node && !anchor.current) follow.current = isTraceAtBottom(node.scrollTop, node.scrollHeight, node.clientHeight)
+    } : undefined}>
       <div className="trace-body" ref={body}>
-        {snapshot.hasMore && <div className="trace-older"><M3eButton variant="text" disabled={loading || snapshot.loadingOlder} onClick={() => { void loadOlder() }}>
+        {snapshot.hasMore && <div className="trace-older"><M3eButton variant="text" disabled={!active || loading || snapshot.loadingOlder} onClick={() => { void loadOlder() }}>
           <Icon name="expand_less" slot="icon" />{loading || snapshot.loadingOlder ? '読み込み中…' : '前の記録を読み込む'}
         </M3eButton></div>}
         {loadError && <p className="trace-error" role="alert">{loadError}</p>}
@@ -111,9 +140,11 @@ function TraceSession({ sessionId }: { sessionId: string }) {
         {query.trim() && count === 0 && <p className="trace-empty" role="status">一致する記録がありません。</p>}
         {filtered.map(turn => <section className="trace-turn" key={turn.id} aria-label={turnHeading(turn)}>
           <h2>{turnHeading(turn)}</h2>
+          {turn.termination && <p className={turn.termination.kind === 'error' ? 'trace-error' : 'trace-note'}>{turn.termination.message}</p>}
           {turn.partial && <p className="trace-partial">開始前の記録は未読み込みです。</p>}
           <M3eActionList aria-label={turn.number === null ? '記録' : `ターン ${turn.number} の記録`}>
             {turn.rows.map(row => <M3eListAction key={row.id} className={`trace-row${row.failed ? ' trace-row-error' : ''}`}
+              disabled={!active}
               style={{ marginInlineStart: Math.min(row.depth, 4) * 16 }} data-trace-row={row.id}
               onClick={() => showRecord(row)} aria-label={`${row.title}、${rowDescription(row)}、詳細を開く`}>
               <Icon name={icons[row.kind]} slot="leading" />
@@ -125,11 +156,11 @@ function TraceSession({ sessionId }: { sessionId: string }) {
         </section>)}
       </div>
     </div>
-    <footer className="conversation-footer trace-search">
+    <footer className="conversation-footer trace-search" inert={!active}>
       {query.trim() && <p className="trace-search-count" role="status">読み込み済みの記録から {count} 件</p>}
-      <M3eSearchBar clearable clearLabel="検索を消す" onClear={() => changeQuery('')}>
+      <M3eSearchBar clearable={active} clearLabel="検索を消す" onClear={() => changeQuery('')}>
         <Icon name="search" slot="leading" />
-        <input slot="input" type="search" aria-label="記録を検索" placeholder="種類・ツール名・本文で検索" value={query}
+        <input slot="input" type="search" disabled={!active} aria-label="記録を検索" placeholder="種類・ツール名・本文で検索" value={query}
           onChange={event => changeQuery(event.target.value)} />
       </M3eSearchBar>
     </footer>
