@@ -131,4 +131,39 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 
 ## 実装メモ
 
-（実装した担当が書き足します）
+### 2026-09-25：段階 2 の実装
+
+#### 実装したものと判断
+
+- 会話の ⋮ は M3E のアンカー付きメニューに置き換えた。子とゴールがある場合の 7 項目、題名変更、統計シート、各補助画面への移動、実行中ジョブの件数、アーカイブ後の一覧への replace と通知を実装した。
+- 統計は projection と読み込み済み records だけを使う。pressureTokens の 0 も有効値とし、欠けた場合だけ projectedTokens に戻す。欠損・負数・非有限値・0 除算では使用率を表示しない。100% 超の数字はそのまま表示し、バーだけ 100% までにする。トークンの未取得と 0 を分ける。モデルは実物の modelSelection の next、なければ lastUsed を使い、考える深さは日本語にする。クォータは追加していない。
+- アーカイブは本文の raw RPC ではなく、土台の公開入口 `useDsh().workspaces.archiveSession(id)` を使用した。土台と実物の controller の契約に合わせるため。共有ファイルは変えていない。
+- 子の一覧はカタログの開閉と読み直しを行い、子の会話へは mode を含むアドレスを渡す。子の会話は読むだけという今回の決定を優先し、継続送信の機能は追加しない。子の題名変更・アーカイブも無効にした。入力欄の非表示は 03 の担当のまま。
+- ファイルとジョブ・ゴールは PageScaffold の画面として登録した。ファイルは読み取り専用。ゴールの変更は表示中の GoalRef を送り、失敗したら get で読み直す。新しい revision で同じ変更を自動再送しない。
+
+#### 未確認事項を既存プラグインで照合した結果
+
+参照元は `/Users/user/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 以下。ソースと型を読むだけにし、DSH 本体を起動・変更していない。
+
+- **ジョブ停止**：`dsh-client-ui-jobs/lib/client.js` は表示のみ。ホスト内部の jobs サービスには停止のメソッドがあるが、確認したブラウザ向け RPC 契約にはない。公開窓口を確認できないため、停止ボタンも架空の偽 RPC も作らなかった。実物の DSH での窓口追加・再調査は段階 3 の判断に残す。
+- **ゴール**：名前空間は設計本文の単数形ではなく `remote.goals`。`get(sessionId)`、`pause(sessionId, ref)`、`resume(sessionId, ref)`、`complete(sessionId, ref)`、`clear(sessionId, ref)` を確認した。根拠は `dsh-client-ui-goal/lib/client.js` と `dsh-goal/lib/typert.remote-client.d.ts`。projection はゴールの直値ではなく `{ goal, roundsStarted, createdAt, updatedAt }`。RPC の GoalView は goal の各属性と集計値が同じ階層にあるので変換する。clear は更新された GoalRef を返す。
+- **ゴールの状態**：phase は active / paused / blocked / complete。blocked は pause の対象外なので「再開」にし、ラウンド上限に達した場合は再開できない表示にした。完了後は消去のみ。blockedReason は文字列ではなく code と message を持つオブジェクト。
+- **ファイルのパス**：入力は作業フォルダ相対・絶対の両方に対応。list の path は相対でルートは空文字、read / readBytes / stat と変更通知の absolutePath は絶対。URL は相対パスに統一する。テキストの offset は **1 始まりの行番号**、バイト読み込みは **0 始まり**。根拠は `dsh-api-workspace-files/lib/types/types.d.ts`、同 `typert.remote-client.d.ts` と `dsh-client-ui-sidebar-documentpreview` の型。stat はバイナリの大きさ表示に使う。
+- **変更通知**：changes は ready / change を流す AsyncIterable で、AbortSignal で解除する。変更は DSH が観測したファイル操作に基づき、OS 全体のファイル監視を保証するものではない。DSH 外で編集した場合の通知は未確認のまま。
+- **子のアドレス**：`dsh-subagent/lib/types/control-types.d.ts` の SubagentAddress は親 ID・子 ID に加えて mode が必須。ローカル helper で mode を保持し、共有型は変更しなかった。オーケストレーターが予定する土台の修正と互換になる形にした。
+
+#### 操作上の記録と確認範囲
+
+- 開発サーバー、HTTP 確認、DSH 起動は行っていない。ブラウザの `?mock` 操作確認は、今回の追加指示に従ってオーケストレーターへ引き継ぐ。ブラウザで操作済みとは扱わない。
+- ファイル担当の M3E 型の位置検索で、誤ってパイプを含むコマンドを 1 回実行した。終了コード 1、出力なし。単純な 1 コマンドずつという指示からの逸脱として記録し、その検索は停止した。同じ検索の別経路での再実行はしていない。保護対象へのアクセスや自動承認の拒否は発生していない。
+- 中間の型検査は並行作業中の FilesScreen / FileScreen がまだ存在しないため失敗した。最終の 3 コマンドの結果は下に追記する。
+
+#### 最終検証と引き継ぎ
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：86 件すべて成功。今回追加は 31 件（表示判定 6、ファイル処理 8、ジョブ・ゴール処理 7、偽 API 10）。使用率の欠損・ゼロ除算、各一覧の並べ替え、5000 行＋1000 行の復元、画像の分割読み込み、途中の版変更、変更通知と購読中断、各ゴール操作、古い GoalRef の拒否・再読込、子のアドレス、ジョブ一覧の更新通知、共有履歴の不変を確認した。React の描画テストは追加していない。
+- `pnpm build`：成功。Vite の 500 KB 超の chunk 警告は残る（JavaScript 約 1,189 KB、gzip 約 297 KB）。分割設定は担当外なので変更していない。
+- 偽データは「承認シートの実装」に統計 62%、進行中ゴール、ジョブ 3 件、子 2 件とそれぞれの履歴を追加。画像・バイナリと docs/ui-spec.md 6000 行、変更通知を持つ読み取り専用 workspaceFiles、実物の名前に合わせた goals を登録した。既存の 2 会話の履歴は変更しない。
+- ブラウザで操作した画面：**なし（今回の指示で実施しない）**。オーケストレーターは `?mock#/s/approval-sheet` から、⋮ の 7 項目、題名変更、統計、ファイルのパンくず、docs/ui-spec.md の表示切替と追加読み込み、preview.png、sample.bin、ジョブ、子の会話への移動、ゴール操作と消去確認、アーカイブを確認する。行き詰まりは `?mock&scenario=goal-blocked#/s/approval-sheet/goal`。ジョブの停止ボタンは出さない仕様。
+- 担当外で必要になった追加変更：**なし**。共有型への mode 追加と子の入力欄非表示は、依頼で示された土台・03 の担当のまま。main への変更、merge、rebase はしていない。
+- 変更範囲の確認：開始時の HEAD は既存の `b69559c`。`25e3b2d` との差分にある docs/design/05-interactions.md の 1 行は開始前のコミットに含まれており、今回変更・ステージしていない。今回のコミットは 09 の担当ファイル 20 個だけ。
