@@ -16,7 +16,7 @@ test('ファイルの偽物は相対パスと絶対パスを同じ作業フォ�
   const { remote } = createWorkspaceFilesMock()
   const root = unwrapRemoteResult(await remote.list(sessionId, directoryRequestPath('')))
   assert.equal(root.path, '')
-  assert.deepEqual(root.entries.map(entry => entry.name), ['docs', 'README.md', 'preview.png', 'sample.bin'])
+  assert.deepEqual(root.entries.map(entry => entry.name), ['docs', 'README.md', 'preview.png', 'sample.bin', 'unknown-format', 'undecodable.data', 'too-large.txt', 'too-large.png'])
   const docs = unwrapRemoteResult(await remote.list(sessionId, 'docs'))
   assert.deepEqual(docs.entries.map(entry => entry.name), ['canvas', 'handoff.md', 'ui-spec.md'])
   assert.deepEqual(unwrapRemoteResult(await remote.list(sessionId, '/mock/dsh-webui-m3e/docs')), docs)

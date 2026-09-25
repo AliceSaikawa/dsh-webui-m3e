@@ -53,7 +53,7 @@ export function SessionMenuButton({ sessionId }: { sessionId: string }) {
     <M3eMenu ref={menu} id={id} positionX="before" positionY="below" className="st-menu" aria-label="会話のメニュー">
       {items.map(action => <M3eMenuItem key={action} disabled={busy || ((action === 'rename' || action === 'archive') && (!face || snapshot.removed || !!snapshot.subagent))} onClick={() => { void select(action) }}>
         <Icon name={labels[action][1]} slot="icon" />{labels[action][0]}
-        {action === 'jobs' && count > 0 && <span slot="trailing-icon" className="st-badge" aria-label={`実行中 ${count} 件`}>{count}</span>}
+        {action === 'jobs' && count > 0 && <span slot="trailing-icon" className="st-badge" aria-label={`実行中・停止中 ${count} 件`}>{count}</span>}
       </M3eMenuItem>)}
     </M3eMenu>
   </>

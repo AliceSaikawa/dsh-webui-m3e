@@ -7,6 +7,11 @@ type SubscribeActivation = (event: 'goal/activation-changed', listener: (event: 
 export function goalActivationFor(ref: GoalRef | undefined, live: GoalActivationRef | undefined): GoalActivation | undefined {
   return ref && live?.id === ref.id && live.revision === ref.revision ? live.activation : undefined
 }
+/** Keep the last matching value until this exact goal has a fresh observation. */
+export function updateGoalActivation(ref: GoalRef, previous: GoalActivationRef | undefined, received: GoalActivationRef | undefined): GoalActivationRef | undefined {
+  if (goalActivationFor(ref, received) !== undefined) return received
+  return goalActivationFor(ref, previous) !== undefined ? previous : undefined
+}
 
 /** Subscribe before reading. A later event always wins over an in-flight RPC. */
 export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessionId: string,

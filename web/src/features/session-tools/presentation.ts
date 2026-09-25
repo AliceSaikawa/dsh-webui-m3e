@@ -1,4 +1,5 @@
 import type { SessionJob, SessionSummary, SessionWireEvent, SubagentCatalogSnapshot } from '../../dsh/services.ts'
+import { isLiveJob } from './operations.ts'
 
 export interface ContextPressure { pressureTokens?: number | null; projectedTokens?: number | null; contextWindow?: number | null }
 export interface Usage { uncachedInputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
@@ -38,6 +39,10 @@ export function catalogEntries(catalog?: SubagentCatalogSnapshot): CatalogEntry[
   return catalog.entries.filter((entry): entry is CatalogEntry => entry && typeof entry === 'object' && typeof entry.id === 'string'
     && (entry.kind === 'diagnostic' || (entry.kind === 'child' && ['running', 'inactive'].includes(entry.activity) && ['one-shot', 'continuable'].includes(entry.mode))))
 }
+export function catalogRows(entries: readonly CatalogEntry[]): { children: Child[]; diagnosticCount: number } {
+  return { children: entries.filter((entry): entry is Child => entry.kind === 'child'),
+    diagnosticCount: entries.filter(entry => entry.kind === 'diagnostic').length }
+}
 export function childAddress(parentSessionId: string, child: Child) {
   return { parentSessionId, childSessionId: child.id, mode: child.mode }
 }
@@ -48,4 +53,4 @@ export type MenuAction = 'rename' | 'stats' | 'files' | 'jobs' | 'subagents' | '
 export function menuActions(children: boolean, goal: unknown): MenuAction[] {
   return ['rename', 'stats', 'files', 'jobs', ...(children ? ['subagents' as const] : []), ...(goal ? ['goal' as const] : []), 'archive']
 }
-export function runningJobCount(jobs: readonly SessionJob[] = []): number { return jobs.filter(job => job.status === 'running').length }
+export function runningJobCount(jobs: readonly SessionJob[] = []): number { return jobs.filter(isLiveJob).length }

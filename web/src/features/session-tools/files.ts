@@ -1,5 +1,12 @@
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
-import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { remoteErrorMessage, remoteFailureOf, unwrapRemoteResult } from '../../dsh/remote-result.ts'
+
+/** dsh-api-workspace-files/lib/types/types.d.ts uses the singular prefix. */
+export const workspaceFileErrors = {
+  notFound: 'workspace-file/not-found', notText: 'workspace-file/not-text', tooLarge: 'workspace-file/too-large',
+} as const
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const IMAGE_READ_BYTES = 256 * 1024
 
 /** Wire contracts verified against the installed workspace-files API. */
 export interface WorkspaceFileStat { readonly absolutePath: string; readonly version: string; readonly bytes?: number }
@@ -72,6 +79,31 @@ export function fileChanged(change: WorkspaceFileChange, file: WorkspaceFileStat
 }
 
 export class FileVersionChanged extends Error {}
+export class ImageFileTooLarge extends Error {}
+export function fileReadErrorMessage(failure: unknown): string {
+  if (failure instanceof ImageFileTooLarge) return '画像は 10 MB まで表示できます。上限内で読み込みを完了できませんでした。'
+  if (remoteFailureOf(failure)?.code === workspaceFileErrors.tooLarge) return 'ファイルが大きいため表示できません。'
+  return remoteErrorMessage(failure, 'ファイルを読み込めませんでした。')
+}
+
+function checkFileReadAbort(signal: AbortSignal) {
+  if (signal.aborted) throw new DOMException('読み込みを取り消しました。', 'AbortError')
+}
+
+/** Unknown extensions can still be binary; use the host's content verdict. */
+export async function readTextFilePage(remote: WorkspaceFilesRemote, sessionId: string, path: string, offset: number, signal: AbortSignal): Promise<
+  { kind: 'text'; page: WorkspaceFileText } | { kind: 'binary'; metadata: WorkspaceFileStat }
+> {
+  checkFileReadAbort(signal)
+  const result = await remote.read(sessionId, path, { offset, limit: 5000 }, signal)
+  checkFileReadAbort(signal)
+  if (!result.ok && result.error.code === workspaceFileErrors.notText) {
+    const metadata = unwrapRemoteResult(await remote.stat(sessionId, path, signal))
+    checkFileReadAbort(signal)
+    return { kind: 'binary', metadata }
+  }
+  return { kind: 'text', page: unwrapRemoteResult(result) }
+}
 export interface FileTextContent extends WorkspaceFileStat { readonly text: string; readonly nextOffset: number; readonly eof: boolean }
 export interface FilePageRequest { readonly offset: number; readonly requestId: number }
 /** A retry must trigger another load even when its line offset has not changed. */
@@ -88,23 +120,32 @@ export function appendFilePage(previous: FileTextContent | undefined, page: Work
 
 /** Byte reads can be capped by the host. Only display complete, same-version images. */
 export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: string, path: string, signal: AbortSignal): Promise<WorkspaceFileStat & { data: Uint8Array<ArrayBuffer> }> {
+  checkFileReadAbort(signal)
+  const stat = unwrapRemoteResult(await remote.stat(sessionId, path, signal))
+  checkFileReadAbort(signal)
+  if (stat.bytes !== undefined && stat.bytes > MAX_IMAGE_BYTES) throw new ImageFileTooLarge()
   let offset = 0
-  let first: WorkspaceFileBytes | undefined
   const parts: Uint8Array<ArrayBuffer>[] = []
   while (!signal.aborted) {
-    const page = unwrapRemoteResult(await remote.readBytes(sessionId, path, { offset }, signal))
-    if (signal.aborted) throw new DOMException('読み込みを取り消しました。', 'AbortError')
-    if (first && (page.version !== first.version || page.absolutePath !== first.absolutePath)) throw new FileVersionChanged()
+    const length = Math.min(IMAGE_READ_BYTES, MAX_IMAGE_BYTES - offset)
+    if (length === 0) throw new ImageFileTooLarge()
+    const page = unwrapRemoteResult(await remote.readBytes(sessionId, path, { offset, length }, signal))
+    checkFileReadAbort(signal)
+    if (page.version !== stat.version || page.absolutePath !== stat.absolutePath) throw new FileVersionChanged()
+    if (page.bytes !== undefined && page.bytes > MAX_IMAGE_BYTES) throw new ImageFileTooLarge()
+    // Reject an oversized response before decoding or retaining another buffer.
+    if (page.data.length > Math.ceil(length / 3) * 4) throw new ImageFileTooLarge()
     const bytes = Uint8Array.from(atob(page.data), character => character.charCodeAt(0))
+    if (bytes.length > MAX_IMAGE_BYTES - offset) throw new ImageFileTooLarge()
+    if (bytes.length > length) throw new Error('読み込み範囲を確認できませんでした。')
     if (page.offset !== offset || (!page.eof && bytes.length === 0)) throw new Error('読み込み位置を確認できませんでした。')
-    first ??= page
     parts.push(bytes)
     offset += bytes.length
     if (page.eof) {
       const data = new Uint8Array(offset)
       let start = 0
       for (const part of parts) { data.set(part, start); start += part.length }
-      return { absolutePath: page.absolutePath, version: page.version, bytes: page.bytes, data }
+      return { absolutePath: page.absolutePath, version: page.version, bytes: page.bytes ?? stat.bytes, data }
     }
   }
   throw new DOMException('読み込みを取り消しました。', 'AbortError')

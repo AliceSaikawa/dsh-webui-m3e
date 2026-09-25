@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { appendFilePage, directoryChanged, fileBreadcrumbs, fileChanged, fileKind, fileRoute, fileSize, FileVersionChanged, readImageFile, sortFileEntries, type WorkspaceDirectoryEntry, type WorkspaceFilesRemote } from '../web/src/features/session-tools/files.ts'
+import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock-files.ts'
 
 test('file entries place directories first and use natural names without mutating the listing', () => {
   const entries: WorkspaceDirectoryEntry[] = [{ name: 'z.md', type: 'file' }, { name: 'docs10', type: 'directory' }, { name: 'a.md', type: 'file' }, { name: 'docs2', type: 'directory' }]
@@ -53,10 +54,10 @@ test('text pagination is one-based and retains empty lines between pages', () =>
 test('image pages are joined using byte offsets and never mix versions', async () => {
   const offsets: number[] = []
   let revision = 'v1'
-  const api = { async readBytes(_id: string, _path: string, range: { offset?: number }) {
+  const api: WorkspaceFilesRemote = { ...createWorkspaceFilesMock().remote, async stat() { return { ok: true as const, value: { absolutePath: '/work/a.png', version: 'v1', bytes: 3 } } }, async readBytes(_id: string, _path: string, range: { offset?: number }) {
     offsets.push(range.offset ?? 0)
     return { ok: true as const, value: { absolutePath: '/work/a.png', version: range.offset ? revision : 'v1', bytes: 3, offset: range.offset ?? 0, data: range.offset ? 'Aw==' : 'AQI=', eof: Boolean(range.offset) } }
-  } } as WorkspaceFilesRemote
+  } }
   const image = await readImageFile(api, 's', 'a.png', new AbortController().signal)
   assert.deepEqual([...image.data], [1, 2, 3])
   assert.deepEqual(offsets, [0, 2])

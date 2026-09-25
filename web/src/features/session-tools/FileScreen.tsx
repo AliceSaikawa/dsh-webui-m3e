@@ -7,8 +7,8 @@ import { useRoute } from '../../app/router.ts'
 import { PageScaffold } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
-import { remoteErrorMessage, remoteFailureOf, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileSize, FileVersionChanged, imageMediaTypes, nextFilePageRequest, readImageFile, workspaceFilesOf, type FilePageRequest, type FileTextContent, type WorkspaceFileStat } from './files.ts'
+import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileReadErrorMessage, fileSize, FileVersionChanged, imageMediaTypes, nextFilePageRequest, readImageFile, readTextFilePage, workspaceFilesOf, type FilePageRequest, type FileTextContent, type WorkspaceFileStat } from './files.ts'
 import './files.css'
 
 export function FileScreen({ sessionId }: { sessionId: string }) {
@@ -61,22 +61,20 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
           objectUrl = URL.createObjectURL(new Blob([image.data], { type: imageMediaTypes[fileExtension(path)] }))
           markMetadata(image); setImageUrl(objectUrl)
         } else {
-          const result = await api.read(sessionId, path, { offset: request.offset, limit: 5000 }, controller.signal)
+          const result = await readTextFilePage(api, sessionId, path, request.offset, controller.signal)
           if (controller.signal.aborted) return
-          if (!result.ok && result.error.code === 'workspace-file/not-text') {
-            const stat = unwrapRemoteResult(await api.stat(sessionId, path, controller.signal))
-            if (!controller.signal.aborted) { setBinary(true); markMetadata(stat) }
+          if (result.kind === 'binary') {
+            setBinary(true); markMetadata(result.metadata)
             return
           }
-          const content = appendFilePage(textRef.current, unwrapRemoteResult(result))
+          const content = appendFilePage(textRef.current, result.page)
           textRef.current = content
           markMetadata(content); setText(content)
         }
       } catch (failure) {
         if (controller.signal.aborted) return
         if (failure instanceof FileVersionChanged) { setChanged(true); setError('読み込み中にファイルが変わりました。読み直してください。') }
-        else setError(remoteFailureOf(failure)?.code === 'workspace-file/too-large'
-          ? 'ファイルが大きいため表示できません。' : remoteErrorMessage(failure, 'ファイルを読み込めませんでした。'))
+        else setError(fileReadErrorMessage(failure))
       } finally {
         if (!controller.signal.aborted) { setLoading(false); loadGuard.current = false }
       }
@@ -120,7 +118,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
         <M3eButton variant={view === 'source' ? 'tonal' : 'outlined'} aria-pressed={view === 'source'} onClick={() => setView('source')}>元の文字</M3eButton>
       </div>}
       {metadata && <p className="session-file-hint">{fileSize(metadata.bytes)} ・ 読み取り専用</p>}
-      {error && <div className="session-file-notice" role="alert"><p>{error}</p><M3eButton variant="outlined" disabled={loading} onClick={reload}>もう一度読み込む</M3eButton></div>}
+      {error && <div className="session-file-notice" role="alert"><p>{error}</p><M3eButton variant="outlined" disabled={loading} onClick={reload}>最初から読み直す</M3eButton></div>}
       {loading && <p className="session-file-hint" role="status">読み込み中です…</p>}
       {binary && metadata && <div className="placeholder"><Icon name="draft" /><p>{fileName(path)}</p><p>このファイルは表示できません</p></div>}
       {imageUrl && <img className="session-file-image" src={imageUrl} alt={fileName(path)} onError={() => setError('画像を表示できませんでした。')} />}

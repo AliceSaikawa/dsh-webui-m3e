@@ -7,13 +7,14 @@ import { navigate } from '../../app/router.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { catalogEntries, childAddress, type Child } from './presentation.ts'
+import { catalogEntries, catalogRows, childAddress, type Child } from './presentation.ts'
 
 export function SubagentsScreen({ sessionId }: { sessionId: string }) {
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
   const catalog = list.subagentsByParent[sessionId]
   const entries = catalogEntries(catalog)
+  const { children, diagnosticCount } = catalogRows(entries)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   useEffect(() => {
@@ -33,9 +34,8 @@ export function SubagentsScreen({ sessionId }: { sessionId: string }) {
     {(error || catalog?.state === 'error') && <div className="st-error" role="alert"><p>{error || remoteErrorMessage(catalog?.error, 'サブエージェントを読み込めませんでした。')}</p><M3eButton onClick={() => setRetry(value => value + 1)}>読み直す</M3eButton></div>}
     {catalog?.state === 'ready' && !entries.length && <p>サブエージェントはありません</p>}
     <M3eActionList className="st-list" aria-label="子の会話">
-      {entries.map(entry => entry.kind === 'diagnostic'
-        ? <M3eListItem key={entry.id}><Icon slot="leading" name="info" />読み込めない記録があります</M3eListItem>
-        : <M3eListAction key={entry.id} onClick={() => open(entry)}>
+      {diagnosticCount > 0 && <M3eListItem><Icon slot="leading" name="info" />読み込めない記録があります（{diagnosticCount} 件）</M3eListItem>}
+      {children.map(entry => <M3eListAction key={entry.id} onClick={() => open(entry)}>
           <Icon slot="leading" name={entry.activity === 'running' ? 'pending' : 'check_circle'} />
           {entry.label || list.byId[entry.id]?.displayTitle || '子の会話'}
           <span slot="supporting-text">{entry.activity === 'running' ? '実行中' : '終了'} ・ {entry.mode === 'continuable' ? '続けて頼める' : '1 回限り'}</span>

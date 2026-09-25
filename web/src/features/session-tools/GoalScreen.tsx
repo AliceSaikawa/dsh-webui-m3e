@@ -9,7 +9,7 @@ import {
   currentGoalProjection, goalPhaseLabel, goalPrimaryAction, goalProjectionOf, goalsRemoteOf, performGoalOperation,
   type GoalAction, type GoalActivationRef, type GoalObservation, type GoalProjection, type GoalRef,
 } from './operations.ts'
-import { goalActivationFor, watchGoalActivation } from './goal-activation.ts'
+import { goalActivationFor, updateGoalActivation, watchGoalActivation } from './goal-activation.ts'
 
 export function GoalScreen({ sessionId }: { sessionId: string }) {
   return <GoalContent key={sessionId} sessionId={sessionId} />
@@ -45,11 +45,10 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   const mutationDisabled = disabled || readOnly || needsRefresh
 
   useEffect(() => {
-    setLiveActivation(undefined)
     setActivationError(false)
     if (!goals || !connected || !goal) return
     const watcher = watchGoalActivation(remote, goals, sessionId, value => {
-      setLiveActivation(value)
+      setLiveActivation(previous => updateGoalActivation(goal, previous, value))
       setActivationError(false)
     }, () => setActivationError(true))
     void watcher.refresh()

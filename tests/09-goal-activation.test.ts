@@ -4,7 +4,7 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import type { RemoteResult } from '../web/src/dsh/services.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 import { extendMock, SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
-import { goalActivationFor, watchGoalActivation, type GoalActivationChanged } from '../web/src/features/session-tools/goal-activation.ts'
+import { goalActivationFor, updateGoalActivation, watchGoalActivation, type GoalActivationChanged } from '../web/src/features/session-tools/goal-activation.ts'
 import { goalPhaseLabel, goalPrimaryAction, goalsRemoteOf, performGoalOperation, type GoalActivationRef, type GoalProjection, type GoalsRemote, type GoalView } from '../web/src/features/session-tools/operations.ts'
 
 const sessionId = SESSION_TOOLS_MOCK_IDS.parent
@@ -114,5 +114,25 @@ test('再取得の順序を保ち、取得失敗は進行中と扱わず再試�
   source.goals.get = async () => ok({ ...view, activation: 'armed' })
   await watcher.refresh()
   assert.equal(live?.activation, 'armed')
+  watcher.dispose()
+})
+
+test('ターンによる再取得中も最後の状態と一時停止操作を保ち、同じ版の応答で更新する', async () => {
+  const pending = deferred<RemoteResult<GoalView | undefined>>()
+  const source = harness(() => pending.promise)
+  let live: GoalActivationRef | undefined = { id: view.id, revision: view.revision, activation: 'armed' }
+  const watcher = watchGoalActivation(source.remote, source.goals, sessionId,
+    value => { live = updateGoalActivation(view, live, value) }, () => assert.fail())
+  const reading = watcher.refresh()
+  assert.equal(goalPhaseLabel(view.phase, goalActivationFor(view, live)), '進行中')
+  assert.equal(goalPrimaryAction(view, goalActivationFor(view, live)), 'pause')
+  pending.resolve(ok({ ...view, activation: 'disarmed' }))
+  await reading
+  assert.equal(goalPhaseLabel(view.phase, goalActivationFor(view, live)), '停止中')
+  assert.equal(goalPrimaryAction(view, goalActivationFor(view, live)), 'resume')
+  const latest = live
+  assert.equal(updateGoalActivation(view, live, { ...view, revision: view.revision - 1 }), latest)
+  assert.equal(updateGoalActivation(view, live, { ...view, id: 'another' }), latest)
+  assert.equal(goalActivationFor({ ...view, revision: view.revision + 1 }, live), undefined)
   watcher.dispose()
 })

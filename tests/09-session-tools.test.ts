@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { catalogEntries, childAddress, contextPercent, formatTokens, hasChildren, maxTurn, menuActions, reasoningLabel, runningJobCount } from '../web/src/features/session-tools/presentation.ts'
+import { catalogEntries, catalogRows, childAddress, contextPercent, formatTokens, hasChildren, maxTurn, menuActions, reasoningLabel, runningJobCount } from '../web/src/features/session-tools/presentation.ts'
 import type { SessionJob, SessionSummary, SessionWireEvent, SubagentCatalogSnapshot } from '../web/src/dsh/services.ts'
 
 test('コンテキストは pressure を優先し、欠けたときのみ projected に戻る', () => {
@@ -46,8 +46,19 @@ test('子カタログを絞り込み、会話へ mode を保ったアドレス�
   assert.equal(hasChildren('parent', undefined, { child: summary }), true)
   assert.equal(hasChildren('another', undefined, { child: summary }), false)
 })
-test('ジョブのメニュー件数は実行中のみ', () => {
+test('ジョブのメニュー件数は一覧と同じ実行中・停止中を数える', () => {
   const jobs = ['running', 'stopping', 'completed', 'failed', 'killed'].map((status, index) => ({ id: String(index), kind: 'bash', label: '処理', status, startedAt: 0 })) as SessionJob[]
-  assert.equal(runningJobCount(jobs), 1)
+  assert.equal(runningJobCount(jobs), 2)
   assert.equal(runningJobCount(), 0)
+  assert.equal(runningJobCount(jobs.filter(job => job.status === 'completed')), 0)
+})
+test('複数の読めない記録は件数にまとめ、子の行と順序は維持する', () => {
+  const children = [
+    { kind: 'child', id: 'child-1', activity: 'running', mode: 'continuable' },
+    { kind: 'child', id: 'child-2', activity: 'inactive', mode: 'one-shot' },
+  ] as const
+  assert.deepEqual(catalogRows([children[0], { kind: 'diagnostic', id: 'bad-1' }, children[1], { kind: 'diagnostic', id: 'bad-2' }]),
+    { children, diagnosticCount: 2 })
+  assert.deepEqual(catalogRows([{ kind: 'diagnostic', id: 'bad' }]), { children: [], diagnosticCount: 1 })
+  assert.deepEqual(catalogRows([]), { children: [], diagnosticCount: 0 })
 })
