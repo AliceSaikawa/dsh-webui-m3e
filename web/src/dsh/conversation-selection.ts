@@ -8,19 +8,25 @@ export function conversationSessionId(pathname: string): string | undefined {
   catch { return undefined }
 }
 
-/** Reconcile URL entry and readiness changes, without per-screen cleanup. */
+/** Match the controller's selectability independently of the first list fetch. */
+export function canSelectConversation(
+  sessions: Pick<ISessions, 'list' | 'subagentAddress'>,
+  sessionId: string | undefined,
+): boolean {
+  return sessionId !== undefined && (!!sessions.list.getSnapshot().byId[sessionId] || sessions.subagentAddress(sessionId) !== undefined)
+}
+
+/** Reconcile URL entry and selectability changes, without per-screen cleanup. */
 export function syncConversationSelection(
-  sessions: Pick<ISessions, 'list' | 'open' | 'clear'>,
+  sessions: Pick<ISessions, 'list' | 'open' | 'clear' | 'subagentAddress'>,
   sessionId: string | undefined,
   canOpen: boolean,
 ): void {
   const { current, phase } = sessions.list.getSnapshot()
-  // A request can create a scope before the list baseline makes it selectable.
-  if (phase !== 'ready') return
   if (sessionId === undefined) {
     // Boot may restore selection after the initial render. Wait for its baseline.
-    if (current !== undefined) sessions.clear()
-  } else if (canOpen && current !== sessionId) {
+    if (phase === 'ready' && current !== undefined) sessions.clear()
+  } else if (canOpen && current !== sessionId && canSelectConversation(sessions, sessionId)) {
     try { sessions.open(sessionId) }
     catch (error) { console.error(`会話を選択できませんでした: ${sessionId}`, error) }
   }
