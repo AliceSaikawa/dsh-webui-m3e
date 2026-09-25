@@ -8,5 +8,5 @@ const extensions = import.meta.glob<MockExtension>('../../features/*/mock.ts', {
 /** Only imported from the DEV branch of main.tsx; feature fixtures auto-register. */
 export function createMockContext(options: MockOptions = {}) {
   const scenario = options.scenario ?? new URLSearchParams(globalThis.location?.search ?? '').get('scenario') ?? undefined
-  return createContext({ ...options, scenario, extensions: [...Object.keys(extensions).sort().map((key) => extensions[key]!), ...options.extensions ?? []] })
+  return createContext({ ...options, scenario, extensions: [...Object.keys(extensions).sort().map((key) => ({ ...extensions[key]!, source: key })), ...options.extensions ?? []] })
 }
