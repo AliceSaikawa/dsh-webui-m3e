@@ -27,7 +27,7 @@ function missingSession(id: string, pending: boolean): ObservableSnapshot<Sessio
 /**
  * The controller owns scope lifetime, follow, reconnect baseline and pagination.
  * Every feature sees the same face and journal. No consumer starts its own feed.
- * Reading a session never changes the selection; the conversation screen opens it.
+ * Reading a session never changes selection; Frame manages it from the URL.
  * `projection(key)` is a hook: call it unconditionally at component top level.
  */
 export function useSession(id: string) {
