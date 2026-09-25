@@ -1,6 +1,6 @@
-import { Fragment, useLayoutEffect, useRef } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useRef } from 'react'
 import { M3eSearchBar } from '@m3e/react/search'
-import { M3eActionList, M3eListAction } from '@m3e/react/list'
+import { M3eActionList, M3eListAction, type M3eListActionElement } from '@m3e/react/list'
 import { M3eButton } from '@m3e/react/button'
 import { M3eLinearProgressIndicator } from '@m3e/react/progress-indicator'
 import { TabScaffold } from '../../app/shell/TabScaffold.tsx'
@@ -8,8 +8,10 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
 import { useDsh, type SessionSummary } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
-import { searchControllerFor } from './search-controller.ts'
-import { findMatchRanges, selectRecentSessions } from './search-utils.ts'
+import { isSearchBusy, searchControllerFor } from './search-controller.ts'
+import { findMatchRanges, normalizeQuery } from './search-utils.ts'
+import { filterVisibleSearchItems, selectVisibleRecentSessions } from './search-visibility.ts'
+import { connectSearchScroll } from './search-scroll.ts'
 import './search.css'
 
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -42,38 +44,56 @@ function ModelIcon({ row }: { row: SessionSummary | undefined }) {
 }
 
 export function SearchScreen() {
-  const { sessions } = useDsh()
+  const { sessions, workspaces } = useDsh()
   const controller = searchControllerFor(sessions)
   const state = useSnapshot(controller)
   const list = useSnapshot(sessions.list)
+  const workspaceList = useSnapshot(workspaces.list)
   const root = useRef<HTMLDivElement>(null)
+  const scroll = useRef<ReturnType<typeof connectSearchScroll> | null>(null)
   const composing = useRef(false)
-  const recent = selectRecentSessions(list.ids.flatMap(id => list.byId[id] ? [list.byId[id]!] : []))
-  const busy = state.phase === 'waiting' || state.phase === 'loading'
+  const rows = useMemo(() => state.query
+    ? filterVisibleSearchItems(state.items, list, workspaceList)
+    : selectVisibleRecentSessions(list, workspaceList).map(row => ({ sessionId: row.id, snippet: '' })),
+  [state.query, state.items, list, workspaceList])
+  const busy = isSearchBusy(state)
 
   useLayoutEffect(() => {
-    const area = root.current?.closest<HTMLElement>('[data-scroll-area]')
-    const saved = controller.getScrollTop()
-    if (area) area.scrollTop = saved
-    // M3E's initial element rendering completes before the next frame.
-    const frame = requestAnimationFrame(() => { if (area) area.scrollTop = saved })
-    const saveScroll = () => { if (area) controller.setScrollTop(area.scrollTop) }
-    area?.addEventListener('scroll', saveScroll, { passive: true })
     controller.resume()
-    return () => {
-      cancelAnimationFrame(frame)
-      saveScroll()
-      area?.removeEventListener('scroll', saveScroll)
-      controller.suspend()
-    }
+    return () => controller.suspend()
   }, [controller])
 
+  useLayoutEffect(() => {
+    const content = root.current
+    const area = content?.closest<HTMLElement>('[data-scroll-area]')
+    // Missing metadata is withheld until the list arrives. Do not restore into
+    // that temporary short list and lose the saved position to browser clamping.
+    if (!content || !area || list.phase !== 'ready') return
+    const connection = connectSearchScroll({
+      area,
+      rows: () => content.querySelectorAll<M3eListActionElement>('m3e-list-action'),
+      getSaved: controller.getScrollTop,
+      setSaved: controller.setScrollTop,
+      scheduler: { request: callback => requestAnimationFrame(callback), cancel: handle => cancelAnimationFrame(handle) },
+    })
+    scroll.current = connection
+    return () => {
+      connection.dispose()
+      if (scroll.current === connection) scroll.current = null
+    }
+  }, [controller, list.phase, rows])
+
   const change = (value: string, isComposing = composing.current) => {
-    const area = root.current?.closest<HTMLElement>('[data-scroll-area]')
-    if (area) area.scrollTop = 0
+    if (normalizeQuery(value) !== controller.getSnapshot().query) {
+      if (scroll.current) scroll.current.reset()
+      else {
+        controller.setScrollTop(0)
+        const area = root.current?.closest<HTMLElement>('[data-scroll-area]')
+        if (area) area.scrollTop = 0
+      }
+    }
     controller.setInput(value, isComposing)
   }
-  const rows = state.query ? state.items : recent.map(row => ({ sessionId: row.id, snippet: '' }))
 
   return <TabScaffold title="検索">
     <div ref={root} className="search-screen">
@@ -94,13 +114,14 @@ export function SearchScreen() {
         <h2>{state.query ? `「${state.query}」の検索結果` : '最近のセッション'}</h2>
         <div role="status" aria-live="polite" aria-atomic="true" className="search-status">
           {busy && <p>検索しています…</p>}
-          {state.phase === 'ready' && rows.length === 0 && <p>見つかりませんでした</p>}
+          {state.phase === 'composing' && <p>入力を確定すると検索します</p>}
+          {state.phase === 'ready' && rows.length === 0 && <p>{list.phase === 'pending' ? 'セッションを読み込んでいます…' : '見つかりませんでした'}</p>}
           {state.phase === 'ready' && rows.length > 0 && <span className="search-visually-hidden">{rows.length} 件見つかりました</span>}
           {!state.query && rows.length === 0 && <p>{list.phase === 'pending' ? 'セッションを読み込んでいます…' : '最近のセッションはありません'}</p>}
         </div>
         {state.phase === 'error' && <div role="alert" className="search-error">
           <p>検索できませんでした</p><p>{state.error}</p>
-          <M3eButton variant="tonal" onClick={() => controller.retry()}>もう一度検索</M3eButton>
+          {state.retryable && <M3eButton variant="tonal" onClick={() => controller.retry()}>もう一度検索</M3eButton>}
         </div>}
         {rows.length > 0 && <M3eActionList aria-label={state.query ? '検索結果' : '最近のセッション'}>
           {rows.map(item => {
