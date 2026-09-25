@@ -42,6 +42,7 @@ export interface CommandRow extends RowBase {
   readonly kind: 'command'
   readonly name: string
   readonly text: string
+  readonly status: 'success' | 'error' | 'unknown'
 }
 export interface PendingRow extends RowBase {
   readonly kind: 'pending'
@@ -53,6 +54,19 @@ export type ChatRow = UserRow | TextRow | ToolRow | SystemRow | CommandRow | Pen
 type ObjectValue = Record<string, unknown>
 const objectOf = (value: unknown): ObjectValue | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined
+
+/** Replacement messages summarize model context; they are not chat history. */
+function isChatEvent(event: SessionWireEvent): boolean {
+  return event.ignorable !== true && objectOf(event.surfaceOp)?.op !== 'replace'
+}
+
+/** A step has one accepted assistant message; retries remain attempt events. */
+function assistantBlockKey(turn: unknown, step: unknown, index: number, fallback: string): string {
+  return typeof turn === 'number' && Number.isSafeInteger(turn) && turn >= 0
+    && typeof step === 'number' && Number.isSafeInteger(step) && step >= 0
+    ? `assistant:${turn}:${step}:${index}`
+    : `${fallback}:${index}`
+}
 
 function fileAttachment(value: unknown): FileAttachmentRef | undefined {
   const attachment = objectOf(value)
@@ -179,7 +193,7 @@ export function buildChatRows(
   stream: AssistantStream | null = null,
   pendingSubmissions: readonly PendingSubmission[] = [],
 ): ChatRow[] {
-  const events = records.filter(event => event.ignorable !== true).slice().sort((a, b) => a.seq - b.seq)
+  const events = records.filter(isChatEvent).sort((a, b) => a.seq - b.seq)
   const calls = new Map<string, { event: SessionWireEvent; name: string; arguments: string }>()
   const results = new Map<string, ResultInfo>()
   const commandNames = new Map<string | number, string>()
@@ -228,8 +242,11 @@ export function buildChatRows(
       rows.push({ ...base, kind: 'user', content, text: textOf(content) })
     } else if (event.type === 'assistant/message') {
       const message = objectOf(data.message) ?? data
-      contentOf(message.content).forEach((block, index) => {
-        const blockBase = { ...base, key: `${base.key}:${index}` }
+      const content = Array.isArray(message.content) ? message.content : []
+      content.forEach((value, index) => {
+        const block = contentOf([value])[0]
+        if (block === undefined) return
+        const blockBase = { ...base, key: assistantBlockKey(data.turn, data.step, index, base.key) }
         if (block.type === 'text' || block.type === 'reasoning') {
           rows.push({ ...blockBase, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: false })
         } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
@@ -252,12 +269,15 @@ export function buildChatRows(
         ?? (typeof data.commandId === 'string' ? commandNames.get(data.commandId) : undefined)
         ?? (typeof data.sourceEventSeq === 'number' ? commandNames.get(data.sourceEventSeq) : undefined)
         ?? ''
-      rows.push({ ...base, kind: 'command', name, text: stringOf(data.text) ?? '' })
+      const status = data.kind === 'success' || data.kind === 'error' ? data.kind : 'unknown'
+      rows.push({ ...base, kind: 'command', name, text: stringOf(data.text) ?? '', status })
     }
   }
   if (stream !== null) {
+    const settledKeys = new Set(rows.map(row => row.key))
     for (const { index, block, complete } of getStreamBlocks(stream)) {
-      const base = { key: `stream:${stream.attemptId}:${index}` }
+      const base = { key: assistantBlockKey(stream.turn, stream.step, index, `stream:${stream.attemptId}`) }
+      if (settledKeys.has(base.key)) continue
       if (block.type === 'text' || block.type === 'reasoning') {
         rows.push({ ...base, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: !complete })
       } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
@@ -270,6 +290,22 @@ export function buildChatRows(
     rows.push({ key: `pending:${submission.requestId}`, kind: 'pending', time: submission.time, submission, text: submission.text })
   }
   return rows
+}
+
+export interface CommandPresentation {
+  readonly label: string
+  readonly icon: 'check_circle' | 'error' | 'info'
+  readonly failureReason?: string
+}
+
+/** Keep missing outcomes neutral and expose failures without opening details. */
+export function commandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'status'>): CommandPresentation {
+  const name = row.name ? `/${row.name} ` : 'コマンド'
+  if (row.status === 'error') {
+    return { label: `${name}の実行に失敗しました`, icon: 'error', failureReason: row.text.trim() || '詳しい理由は記録されていません。' }
+  }
+  if (row.status === 'success') return { label: `${name}を実行しました`, icon: 'check_circle' }
+  return { label: `${name}の結果を受け取りました`, icon: 'info' }
 }
 
 export function summarizeToolArguments(raw: string, maxLength = 100): string | undefined {

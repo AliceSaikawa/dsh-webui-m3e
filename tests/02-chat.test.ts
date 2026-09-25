@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  buildChatRows, formatDuration, formatToolArguments, getStreamBlocks,
+  buildChatRows, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
   isNearBottom, preservePrependScroll, summarizeToolArguments,
 } from '../web/src/features/chat/model.ts'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
@@ -40,6 +40,31 @@ test('chat rows keep visible message kinds, omit ignored attempts, and append tr
   assert.equal(last?.kind, 'pending')
   if (last?.kind === 'pending') assert.equal(last.submission, submission)
   assert.equal(JSON.stringify(records), frozen)
+})
+
+test('replacement summaries never enter chat rows, tool result matching, or call metadata', () => {
+  const replace = (value: SessionWireEvent): SessionWireEvent => ({ ...value, surfaceOp: { op: 'replace', startSeq: 1, endSeq: 2 } })
+  const records = [
+    { ...event(1, 'user/message', { content: [{ type: 'text', text: '元の質問' }] }), surfaceOp: 'append' },
+    event(2, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'complete', name: 'read_file', arguments: '{}' }, { type: 'tool-call', id: 'running', name: 'bash', arguments: '{}' }] } }),
+    replace(event(3, 'user/message', { content: [{ type: 'text', text: 'モデル用の要約' }] })),
+    replace(event(4, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '置換された検討' }, { type: 'tool-call', id: 'orphan', name: '表示しない名前', arguments: '{}' }] } })),
+    event(5, 'tool/result', { callId: 'complete', content: [{ type: 'text', text: '元の結果' }] }),
+    replace(event(6, 'tool/result', { callId: 'complete', content: [{ type: 'text', text: '結果の要約' }], isError: true })),
+    replace(event(7, 'tool/result', { callId: 'running', content: [{ type: 'text', text: '完了させない' }] })),
+    replace(event(8, 'tool/result', { callId: 'invisible', content: [{ type: 'text', text: '追加しない結果' }] })),
+    replace(event(9, 'tool/call', { callId: 'orphan', name: '使わない呼出情報' })),
+    event(10, 'tool/result', { callId: 'orphan', content: [{ type: 'text', text: '残す孤立結果' }] }),
+  ]
+  const rows = buildChatRows(records)
+  assert.deepEqual(rows.map(row => row.kind), ['user', 'tool', 'tool', 'tool'])
+  assert.ok(rows[0]?.kind === 'user')
+  assert.equal(rows[0].text, '元の質問')
+  const tools = rows.filter(row => row.kind === 'tool')
+  assert.deepEqual(tools.map(row => [row.callId, row.status]), [['complete', 'success'], ['running', 'running'], ['orphan', 'success']])
+  assert.deepEqual(tools[0]?.result, [{ type: 'text', text: '元の結果' }])
+  assert.equal(tools[2]?.name, 'ツール')
+  assert.equal(tools[2]?.durationMs, undefined)
 })
 
 test('tool calls are matched by callId across interleaved records and keep the assistant fork point', () => {
@@ -110,6 +135,26 @@ test('command completion uses command/run only to find its name', () => {
   assert.deepEqual(rows.map(row => row.kind === 'command' ? [row.name, row.text] : []), [['permission', '変更しました'], ['permission', ''], ['', '']])
 })
 
+test('command outcomes retain success, failure, and unknown states with Japanese presentation', () => {
+  const rows = buildChatRows([
+    event(1, 'command/run', { name: 'permission', commandId: 'known-command' }),
+    event(2, 'command/done', { commandId: 'known-command', kind: 'success', text: '変更しました' }),
+    event(3, 'command/done', { commandId: 'known-command', kind: 'error', text: '設定を変更できませんでした。' }),
+    event(4, 'command/done', { kind: 'error', text: '   ' }),
+    event(5, 'command/done', { kind: 'future-outcome', text: '結果' }),
+    event(6, 'command/done', {}),
+  ])
+  const commands = rows.filter(row => row.kind === 'command')
+  assert.deepEqual(commands.map(row => row.status), ['success', 'error', 'error', 'unknown', 'unknown'])
+  assert.deepEqual(commands.map(commandPresentation), [
+    { label: '/permission を実行しました', icon: 'check_circle' },
+    { label: '/permission の実行に失敗しました', icon: 'error', failureReason: '設定を変更できませんでした。' },
+    { label: 'コマンドの実行に失敗しました', icon: 'error', failureReason: '詳しい理由は記録されていません。' },
+    { label: 'コマンドの結果を受け取りました', icon: 'info' },
+    { label: 'コマンドの結果を受け取りました', icon: 'info' },
+  ])
+})
+
 test('system messages read the installed message payload and preserve structured text content', () => {
   const rows = buildChatRows([
     event(1, 'system/message', { message: '処理を再開しました' }),
@@ -130,6 +175,7 @@ test('the shared README mock produces reasoning, merged tools, an attachment, an
   assert.ok(command?.kind === 'command')
   assert.equal(command.name, 'permission')
   assert.equal(command.text, '/permission を実行しました')
+  assert.equal(command.status, 'success')
 })
 
 test('argument summary respects priority, invalid JSON, scalar values, Unicode, and length limit', () => {
@@ -159,7 +205,7 @@ test('parallel streaming blocks retain independent text, stable index keys, and 
     { type: 'text-delta', index: 2, text: '事' },
   ]
   const before = buildChatRows([], stream(first))
-  assert.deepEqual(before.map(row => [row.key, row.kind]), [['stream:attempt-1:0', 'reasoning'], ['stream:attempt-1:1', 'tool'], ['stream:attempt-1:2', 'assistant']])
+  assert.deepEqual(before.map(row => [row.key, row.kind]), [['assistant:1:1:0', 'reasoning'], ['assistant:1:1:1', 'tool'], ['assistant:1:1:2', 'assistant']])
   const complete = stream([
     ...first,
     { type: 'reasoning-delta', index: 0, text: '中' },
@@ -182,7 +228,7 @@ test('folded stream content is not added again and reconnect replaces previous t
   const first = buildChatRows([], baseline)
   assert.ok(first[0]?.kind === 'assistant')
   assert.equal(first[0].text, '現在の返事')
-  assert.equal(first[0].key, 'stream:attempt-1:3')
+  assert.equal(first[0].key, 'assistant:1:1:3')
   const restored = buildChatRows([], stream([{ type: 'text-delta', index: 3, text: '復元した返事' }]))
   assert.ok(restored[0]?.kind === 'assistant')
   assert.equal(restored[0].text, '復元した返事')
@@ -201,6 +247,45 @@ test('stream finish stops generation indicators without marking unanswered tools
   assert.equal(rows[0].streaming, false)
   assert.ok(rows[1]?.kind === 'tool')
   assert.equal(rows[1].status, 'running')
+})
+
+test('settlement preserves keys for the same reasoning, tool, and text blocks without duplicate live rows', () => {
+  const live = stream([
+    { type: 'reasoning-delta', index: 0, text: '検討中' },
+    { type: 'tool-call-delta', index: 1, id: 'call-1', name: 'read_file', argumentsDelta: '{}' },
+    { type: 'text-delta', index: 2, text: '本文' },
+  ])
+  const before = buildChatRows([], live)
+  const accepted = event(9, 'assistant/message', {
+    turn: 1, step: 1, message: { content: [
+      { type: 'reasoning', text: '確定した検討' },
+      { type: 'tool-call', id: 'call-1', name: 'read_file', arguments: '{}' },
+      { type: 'text', text: '確定した本文' },
+    ] },
+  })
+  const attempt = event(8, 'assistant/attempt', { turn: 1, step: 1, message: { content: [{ type: 'reasoning', text: '採用されない試行' }] } })
+  const settled = buildChatRows([attempt, accepted])
+  assert.deepEqual(settled.map(row => row.key), before.map(row => row.key))
+  assert.deepEqual(settled.map(row => row.kind), ['reasoning', 'tool', 'assistant'])
+  assert.ok(before[0]?.kind === 'reasoning' && settled[0]?.kind === 'reasoning')
+  assert.equal(before[0].streaming, true)
+  assert.equal(settled[0].streaming, false)
+  assert.equal(settled[0].seq, 9)
+  assert.equal(settled[0].text, '確定した検討')
+  assert.deepEqual(buildChatRows([attempt, accepted], live), settled)
+})
+
+test('assistant identities distinguish turns, steps, original block indices, and seq fallbacks', () => {
+  const rows = buildChatRows([
+    event(1, 'assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'reasoning', text: '一番目' }, { type: 'text', text: '本文' }] } }),
+    event(2, 'assistant/message', { turn: 1, step: 2, message: { content: [{ type: 'reasoning', text: '次の段階' }] } }),
+    event(3, 'assistant/message', { turn: 2, step: 1, message: { content: [{ type: 'reasoning', text: '次のターン' }] } }),
+    event(4, 'assistant/message', { turn: 2, step: 2, message: { content: [null, { type: 'reasoning', text: '元の番号を保つ' }] } }),
+    event(5, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '番号情報なし' }] } }),
+    event(6, 'assistant/message', { turn: 2, step: -1, message: { content: [{ type: 'reasoning', text: '無効な番号情報' }] } }),
+  ])
+  assert.deepEqual(rows.map(row => row.key), ['assistant:1:1:0', 'assistant:1:1:1', 'assistant:1:2:0', 'assistant:2:1:0', 'assistant:2:2:1', 'event:5:0', 'event:6:0'])
+  assert.equal(new Set(rows.map(row => row.key)).size, rows.length)
 })
 
 test('malformed message JSON is skipped while unsupported result blocks keep their type labels', () => {

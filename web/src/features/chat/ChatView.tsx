@@ -10,7 +10,7 @@ import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { AttachmentImage, FileAttachment, PreviewImage } from './Attachments.tsx'
 import { MessageActions } from './MessageActions.tsx'
 import { ToolDetail } from './ToolDetail.tsx'
-import { buildChatRows, formatDuration, summarizeToolArguments, type ChatRow } from './model.ts'
+import { buildChatRows, commandPresentation, formatDuration, summarizeToolArguments, type ChatRow } from './model.ts'
 import { useChatScroll } from './useChatScroll.ts'
 import './chat.css'
 
@@ -18,16 +18,16 @@ function Progress({ children }: { children: string }) {
   return <div className="chat-progress" role="status"><span aria-hidden="true" className="chat-progress-dot" />{children}</div>
 }
 
-function Row({ row, sessionId, face }: { row: ChatRow; sessionId: string; face?: SessionFace }) {
+function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string; face?: SessionFace; active: boolean }) {
   if (row.kind === 'user') return <article className="chat-user" aria-label="自分のメッセージ">
-    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq}>
+    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}>
       {row.text && <p className="chat-bubble">{row.text}</p>}
       <div className="chat-attachments">{row.content.map((block, index) => block.type === 'image'
         ? <AttachmentImage key={index} attachment={block.attachment} face={face} />
         : block.type === 'file' ? <FileAttachment key={index} attachment={block.attachment} /> : null)}</div>
     </MessageActions></article>
   if (row.kind === 'assistant') return row.text ? <article className="chat-assistant" aria-label="AI のメッセージ" aria-busy={row.streaming}>
-    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq}><Markdown>{row.text}</Markdown></MessageActions>
+    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}><Markdown>{row.text}</Markdown></MessageActions>
   </article> : null
   if (row.kind === 'reasoning') return <details className="chat-reasoning"><summary><Icon name="psychology" />{row.streaming ? '考えています…' : '考えた内容'}<Icon className="chat-chevron" name="expand_more" /></summary>
     <Markdown>{row.text || '内容を待っています…'}</Markdown></details>
@@ -42,8 +42,13 @@ function Row({ row, sessionId, face }: { row: ChatRow; sessionId: string; face?:
     </button>
   }
   if (row.kind === 'system') return <p className="chat-system">{row.text}</p>
-  if (row.kind === 'command') return row.text ? <details className="chat-command"><summary><Icon name="task_alt" />{row.name ? `/${row.name} を実行しました` : 'コマンドを実行しました'}<Icon name="expand_more" /></summary><Markdown>{row.text}</Markdown></details>
-    : <p className="chat-system">{row.name ? `/${row.name} を実行しました` : 'コマンドを実行しました'}</p>
+  if (row.kind === 'command') {
+    const presentation = commandPresentation(row)
+    if (row.status === 'error') return <aside className="chat-error-card" role="alert"><Icon name={presentation.icon} />
+      <div><h3>{presentation.label}</h3><Markdown>{presentation.failureReason ?? row.text}</Markdown></div></aside>
+    return row.text ? <details className="chat-command"><summary><Icon name={presentation.icon} />{presentation.label}<Icon name="expand_more" /></summary><Markdown>{row.text}</Markdown></details>
+      : <p className="chat-system">{presentation.label}</p>
+  }
   if (row.kind !== 'pending') return null
   return <article className="chat-user chat-pending" aria-label="送信中のメッセージ">
     {row.text && <p className="chat-bubble">{row.text}</p>}<div className="chat-attachments">{row.submission.attachments.map((attachment, index) => attachment.type === 'image'
@@ -53,13 +58,13 @@ function Row({ row, sessionId, face }: { row: ChatRow; sessionId: string; face?:
 }
 
 /** A key resets scroll and expanded rows when routing to a different session. */
-export function ChatView({ sessionId }: { sessionId: string }) { return <SessionChat key={sessionId} sessionId={sessionId} /> }
+export function ChatView({ sessionId, active }: { sessionId: string; active: boolean }) { return <SessionChat key={sessionId} sessionId={sessionId} active={active} /> }
 
-function SessionChat({ sessionId }: { sessionId: string }) {
+function SessionChat({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { face, snapshot, records, stream } = useSession(sessionId)
   const rows = useMemo(() => buildChatRows(records, stream, snapshot.pendingSubmissions), [records, stream, snapshot.pendingSubmissions])
   const revision = useMemo(() => ({ rows, error: snapshot.lastAgentError, waiting: snapshot.awaitingFirstTurn, open: snapshot.openState }), [rows, snapshot.lastAgentError, snapshot.awaitingFirstTurn, snapshot.openState])
-  const scroll = useChatScroll({ face, revision, loadingOlder: snapshot.loadingOlder, hasMore: snapshot.hasMore,
+  const scroll = useChatScroll({ face, revision, active, ready: snapshot.openState === 'open', loadingOlder: snapshot.loadingOlder, hasMore: snapshot.hasMore,
     onLoadError: () => showSnackbar('前のメッセージを読み込めませんでした。もう一度お試しください。') })
   const touchY = useRef<number | null>(null)
   return <section className="chat-view" aria-label="チャット">
@@ -77,13 +82,13 @@ function SessionChat({ sessionId }: { sessionId: string }) {
               <div className="chat-older">{snapshot.loadingOlder || scroll.requesting ? <Progress>前のメッセージを読み込んでいます…</Progress>
                 : snapshot.hasMore && <M3eButton onClick={() => void scroll.loadOlder()}>前のメッセージを読み込む</M3eButton>}</div>
               {rows.length === 0 && <div className="chat-state"><Icon name="chat_bubble" /><h2>何をしますか</h2><p>下の入力欄からメッセージを送れます。</p></div>}
-              {rows.map(row => <div key={row.key} data-chat-key={row.key}><Row row={row} sessionId={sessionId} face={face} /></div>)}
+              {rows.map(row => <div key={row.key} data-chat-key={row.key}><Row row={row} sessionId={sessionId} face={face} active={active} /></div>)}
               {snapshot.awaitingFirstTurn && <Progress>AI の応答を待っています…</Progress>}
               {stream && !stream.content.some(block => block.type !== 'text' || block.text.length > 0) && <Progress>返事を生成しています…</Progress>}
               {snapshot.lastAgentError && <aside className="chat-error-card" role="alert"><Icon name="error" /><div><h3>AI の処理が止まりました</h3><p>{snapshot.lastAgentError}</p></div></aside>}
             </>}
       </div>
     </div>
-    {scroll.latestVisible && <M3eButton variant="filled" className="chat-latest" onClick={scroll.toLatest}><Icon name="arrow_downward" />最新へ</M3eButton>}
+    {active && scroll.latestVisible && <M3eButton variant="filled" className="chat-latest" onClick={scroll.toLatest}><Icon name="arrow_downward" />最新へ</M3eButton>}
   </section>
 }

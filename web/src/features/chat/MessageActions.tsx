@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { Icon } from '../../app/icons/Icon.tsx'
@@ -39,23 +39,23 @@ function ActionsSheet({ sessionId, text, seq, close }: { sessionId: string; text
 }
 
 /** Scrolling cancels the hold. The explicit button also supports keyboard users. */
-export function MessageActions({ sessionId, text, seq, children }: { sessionId: string; text: string; seq?: number; children: ReactNode }) {
+export function MessageActions({ sessionId, text, seq, children, active }: { sessionId: string; text: string; seq?: number; children: ReactNode; active: boolean }) {
   const hold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
   const triggered = useRef(false)
   const cancel = () => { if (hold.current) clearTimeout(hold.current.timer); hold.current = null }
-  useEffect(() => cancel, [])
-  const show = () => openSheet(close => <ActionsSheet sessionId={sessionId} text={text} seq={seq} close={close} />, { label: 'メッセージの操作' })
+  useLayoutEffect(() => { if (!active) cancel(); return cancel }, [active])
+  const show = () => { if (active) openSheet(close => <ActionsSheet sessionId={sessionId} text={text} seq={seq} close={close} />, { label: 'メッセージの操作' }) }
   const start = (event: PointerEvent<HTMLDivElement>) => {
     cancel()
     triggered.current = false
-    if (!event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
+    if (!active || !event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
     hold.current = { x: event.clientX, y: event.clientY, timer: setTimeout(() => { hold.current = null; triggered.current = true; show() }, 550) }
   }
   const move = (event: PointerEvent<HTMLDivElement>) => {
     if (hold.current && Math.hypot(event.clientX - hold.current.x, event.clientY - hold.current.y) > 10) cancel()
   }
   const contextMenu = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
+    if (!active || (event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
     event.preventDefault(); cancel()
     if (!triggered.current) { triggered.current = true; show() }
   }

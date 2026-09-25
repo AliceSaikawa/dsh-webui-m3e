@@ -212,3 +212,21 @@ test('RemoteResult helpers preserve failure data and present Japanese errors', (
   })
   assert.equal(remoteErrorMessage({ code: 'new/code', message: 'English diagnostic', details: {} }), '処理に失敗しました。もう一度お試しください。')
 })
+
+test('gateway の入力不備と内部エラーは包まれた RPC エラーも日本語で区別する', () => {
+  for (const [code, message] of [
+    ['gateway/bad-request', '送信内容を確認して、もう一度お試しください。'],
+    ['gateway/internal', 'サーバーでエラーが発生しました。しばらく待ってから、もう一度お試しください。'],
+  ] as const) {
+    const failure = { code, message: 'English diagnostic', details: {} }
+    for (const error of [failure, { rpcError: failure }, { ok: false, error: failure }]) {
+      assert.equal(remoteErrorMessage(error, '共通の失敗文言'), message)
+    }
+    assert.throws(() => unwrapRemoteResult({ ok: false, error: failure }), (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.equal(error.message, message)
+      assert.equal(remoteErrorMessage(error), message)
+      return true
+    })
+  }
+})
