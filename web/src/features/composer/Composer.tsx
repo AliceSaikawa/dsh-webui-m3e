@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eSplitButton } from '@m3e/react/split-button'
@@ -11,11 +11,12 @@ import { useDsh } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
-import { readDraft, writeDraft, type Draft } from './drafts.ts'
+import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
 import { prepareImage } from './images.ts'
 import { errorText, ModelSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
+import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -33,9 +34,11 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const permissions = projection<PermissionProjection>('permissions')
   const modelSelection = projection<ModelSelectionProjection>('modelSelection')
   const { connected } = useConnection()
-  const [draft, setDraft] = useState(() => readDraft(draftKey))
-  const [busy, setBusy] = useState(() => Boolean(pendingDelivery(draftKey)))
-  const [preparing, setPreparing] = useState(false)
+  const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
+  const snapshotOfDraft = useCallback(() => readDraft(draftKey), [draftKey])
+  const draft = useSyncExternalStore(subscribe, snapshotOfDraft, snapshotOfDraft)
+  const [busy, setBusy] = useState(() => Boolean(pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)))
+  const preparing = (draft.preparingImages ?? 0) > 0
   const [auxError, setAuxError] = useState('')
   const [commands, setCommands] = useState<readonly CommandDescriptor[]>([])
   const [files, setFiles] = useState<readonly FileReference[]>([])
@@ -67,13 +70,14 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   function update(patch: Partial<Draft>) {
     const next = { ...readDraft(draftKey), ...patch }
     writeDraft(draftKey, next)
-    if (mounted.current) setDraft(next)
   }
   useEffect(() => {
     mounted.current = true
     const pending = pendingDelivery(draftKey)
+    const recovery = pendingWorkspaceAttachment(draftKey)
     if (pending) void pending.then(finishDelivery)
-    else { setBusy(false); setDraft(readDraft(draftKey)) }
+    else if (recovery) void recovery.then(finishWorkspaceRecovery)
+    else setBusy(false)
     return () => { mounted.current = false; closeSheet.current?.() }
   }, [])
   useEffect(() => { autosize.current?.resizeToFitContent(true) }, [draft.text])
@@ -122,12 +126,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }
   async function imagesPicked(files: File[]) {
     if (!files.length) return
-    setPreparing(true); setAuxError('')
-    const results = await Promise.allSettled(files.map(prepareImage))
-    const added = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
-    update({ images: [...readDraft(draftKey).images, ...added] })
-    const failed = results.find(result => result.status === 'rejected')
-    if (mounted.current) { setPreparing(false); if (failed?.status === 'rejected') setAuxError(errorText(failed.reason, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')) }
+    setAuxError('')
+    await prepareDraftImages(draftKey, files, prepareImage)
   }
   async function send(mode: 'queue' | 'steer' = draft.retryMode ?? 'queue') {
     if (!canSend || locked.current || services.connection.state.getSnapshot() !== 'connected') return
@@ -149,8 +149,24 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     }
     locked.current = false
     if (!mounted.current) return
-    setDraft(readDraft(draftKey)); setBusy(false)
-    if (result.createdId) navigate(`/s/${encodeURIComponent(result.createdId)}`, { replace: true })
+    setBusy(false)
+    if (result.createdId && result.sessionReady !== false) navigate(`/s/${encodeURIComponent(result.createdId)}`, { replace: true })
+  }
+  async function recoverWorkspace() {
+    if (!draft.workspaceAttachment || busy || preparing || locked.current || services.connection.state.getSnapshot() !== 'connected') return
+    locked.current = true; setBusy(true); setSuggesting(false)
+    update({ workspaceAttachmentError: undefined })
+    finishWorkspaceRecovery(await retryWorkspaceAttachment({ draftKey, sessions: services.sessions }))
+  }
+  function finishWorkspaceRecovery(result: WorkspaceRecoveryResult) {
+    const key = result.sessionId && result.sessionReady ? `session:${result.sessionId}` : draftKey
+    const current = readDraft(key)
+    writeDraft(key, { ...current, workspaceAttachmentError: result.error === undefined ? undefined
+      : errorText(result.error, 'ワークスペースへ登録できませんでした。接続を確認して、もう一度お試しください。') })
+    locked.current = false
+    if (!mounted.current) return
+    setBusy(false)
+    if (result.sessionId && result.sessionReady) navigate(`/s/${encodeURIComponent(result.sessionId)}`, { replace: true })
   }
   async function openModels() {
     setAuxError('')
@@ -194,8 +210,14 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
 
   if (snapshot.subagent !== null) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
+    {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
+      <p>会話は作成済みです。登録の再試行では新しい会話を作りません。メッセージは送信ボタンから送れます。</p>
+      {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
+      <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
+    </div>}
     {sendError && <div className="composer-error" role="alert"><strong>送れませんでした</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={() => { void send() }}>もう一度送る</M3eButton></div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
+    {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}
     {queue.length > 0 && <M3eButton className="composer-queue-chip" variant="tonal" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: '順番待ちの編集' }) }}>順番待ち {queue.length} 件</M3eButton>}
     <div className="composer-input-wrap">

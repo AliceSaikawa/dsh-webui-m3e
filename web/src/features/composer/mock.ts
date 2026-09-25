@@ -88,17 +88,4 @@ export function extendMock(kit: MockKit): void {
       return success({ selected: value })
     },
   })
-  kit.addRemote('settings', {
-    async describe() {
-      return success({ namespaces: [{
-        ns: 'permission', value: { defaultPreset: mockPermissions.currentValue },
-        schema: { uid: 1, refs: {
-          1: { type: 'object', dict: { defaultPreset: 2 } },
-          2: { type: 'union', list: [3, 4] },
-          3: { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } },
-          4: { type: 'const', value: 'danger-full-access', meta: { description: 'フル アクセス' } },
-        } },
-      }] })
-    },
-  })
 }

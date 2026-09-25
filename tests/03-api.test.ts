@@ -78,6 +78,14 @@ test('権限の既定値は serialized schema の公開候補から読み、全�
 test('偽データは既存と最初の送信で作る新規セッションへ projection を公開する', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
+    assert.equal(ctx.remote.settings, undefined)
+    ctx.mock.addRemote('settings', {
+      async describe() {
+        return { ok: true, value: { namespaces: [{ ns: 'permission', value: { defaultPreset: 'workspace-write' },
+          schema: { type: 'object', dict: { defaultPreset: { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } } } },
+        }] } }
+      },
+    })
     const api = composerApi(ctx.remote)
     assert.equal(ctx.sessions.list.getSnapshot().ids.length, 2)
     assert.deepEqual(await api.modelCatalog(), mockModelCatalog)
@@ -110,6 +118,25 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     abort.abort()
     await assert.rejects(api.listFiles(created, '', abort.signal), /取り消しました/)
     assert.equal((await api.defaultPermissions())?.currentValue, 'workspace-write')
+  } finally { ctx.dispose() }
+})
+
+test('設定の偽データの持ち主が先に登録しても、03 は読取と保存を妨げない', async () => {
+  let saves = 0
+  const settings = {
+    async describe() {
+      return { ok: true, value: { namespaces: [{ ns: 'permission', value: { defaultPreset: 'workspace-write' },
+        schema: { type: 'object', dict: { defaultPreset: { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } } } },
+      }] } }
+    },
+    async mutate() { saves++; return { ok: true, value: {} } },
+  }
+  const ctx = createMockContext({ extensions: [{ extendMock(kit) { kit.addRemote('settings', settings) } }, { extendMock }] })
+  try {
+    assert.equal(ctx.remote.settings, settings)
+    assert.equal((await composerApi(ctx.remote).defaultPermissions())?.currentValue, 'workspace-write')
+    await settings.mutate()
+    assert.equal(saves, 1)
   } finally { ctx.dispose() }
 })
 

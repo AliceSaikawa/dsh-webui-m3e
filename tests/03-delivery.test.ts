@@ -66,6 +66,7 @@ function harness(label: string) {
     },
     scope(sessionId) { calls.push(`scope:${sessionId}`); return scopeAvailable ? scope : undefined },
     sessionOf() { return face },
+    async refresh() { calls.push('refresh') },
   }
   const api: DeliveryOptions['api'] = {
     async selectModel(sessionId, selection) { calls.push(`model:${sessionId}`); if (modelWait) await modelWait; return selection },
@@ -262,4 +263,80 @@ test('a pending plan change is treated as the next effective state and is not to
   h.setPlan({ active: false, pending: true })
   assert.deepEqual(await deliverDraft(h.existing()), {})
   assert.equal(h.calls.some(call => call.startsWith('command:')), false)
+})
+
+test('image preparation prevents creation without replacing the pending draft', async () => {
+  const h = harness('preparing')
+  h.put({ text: '画像の準備を待つ', preparingImages: 2, images: [image], plan: true })
+  const before = readDraft(h.key)
+  const result = await deliverDraft(h.options)
+  assert.match(String(result.error), /画像を準備/u)
+  assert.deepEqual(h.calls, [])
+  assert.equal(readDraft(h.key), before)
+})
+
+test('wrapped partial-creation failure recovers the existing identity and keeps all draft choices for resend', async () => {
+  const h = harness('partial')
+  const model = { provider: 'local', model: 'small', reasoningEffort: 'high' }
+  h.put({ text: 'まだ送っていない内容', images: [image], model, permission: 'limited', plan: true })
+  const failure = { rpcError: { code: 'session/workspace-attach-failed', details: { sessionId: h.id, workspaceId: 'partial' } } }
+  h.failCreate(failure)
+  const result = await deliverDraft(h.options)
+  assert.equal(result.createdId, h.id)
+  assert.equal(result.sessionReady, true)
+  assert.equal(result.error, failure)
+  assert.equal(h.prompts.length, 0)
+  assert.deepEqual(readDraft(h.key), { text: '', images: [] })
+  const retained = readDraft(`session:${h.id}`)
+  assert.equal(retained.text, 'まだ送っていない内容')
+  assert.deepEqual(retained.images, [image])
+  assert.deepEqual(retained.model, model)
+  assert.equal(retained.permission, 'limited')
+  assert.equal(retained.plan, true)
+  assert.deepEqual(retained.workspaceAttachment, { workspaceId: 'partial', sessionId: h.id })
+  assert.match(retained.error ?? '', /まだ送信されていません/u)
+  assert.deepEqual(await deliverDraft(h.existing()), {})
+  assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 1)
+  assert.deepEqual(readDraft(`session:${h.id}`), { text: '', images: [], workspaceAttachment: retained.workspaceAttachment })
+})
+
+test('a recovered ID remains on the new screen while its scope is missing, and retry never creates another session', async () => {
+  const h = harness('partial-delayed')
+  h.put({ text: '一覧を待つ', images: [image], permission: 'limited' })
+  h.setScopeAvailable(false)
+  h.failCreate({ rpcError: { code: 'session/workspace-attach-failed', details: { sessionId: h.id, workspaceId: 'partial-delayed' } } })
+  const first = await deliverDraft(h.options)
+  assert.equal(first.sessionReady, false)
+  assert.equal(first.createdId, h.id)
+  assert.ok(h.calls.includes('refresh'))
+  assert.deepEqual(readDraft(h.key).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id })
+  assert.deepEqual(readDraft(h.key).images, [image])
+  assert.equal((await deliverDraft(h.options)).sessionReady, false)
+  assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 1)
+  h.setScopeAvailable(true)
+  assert.deepEqual(await deliverDraft(h.options), { createdId: h.id })
+  assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 1)
+  assert.equal(h.prompts.length, 1)
+  assert.deepEqual(readDraft(h.key), { text: '', images: [] })
+  assert.equal(readDraft(`session:${h.id}`).text, '')
+  assert.deepEqual(readDraft(`session:${h.id}`).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id })
+})
+
+test('unknown failures and missing published IDs remain creation failures without inventing an identity', async () => {
+  for (const [label, code, sessionId] of [
+    ['unknown-error', 'gateway/disconnected', 'some-id'],
+    ['missing-id', 'session/workspace-attach-failed', undefined],
+    ['empty-id', 'session/workspace-attach-failed', ''],
+  ] as const) {
+    const h = harness(label)
+    h.put({ text: '下書きを残す', images: [image] })
+    h.failCreate({ rpcError: { code, details: { workspaceId: label, sessionId } } })
+    const result = await deliverDraft(h.options)
+    assert.equal(result.createdId, undefined)
+    assert.ok(result.error)
+    assert.equal(readDraft(h.key).text, '下書きを残す')
+    assert.deepEqual(readDraft(h.key).images, [image])
+    assert.equal(readDraft(h.key).workspaceAttachment, undefined)
+    assert.equal(h.calls.some(call => call.startsWith('scope:')), false)
+  }
 })
