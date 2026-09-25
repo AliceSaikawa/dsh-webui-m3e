@@ -11,9 +11,11 @@ import { imageAttachment, imageBase64, MOCK_IDS, sharedSessions, sharedWorkspace
 type EventHandler = (this: AgentContext, payload: unknown, next: () => Promise<unknown>) => unknown
 export interface MockKit {
   addWorkspace(workspace: WorkspaceView): void
+  /** Update an existing workspace in place; unknown ids throw and identity stays fixed. */
+  updateWorkspace(workspaceId: string, update: Partial<Omit<WorkspaceView, 'workspaceId'>> | ((current: WorkspaceView) => Partial<Omit<WorkspaceView, 'workspaceId'>>)): void
   addSession(summary: SessionSummary, records: readonly SessionWireEvent[]): void
   addRemote(namespace: string, impl: unknown): void
-  /** Use payload.agent (session id) or payload.sessionId to address an event. */
+  /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
   emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
   streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number }): Promise<void>
   setProjection(sessionId: string, key: string, value: unknown): void
@@ -25,7 +27,11 @@ export interface MockKit {
   updateList(update: (state: SessionListState) => SessionListState | void): void
   scenario(name: string, setup: (kit: MockKit) => void): void
 }
-export type MockExtension = { extendMock(kit: MockKit): void }
+export type MockExtension = {
+  /** Diagnostic origin supplied by the feature-module collector. */
+  readonly source?: string
+  extendMock(kit: MockKit): void
+}
 export interface MockOptions { scenario?: string; extensions?: readonly MockExtension[]; pageSize?: number }
 export interface MockContext extends DshContext { readonly mock: MockKit; dispose(): void }
 
@@ -42,7 +48,7 @@ interface SessionModel {
 }
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
-const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
+const failure = (code: string, message: string, details: Readonly<Record<string, unknown>> = {}): RemoteResult<never> => ({ ok: false, error: { code, message, details } })
 const accepted = () => success({ accepted: true as const })
 const textOf = (content: readonly ContentBlock[]) => content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')
 const json = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value)) as JsonValue
@@ -51,9 +57,11 @@ const json = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value)) as
 export function createMockContext(options: MockOptions = {}): MockContext {
   let serial = 0
   let disposed = false
+  let preparing = true
   const id = (prefix: string) => `${prefix}-${++serial}`
   const models = new Map<string, SessionModel>()
   const handlers = new Map<string, Set<EventHandler>>()
+  const startupEvents = new Set<{ event: string; owner?: SessionModel; deliver(): void; cancel(): void }>()
   const timers = new Map<ReturnType<typeof setTimeout>, { resolve(): void; owner?: SessionModel }>()
   const scenarios = new Map<string, (kit: MockKit) => void>()
   const attachments = new Map<string, { attachment: ImageAttachmentRef; data: Uint8Array }>([
@@ -78,6 +86,19 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       timers.delete(timer)
       pending.resolve()
     }
+  }
+  async function deliverEvent(event: string, payload: unknown, sessionId: string | undefined, owner: SessionModel | undefined): Promise<unknown> {
+    if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
+    const scope = owner?.binding.ctx ?? { remote }
+    const selected = [...(handlers.get(event) ?? [])]
+    if (event !== 'approval/request' && event !== 'user-questions/request') {
+      return Promise.all(selected.map((handler) => handler.call(scope, payload, async () => undefined)))
+    }
+    const invoke = async (index: number): Promise<unknown> => {
+      const handler = selected[index]
+      return handler ? handler.call(scope, payload, () => invoke(index + 1)) : undefined
+    }
+    return invoke(0)
   }
   const getModel = (sessionId: string): SessionModel => {
     const model = models.get(sessionId)
@@ -113,7 +134,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   function running(model: SessionModel, value: boolean) {
     if (!isActive(model)) return
     model.snapshot.update((state) => ({ ...state, running: value, blank: false }))
-    updateSummary(model, { running: value, blank: false, updatedAt: Date.now() })
+    updateSummary(model, { running: value, blank: false, updatedAt: Date.now(), ...(value ? { completed: false } : {}) })
   }
   function turnOf(model: SessionModel): number {
     const start = [...model.records].reverse().find((event) => event.type === 'turn/start')
@@ -202,7 +223,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
 
   const sessions: ISessions = {
-    list, searchResultLimit: 30,
+    list, searchResultLimit: 20,
     async create(input = {}) {
       const sessionId = input.sessionId ?? id('session')
       if (models.has(sessionId)) return sessionId
@@ -214,15 +235,25 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     open(sessionId) {
       const model = models.get(sessionId)
       if (!model) return
-      model.snapshot.update((state) => ({ ...state, openState: 'open' }))
-      list.update((state) => ({ ...state, current: sessionId, currentAddress: undefined }))
+      model.snapshot.update((state) => state.openState === 'error' ? state : { ...state, openState: 'open' })
+      model.summary = { ...model.summary, completed: false }
+      list.update((state) => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, current: sessionId, currentAddress: model.snapshot.getSnapshot().subagent?.address }))
     },
     openSubagent(address) {
-      if (!models.has(address.childSessionId) || !models.has(address.parentSessionId)) return
+      const catalog = list.getSnapshot().subagentsByParent[address.parentSessionId]
+      const entries = catalog?.entries
+      const entry: unknown = Array.isArray(entries) ? entries.find((candidate: unknown) =>
+        typeof candidate === 'object' && candidate !== null && 'id' in candidate && candidate.id === address.childSessionId) : undefined
+      if (typeof entry !== 'object' || entry === null || !('kind' in entry) || entry.kind !== 'child'
+        || !('mode' in entry) || (entry.mode !== 'one-shot' && entry.mode !== 'continuable') || entry.mode !== address.mode) {
+        throw new Error('サブエージェントのカタログとアドレスが一致しません。')
+      }
+      const model = getModel(address.childSessionId)
+      const selectedAddress = { ...address }
+      model.snapshot.update((state) => ({ ...state, subagent: { address: selectedAddress, parentAvailable: catalog?.parentAvailable } }))
       sessions.open(address.childSessionId)
-      list.update((state) => ({ ...state, currentAddress: address }))
     },
-    subagentAddress(sessionId) { const parentSessionId = models.get(sessionId)?.summary.parentId; return parentSessionId ? { parentSessionId, childSessionId: sessionId } : undefined },
+    subagentAddress(sessionId) { return models.get(sessionId)?.snapshot.getSnapshot().subagent?.address },
     setSubagentCatalogOpen() { /* The in-memory catalog has no subscription cost. */ },
     async refreshSubagents() { list.update((state) => ({ ...state })) },
     clear() { list.update((state) => ({ ...state, current: undefined, currentAddress: undefined })) },
@@ -257,6 +288,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     let listeners = handlers.get(event)
     if (!listeners) { listeners = new Set(); handlers.set(event, listeners) }
     listeners.add(handler)
+    const waiting = [...startupEvents].filter((pending) => pending.event === event)
+    if (waiting.length) {
+      for (const pending of waiting) startupEvents.delete(pending)
+      // Finish synchronous handler registration before taking the waterfall snapshot.
+      queueMicrotask(() => { for (const pending of waiting) pending.deliver() })
+    }
     return () => { listeners.delete(handler) }
   }
 
@@ -278,6 +315,8 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     get mock() { return kit },
     dispose() {
       disposed = true
+      for (const pending of startupEvents) pending.cancel()
+      startupEvents.clear()
       for (const [timer, pending] of timers) { clearTimeout(timer); pending.resolve() }
       timers.clear()
       handlers.clear()
@@ -290,15 +329,32 @@ export function createMockContext(options: MockOptions = {}): MockContext {
 
   const kit: MockKit = {
     addWorkspace(workspace) {
-      if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) throw new Error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
+      if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) {
+        console.error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
+        return
+      }
       workspaceList.update((state) => ({ ...state, items: [...state.items, structuredClone(workspace)] }))
     },
+    updateWorkspace(workspaceId, update) {
+      const current = workspaceList.getSnapshot().items.find((item) => item.workspaceId === workspaceId)
+      if (!current) {
+        throw new Error(`偽のワークスペースが見つかりません: ${workspaceId}`)
+      }
+      const next = structuredClone(typeof update === 'function' ? update(structuredClone(current)) : update)
+      workspaceList.update((state) => ({
+        ...state,
+        items: state.items.map((item) => item.workspaceId === workspaceId ? { ...item, ...next, workspaceId } : item),
+      }))
+    },
     addSession(summary, inputRecords) {
-      if (models.has(summary.id)) throw new Error(`偽のセッションが重複しています: ${summary.id}`)
+      if (models.has(summary.id)) {
+        console.error(`偽のセッションが重複しています: ${summary.id}`)
+        return
+      }
       const records = structuredClone([...inputRecords]).sort((a, b) => a.seq - b.seq)
       const start = Math.max(0, records.length - pageSize)
       const entries: SessionEventLikeEntry[] = records.slice(start).map((event) => ({ type: 'event', event }))
-      const snapshot = observable<SessionSnapshot>({ sessionId: summary.id, queue: [], pendingSubmissions: [], running: summary.running, subagent: summary.parentId ? { address: { parentSessionId: summary.parentId, childSessionId: summary.id }, parentAvailable: true } : null, removed: false, openState: 'open', openError: null, hasMore: start > 0, loadingOlder: false, promptError: null, blank: summary.blank, lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false })
+      const snapshot = observable<SessionSnapshot>({ sessionId: summary.id, queue: [], pendingSubmissions: [], running: summary.running, subagent: null, removed: false, openState: 'open', openError: null, hasMore: start > 0, loadingOlder: false, promptError: null, blank: summary.blank, lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false })
       const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
       const projections = new Map<string, MutableSnapshot<unknown>>()
       const scope: AgentContext = { remote, sessionId: summary.id, agent: summary.id }
@@ -357,7 +413,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         async updateQueue(itemId, action) {
           if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const item = snapshot.getSnapshot().queue.find((row) => row.id === itemId)
-          if (!item) return failure('session/queue-not-found', '順番待ちのメッセージが見つかりません。')
+          if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
           if (action.kind === 'edit') snapshot.update((state) => ({ ...state, queue: state.queue.map((row) => row.id === itemId ? { ...row, content: action.content, text: textOf(action.content), preview: textOf(action.content) } : row) }))
           else {
             snapshot.update((state) => ({ ...state, queue: state.queue.filter((row) => row.id !== itemId) }))
@@ -381,7 +437,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         async rename(title) {
           if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
           const normalized = title.trim()
-          if (!normalized) return failure('session/invalid-title', '題名を入力してください。')
+          if (!normalized) return failure('session/title-invalid', '題名を入力してください。', { sessionId: model.summary.id })
           updateSummary(model, { title: normalized, displayTitle: normalized })
           const event = append(model, 'session/title', { title: normalized })
           return success({ title: normalized, seq: event.seq })
@@ -430,16 +486,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const owner = sessionId ? models.get(sessionId) : undefined
       if (options.afterMs !== undefined) await delay(options.afterMs, owner)
       if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
-      const scope = owner?.binding.ctx
-      const selected = [...(handlers.get(event) ?? [])]
-      if (event !== 'approval/request' && event !== 'user-questions/request') {
-        return Promise.all(selected.map((handler) => handler.call(scope ?? { remote }, payload, async () => undefined)))
+      if (preparing && !handlers.get(event)?.size) {
+        return new Promise((resolve) => {
+          startupEvents.add({ event, owner, deliver: () => resolve(deliverEvent(event, payload, sessionId, owner)), cancel: () => resolve(undefined) })
+        })
       }
-      const invoke = async (index: number): Promise<unknown> => {
-        const handler = selected[index]
-        return handler ? handler.call(scope ?? { remote }, payload, () => invoke(index + 1)) : undefined
-      }
-      return invoke(0)
+      return deliverEvent(event, payload, sessionId, owner)
     },
     async streamAssistant(sessionId, text, streamOptions = {}) {
       const model = getModel(sessionId)
@@ -468,6 +520,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       append(model, 'step/end', { turn: attempt.turn, step: attempt.step })
       append(model, 'turn/end', { turn: attempt.turn, reason: { kind: 'completed' } })
       running(model, false)
+      updateSummary(model, { completed: list.getSnapshot().current !== sessionId })
       advanceQueue(model)
     },
     setProjection(sessionId, key, value) {
@@ -494,6 +547,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       models.delete(sessionId)
       model.attempt = undefined
       cancelTimers(model)
+      for (const pending of startupEvents) {
+        if (pending.owner !== model) continue
+        startupEvents.delete(pending)
+        pending.cancel()
+      }
       model.start = 0
       model.snapshot.update((state) => ({
         ...state, removed: true, running: false, queue: [], loadingOlder: false,
@@ -564,11 +622,15 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   kit.scenario('approval-demo', () => {
     void kit.emit('approval/request', { agent: MOCK_IDS.sessions.readme, toolName: 'bash', callId: 'mock-approval-demo', reason: 'テストを実行するため、今回の操作を承認してください。' }, { afterMs: 1000 }).catch(() => { /* Disposing an unanswered demo may abort the waterfall. */ })
   })
-  for (const extension of options.extensions ?? []) extension.extendMock(kit)
+  for (const [index, extension] of (options.extensions ?? []).entries()) {
+    try { extension.extendMock(kit) }
+    catch (error) { console.error(`偽データの拡張に失敗しました: ${extension.source ?? `拡張 ${index + 1}`}`, error) }
+  }
   if (options.scenario) {
     const setup = scenarios.get(options.scenario)
     if (setup) setup(kit)
     else console.warn(`偽の状態が見つかりません: ${options.scenario}`)
   }
+  preparing = false
   return ctx
 }
