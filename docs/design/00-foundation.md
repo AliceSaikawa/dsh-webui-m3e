@@ -340,3 +340,16 @@ web/src/
 - 今回の変更はこの停止記録だけ。共有型、mock、仮の部品の引数・戻り値は変更していない。「段階 2 が使う公開入口」への新しい契約の確定・追記は修正再開後に行う。
 - 検証：実装前の停止のため、`pnpm typecheck`、`pnpm test`、`pnpm build` はすべて未実施。3 件とも未修正であり、既存の成功記録を今回の検証結果として扱わない。
 - 担当外で必要になったソース変更：なし。再開には、上記の読み取りを許可された形で実行できることの確認が必要。担当外の保護フックをこの実行で変更しない。
+
+### 2026-09-25：範囲を限定して調査を再開し、HTTP 確認の拒否で停止
+
+- ユーザーから、安全なソースディレクトリに検索範囲を絞り、除外 glob を付けずに再開する明示許可を受けた。前節はその時点の記録として維持する。開始時は `feat/00-foundation`、HEAD は `f4a1c4b` で、追跡済みファイルに未コミットの変更はなかった。
+- 許可された範囲への読み取り・検索は成功し、指摘 1 の実物との照合が進んだ。参照元はインストール済み DSH の `node_modules/@deepseek-ai/` 以下。実物の変更・起動はしていない。
+  - `dsh-subagent/lib/types/control-types.d.ts:76–84` の `SubagentAddress` は、2 つの ID に加えて `mode: 'one-shot' | 'continuable'` を必須とする。
+  - `dsh-api-session-controller/lib/types/client/sessions/service.js:159–160` の `openSubagent` は `manager.selectSubagent(address)` に委譲する。同 `manager.js:105–118` は親カタログの entries で子 ID を探し、未存在、`kind !== 'child'`、`entry.mode !== address.mode` で例外を投げ、成功時にアドレスを保持する。
+  - 共有型には依然として mode がなく、mock の `openSubagent` も親子モデルの存在だけを確認してカタログ・mode を照合していない。共有型と mock の両方の修正が必要。実行による再現とテスト追加は未実施。
+- 指摘 2 は、既存テストがシナリオによる状態の同期準備を前提にしていることを確認した。初期イベントだけを保留する方式を検討したが、まだ実装していない。指摘 3 も現行の条件分岐によるアンマウントを再確認した段階で、保持方式・部品の契約は未変更。
+- 親担当による mock 開発画面の HTTP 応答確認 `curl -sS -o /dev/null -w '%{http_code}\\n' http://localhost:5173/m3e/?mock` が PreToolUse フックに拒否された。理由は `Opaque shell wrappers are blocked unless Codex can split them into allowed commands.`。HTTP の結果は取得できず、サーバーが稼働しているかも未確認。これは前節の検索拒否とは別の操作。
+- 再度拒否された場合は止めるというユーザー指示に従い、全担当の調査・実装を停止し、ソース変更なしを回収した。同じ HTTP 確認を別コマンド・ツールで再試行していない。保護フック・権限設定は変更していない。
+- 今回も変更はこの追記だけ。3 件とも未修正で、「段階 2 が使う公開入口」の新しい契約はまだ確定していない。DSH は起動せず、main には触れていない。
+- 検証：`pnpm typecheck`、`pnpm test`、`pnpm build` はすべて未実施。担当外で必要になったソース変更：なし。HTTP 確認の拒否に対する扱いを、次回の再開指示で確定する必要がある。
