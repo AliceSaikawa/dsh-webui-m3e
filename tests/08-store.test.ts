@@ -36,6 +36,114 @@ function current(store: ReturnType<typeof createSettingsStore>, name = ns): Sett
   return row
 }
 
+function restartingHarness() {
+  let row: SettingsNamespace = {
+    ns, revision: 3, applies: 'live', value: { timeout: 45, name: '設定' }, user: {},
+    schema: { uid: 0, refs: { 0: { type: 'object', dict: { timeout: 1, name: 2 } }, 1: { type: 'number' }, 2: { type: 'string' } } },
+  }
+  const revisions: number[] = []
+  const api: SettingsApi = {
+    describe: async () => success({ writable: true, namespaces: [row] }),
+    update: async (_name, patch, revision) => {
+      revisions.push(revision)
+      if (revision !== row.revision) return failure('settings/conflict', 'ほかの場所で変更されました。')
+      row = { ...row, revision: row.revision + 1, value: { ...row.value, ...patch }, user: { ...row.user, ...patch } }
+      return success(row)
+    },
+    mutate: async () => failure('settings/rejected', 'このテストでは使いません。'),
+  }
+  return { api, revisions, store: createSettingsStore(api), restart: () => { row = { ...row, revision: 0 } } }
+}
+
+test('再接続では revision 3 の基準を 0 に更新し、続けて二回保存できる', async () => {
+  const h = restartingHarness()
+  const notices: string[] = []
+  h.store.subscribeNotice(message => notices.push(message))
+  assert.equal(await h.store.connectionChanged('connected'), true)
+  assert.equal(current(h.store).revision, 3)
+  await h.store.connectionChanged('disconnected')
+  assert.equal(h.store.getSnapshot().writable, false)
+  assert.equal(await h.store.edit(ns, ['timeout'], 50), false)
+  h.restart()
+  assert.equal(await h.store.connectionChanged('connected'), true)
+  assert.equal(current(h.store).revision, 0)
+  assert.equal(await h.store.edit(ns, ['timeout'], 60), true)
+  assert.equal(await h.store.edit(ns, ['name'], '再起動後の設定'), true)
+  assert.deepEqual(h.revisions, [0, 1])
+  assert.equal(current(h.store).revision, 2)
+  assert.equal(current(h.store).value.timeout, 60)
+  assert.equal(current(h.store).value.name, '再起動後の設定')
+  assert.deepEqual(notices, [])
+})
+
+test('再接続前の describe が後から届いても、新接続の revision 0 を上書きしない', async () => {
+  const h = restartingHarness()
+  await h.store.connectionChanged('connected')
+  const original = h.api.describe
+  const old = await original()
+  const delayed = deferred<RemoteResult<SettingsDescription>>()
+  h.api.describe = () => delayed.promise
+  const reading = h.store.reload()
+  await h.store.connectionChanged('disconnected')
+  h.restart()
+  h.api.describe = original
+  await h.store.connectionChanged('connected')
+  delayed.resolve(old)
+  assert.equal(await reading, false)
+  assert.equal(current(h.store).revision, 0)
+  assert.equal(h.store.getSnapshot().writable, true)
+})
+
+test('再接続前の保存と待機中の編集を破棄し、古い保存を待たずに新しい保存を進める', async () => {
+  const h = restartingHarness()
+  await h.store.connectionChanged('connected')
+  const oldRow = current(h.store)
+  const original = h.api.update
+  const delayed = deferred<RemoteResult<SettingsNamespace>>()
+  h.api.update = () => delayed.promise
+  const saving = h.store.edit(ns, ['timeout'], 88)
+  const queued = h.store.edit(ns, ['name'], '古い接続の編集')
+  await tick()
+  await h.store.connectionChanged('connecting')
+  h.restart()
+  h.api.update = original
+  await h.store.connectionChanged('connected')
+  assert.equal(await h.store.edit(ns, ['timeout'], 66), true)
+  delayed.resolve(success({ ...oldRow, revision: 4, value: { ...oldRow.value, timeout: 88 } }))
+  assert.deepEqual(await Promise.all([saving, queued]), [false, false])
+  assert.equal(current(h.store).revision, 1)
+  assert.equal(current(h.store).value.timeout, 66)
+  assert.equal(current(h.store).value.name, '設定')
+  assert.deepEqual(h.revisions, [0])
+  assert.equal(h.store.getSnapshot().busy[ns], false)
+  assert.deepEqual(h.store.getSnapshot().fieldErrors, {})
+})
+
+test('再接続前の保存失敗は新接続のエラーや競合通知として表示しない', async () => {
+  for (const outcome of ['conflict', 'rejected', 'throw'] as const) {
+    const h = restartingHarness()
+    const notices: string[] = []
+    h.store.subscribeNotice(message => notices.push(message))
+    await h.store.connectionChanged('connected')
+    const delayed = deferred<void>()
+    h.api.update = async () => {
+      await delayed.promise
+      if (outcome === 'throw') throw new Error('offline')
+      return failure(`settings/${outcome}`, '以前の接続のエラーです。')
+    }
+    const saving = h.store.edit(ns, ['timeout'], 88)
+    await tick()
+    await h.store.connectionChanged('disconnected')
+    h.restart()
+    await h.store.connectionChanged('connected')
+    delayed.resolve()
+    assert.equal(await saving, false)
+    assert.equal(current(h.store).revision, 0)
+    assert.deepEqual(h.store.getSnapshot().fieldErrors, {})
+    assert.deepEqual(notices, [])
+  }
+})
+
 test('保存成功を公開し、入れ子の上書きを unset で既定値へ戻す', async () => {
   const h = harness()
   try {
@@ -229,7 +337,7 @@ test('保存前に開始した古い describe 応答で新しい保存結果を�
     assert.equal(await h.store.edit(ns, ['timeout'], 88), true)
     assert.equal(current(h.store).revision, 2)
     delayed.resolve(old)
-    assert.equal(await reading, true)
+    assert.equal(await reading, false)
     assert.equal(current(h.store).revision, 2)
     assert.equal(current(h.store).value.timeout, 88)
   } finally { h.ctx.dispose() }
@@ -253,7 +361,7 @@ test('複数の describe が逆順に戻っても、最後に開始した読込�
   } finally { h.ctx.dispose() }
 })
 
-test('伏せる項目、除去された値、無効な項目、読み取り専用項目の保存を抑止する', async () => {
+test('伏せる項目、無効な項目、読み取り専用項目の保存を抑止する', async () => {
   const h = harness()
   try {
     const described = await h.remote.describe()
@@ -261,21 +369,40 @@ test('伏せる項目、除去された値、無効な項目、読み取り専�
     if (!described.ok) return
     const row = described.value.namespaces.find(item => item.ns === 'llm-deepseek')!
     const schema = row.schema as { uid: number; refs: Record<string, { dict?: Record<string, number>; type?: string; meta?: Record<string, unknown> }> }
-    schema.refs['0']!.dict!.missingValue = 16
     schema.refs['0']!.dict!.disabledValue = 17
-    schema.refs['16'] = { type: 'string' }
     schema.refs['17'] = { type: 'string', meta: { disabled: true } }
     row.value.disabledValue = '固定された値'
     row.value.protectedInput = 'stored-key-not-for-editing'
-    row.user!.missingValue = 'omitted-value-not-for-editing'
     h.api.describe = async () => success(described.value)
     await h.store.reload()
-    for (const path of [['protectedInput'], ['missingValue'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['retry'], ['nonexistent']]) {
+    for (const path of [['protectedInput'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['retry'], ['nonexistent']]) {
       assert.equal(await h.store.edit('llm-deepseek', path, '変更'), false, path.join('.'))
       assert.equal(await h.store.edit('llm-deepseek', path), false, path.join('.'))
     }
     assert.equal(await h.store.edit('missing-namespace', ['enabled'], false), false)
     assert.deepEqual(h.calls, [])
+  } finally { h.ctx.dispose() }
+})
+
+test('通常の未設定の項目は初回から保存できる', async () => {
+  const h = harness()
+  try {
+    const described = await h.remote.describe()
+    assert.equal(described.ok, true)
+    if (!described.ok) return
+    const row = described.value.namespaces.find(item => item.ns === 'agent-default-model')!
+    const schema = row.schema as { uid: number; refs: Record<string, { dict?: Record<string, number>; type?: string }> }
+    schema.refs['0']!.dict!.reasoningEffort = 16
+    schema.refs['16'] = { type: 'string' }
+    h.api.describe = async () => success(described.value)
+    h.api.update = async (name, patch, revision) => {
+      h.calls.push({ kind: 'update', ns: name, input: patch, revision })
+      return success({ ...row, revision: revision + 1, value: { ...row.value, ...patch }, user: patch })
+    }
+    await h.store.reload()
+    assert.equal(await h.store.edit(row.ns, ['reasoningEffort'], 'high'), true)
+    assert.equal(current(h.store, row.ns).value.reasoningEffort, 'high')
+    assert.deepEqual(h.calls, [{ kind: 'update', ns: row.ns, input: { reasoningEffort: 'high' }, revision: row.revision }])
   } finally { h.ctx.dispose() }
 })
 

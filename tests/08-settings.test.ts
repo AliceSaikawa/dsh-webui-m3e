@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildPatch, buildReset, decodeSchema, groupNamespaces, pageSummary, parseFieldInput, schemaFields, valueAt,
+  buildPatch, buildReset, decodeSchema, formatSetting, groupNamespaces, pageSummary, parseFieldInput, schemaFields, valueAt,
   type SettingField, type SettingsNamespace,
 } from '../web/src/features/settings/schema.ts'
 
@@ -156,6 +156,7 @@ test('伏せる項目の保存済み値は項目モデルにもページの要�
     assert.equal(field.kind, 'masked')
     assert.equal(Object.hasOwn(field, 'value'), false)
     assert.equal(field.overridden, true)
+    assert.equal(field.registered, true)
   }
   assert.equal(Object.hasOwn(fields[1]!, 'value'), false)
   assert.doesNotMatch(JSON.stringify(fields), /do-not-display/)
@@ -163,22 +164,90 @@ test('伏せる項目の保存済み値は項目モデルにもページの要�
   assert.equal(pageSummary('other', [row]), '設定項目を確認')
 })
 
-test('値が除去された通常の葉は編集不可にし、false・0・空文字は保持する', () => {
+test('通常の未設定項目は型どおり編集でき、false・0・空文字も保持する', () => {
   const fields = schemaFields(namespace({
     schema: { uid: 1, refs: {
-      1: { type: 'object', dict: { missing: 2, enabled: 3, count: 4, name: 2, accessKey: 5 } },
+      1: { type: 'object', dict: { reasoningEffort: 2, enabled: 3, count: 4, name: 2, accessKey: 5, optionalFlag: 3, optionalCount: 4 } },
       2: { type: 'string' }, 3: { type: 'boolean' }, 4: { type: 'number' },
       5: { type: 'string', meta: { role: 'password' } },
     } },
     value: { enabled: false, count: 0, name: '' },
-    base: { missing: 'hidden-base-value' }, user: { missing: 'hidden-user-value' },
   }))
-  assert.deepEqual(fields.map(field => field.kind), ['readonly', 'switch', 'number', 'text', 'masked'])
+  assert.deepEqual(fields.map(field => field.kind), ['text', 'switch', 'number', 'text', 'masked', 'switch', 'number'])
   assert.equal(fields[0]!.value, undefined)
-  assert.equal(fields[0]!.overridden, true)
+  assert.equal(fields[0]!.overridden, false)
+  assert.equal(fields[0]!.label, '推論の強さ')
+  assert.deepEqual(parseFieldInput(fields[0]!, 'high'), { ok: true, value: 'high' })
+  assert.deepEqual(buildPatch(fields[0]!.path, 'high'), { reasoningEffort: 'high' })
   assert.deepEqual(fields.slice(1, 4).map(field => field.value), [false, 0, ''])
   assert.equal(Object.hasOwn(fields[4]!, 'value'), false)
-  assert.doesNotMatch(JSON.stringify(fields), /hidden-(base|user)-value/)
+  assert.equal(fields[4]!.registered, false)
+  assert.deepEqual(parseFieldInput(fields[6]!, '2'), { ok: true, value: 2 })
+})
+
+test('状態メタ情報が伏せる項目を決め、保存値がなくても登録状態を表示できる', () => {
+  const row = namespace({
+    schema: { uid: 1, refs: {
+      1: { type: 'object', dict: { saved: 2, empty: 2, profile: 3, reasoningEffort: 2 } },
+      2: { type: 'string' },
+      3: { type: 'object', dict: { token: 2 } },
+    } },
+    value: { empty: 'unexpected-do-not-display', profile: { token: 'nested-do-not-display' } },
+    base: { saved: 'base-do-not-display' }, user: { saved: 'user-do-not-display' },
+    secrets: [{ path: ['saved'], set: true }, { path: ['empty'], set: false }, { path: ['profile'], set: true }],
+  })
+  const before = structuredClone(row)
+  const fields = schemaFields(row)
+  assert.deepEqual(fields.map(field => [field.kind, field.registered]), [
+    ['masked', true], ['masked', false], ['masked', true], ['text', undefined],
+  ])
+  assert.equal(fields[2]!.children, undefined)
+  assert.ok(fields.slice(0, 3).every(field => !Object.hasOwn(field, 'value')))
+  assert.doesNotMatch(JSON.stringify(fields), /do-not-display/)
+  assert.doesNotMatch(pageSummary('other', [row]), /do-not-display/)
+  assert.deepEqual(row, before)
+})
+
+test('読み取り専用の辞書と配列からも保護パスと伏せ字指定の値を除去する', () => {
+  const row = namespace({
+    schema: { uid: 1, refs: {
+      1: { type: 'object', dict: { map: 2, list: 3, passwords: 4 } },
+      2: { type: 'dict', inner: 5 },
+      3: { type: 'array', inner: 5 },
+      4: { type: 'array', inner: 6 },
+      5: { type: 'object', dict: { token: 6, name: 7 } },
+      6: { type: 'string', meta: { role: 'password' } },
+      7: { type: 'string' },
+    } },
+    value: {
+      map: { first: { token: 'map-do-not-display', name: '辞書の項目' }, hidden: 'metadata-do-not-display' },
+      list: [{ token: 'array-do-not-display', name: '配列の項目' }, 'metadata-array-do-not-display'],
+      passwords: ['role-array-do-not-display'],
+    },
+    secrets: [{ path: ['map', 'hidden'], set: true }, { path: ['list', '1'], set: true }],
+  })
+  const before = structuredClone(row)
+  const fields = schemaFields(row)
+  assert.ok(fields.every(field => field.kind === 'readonly'))
+  assert.deepEqual(fields.map(field => field.value), [
+    { first: { name: '辞書の項目' } }, [{ name: '配列の項目' }, null], [null],
+  ])
+  for (const field of fields) assert.doesNotMatch(formatSetting(valueAt(field.value, [])), /do-not-display/)
+  assert.doesNotMatch(JSON.stringify(fields), /do-not-display/)
+  assert.doesNotMatch(pageSummary('other', [row]), /do-not-display/)
+  assert.deepEqual(row, before)
+})
+
+test('未知のルート型にも保護パスを適用して読み取り専用の表示値を作る', () => {
+  const row = namespace({
+    schema: { uid: 1, refs: { 1: { type: 'future-format' } } },
+    value: { token: 'root-do-not-display', name: '残す値' },
+    secrets: [{ path: ['token'], set: true }],
+  })
+  const fields = schemaFields(row)
+  assert.equal(fields[0]!.kind, 'readonly')
+  assert.deepEqual(fields[0]!.value, { name: '残す値' })
+  assert.doesNotMatch(formatSetting(fields[0]!.value), /do-not-display/)
 })
 
 test('上書き層が省略された応答を扱い、まとまり全体が伏せられた場合は子を描かない', () => {

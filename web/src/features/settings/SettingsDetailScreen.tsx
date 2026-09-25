@@ -1,7 +1,7 @@
 import { M3eButton } from '@m3e/react/button'
 import { PageScaffold } from '../../app/shell/PageScaffold.tsx'
 import { navigate } from '../../app/router.ts'
-import { confirmClassic } from './AppearanceSheet.tsx'
+import { ProvidersPanel } from './ProvidersPanel.tsx'
 import { SettingsStatus } from './SettingsScreen.tsx'
 import { SchemaFields } from './SchemaFields.tsx'
 import { groupNamespaces, namespaceTitle, schemaFields, settingsPages } from './schema.ts'
@@ -16,17 +16,13 @@ export function SettingsDetailScreen({ page }: { page: string }) {
   const namespaces = groupNamespaces(state.namespaces)[definition.id]
   return <PageScaffold title={definition.title}><div className="settings-content">
     <SettingsStatus state={state} reload={store.reload} />
-    {definition.id === 'providers' && <div className="settings-notice">
-      <p>API キーの登録状況の確認・登録・削除は、まだこの画面では利用できません。標準の画面で設定してください。</p>
-      <M3eButton variant="text" onClick={confirmClassic}>今の画面に戻す</M3eButton>
-    </div>}
+    {definition.id === 'providers' && <ProvidersPanel />}
     {state.phase === 'ready' && namespaces.length === 0 && <p className="muted">この DSH に該当する設定項目はありません。</p>}
     {namespaces.map(namespace => <section className="settings-namespace" key={namespace.ns}>
       <h2>{namespaceTitle(namespace.ns)}</h2>
       <div className="settings-fields" key={`${namespace.ns}:${state.generation[namespace.ns] ?? 0}`}>
         <SchemaFields fields={schemaFields(namespace)} namespace={namespace} state={state} store={store} />
       </div>
-      {state.busy[namespace.ns] && <p className="settings-saving" role="status">保存しています…</p>}
     </section>)}
   </div></PageScaffold>
 }

@@ -1,6 +1,7 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
 import type { SettingObject, SettingsDescription, SettingsNamespace, SettingValue } from './schema.ts'
+import type { ProviderAddress, ProviderEntry } from './providers.ts'
 
 type ResetOperation = { op: 'unset'; path: string[] }
 export interface SettingsMockRemote {
@@ -69,8 +70,23 @@ function fixture(ns: string, name: string, index: number): SettingsNamespace {
   if (ns === 'llm-deepseek') {
     dict.protectedInput = 15
     refs[15] = { type: 'string', meta: { title: '保護された項目', role: 'password', description: '値を表示しないための偽データです。' } }
+    base.apiKeyEnv = 'DEEPSEEK_API_KEY'
   }
-  return { ns, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user), applies: index % 3 === 1 ? 'restart' : 'live' }
+  if (ns === 'llm-pi-ai') base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
+  if (ns === 'agent-default-model') {
+    dict.reasoningEffort = 16
+    refs[16] = { type: 'string', meta: { title: '考える深さ', description: '任意の文字列で指定します。' } }
+  }
+  if (ns === 'permission') {
+    base.defaultPreset = 'workspace-write'
+    dict.defaultPreset = 16
+    refs[16] = { type: 'union', list: [17, 18], meta: { title: '新しい会話の権限' } }
+    refs[17] = { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } }
+    refs[18] = { type: 'const', value: 'danger-full-access', meta: { description: 'フル アクセス' } }
+  }
+  return { ns, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user),
+    secrets: ns === 'llm-deepseek' ? [{ path: ['protectedInput'], set: true }] : [],
+    applies: index % 3 === 1 ? 'restart' : 'live' }
 }
 
 export function extendMock(kit: MockKit): void {
@@ -95,6 +111,20 @@ export function extendMock(kit: MockKit): void {
   let writable = true
   let firstWriteConflict = false
   let rejectWrites = false
+  let keysWritable = true
+  let keyLookupFails = false
+  // Keep registration booleans only, never the submitted key material.
+  const registeredKeys = new Set(['DEEPSEEK_API_KEY'])
+  const providers: ProviderEntry[] = [
+    { id: 'deepseek-official', name: 'ディープシーク' },
+    { id: 'cloud', name: 'クラウド提供元' },
+    { id: 'local', name: 'ローカル' },
+  ]
+  const directory: ProviderAddress[] = [
+    { provider: 'deepseek-official', displayName: 'ディープシーク', settingsNs: 'llm-deepseek', settingsPath: [] },
+    { provider: 'cloud', displayName: 'クラウド提供元', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'cloud'] },
+    { provider: 'local', displayName: 'ローカル', settingsNs: 'llm-local', settingsPath: [] },
+  ]
 
   function checkWrite(ns: string, expectedRevision: number): RemoteResult<SettingsNamespace> {
     const current = namespaces.get(ns)
@@ -137,7 +167,31 @@ export function extendMock(kit: MockKit): void {
     },
   }
   kit.addRemote('settings', remote)
+  kit.addRemote('llm', {
+    async listProviders() { return success(providers) },
+    async listConfigurableProviders() { return success(directory) },
+  })
+  kit.addRemote('credentials', {
+    async describe(refs: string[]) {
+      if (keyLookupFails) return failure('credential/unavailable', '登録状況を読み込めません。')
+      return success(Object.fromEntries(refs.map(ref => [ref, { configured: registeredKeys.has(ref), writable: writable && keysWritable }])))
+    },
+    async set(ref: string, value: string) {
+      if (!writable || !keysWritable || rejectWrites || !value.trim()) return failure('credential/rejected', 'キーを登録できません。')
+      registeredKeys.add(ref)
+      await kit.emit('credentials/reference-updated', ref)
+      return success({ configured: true, writable: true })
+    },
+    async unset(ref: string) {
+      if (!writable || !keysWritable || rejectWrites) return failure('credential/rejected', '登録を消せません。')
+      registeredKeys.delete(ref)
+      await kit.emit('credentials/reference-updated', ref)
+      return success({ configured: false, writable: true })
+    },
+  })
   kit.scenario('settings-readonly', () => { writable = false })
   kit.scenario('settings-conflict', () => { firstWriteConflict = true })
   kit.scenario('settings-rejected', () => { rejectWrites = true })
+  kit.scenario('settings-keys-readonly', () => { keysWritable = false })
+  kit.scenario('settings-keys-unavailable', () => { keyLookupFails = true })
 }

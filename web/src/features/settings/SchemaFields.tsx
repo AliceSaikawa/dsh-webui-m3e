@@ -1,11 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eOption } from '@m3e/react/option'
 import { M3eFormField } from '@m3e/react/form-field'
-import { formatSetting, parseFieldInput, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
+import { formatSetting, parseFieldInput, valueAt, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
+import { createSettingInput } from './input.ts'
 
 interface FieldsProps {
   fields: SettingField[]
@@ -25,65 +26,66 @@ export function SchemaFields({ fields, ...props }: FieldsProps) {
 
 function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
   const id = useId()
-  const original = typeof field.value === 'string' || typeof field.value === 'number' ? String(field.value) : ''
-  const [draft, setDraft] = useState(original)
-  const [choice, setChoice] = useState(field.value)
   const [validation, setValidation] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
-  const dirty = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const latest = useRef(draft)
-  const sending = useRef(false)
-  const deferred = useRef(false)
-  const disabled = !state.writable || field.disabled || Boolean(state.busy[namespace.ns])
-  const disabledRef = useRef(disabled)
-  disabledRef.current = disabled
+  const currentField = useRef(field)
+  currentField.current = field
+  const disabled = !state.writable || field.disabled
+  const [input] = useState(() => {
+    const generation = state.generation[namespace.ns] ?? 0
+    return createSettingInput<SettingValue | undefined>(inputValue(field, field.value), {
+      canSave: () => store.getSnapshot().writable && !currentField.current.disabled
+        && (store.getSnapshot().generation[namespace.ns] ?? 0) === generation,
+      async save(value, reset) {
+        const latestField = currentField.current
+        let next = value
+        if (!reset && ['text', 'number'].includes(latestField.kind)) {
+          const parsed = parseFieldInput(latestField, String(value ?? ''))
+          if (!parsed.ok) { setValidation(parsed.message); return { ok: false } }
+          next = parsed.value
+        }
+        setValidation(null)
+        const accepted = await store.edit(namespace.ns, latestField.path, reset ? undefined : next)
+        if (!accepted) return { ok: false }
+        const row = store.getSnapshot().namespaces.find(item => item.ns === namespace.ns)
+        return { ok: true, value: inputValue(latestField, valueAt(row?.value, latestField.path)) }
+      },
+    })
+  })
+  const editing = useSyncExternalStore(input.subscribe, input.getSnapshot, input.getSnapshot)
+  const draft = String(editing.value ?? '')
+  const choice = editing.value
   const error = validation ?? state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = namespace.applies === 'restart' ? 'DSH の再起動後に反映されます' : 'すぐ反映されます'
   useEffect(() => {
-    setDraft(original); latest.current = original; dirty.current = false
-    setChoice(field.value)
-  }, [original, field.value])
-  useEffect(() => () => { clearTimeout(timer.current) }, [])
+    input.receive(inputValue(field, field.value))
+  }, [input, field.kind, field.value])
   useEffect(() => {
-    if (!disabled && deferred.current) {
-      deferred.current = false
-      void flush()
-    }
-  }, [disabled])
+    input.setActive(true)
+    return () => { clearTimeout(timer.current); input.setActive(false) }
+  }, [input])
   function cancelTimer() { clearTimeout(timer.current); timer.current = undefined }
-  async function flush() {
+  function flush() {
     cancelTimer()
-    if (!dirty.current || sending.current) return
-    if (disabledRef.current) { deferred.current = true; return }
-    const parsed = parseFieldInput(field, latest.current)
-    if (!parsed.ok) { setValidation(parsed.message); return }
-    setValidation(null)
-    sending.current = true
-    dirty.current = false
-    const accepted = await store.edit(namespace.ns, field.path, parsed.value)
-    sending.current = false
-    dirty.current = !accepted
-    setSaved(accepted)
+    return input.flush()
   }
   function changeText(input: string) {
-    latest.current = input; setDraft(input); setSaved(false); setValidation(null)
-    dirty.current = input !== original
+    changeDraft(input)
     cancelTimer()
-    if (dirty.current) timer.current = setTimeout(() => { void flush() }, 600)
+    timer.current = setTimeout(() => { void flush() }, 600)
   }
-  async function changeChoice(value: SettingValue) {
-    if (disabled || sending.current) return
-    setSaved(false); setChoice(value); sending.current = true
-    const accepted = await store.edit(namespace.ns, field.path, value)
-    sending.current = false
-    setSaved(accepted)
-    if (!accepted) setChoice(field.value)
+  function changeDraft(value: SettingValue) {
+    input.change(value)
+    setValidation(null)
   }
-  async function reset() {
-    cancelTimer(); dirty.current = false; setValidation(null); setSaved(false)
-    const accepted = await store.edit(namespace.ns, field.path)
-    setSaved(accepted)
+  function changeChoice(value: SettingValue) {
+    if (disabled) return
+    changeDraft(value)
+    return input.flush()
+  }
+  function reset() {
+    cancelTimer(); setValidation(null)
+    return input.reset()
   }
   const helpId = `${id}-help`
   const errorId = `${id}-error`
@@ -108,7 +110,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
       </M3eSelect>
     </M3eFormField> : readonly ? <>
       <h3>{field.label}</h3>
-      <pre className="settings-value">{field.kind === 'masked' ? '値は表示しません' : formatSetting(field.value)}</pre>
+      <pre className="settings-value">{field.kind === 'masked' ? field.registered ? '登録済み' : '未登録' : formatSetting(field.value)}</pre>
       <p className="settings-field-help">この項目は今の画面で編集してください</p>
     </> : <M3eFormField variant="outlined" error={Boolean(error)}>
       <label slot="label" htmlFor={id}>{field.label}</label>
@@ -120,8 +122,15 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
     </M3eFormField>}
     <p className="settings-field-help" id={helpId}>{[field.description, timing].filter(Boolean).join('\n')}</p>
     {error && <p className="settings-error" role="alert" id={errorId}>{error}</p>}
-    {!readonly && field.overridden && <M3eButton variant="text" className="settings-reset" disabled={disabled}
+    {!readonly && field.overridden && <M3eButton variant="text" className="settings-reset" disabled={disabled || editing.saving}
       onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>}
-    {saved && !error && <div className="settings-saving" role="status">保存しました</div>}
+    {editing.saving && <div className="settings-saving" role="status">保存しています…</div>}
+    {editing.saved && !editing.saving && !error && <div className="settings-saving" role="status">保存しました</div>}
   </div>
+}
+
+function inputValue(field: Pick<SettingField, 'kind'>, value: SettingValue | undefined): SettingValue | undefined {
+  return ['text', 'number'].includes(field.kind)
+    ? typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+    : value
 }

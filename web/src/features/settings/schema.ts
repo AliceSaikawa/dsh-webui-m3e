@@ -16,6 +16,7 @@ export interface SettingsNamespace {
   value: SettingObject
   base?: SettingObject
   user?: SettingObject
+  secrets?: { path: string[]; set: boolean }[]
   applies: 'live' | 'restart'
 }
 export interface SettingsDescription { writable: boolean; namespaces: SettingsNamespace[] }
@@ -25,6 +26,7 @@ export interface SettingField {
   label: string
   description: string
   value?: SettingValue
+  registered?: boolean
   overridden: boolean
   disabled: boolean
   min?: number
@@ -52,6 +54,7 @@ const names: Record<string, string> = {
   name: '名前', mode: '動作モード', maxSteps: '最大ステップ数', timeout: '待機時間',
   maxRetries: '再試行の上限', count: '回数', temperature: '応答の多様性',
   retry: '再試行', interval: '間隔', command: 'コマンド', language: '言語',
+  reasoningEffort: '推論の強さ',
 }
 export const namespaceTitle = (ns: string): string => names[ns] ?? ns
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -105,21 +108,48 @@ export function valueAt(value: unknown, path: SettingPath): SettingValue | undef
 }
 
 export function schemaFields(namespace: SettingsNamespace): SettingField[] {
+  const schema = decodeSchema(namespace.schema)
+  const protectedPaths: SettingPath[] = (namespace.secrets ?? []).map(entry => entry.path)
+  const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
+  const protectedAt = (path: SettingPath) => protectedPaths.some(parent => containsPath(parent, path))
+
+  // Password roles also protect values nested inside read-only arrays/dictionaries.
+  function collectProtected(node: SchemaNode, path: string[], value: unknown): void {
+    if (node.meta?.role === 'password') { protectedPaths.push(path); return }
+    if (node.dict) for (const [key, child] of Object.entries(node.dict)) collectProtected(child, [...path, key], isObject(value) ? value[key] : undefined)
+    if (node.list) for (const child of node.list) collectProtected(child, path, value)
+    if (node.inner && (isObject(value) || Array.isArray(value))) {
+      for (const [key, child] of Object.entries(value)) if (safeKey(key)) collectProtected(node.inner, [...path, key], child)
+    }
+  }
+  collectProtected(schema, [], namespace.value)
+
+  // Remove protected descendants before a read-only parent can reach JSON formatting.
+  function visibleValue(value: SettingValue | undefined, path: string[], depth = 0): SettingValue | undefined {
+    if (protectedAt(path) || depth > 64) return undefined
+    if (Array.isArray(value)) return value.map((child, index) => visibleValue(child, [...path, String(index)], depth + 1) ?? null)
+    if (isObject(value)) return Object.fromEntries(Object.entries(value).filter(([key]) => safeKey(key)).flatMap(([key, child]) => {
+      const visible = visibleValue(child as SettingValue, [...path, key], depth + 1)
+      return visible === undefined ? [] : [[key, visible]]
+    }))
+    return value
+  }
+  const visible = visibleValue(namespace.value, [])
+
   function fields(node: SchemaNode, path: string[], inheritedDisabled = false): SettingField[] {
-    if (node.meta?.role === 'password') return [field(node, path, 0, inheritedDisabled)]
+    if (protectedAt(path)) return [field(node, path, 0, inheritedDisabled)]
     if (node.type === 'intersect') return (node.list ?? []).flatMap(child => fields(child, path, inheritedDisabled || node.meta?.disabled === true))
     if (node.type === 'object' && node.dict) return Object.entries(node.dict).map(([key, child], index) => field(child, [...path, key], index, inheritedDisabled || node.meta?.disabled === true))
     return [field(node, path, 0, inheritedDisabled)]
   }
   function field(node: SchemaNode, path: string[], index: number, inheritedDisabled: boolean): SettingField {
     const meta = node.meta ?? {}
-    let kind: SettingField['kind'] = meta.role === 'password' ? 'masked'
+    let kind: SettingField['kind'] = protectedAt(path) ? 'masked'
       : (node.type === 'object' && node.dict) || node.type === 'intersect' ? 'group'
       : node.type === 'boolean' ? 'switch' : node.type === 'string' ? 'text' : node.type === 'number' ? 'number'
       : node.type === 'union' && node.list?.length && node.list.every(child => child.type === 'const' && (child.value === null || ['string', 'boolean', 'number'].includes(typeof child.value))) ? 'select' : 'readonly'
-    // Omitted leaves may be write-only slots. Until their metadata can be
-    // integrated, do not send ordinary updates to any omitted leaf.
-    if (!['group', 'masked'].includes(kind) && (!path.length || valueAt(namespace.value, path) === undefined)) kind = 'readonly'
+    // Ordinary optional fields remain editable; only metadata identifies masked values.
+    if (!['group', 'masked'].includes(kind) && !path.length) kind = 'readonly'
     const label = japanese(meta.title) ?? names[path.at(-1) ?? ''] ?? `項目 ${index + 1}`
     const result: SettingField = {
       path, kind, label, description: japanese(meta.description) ?? (meta.description ? '説明は標準の画面で確認できます。' : ''),
@@ -128,7 +158,10 @@ export function schemaFields(namespace: SettingsNamespace): SettingField[] {
       min: meta.min, max: meta.max, step: meta.step,
     }
     // Masked fields never carry a stored value into the view model.
-    if (kind !== 'masked') result.value = valueAt(namespace.value, path)
+    if (kind === 'masked') {
+      const status = namespace.secrets?.find(entry => containsPath(entry.path, path))
+      result.registered = status ? status.set : valueAt(namespace.value, path) !== undefined
+    } else result.value = valueAt(visible, path)
     if (kind === 'group') {
       result.children = fields(node, path, result.disabled)
       delete result.value
@@ -139,7 +172,7 @@ export function schemaFields(namespace: SettingsNamespace): SettingField[] {
     }))
     return result
   }
-  return fields(decodeSchema(namespace.schema), [])
+  return fields(schema, [])
 }
 
 export function parseFieldInput(field: SettingField, input: string): { ok: true; value: string | number } | { ok: false; message: string } {
