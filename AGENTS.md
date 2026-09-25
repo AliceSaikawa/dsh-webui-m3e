@@ -16,6 +16,8 @@ DeepSeek Harness（DSH）のスマートフォン向け Web 画面を、Material
 - 段階 1（`docs/design/00-foundation.md`）の担当以外は、`package.json` とロックファイルを変更しません。
 - 画面の文言は日本語だけにします。外部の CDN、トラッカー、外部のフォントは使いません。
 - 完了の前に `pnpm typecheck`、`pnpm test`、`pnpm build` を通します。
+- 段階 1 と 2 では DSH を起動しません。確かめるのは `?mock` の偽データだけです。
+- 拒否された操作や禁じられた操作を、別のコマンドや別のツールで回避しません。止めて、設計書の「実装メモ」に書いて報告します。
 - `git push --force` と `git reset --hard` は使いません。
 
 ## コマンド
