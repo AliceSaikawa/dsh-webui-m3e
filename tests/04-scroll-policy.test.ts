@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { rememberScrollPositions, restoreScrollPositions } from '../web/src/app/scroll-retention.ts'
-import { isTraceAtBottom, traceScrollAction, type TraceScrollState } from '../web/src/features/trace/scroll-policy.ts'
+import { isTraceAtBottom, traceFollowAfterScroll, traceScrollAction, type TraceScrollState } from '../web/src/features/trace/scroll-policy.ts'
 
 const shown: TraceScrollState = {
   active: true, initialized: true, hasRows: true, visible: true,
@@ -119,4 +119,32 @@ test('hidden search changes cannot move the retained position or act on invisibl
     assert.equal(traceScrollAction({ ...state, visible: false }, 'search'), 'none')
     assert.equal(traceScrollAction({ ...state, hasRows: false }, 'search'), 'none')
   }
+})
+
+test('clearing a search stays at the end while long rows finish growing', () => {
+  const viewport = { scrollTop: 0, scrollHeight: 900, clientHeight: 500 }
+  const action = traceScrollAction({ ...shown, searching: false, following: true }, 'search')
+  assert.equal(action, 'bottom')
+  viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight
+
+  // The list host has rendered, but its custom-element rows obtain height later.
+  for (const nextHeight of [1800, 3100, 4200]) {
+    viewport.scrollHeight = nextHeight
+    const atBottom = isTraceAtBottom(viewport.scrollTop, viewport.scrollHeight, viewport.clientHeight)
+    assert.equal(atBottom, false)
+    const following = traceFollowAfterScroll(true, atBottom, 'scroll')
+    assert.equal(following, true, 'a layout-induced scroll must not cancel the requested follow')
+    assert.equal(traceScrollAction({ ...shown, following }, 'resize'), 'bottom')
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight
+    assert.equal(isTraceAtBottom(viewport.scrollTop, viewport.scrollHeight, viewport.clientHeight), true)
+  }
+})
+
+test('an upward gesture stops following until the user returns to the end', () => {
+  const stopped = traceFollowAfterScroll(true, false, 'user-up')
+  assert.equal(stopped, false)
+  assert.equal(traceFollowAfterScroll(stopped, false, 'scroll'), false)
+  assert.equal(traceScrollAction({ ...shown, following: stopped }, 'resize'), 'none')
+  assert.equal(traceFollowAfterScroll(stopped, true, 'scroll'), true)
+  assert.equal(traceScrollAction(shown, 'resize'), 'bottom')
 })
