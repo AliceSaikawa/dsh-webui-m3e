@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { closeOverlaysOutsideRoute, getOverlays, openDialog, openSheet, overlayOwnerForRoute } from '../web/src/app/overlay/store.ts'
-import { hideSheet, OverlayPresentation, setSheetHandle, type OverlaySurface } from '../web/src/app/overlay/presentation.ts'
+import { hideSheet, keepTopInteractive, OverlayPresentation, setSheetHandle, type OverlaySurface } from '../web/src/app/overlay/presentation.ts'
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
 function cleanup() { for (const entry of getOverlays()) entry.close() }
@@ -132,4 +132,36 @@ test('通常sheetのhandleは実際のHTML属性にも付ける', () => {
   assert.equal(attributes.has('handle'), true)
   setSheetHandle(node, false)
   assert.equal(attributes.has('handle'), false)
+})
+
+test('最上位の面は後からinertを付けられても操作可能に戻し、隠すと監視を止める', () => {
+  const surface = { inert: true }
+  let notify = () => {}
+  let observing = true
+  const stop = keepTopInteractive(surface, callback => {
+    notify = () => { if (observing) callback() }
+    return () => { observing = false }
+  })
+  assert.equal(surface.inert, false)
+  surface.inert = true
+  notify()
+  assert.equal(surface.inert, false)
+  stop()
+  surface.inert = true
+  notify()
+  assert.equal(surface.inert, true)
+})
+
+test('返事が必須の下のシートは割り込み後も残り、閉じられない設定を保つ', () => {
+  try {
+    const closeRequired = openSheet('承認', { dismissible: false })
+    const required = getOverlays()[0]
+    assert.equal(required?.dismissible, false)
+    const closeTop = openSheet('割り込み')
+    assert.equal(getOverlays()[0], required)
+    closeTop()
+    assert.deepEqual(getOverlays(), [required])
+    closeRequired()
+    assert.equal(getOverlays().length, 0)
+  } finally { cleanup() }
 })

@@ -73,6 +73,16 @@ export async function hideSheet(surface: SheetSurface): Promise<void> {
   }
 }
 
+/** M3E can leave `inert` on a newly opened popover during a layer handoff. */
+export function keepTopInteractive(
+  surface: { inert: boolean },
+  observe: (notify: () => void) => () => void,
+): () => void {
+  const stop = observe(() => { if (surface.inert) surface.inert = false })
+  surface.inert = false
+  return stop
+}
+
 export function setSheetHandle(element: { toggleAttribute(name: string, force?: boolean): boolean }, enabled: boolean): void {
   // M3E's property is not reflected, but its CSS requires the HTML attribute.
   element.toggleAttribute('handle', enabled)

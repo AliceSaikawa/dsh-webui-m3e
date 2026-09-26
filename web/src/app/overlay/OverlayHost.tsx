@@ -4,7 +4,13 @@ import { M3eDialog } from '@m3e/react/dialog'
 import type { M3eBottomSheetElement } from '@m3e/web/bottom-sheet'
 import type { M3eDialogElement } from '@m3e/web/dialog'
 import { getOverlays, useOverlays, isTopOverlay, type OverlayEntry } from './store.ts'
-import { hideSheet, OverlayPresentation, setSheetHandle } from './presentation.ts'
+import { hideSheet, keepTopInteractive, OverlayPresentation, setSheetHandle } from './presentation.ts'
+
+function observeInert(element: HTMLElement, notify: () => void): () => void {
+  const observer = new MutationObserver(notify)
+  observer.observe(element, { attributes: true, attributeFilter: ['inert'] })
+  return () => observer.disconnect()
+}
 
 function OverlayLayer({ entry, presentation }: { entry: OverlayEntry; presentation: OverlayPresentation }) {
   const sheet = useRef<M3eBottomSheetElement>(null)
@@ -13,22 +19,32 @@ function OverlayLayer({ entry, presentation }: { entry: OverlayEntry; presentati
   useLayoutEffect(() => {
     const element = sheet.current ?? dialog.current
     if (!element) return
-    if (presentation.activeId !== entry.id) element.hidden = true
+    if (presentation.activeId !== entry.id) {
+      element.hidden = true
+      element.inert = true
+    }
     if (sheet.current) setSheetHandle(sheet.current, entry.kind === 'sheet')
-    return presentation.register(entry.id, {
+    const keepInteractive = () => keepTopInteractive(element, notify => observeInert(element, notify))
+    let stopInteractive: (() => void) | undefined = presentation.isUserClose(entry.id)
+      ? keepInteractive() : undefined
+    const unregister = presentation.register(entry.id, {
       async show() {
         element.hidden = false
-        element.inert = false
+        stopInteractive?.()
+        stopInteractive = keepInteractive()
         if (sheet.current) { sheet.current.open = true; await sheet.current.updateComplete }
         else if (dialog.current) { dialog.current.open = true; await dialog.current.show() }
       },
       async hide() {
+        stopInteractive?.()
+        stopInteractive = undefined
         if (sheet.current) await hideSheet(sheet.current)
         else if (dialog.current) await dialog.current.hide()
         element.hidden = true
         element.inert = true
       },
     })
+    return () => { stopInteractive?.(); unregister() }
   }, [entry.id, entry.kind, presentation])
   const closed = () => {
     if (presentation.isUserClose(entry.id) && isTopOverlay(entry.id)) entry.close()
