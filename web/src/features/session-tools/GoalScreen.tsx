@@ -115,10 +115,9 @@ function GoalContent({ sessionId }: { sessionId: string }) {
       <M3eButton disabled={disabled} onClick={() => { void refresh() }}>読み直す</M3eButton>
     </div>}
     {!goal ? <p className="st-muted">ゴールはありません。</p> : <>
-      <section className="st-card" aria-label="現在のゴール">
-        <span className="st-badge">{goalPhaseLabel(goal.phase, activation)}</span>
+      <section className="st-card st-goal-card" aria-label="現在のゴール">
         <h2 className="st-title">{goal.objective}</h2>
-        <p className="st-muted">ラウンド {current!.roundsStarted} / {goal.maxGoalRounds}</p>
+        <p className="st-goal-status">{goalPhaseLabel(goal.phase, activation)} ・ {current!.roundsStarted} / {goal.maxGoalRounds} ラウンド</p>
         {goal.phase === 'blocked' && goal.blockedReason && <p>{goal.blockedReason.message}</p>}
       </section>
       {!goals && <p className="st-muted">この接続先ではゴールを操作できません。</p>}
@@ -127,14 +126,14 @@ function GoalContent({ sessionId }: { sessionId: string }) {
       </div>}
       {readOnly && <p className="st-muted">子の会話のゴールは読むだけです。</p>}
       {exhausted && <p className="st-muted">ラウンド数の上限に達したため、再開できません。</p>}
-      <div className="st-actions">
-        {primary && <M3eButton variant="tonal" disabled={mutationDisabled || !!exhausted}
+      <div className="st-goal-actions">
+        {primary && <M3eButton variant="outlined" disabled={mutationDisabled || !!exhausted}
           onClick={() => { void mutate(primary, { id: goal.id, revision: goal.revision }) }}>
           {primary === 'pause' ? '一時停止' : '再開'}
         </M3eButton>}
         {goal.phase !== 'complete' && <M3eButton variant="filled" disabled={mutationDisabled}
           onClick={() => { void mutate('complete', { id: goal.id, revision: goal.revision }) }}>完了にする</M3eButton>}
-        <M3eButton disabled={mutationDisabled} onClick={confirmClear}>ゴールを消す</M3eButton>
+        <M3eButton className="st-goal-clear" disabled={mutationDisabled} onClick={confirmClear}>ゴールを消す</M3eButton>
       </div>
     </>}
   </div></PageScaffold>

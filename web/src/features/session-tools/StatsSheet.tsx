@@ -1,4 +1,6 @@
 import { M3eButton } from '@m3e/react/button'
+import { M3eList, M3eListItem } from '@m3e/react/list'
+import { Icon } from '../../app/icons/Icon.tsx'
 import { useSession } from '../../dsh/session.ts'
 import { contextPercent, formatTokens, maxTurn, reasoningLabel, type ContextPressure, type ModelSelection, type Usage } from './presentation.ts'
 
@@ -15,15 +17,17 @@ export function StatsSheet({ sessionId, close }: { sessionId: string; close(): v
       <div className="st-between"><span>コンテキストの使用率</span><strong>{percent}%</strong></div>
       <progress className="st-progress" max={100} value={Math.min(100, percent)} aria-label={`コンテキストの使用率 ${percent}%`} />
     </div>}
-    <dl className="st-details">
-      <div><dt>入力トークン</dt><dd>{formatTokens(usage?.uncachedInputTokens)}</dd></div>
-      <div><dt>出力トークン</dt><dd>{formatTokens(usage?.outputTokens)}</dd></div>
-      <div><dt>キャッシュ読み込み</dt><dd>{formatTokens(usage?.cacheReadTokens)}</dd></div>
-      <div><dt>キャッシュ書き込み</dt><dd>{formatTokens(usage?.cacheWriteTokens)}</dd></div>
-      <div><dt>ターン</dt><dd>{maxTurn(records)}</dd></div>
-      <div><dt>モデル</dt><dd>{model?.model ?? '未取得'}</dd></div>
-      <div><dt>考える深さ</dt><dd>{reasoningLabel(model?.reasoningEffort)}</dd></div>
-    </dl>
+    <M3eList className="st-details" aria-label="会話の統計">
+      <M3eListItem><Icon slot="leading" name="data_usage" />トークン
+        <span slot="supporting-text">入力 {formatTokens(usage?.uncachedInputTokens)} ・ 出力 {formatTokens(usage?.outputTokens)} ・ キャッシュ読み込み {formatTokens(usage?.cacheReadTokens)} ・ キャッシュ書き込み {formatTokens(usage?.cacheWriteTokens)}</span>
+      </M3eListItem>
+      <M3eListItem><Icon slot="leading" name="replay" />ターン
+        <span slot="supporting-text">{maxTurn(records)}</span>
+      </M3eListItem>
+      <M3eListItem><Icon slot="leading" name="smart_toy" />モデル
+        <span slot="supporting-text">{model?.model ?? '未取得'} ・ 考える深さ {reasoningLabel(model?.reasoningEffort)}</span>
+      </M3eListItem>
+    </M3eList>
     <div className="st-actions"><M3eButton onClick={close}>閉じる</M3eButton></div>
   </section>
 }

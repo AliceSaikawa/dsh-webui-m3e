@@ -155,6 +155,7 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
       assert.equal(child.kind, 'child')
       if (child.kind !== 'child') throw new Error('子の会話がありません。')
       const address = childAddress(sessionId, child)
+      assert.deepEqual(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, { address, parentAvailable: true })
       ctx.sessions.openSubagent(address)
       assert.equal(ctx.sessions.list.getSnapshot().current, child.id)
       assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
@@ -170,6 +171,39 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
     assert.equal(notified, 1)
     assert.equal(runningJobCount(ctx.sessions.list.getSnapshot().jobsBySession[sessionId]), 0)
     stop()
+  } finally { ctx.dispose() }
+})
+
+test('未取得の子シナリオはアドレスを先に設定せず、親の取得後にカタログから子を開ける', async () => {
+  const ctx = createMockContext({ scenario: 'subagents-unloaded', extensions: [{ extendMock }] })
+  try {
+    const initial = ctx.sessions.list.getSnapshot()
+    assert.equal(Object.hasOwn(initial.subagentsByParent, sessionId), false)
+    for (const childId of Object.values(SESSION_TOOLS_MOCK_IDS.children)) {
+      assert.equal(initial.byId[childId]?.origin, 'subagent')
+      assert.equal(initial.byId[childId]?.parentId, sessionId)
+      assert.equal(ctx.sessions.binding(childId)!.session.getSnapshot().subagent, null)
+      assert.equal(ctx.sessions.subagentAddress(childId), undefined)
+      assert.ok(foldSessionWindow(ctx.sessions.binding(childId)!.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+    }
+    assert.equal(hasChildren(sessionId, initial.subagentsByParent[sessionId], initial.byId), true)
+
+    await ctx.sessions.refreshSubagents(MOCK_IDS.sessions.readme)
+    assert.equal(Object.hasOwn(ctx.sessions.list.getSnapshot().subagentsByParent, sessionId), false)
+    await ctx.sessions.refreshSubagents(sessionId)
+    const catalog = ctx.sessions.list.getSnapshot().subagentsByParent[sessionId]
+    assert.equal(catalog?.state, 'ready')
+    const children = catalogEntries(catalog)
+    assert.equal(children.length, 2)
+    for (const child of children) {
+      if (child.kind !== 'child') throw new Error('子の会話がありません。')
+      assert.equal(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, null)
+      const address = childAddress(sessionId, child)
+      ctx.sessions.openSubagent(address)
+      assert.deepEqual(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+    }
+    assert.deepEqual(children.map(child => child.kind === 'child' ? child.mode : undefined), ['continuable', 'one-shot'])
   } finally { ctx.dispose() }
 })
 
