@@ -1,5 +1,5 @@
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
-import { RemoteCallError } from '../../dsh/remote-result.ts'
+import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 
 /** Browser wire shapes verified against the installed DSH client plugins. */
 export interface CommandDescriptor {
@@ -42,13 +42,8 @@ export interface SettingsNamespace { readonly ns: string; readonly schema: unkno
 type RecordValue = Record<string, unknown>
 const record = (value: unknown): RecordValue | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as RecordValue : undefined
 
-export function unwrapResult<T>(result: RemoteResult<T>): T {
-  if (!result.ok) throw new RemoteCallError(result.error)
-  return result.value
-}
-
 export function requireMatched(result: RemoteResult<{ matched: boolean }>): void {
-  if (!unwrapResult(result).matched) throw new Error('この会話では、そのコマンドを使えません。')
+  if (!unwrapRemoteResult(result).matched) throw new Error('この会話では、そのコマンドを使えません。')
 }
 
 /** Read only the advertised preset enum; never evaluate serialized schema callbacks. */
@@ -74,29 +69,29 @@ export function permissionDefaultsOf(view: SettingsNamespace | undefined): Permi
   return { currentValue, options }
 }
 
-/** These calls do not create a Session or write the Host-wide defaults. */
+/** Discovery never creates a Session; selectModel also asks the Host to save its default. */
 export function composerApi(remote: DshRemote) {
   const wire = remote as ComposerRemote
   return {
     async listCommands(sessionId: string): Promise<readonly CommandDescriptor[]> {
       if (!wire.commands) throw new Error('コマンドの候補を取得できません。')
-      return unwrapResult(await wire.commands.list(sessionId))
+      return unwrapRemoteResult(await wire.commands.list(sessionId))
     },
     async listFiles(sessionId: string, query: string, signal: AbortSignal): Promise<readonly FileReference[]> {
       if (!wire.fileReferences) throw new Error('ファイルの候補を取得できません。')
-      return unwrapResult(await wire.fileReferences.list(sessionId, query, signal))
+      return unwrapRemoteResult(await wire.fileReferences.list(sessionId, query, signal))
     },
     async modelCatalog(): Promise<ModelCatalog> {
       if (!wire.session?.modelCatalog) throw new Error('モデルの一覧を取得できません。')
-      return unwrapResult(await wire.session.modelCatalog())
+      return unwrapRemoteResult(await wire.session.modelCatalog())
     },
     async selectModel(sessionId: string, selection: ModelSelection): Promise<ModelSelection> {
       if (!wire.session?.selectModel) throw new Error('モデルを切り替えられません。')
-      return unwrapResult(await wire.session.selectModel({ sessionId, ...selection })).selected
+      return unwrapRemoteResult(await wire.session.selectModel({ sessionId, ...selection })).selected
     },
     async defaultPermissions(): Promise<PermissionProjection | undefined> {
       if (!wire.settings?.describe) return undefined
-      const value = unwrapResult(await wire.settings.describe())
+      const value = unwrapRemoteResult(await wire.settings.describe())
       return permissionDefaultsOf(value.namespaces.find((view) => view.ns === 'permission'))
     },
     onCommandsChange(listener: () => void): () => void {

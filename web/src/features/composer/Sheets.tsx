@@ -9,17 +9,19 @@ import type { QueueAction } from '../../dsh/services.ts'
 import type { ModelCatalog, ModelSelection, PermissionProjection } from './api.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
 import { queueEditPrompt } from './queue-edit.ts'
+import { modelIcon, permissionIcon } from './presentation.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
   // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
   if (error instanceof Error && /^[ぁ-んァ-ヶ一-龠]/.test(error.message)) return error.message
   return remoteErrorMessage(error, fallback)
 }
-export function SheetRow({ icon, children, detail, selected, disabled, onClick }: {
-  icon?: string; children: ReactNode; detail?: string; selected?: boolean; disabled?: boolean; onClick(): void
+export function SheetRow({ icon, trailingIcon, children, detail, selected, disabled, onClick }: {
+  icon?: string; trailingIcon?: string; children: ReactNode; detail?: string; selected?: boolean; disabled?: boolean; onClick(): void
 }) {
+  const endIcon = selected ? 'check' : trailingIcon
   return <button type="button" className="composer-sheet-row" disabled={disabled} onClick={onClick} aria-pressed={selected}>
-    {icon && <Icon name={icon} />}<span>{children}{detail && <small>{detail}</small>}</span>{selected && <Icon name="check" />}
+    {icon && <Icon name={icon} className="composer-sheet-icon" />}<span className="composer-sheet-copy">{children}{detail && <small>{detail}</small>}</span>{endIcon && <Icon name={endIcon} className="composer-sheet-icon" />}
   </button>
 }
 
@@ -38,11 +40,11 @@ export function PlusSheet({ close, plan, disabled, modelName, onImage, onReferen
     finally { setBusy(false) }
   }
   return <div className="composer-sheet"><h2>入力の補助</h2>
-    <SheetRow icon="add_photo_alternate" onClick={() => choose(onImage)}>画像を添付</SheetRow>
-    <SheetRow icon="alternate_email" onClick={() => choose(onReference)}>ファイルを参照</SheetRow>
-    <SheetRow icon="terminal" onClick={() => choose(onCommand)}>コマンド</SheetRow>
-    <div className="composer-switch-row"><Icon name="edit_note" /><span>計画モード</span><M3eSwitch aria-label="計画モード" checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
-    <SheetRow icon="neurology" detail={modelName} disabled={disabled || busy} onClick={() => choose(onModel)}>モデル</SheetRow>
+    <SheetRow icon="image" onClick={() => choose(onImage)}>画像を添付</SheetRow>
+    <SheetRow icon="alternate_email" detail="入力欄で @ を打っても出せる" onClick={() => choose(onReference)}>ファイルを参照</SheetRow>
+    <SheetRow icon="terminal" detail="入力欄で / を打っても出せる" onClick={() => choose(onCommand)}>コマンド</SheetRow>
+    <div className="composer-switch-row"><Icon name="checklist" className="composer-sheet-icon" /><span className="composer-sheet-copy">計画モード</span><M3eSwitch aria-label="計画モード" checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
+    <SheetRow icon="smart_toy" trailingIcon="chevron_right" detail={modelName} disabled={disabled || busy} onClick={() => choose(onModel)}>モデル</SheetRow>
     {error && <p role="alert">{error}</p>}
   </div>
 }
@@ -64,7 +66,7 @@ export function ModelSheet({ catalog, selected, apply, close }: {
       {group.models.map(model => {
         const isSelected = selected?.provider === group.id && selected.model === model.id
         return <div key={model.id}>
-          <SheetRow selected={isSelected} disabled={busy} onClick={() => { void choose({ provider: group.id, model: model.id }) }}>{model.name}</SheetRow>
+          <SheetRow icon={modelIcon(group.id)} selected={isSelected} disabled={busy} onClick={() => { void choose({ provider: group.id, model: model.id }) }}>{model.name}</SheetRow>
           {isSelected && model.reasoning && <fieldset className="composer-efforts" disabled={busy}><legend>考える深さ</legend>
             {model.reasoning.efforts.map((effort, index) => <M3eButton key={effort.id} variant={(selected.reasoningEffort ?? model.reasoning?.defaultEffort) === effort.id ? 'filled' : 'tonal'} onClick={() => { void choose({ provider: group.id, model: model.id, reasoningEffort: effort.id }) }}>{reasoningEffortLabel(effort.id, index)}</M3eButton>)}
           </fieldset>}
@@ -86,7 +88,7 @@ export function PermissionSheet({ permissions, apply, close }: {
     try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
-    {permissions.options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
+    {permissions.options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
     {error && <p role="alert">{error}</p>}
   </div>
 }
