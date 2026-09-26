@@ -429,12 +429,92 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
     row.value.protectedInput = 'stored-key-not-for-editing'
     h.api.describe = async () => success(described.value)
     await h.store.reload()
-    for (const path of [['protectedInput'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['retry'], ['nonexistent']]) {
+    for (const path of [['protectedInput'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['nonexistent']]) {
       assert.equal(await h.store.edit('llm-deepseek', path, '変更'), false, path.join('.'))
       assert.equal(await h.store.edit('llm-deepseek', path), false, path.join('.'))
     }
+    assert.equal(await h.store.edit('llm-deepseek', ['retry'], { interval: 8 }), false)
     assert.equal(await h.store.edit('missing-namespace', ['enabled'], false), false)
     assert.deepEqual(h.calls, [])
+  } finally { h.ctx.dispose() }
+})
+
+test('配列・辞書・未知型・入れ子は unset だけで既定値へ戻し、兄弟の上書きを保つ', async () => {
+  const h = harness()
+  try {
+    assert.equal((await h.remote.update(ns, { models: ['変更'], labels: { extra: '追加' }, custom: { nested: true } }, 1)).ok, true)
+    await h.store.reload()
+    let revision = current(h.store).revision
+    for (const key of ['models', 'labels', 'custom', 'retry']) {
+      assert.equal(await h.store.edit(ns, [key], { replacement: true }), false)
+      assert.equal(await h.store.edit(ns, [key]), true)
+      assert.deepEqual(h.calls.at(-1), { kind: 'mutate', ns, input: [{ op: 'unset', path: [key] }], revision })
+      revision++
+      const row = current(h.store)
+      assert.equal(row.revision, revision)
+      assert.deepEqual(row.value[key], row.base![key])
+      assert.equal(Object.hasOwn(row.user!, key), false)
+      assert.equal(row.value.timeout, 45)
+      assert.equal(row.user!.timeout, 45)
+      assert.equal(await h.store.edit(ns, [key]), false)
+    }
+  } finally { h.ctx.dispose() }
+})
+
+test('複合値の復帰も書き込み不可・無効・保護された子を確認して送信を止める', async () => {
+  for (const mode of ['readonly', 'disabled', 'masked'] as const) {
+    const h = harness()
+    try {
+      const described = await h.remote.describe()
+      assert.ok(described.ok)
+      const row = described.value.namespaces.find(item => item.ns === ns)!
+      if (mode === 'readonly') described.value.writable = false
+      if (mode === 'masked') row.secrets = [{ path: ['retry', 'interval'], set: true }]
+      if (mode === 'disabled') {
+        const schema = row.schema as { refs: Record<string, { meta?: Record<string, unknown> }> }
+        schema.refs['10']!.meta = { disabled: true }
+      }
+      h.api.describe = async () => success(described.value)
+      await h.store.reload()
+      assert.equal(await h.store.edit(ns, ['retry']), false)
+      assert.equal(await h.store.edit(ns, ['retry', 'interval']), false)
+      assert.deepEqual(h.calls, [])
+    } finally { h.ctx.dispose() }
+  }
+})
+
+test('まとまりの復帰で前の子の編集を破棄し、次の世代で新しく編集できる', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    const generation = h.store.getSnapshot().generation[ns] ?? 0
+    const gate = deferred<void>()
+    const original = h.api.mutate
+    h.api.mutate = async (name, ops, revision) => { await gate.promise; return original(name, ops, revision) }
+    const resetting = h.store.edit(ns, ['retry'])
+    const queued = h.store.edit(ns, ['retry', 'interval'], 9)
+    await tick()
+    assert.equal(h.store.getSnapshot().busy[ns], true)
+    gate.resolve()
+    assert.deepEqual(await Promise.all([resetting, queued]), [true, false])
+    assert.ok(h.store.getSnapshot().generation[ns]! > generation)
+    assert.deepEqual(current(h.store).value.retry, current(h.store).base!.retry)
+    assert.equal(await h.store.edit(ns, ['retry', 'interval'], 8), true)
+    assert.deepEqual(h.calls.map(call => call.kind), ['mutate', 'update'])
+  } finally { h.ctx.dispose() }
+})
+
+test('複合値の復帰の競合は読み直し、待機していた復帰も破棄する', async () => {
+  const h = harness('settings-conflict')
+  try {
+    await h.store.reload()
+    const notices: string[] = []
+    h.store.subscribeNotice(message => notices.push(message))
+    assert.deepEqual(await Promise.all([h.store.edit(ns, ['retry']), h.store.edit(ns, ['retry'])]), [false, false])
+    assert.equal(h.calls.length, 1)
+    assert.deepEqual(notices, ['ほかの場所で設定が変わりました。読み直しました'])
+    assert.equal(await h.store.edit(ns, ['retry']), true)
+    assert.deepEqual(current(h.store).value.retry, current(h.store).base!.retry)
   } finally { h.ctx.dispose() }
 })
 
