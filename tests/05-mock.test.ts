@@ -5,6 +5,9 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext } from '../web/src/dsh/interactions-store.ts'
 import { extendMock } from '../web/src/features/interactions/mock.ts'
+import { deferredInteractions, questionPresentation } from '../web/src/features/interactions/presentation.ts'
+import { PresentationQueue } from '../web/src/features/interactions/presentation-queue.ts'
+import { shouldHideComposer } from '../web/src/dsh/interaction-presentation.ts'
 
 async function advance(t: TestContext, milliseconds: number): Promise<void> {
   t.mock.timers.tick(milliseconds)
@@ -129,12 +132,54 @@ for (const revision of [false, true]) {
     const item = pending.items[0]!
     assert.deepEqual(item.intent, { kind: 'plan-review', approve: 'このプランで進める' })
     assert.ok(item.options?.some(option => option.label === item.intent!.approve), '承認の文言と一致する選択肢が必要です')
+    assert.deepEqual(questionPresentation(pending.items, 0), { standalonePlan: true, progress: undefined, header: undefined, title: undefined })
     assert.equal(item.detail, '# 認証の作り直し\n\n1. ログインの Cookie を HttpOnly にする\n2. トークンの期限を 1 日にする\n3. 期限切れのときはログイン画面に戻す\n4. テストを 6 件足す')
     const answer = { answers: [{ id: item.id, selected: revision ? [] : [item.intent!.approve], ...(revision ? { custom: '期限は半日に直してほしい' } : {}) }] }
     await pending.answer(answer)
     await setImmediate()
     assert.deepEqual(store.getSnapshot(), [])
     assert.deepEqual(output, [['偽の DSH がプランの確認の回答を受け取りました。', answer]])
+  })
+}
+
+for (const name of ['question', 'plan']) {
+  test(`${name === 'plan' ? 'プラン' : '質問'}をあとでにすると入力でき、返事待ちから未回答のまま再開できる`, async (t) => {
+    const { store, output } = scenario(t, name)
+    await advance(t, 100)
+    const pending = store.getSnapshot()[0]!
+    if (pending.kind !== 'question') assert.fail('質問の要求がありません')
+    const queue = new PresentationQueue()
+    const overlays = new Map<string, { interactionKey: string; sessionId: string }>()
+    const present = () => queue.present(pending.key, () => {
+      overlays.set(pending.key, { interactionKey: pending.key, sessionId: pending.sessionId })
+      return () => { overlays.delete(pending.key) }
+    })
+    const hidden = () => shouldHideComposer(pending.sessionId, store.getSnapshot(), [...overlays.values()])
+    const close = present()
+    assert.equal(hidden(), true)
+    assert.deepEqual(deferredInteractions(store.getSnapshot(), pending.sessionId), [])
+
+    store.defer(pending.key)
+    close()
+    assert.equal(hidden(), false)
+    assert.deepEqual(output, [])
+    const chips = deferredInteractions(store.getSnapshot(), pending.sessionId)
+    assert.deepEqual(chips.map(item => item.key), [pending.key])
+    assert.deepEqual(deferredInteractions(store.getSnapshot(), 'another-session'), [])
+
+    const closeReopened = present()
+    assert.equal(hidden(), true)
+    assert.equal(store.getSnapshot()[0]?.deferred, true)
+    assert.deepEqual(output, [])
+    const resumed = chips[0]!
+    if (resumed.kind !== 'question') assert.fail('保留した質問がありません')
+    const answer = { answers: resumed.items.map(item => ({ id: item.id, selected: [item.options![0]!.label] })) }
+    await resumed.answer(answer)
+    closeReopened()
+    await setImmediate()
+    assert.equal(hidden(), false)
+    assert.deepEqual(deferredInteractions(store.getSnapshot(), pending.sessionId), [])
+    assert.deepEqual(output, [[`偽の DSH が${name === 'plan' ? 'プランの確認' : '質問'}の回答を受け取りました。`, answer]])
   })
 }
 
