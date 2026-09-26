@@ -32,7 +32,27 @@ export function extendMock(kit: MockKit): void {
     ] }] } }),
     event(6, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
   ])
-  kit.addWorkspace({ workspaceId: 'ws-chat-check', path: '/mock/chat', title: 'チャットの確認', sessionIds: ['chat-long', 'chat-samples'], createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString() })
+  const reasoning = '記録の開始と終了から、考えた内容の所要時間を確認しました。'
+  kit.addSession(summary('chat-spec-check', 'チャットの仕様確認'), [
+    event(0, 'turn/start', { turn: 1 }),
+    event(1, 'user/message', { role: 'user', content: [{ type: 'text', text: 'ツールとコマンドの結果を確認して' }] }),
+    event(14, 'assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'reasoning', text: reasoning }] }, stream: [
+      { type: 'chunk', time: origin + 2000, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+      { type: 'chunk', time: origin + 14_000, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: reasoning } } },
+    ] }),
+    event(15, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'spec-read', name: 'read_file', arguments: '{"path":"README.md"}' }] } }),
+    event(16, 'tool/call', { callId: 'spec-read', name: 'read_file' }),
+    event(17, 'tool/result', { callId: 'spec-read', content: [{ type: 'text', text: '# 確認用の原文\n<div>この行も表示します。</div>' }] }),
+    event(18, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'spec-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }] } }),
+    event(19, 'tool/call', { callId: 'spec-bash', name: 'bash' }),
+    event(20, 'tool/result', { callId: 'spec-bash', content: [], isError: true, error: { name: '実行エラー', code: 'EXIT_1' } }),
+    event(21, 'command/run', { commandId: 'spec-failed', name: 'check' }),
+    event(22, 'command/done', { commandId: 'spec-failed', kind: 'error', text: '確認に失敗しました。\n詳細を開くと理由を読めます。' }),
+    event(23, 'command/run', { commandId: 'spec-success', name: 'status' }),
+    event(24, 'command/done', { commandId: 'spec-success', kind: 'success', text: '' }),
+    event(25, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+  ])
+  kit.addWorkspace({ workspaceId: 'ws-chat-check', path: '/mock/chat', title: 'チャットの確認', sessionIds: ['chat-long', 'chat-samples', 'chat-spec-check'], createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString() })
   kit.scenario('streaming', active => {
     void active.streamAssistant('approval-sheet', Array.from({ length: 8 }, (_, index) => `### 確認 ${index + 1}\n\n承認シートの表示とテストを確認しています。返事は少しずつ届きます。上へスクロールすると、読んでいる位置で止まります。\n\n`).join(''), { chunkMs: 35 })
   })
