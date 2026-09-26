@@ -1,3 +1,5 @@
+import type { ProviderState } from './providers.ts'
+
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
 export type SettingObject = { [key: string]: SettingValue }
 export type SettingPath = readonly string[]
@@ -37,11 +39,11 @@ export interface SettingField {
   children?: SettingField[]
 }
 export const settingsPages = [
-  { id: 'models', title: 'モデル', icon: 'neurology' },
+  { id: 'models', title: 'モデル', icon: 'smart_toy' },
   { id: 'permission', title: '権限', icon: 'shield' },
-  { id: 'agent', title: 'エージェント', icon: 'smart_toy' },
+  { id: 'agent', title: 'エージェント', icon: 'tune' },
   { id: 'providers', title: '提供元と API キー', icon: 'key' },
-  { id: 'tools', title: 'Web 検索とシェル', icon: 'terminal' },
+  { id: 'tools', title: 'Web 検索とシェル', icon: 'travel_explore' },
   { id: 'other', title: 'そのほか', icon: 'tune' },
 ] as const
 export type SettingsPage = typeof settingsPages[number]['id']
@@ -218,9 +220,54 @@ export function formatSetting(value: SettingValue | undefined): string {
 }
 
 export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNamespace[]): string {
-  if (page === 'providers') return '提供元の設定と登録状況'
   const leaves = (fields: SettingField[]): SettingField[] => fields.flatMap(field => field.children ? leaves(field.children) : field)
-  return namespaces.flatMap(namespace => leaves(schemaFields(namespace)))
+  const fields = new Map(namespaces.map(namespace => [namespace.ns, leaves(schemaFields(namespace))]))
+  // Select documented setting paths after redaction, never raw values or schema order.
+  const fieldAt = (ns: string, key: string) => fields.get(ns)?.find(field => field.path.length === 1 && field.path[0] === key && ['text', 'select', 'number', 'switch'].includes(field.kind))
+  const textAt = (ns: string, key: string) => {
+    const field = fieldAt(ns, key)
+    if (!field || field.value === undefined || field.value === null || field.value === '') return undefined
+    return field.options?.find(option => Object.is(option.value, field.value))?.label ?? formatSetting(field.value)
+  }
+  const labeled = (label: string, value: string | undefined) => value === undefined ? undefined : `${label}：${value}`
+  const join = (values: (string | undefined)[]) => values.filter(value => value !== undefined).join('・') || '設定項目を確認'
+  if (page === 'models') {
+    const model = textAt('agent-default-model', 'model')
+    const effort = textAt('agent-default-model', 'reasoningEffort')
+    return model === undefined ? '既定のモデル：未設定' : join([model, labeled('推論の強さ', effort)])
+  }
+  if (page === 'permission') {
+    const field = fieldAt('permission', 'defaultPreset')
+    const labels: Record<string, string> = { 'workspace-write': 'ワークスペース書込', 'danger-full-access': 'フル アクセス' }
+    const value = field?.value
+    return field?.options?.find(option => Object.is(option.value, value))?.label
+      ?? (typeof value === 'string' && value ? labels[value] ?? 'カスタム' : 'プリセット：未設定')
+  }
+  if (page === 'agent') return join([
+    labeled('プリセット', textAt('agent-presets', 'default')),
+    labeled('ツールの同時実行数', textAt('agent-loop', 'maxParallelToolCalls')),
+  ])
+  if (page === 'tools') return join([
+    labeled('検索モデル', textAt('web-search-deepseek', 'model')),
+    labeled('検索の上限回数', textAt('web-search-deepseek', 'maxUses')),
+  ])
+  if (page === 'providers') return '登録状況を読み込み中…'
+  return [...fields.values()].flat()
     .filter(field => ['text', 'select', 'number', 'switch'].includes(field.kind) && field.value !== undefined)
     .slice(0, 2).map(field => `${field.label}：${formatSetting(field.value)}`).join('・') || '設定項目を確認'
+}
+
+/** Only registration states enter the top-level summary, never key material. */
+export function providerSummary(state: Pick<ProviderState, 'phase' | 'rows'>): string {
+  if (state.phase === 'loading') return '登録状況を読み込み中…'
+  if (state.phase === 'error') return '登録状況を確認できません'
+  if (!state.rows.length) return '提供元はありません'
+  const counts = { registered: 0, missing: 0, unnecessary: 0, unknown: 0 }
+  for (const row of state.rows) counts[row.status]++
+  return [
+    counts.registered && `登録済み ${counts.registered}`,
+    counts.missing && `未登録 ${counts.missing}`,
+    counts.unnecessary && `キー不要 ${counts.unnecessary}`,
+    counts.unknown && `未確認 ${counts.unknown}`,
+  ].filter(Boolean).join('・')
 }

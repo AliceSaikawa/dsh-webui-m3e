@@ -1,5 +1,6 @@
 import type { ConnectionState, RemoteResult } from '../../dsh/services.ts'
-import { buildPatch, buildReset, schemaFields, type SettingField, type SettingPath, type SettingValue, type SettingsDescription, type SettingsNamespace } from './schema.ts'
+import { buildPatch, buildReset, type SettingPath, type SettingValue, type SettingsDescription, type SettingsNamespace } from './schema.ts'
+import { findSettingField, settingFieldAccess } from './field-access.ts'
 
 export interface SettingsApi {
   describe(): Promise<RemoteResult<SettingsDescription>>
@@ -31,10 +32,6 @@ export function createSettingsStore(api: SettingsApi) {
   const publish = (patch: Partial<SettingsState>) => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
   const find = (ns: string) => state.namespaces.find(row => row.ns === ns)
   const invalidate = (ns: string) => ({ ...state.generation, [ns]: (state.generation[ns] ?? 0) + 1 })
-  function allowed(row: SettingsNamespace, path: SettingPath): boolean {
-    const leaves = (fields: SettingField[]): SettingField[] => fields.flatMap(field => field.children ? leaves(field.children) : field)
-    return leaves(schemaFields(row)).some(field => fieldKey(row.ns, field.path) === fieldKey(row.ns, path) && !field.disabled && !['readonly', 'masked', 'group'].includes(field.kind))
-  }
   async function reload(): Promise<boolean> {
     if (connectionState !== undefined && connectionState !== 'connected') return false
     const ticket = ++sequence
@@ -88,7 +85,11 @@ export function createSettingsStore(api: SettingsApi) {
     let accepted = false
     const operation = async () => {
       const row = find(ns)
-      if (epoch !== connectionEpoch || !row || !state.writable || !allowed(row, path) || generation !== (state.generation[ns] ?? 0)) return
+      if (epoch !== connectionEpoch || !row || !state.writable || generation !== (state.generation[ns] ?? 0)) return
+      const field = findSettingField(row, path)
+      if (!field) return
+      const access = settingFieldAccess(row, field)
+      if (!(value === undefined ? access.edit || access.reset : access.edit)) return
       saving++
       const fieldErrors = { ...state.fieldErrors }
       delete fieldErrors[key]
@@ -102,7 +103,11 @@ export function createSettingsStore(api: SettingsApi) {
           // In-flight describes must never replace this accepted revision.
           sequence++
           const current = find(ns)
-          if (!current || result.value.revision >= current.revision) publish({ namespaces: state.namespaces.map(item => item.ns === ns ? result.value : item) })
+          if (!current || result.value.revision >= current.revision) publish({
+            namespaces: state.namespaces.map(item => item.ns === ns ? result.value : item),
+            // Child drafts from before a group reset must not restore overrides.
+            ...(value === undefined && field.kind === 'group' ? { generation: invalidate(ns) } : {}),
+          })
           accepted = true
         } else if (result.error.code === 'settings/conflict') {
           publish({ generation: invalidate(ns) })

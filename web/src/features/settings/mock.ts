@@ -76,6 +76,30 @@ function fixture(ns: string, name: string, index: number): SettingsNamespace {
   if (ns === 'agent-default-model') {
     dict.reasoningEffort = 16
     refs[16] = { type: 'string', meta: { title: '考える深さ', description: '任意の文字列で指定します。' } }
+    base.provider = 'deepseek'
+    base.model = 'deepseek-v4'
+    dict.provider = 19
+    dict.model = 20
+    refs[19] = { type: 'string', meta: { title: '提供元' } }
+    refs[20] = { type: 'string', meta: { title: 'モデル' } }
+  }
+  if (ns === 'agent-presets') {
+    base.default = 'default'
+    dict.default = 19
+    refs[19] = { type: 'string', meta: { title: '既定のプリセット' } }
+  }
+  if (ns === 'agent-loop') {
+    base.maxParallelToolCalls = 4
+    dict.maxParallelToolCalls = 19
+    refs[19] = { type: 'number', meta: { title: 'ツールを同時に使う上限', min: 1 } }
+  }
+  if (ns === 'web-search-deepseek') {
+    base.model = 'deepseek-chat'
+    base.maxUses = 5
+    dict.model = 19
+    dict.maxUses = 20
+    refs[19] = { type: 'string', meta: { title: '検索モデル' } }
+    refs[20] = { type: 'number', meta: { title: '検索回数の上限', min: 0 } }
   }
   if (ns === 'permission') {
     base.defaultPreset = 'workspace-write'

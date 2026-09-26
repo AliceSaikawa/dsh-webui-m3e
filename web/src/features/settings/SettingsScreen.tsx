@@ -7,6 +7,7 @@ import { useAppearance } from '../../app/theme/index.ts'
 import { appearanceLabels, confirmClassic, openAppearance } from './AppearanceSheet.tsx'
 import { groupNamespaces, pageSummary, settingsPages } from './schema.ts'
 import { useSettings } from './use-settings.ts'
+import { useProviderSummary } from './use-provider-summary.ts'
 import type { SettingsState } from './store.ts'
 import manifest from '../../../../package.json'
 import './settings.css'
@@ -21,6 +22,7 @@ export function SettingsStatus({ state, reload }: { state: SettingsState; reload
 export function SettingsScreen() {
   const appearance = useAppearance()
   const { state, store } = useSettings()
+  const providers = useProviderSummary()
   const groups = groupNamespaces(state.namespaces)
   return <TabScaffold title="設定" tab="settings"><div className="settings-content">
     <section className="settings-section" aria-labelledby="settings-device">
@@ -32,7 +34,7 @@ export function SettingsScreen() {
           <span slot="trailing"><Icon name="chevron_right" /></span>
         </M3eListAction>
         <M3eListAction onClick={openAppearance}>
-          <span slot="leading"><Icon name="palette" /></span>外観
+          <span slot="leading"><Icon name="dark_mode" /></span>外観
           <span slot="supporting-text">{appearanceLabels[appearance]}</span>
           <span slot="trailing"><Icon name="chevron_right" /></span>
         </M3eListAction>
@@ -45,7 +47,7 @@ export function SettingsScreen() {
         {settingsPages.filter(page => page.id !== 'other' || groups.other.length > 0).map(page =>
           <M3eListAction key={page.id} onClick={() => navigate(`/settings/${page.id}`)}>
             <span slot="leading"><Icon name={page.icon} /></span>{page.title}
-            <span slot="supporting-text">{state.phase === 'loading' ? '読み込み中…' : pageSummary(page.id, groups[page.id])}</span>
+            <span slot="supporting-text">{page.id === 'providers' ? providers : state.phase === 'loading' ? '読み込み中…' : state.error ? '設定を確認できません' : pageSummary(page.id, groups[page.id])}</span>
             <span slot="trailing"><Icon name="chevron_right" /></span>
           </M3eListAction>)}
       </M3eActionList>

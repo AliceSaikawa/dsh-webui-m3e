@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
-import { groupNamespaces, schemaFields, selectFieldState, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
+import { groupNamespaces, pageSummary, schemaFields, selectFieldState, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 
 function setup(scenario?: string) {
@@ -60,6 +60,20 @@ test('設定保存は入れ子の兄弟と null を保ち、返した値や入�
     assert.equal(read.value.name, initial.value.name)
     read.user.timeout = 100
     assert.equal((await namespace(remote)).user.timeout, 45)
+  } finally { ctx.dispose() }
+})
+
+test('偽データの主要設定をトップへ要約し、モデルの保存後は新しい名前を出す', async () => {
+  const { ctx, remote } = setup()
+  try {
+    const groups = groupNamespaces(unwrapRemoteResult(await remote.describe()).namespaces)
+    assert.equal(pageSummary('models', groups.models), 'deepseek-v4')
+    assert.equal(pageSummary('permission', groups.permission), 'ワークスペース書込')
+    assert.equal(pageSummary('agent', groups.agent), 'プリセット：default・ツールの同時実行数：4')
+    assert.equal(pageSummary('tools', groups.tools), '検索モデル：deepseek-chat・検索の上限回数：5')
+    const model = await namespace(remote)
+    const changed = unwrapRemoteResult(await remote.update(model.ns, { model: '別のモデル' }, model.revision))
+    assert.equal(pageSummary('models', [changed]), '別のモデル')
   } finally { ctx.dispose() }
 })
 
