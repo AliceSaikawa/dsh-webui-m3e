@@ -8,10 +8,11 @@ export interface TextPromptDialogProps {
   label?: string
   multiline?: boolean
   rows?: number
+  confirmLabel?: string
   onConfirm(value: string): void | Promise<void>
   onCancel(): void
 }
-export function TextPromptDialog({ title, initialValue = '', label = '名前', multiline = false, rows = 4, onConfirm, onCancel }: TextPromptDialogProps) {
+export function TextPromptDialog({ title, initialValue = '', label = '名前', multiline = false, rows = 4, confirmLabel = 'OK', onConfirm, onCancel }: TextPromptDialogProps) {
   const [value, setValue] = useState(initialValue)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -31,6 +32,6 @@ export function TextPromptDialog({ title, initialValue = '', label = '名前', m
       : <input id={id} autoFocus value={value} onChange={event => setValue(event.target.value)} disabled={busy} />}
     {error && <p role="alert">{error}</p>}
     <div className="actions"><M3eButton onClick={onCancel} disabled={busy}>キャンセル</M3eButton>
-      <M3eButton variant="filled" disabled={busy || !value.trim()} onClick={() => { void submit() }}>OK</M3eButton></div>
+      <M3eButton variant="filled" disabled={busy || !value.trim()} onClick={() => { void submit() }}>{confirmLabel}</M3eButton></div>
   </form>
 }

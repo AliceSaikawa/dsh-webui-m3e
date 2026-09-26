@@ -1,40 +1,74 @@
-import { useEffect } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { M3eBottomSheet } from '@m3e/react/bottom-sheet'
 import { M3eDialog } from '@m3e/react/dialog'
-import { useOverlays, isTopOverlay } from './store.ts'
+import type { M3eBottomSheetElement } from '@m3e/web/bottom-sheet'
+import type { M3eDialogElement } from '@m3e/web/dialog'
+import { getOverlays, useOverlays, isTopOverlay, type OverlayEntry } from './store.ts'
+import { hideSheet, OverlayPresentation, setSheetHandle } from './presentation.ts'
+
+function OverlayLayer({ entry, presentation }: { entry: OverlayEntry; presentation: OverlayPresentation }) {
+  const sheet = useRef<M3eBottomSheetElement>(null)
+  const dialog = useRef<M3eDialogElement>(null)
+  const content = typeof entry.render === 'function' ? entry.render(entry.close) : entry.render
+  useLayoutEffect(() => {
+    const element = sheet.current ?? dialog.current
+    if (!element) return
+    if (presentation.activeId !== entry.id) element.hidden = true
+    if (sheet.current) setSheetHandle(sheet.current, entry.kind === 'sheet')
+    return presentation.register(entry.id, {
+      async show() {
+        element.hidden = false
+        element.inert = false
+        if (sheet.current) { sheet.current.open = true; await sheet.current.updateComplete }
+        else if (dialog.current) { dialog.current.open = true; await dialog.current.show() }
+      },
+      async hide() {
+        if (sheet.current) await hideSheet(sheet.current)
+        else if (dialog.current) await dialog.current.hide()
+        element.hidden = true
+        element.inert = true
+      },
+    })
+  }, [entry.id, entry.kind, presentation])
+  const closed = () => {
+    if (presentation.isUserClose(entry.id) && isTopOverlay(entry.id)) entry.close()
+  }
+  const cancel = (event: Event) => { if (!entry.dismissible) event.preventDefault() }
+  if (entry.kind === 'dialog') return <M3eDialog ref={dialog} closeLabel="閉じる"
+    aria-label={entry.label ?? '確認'} disableClose={!entry.dismissible} onClosed={closed} onCancel={cancel}>
+    <div className="dialog-content">{content}</div>
+  </M3eDialog>
+  return <M3eBottomSheet ref={sheet} modal handle={entry.kind === 'sheet'} hideable={entry.dismissible}
+    handleLabel="シートの高さを変更" detents={entry.kind === 'full' ? ['full'] : ['fit', 'full']}
+    className={entry.kind === 'full' ? 'full-sheet' : 'bottom-sheet'} aria-label={entry.label ?? '操作'}
+    onCancel={cancel} onClosed={closed}>
+    <div className="sheet-content">{content}</div>
+  </M3eBottomSheet>
+}
 
 export function OverlayHost() {
   const entries = useOverlays()
-  const active = entries.at(-1)
-  const locked = entries.length > 0
-  useEffect(() => {
-    if (!active) return
-    const opener = document.activeElement
-    return () => { queueMicrotask(() => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true })
-    }) }
-  }, [active?.id])
-  useEffect(() => {
+  const [retained, setRetained] = useState(entries)
+  const [previous, setPrevious] = useState(entries)
+  const presentation = useMemo(() => new OverlayPresentation(id => {
+    if (!getOverlays().some(entry => entry.id === id)) setRetained(current => current.filter(entry => entry.id !== id))
+  }), [])
+  if (previous !== entries) {
+    setPrevious(entries)
+    // A removed modal stays mounted until its native close animation and locks finish.
+    const closing = retained.find(entry => entry.id === presentation.activeId && !entries.includes(entry))
+    setRetained(closing ? [...entries, closing] : entries)
+  }
+  useLayoutEffect(() => { presentation.select(entries.at(-1)?.id) }, [entries, presentation])
+  const locked = retained.length > 0
+  useLayoutEffect(() => {
     if (!locked) return
-    const nodes = [document.body, ...document.querySelectorAll<HTMLElement>('[data-scroll-area]')]
+    // M3E owns the document lock; retain the app's inner scroll positions across the entire stack.
+    const nodes = [...document.querySelectorAll<HTMLElement>('[data-scroll-area]')]
     const original = nodes.map(node => node.style.overflow)
     nodes.forEach(node => { node.style.overflow = 'hidden' })
     return () => nodes.forEach((node, index) => { node.style.overflow = original[index] ?? '' })
   }, [locked])
-  if (!active) return null
-  const content = typeof active.render === 'function' ? active.render(active.close) : active.render
-  const closed = () => { if (isTopOverlay(active.id)) active.close() }
-  const cancel = (event: Event) => {
-    if (!active.dismissible) event.preventDefault()
-  }
-  if (active.kind === 'dialog') return <M3eDialog key={active.id} open closeLabel="閉じる"
-    aria-label={active.label ?? '確認'} disableClose={!active.dismissible} onClosed={closed} onCancel={cancel}>
-    <div className="dialog-content">{content}</div>
-  </M3eDialog>
-  return <M3eBottomSheet key={active.id} open modal handle={active.kind === 'sheet'} hideable={active.dismissible}
-    handleLabel="シートの高さを変更" detents={active.kind === 'full' ? ['full'] : ['fit', 'full']}
-    className={active.kind === 'full' ? 'full-sheet' : 'bottom-sheet'} aria-label={active.label ?? '操作'}
-    onCancel={cancel} onClosed={closed}>
-    <div className="sheet-content">{content}</div>
-  </M3eBottomSheet>
+  // Stable keys retain form input, busy state and in-flight request results beneath an interruption.
+  return retained.map(entry => <OverlayLayer key={entry.id} entry={entry} presentation={presentation} />)
 }
