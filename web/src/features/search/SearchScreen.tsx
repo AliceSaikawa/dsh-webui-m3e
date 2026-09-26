@@ -12,6 +12,8 @@ import { isSearchBusy, searchControllerFor } from './search-controller.ts'
 import { findMatchRanges, normalizeQuery } from './search-utils.ts'
 import { filterVisibleSearchItems, selectVisibleRecentSessions } from './search-visibility.ts'
 import { connectSearchScroll } from './search-scroll.ts'
+import { SearchModelIcon } from './SearchModelIcon.tsx'
+import { useHomePreferences } from '../home/preferences.ts'
 import './search.css'
 
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -33,29 +35,20 @@ function sessionDetails(row: SessionSummary | undefined): string {
   return `${folder} ・ ${updated}`
 }
 
-function ModelIcon({ row }: { row: SessionSummary | undefined }) {
-  const selection = row?.projectionValues?.modelSelection
-  const lastUsed = selection && typeof selection === 'object' && 'lastUsed' in selection ? selection.lastUsed : null
-  const model = lastUsed && typeof lastUsed === 'object' && 'model' in lastUsed && typeof lastUsed.model === 'string'
-    ? lastUsed.model.trim() : ''
-  return <span slot="leading" className="search-session-icon" aria-hidden="true">
-    {model ? Array.from(model)[0]?.toLocaleUpperCase() : <Icon name="chat_bubble" />}
-  </span>
-}
-
 export function SearchScreen() {
   const { sessions, workspaces } = useDsh()
   const controller = searchControllerFor(sessions)
   const state = useSnapshot(controller)
   const list = useSnapshot(sessions.list)
   const workspaceList = useSnapshot(workspaces.list)
+  const { showSubagents } = useHomePreferences()
   const root = useRef<HTMLDivElement>(null)
   const scroll = useRef<ReturnType<typeof connectSearchScroll> | null>(null)
   const composing = useRef(false)
   const rows = useMemo(() => state.query
-    ? filterVisibleSearchItems(state.items, list, workspaceList)
-    : selectVisibleRecentSessions(list, workspaceList).map(row => ({ sessionId: row.id, snippet: '' })),
-  [state.query, state.items, list, workspaceList])
+    ? filterVisibleSearchItems(state.items, list, workspaceList, showSubagents)
+    : selectVisibleRecentSessions(list, workspaceList, 5, showSubagents).map(row => ({ sessionId: row.id, snippet: '' })),
+  [state.query, state.items, list, workspaceList, showSubagents])
   const busy = isSearchBusy(state)
 
   useLayoutEffect(() => {
@@ -127,7 +120,7 @@ export function SearchScreen() {
           {rows.map(item => {
             const row = list.byId[item.sessionId]
             return <M3eListAction key={item.sessionId} onClick={() => navigate(`/s/${encodeURIComponent(item.sessionId)}`)}>
-              <ModelIcon row={row} />
+              <SearchModelIcon row={row} />
               <span className="search-title">{row?.displayTitle || row?.title || '題名のないセッション'}</span>
               <span slot="supporting-text" className="search-snippet">
                 {item.snippet?.trim() ? <Highlight text={item.snippet} query={state.query} /> : sessionDetails(row)}
