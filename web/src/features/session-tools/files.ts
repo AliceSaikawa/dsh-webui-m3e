@@ -35,8 +35,9 @@ export function sortFileEntries(entries: readonly WorkspaceDirectoryEntry[]): Wo
     || a.name.localeCompare(b.name, 'ja', { numeric: true }))
 }
 
+// SVG stays on the text path: opening an SVG Blob can execute scripts in our origin.
 export const imageMediaTypes: Readonly<Record<string, string>> = {
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
 }
 export function fileExtension(path: string): string { return fileName(path).split('.').slice(1).at(-1)?.toLowerCase() ?? '' }
 export function fileKind(path: string): 'markdown' | 'image' | 'text' | 'binary' {
