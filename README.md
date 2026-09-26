@@ -1,74 +1,73 @@
 # dsh-webui-m3e
 
-A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). It is served beside the stock UI and switched per device. The UI text is Japanese only.
+DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 3 Expressive の画面で操作するためのプラグインです。
 
-DeepSeek Harness（DSH）のスマートフォン向け Web UI を、Material 3 Expressive で作り直すプラグインです。今の UI はそのまま残し、端末ごとに切り替えて使います。
+A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). The UI text is Japanese only.
 
-これは個人のプロジェクトで、DeepSeek の公式のものではありません。
+<p>
+  <img src="docs/images/home.png" alt="セッションの一覧" width="200">
+  <img src="docs/images/chat.png" alt="会話のチャット" width="200">
+  <img src="docs/images/approval.png" alt="ツールの承認" width="200">
+  <img src="docs/images/inbox.png" alt="対応待ち" width="200">
+</p>
 
-## 今の状態
+> [!NOTE]
+> 個人のプロジェクトで、DeepSeek の公式のものではありません。開発中で、実物の DSH とつないだ確認はまだ済んでいません。
 
-段階 1（共通の土台）と段階 2（機能ごとの画面）の実装が終わり、偽データ（`?mock`）の上で確かめています。
+## できること
 
-- 画面：一覧とワークスペース、チャット、入力欄と新しいセッション、トレース、承認・質問・プランの確認、対応待ち、検索、設定、会話の ⋮ メニューと補助の画面、ホーム画面に追加する Web アプリ
-- 確かめ方：Node の単体テスト（`pnpm test`）と、Playwright で `?mock` の画面を幅 390px で操作する試験（`e2e/`）
-- まだのこと：実物の DSH とつないだ確認と、iPhone の実機での確認（段階 3）。本番の DSH の版に合わせた依存の固定
+- **会話**：AI とのやり取り、ツールの実行結果、考えた内容を、スマートフォンの幅で読めます。記録を時間の順に並べた「トレース」にも切り替えられます。
+- **返事**：ツールの承認、AI からの質問、プランの確認に、どの画面にいても下からのシートで答えられます。
+- **対応待ち**：返事が必要な会話と、終わった会話をまとめて見られます。
+- **入力**：画像の添付、ファイルやコマンドの候補、モデルや権限の切り替えができます。
+- **そのほか**：会話の検索、DSH の設定と API キーの登録、ホーム画面に追加して使う Web アプリ
 
-設計と進め方は [docs/design/](docs/design/README.md)、画面の仕様は [docs/ui-spec.md](docs/ui-spec.md) にあります。
+今の DSH の画面はそのまま残ります。端末ごとに、どちらの画面を使うかを選べます。
 
-開発中は `pnpm dev` のあと `http://localhost:5173/m3e/?mock` を開きます。DSH の起動は不要です。偽データは開発時だけ読み込まれ、本番ビルドには含まれません。`features/*/routes.tsx` と `features/*/mock.ts` は自動で集めるので、機能の担当は共有登録ファイルを編集する必要がありません。
+## 必要なもの
 
-## 端末ごとの切り替え
+- DeepSeek Harness（0.1.5-rc.1 で開発しています）
+- ビルドのための Node.js 22 以上と pnpm
 
-- この端末の選択は、Cookie `dsh-webui`（値は `m3e` か `classic`）に入っています。iPhone のホーム画面に追加した PWA は Safari と別の Cookie を持つので、別々に選べます。
-- サーバーは、DSH が返すすべての index の `<head>` の先頭に、小さなスクリプトを差し込みます（`tapIndex`）。今の画面の index（`/` と `/index.html`）で Cookie が `m3e` なら、今の画面のコードを読み込む前に `/m3e/` へ移動します。判定は [src/shared/ui-choice.ts](src/shared/ui-choice.ts) にあります。
-- 切り替える方法は 3 つあります。
-  - 今の画面の「設定 → 一般 → この端末で M3E の画面を使う」
-  - M3E の画面の「今の画面に戻す」ボタン
-  - URL の `?ui=m3e` と `?ui=classic`。どちらかの画面が壊れたときの戻り道です。
-- `/` の経路を横取りする方法は使っていません。今の画面を返す処理（fallback）を外から呼び出せないためです。
-
-## 仕組み
-
-- **サーバー側**（[src/host/index.ts](src/host/index.ts)）: `/m3e` を prefix 経路として登録し、上の切り替えスクリプトを差し込みます。画面本体は、今の UI と同じ `authorizeIndex`（ログイン確認）と `renderIndex`（起動データの埋め込み）を通して返します。今の UI 向けの先読み指定は取り除きます。
-- **今の画面に入る部品**（[src/client/index.tsx](src/client/index.tsx)）: 設定の一般セクション（`settings.general.item`）に切り替えの行を追加します。React は今の画面が持っているものを使います。M3E の画面はこの部品を読み込みません。
-- **ブラウザ側の起動**（[web/src/dsh/boot.ts](web/src/dsh/boot.ts)）: DSH が埋め込む `__DSH_BOOT__` には、今の UI の部品を含む約 50 個のプラグインが並んでいます。そこから通信用の 8 個（`TRANSPORT_PLUGINS`）と、その依存だけを残して起動します。残したプラグインは 1 個ずつ個別の URL で読み込みます。DSH は、宣言していない組み合わせの一括 URL には 404 を返すためです。
-- **共有ライブラリ**: 今の UI は、プラグインが外部参照する `@deepseek-ai/cordis` と `@deepseek-ai/dsh-client-store` を自分のビルドから渡しています。この UI では、同じものを自前で同梱して渡します。**版は本番 DSH と合わせる必要があります**（今は 0.1.5-rc.2 に固定しています）。
-
-## ビルドで補っていること
-
-- `@deepseek-ai/dsh-client-store` は zustand と immer を使っていますが、依存関係として宣言していません。そのため [pnpm-workspace.yaml](pnpm-workspace.yaml) の `packageExtensions` で補っています。
-- `@deepseek-ai/cordis-plugin-loader` は、読み込まれた時点で Node.js の内部 API を探しに行きます。そのため [vite.config.ts](vite.config.ts) で `node:module` を代わりのファイルに差し替え、`process.versions.node` を `"0"` に置き換えています。
-
-## コマンド
+## 入れ方
 
 ```bash
-pnpm install
-pnpm dev         # http://localhost:5173/m3e/?mock（DSH は起動しない）
-pnpm test        # 既存のテストと、ルーター・承認/質問・セッション・偽データの単体テスト
-pnpm typecheck
-pnpm build       # dist/（M3E の画面）、lib/index.js（サーバー側）、lib/client.js（今の画面に入る部品）
-pnpm exec playwright test -c e2e/playwright.config.ts   # ?mock の画面を幅 390px で操作する試験（開発サーバーは自動で起動）
+git clone https://github.com/AliceSaikawa/dsh-webui-m3e.git
 ```
-
-開発用の状態は URL で選べます。
-
-- `?mock`：3 ワークスペース、待機中と実行中の 2 セッション
-- `?mock&scenario=disconnected`：接続切れ
-- `?mock&scenario=reconnecting`：再接続中
-- `?mock&scenario=approval-demo#/s/readme-review`：1 秒後に仮の承認シート
-- `?mock&scenario=approval-demo#/s/readme-review/trace`：トレース表示中の承認
-
-各機能は `web/src/dsh/mock/kit.ts` の `MockKit` を使い、自分の `mock.ts` の `extendMock(kit)` でデータやシナリオを追加できます。共通セッション `readme-review` と `approval-sheet` の履歴は変更せず、必要なセッションを追加してください。共有部品の引数と戻り値、静的調査の結果は [00 の実装メモ](docs/design/00-foundation.md#実装メモ) にあります。
-
-以下は段階 3 の統合担当が DSH に入れるときの手順です。段階 1 と 2 では実行しません。
 
 ```bash
-pnpm pack
-dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
+cd dsh-webui-m3e && pnpm install && pnpm build && pnpm pack
 ```
 
-入れ直すときは package.json の version を上げてください。同じ版のままだと、pnpm が古いファイルを使い続けます。DSH を再起動すると、`http://<host>/m3e/` で開けます。先に `/` で一度ログインして、Cookie を持った状態にしておく必要があります。
+できた `dsh-webui-m3e-<版>.tgz` を DSH に入れ、DSH を再起動します。`--profile` には、DSH の Web 画面を動かしているプロファイルを指定してください。
+
+```bash
+dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<版>.tgz
+```
+
+入れ直すときは、`package.json` の `version` を上げてから作り直してください。同じ版のままだと、古いファイルが使われ続けます。
+
+## 使い方
+
+1. いつもの DSH の画面（`http://<host>/`）で、一度ログインします。
+2. `http://<host>/m3e/` を開きます。
+3. iPhone では、Safari の共有メニューから「ホーム画面に追加」すると、アプリのように開けます。
+
+### 画面を切り替える
+
+この端末でどちらの画面を使うかは、次のどれかで選べます。選んだ内容は端末ごとに保存されます。
+
+- いつもの画面の「設定 → 一般 → この端末で M3E の画面を使う」
+- この画面の「設定 → 今の画面に戻す」
+- URL に `?ui=m3e` か `?ui=classic` を付けて開く
+
+どちらかの画面がうまく開かないときは、`http://<host>/?ui=classic` を開くと、いつもの画面に戻れます。
+
+## 注意
+
+- 画面の文言は日本語だけです。
+- DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
+- 開発中は、実物の DSH の代わりに偽のデータで確かめています。開発の方法と仕組みは [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス
 
