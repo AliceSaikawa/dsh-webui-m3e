@@ -76,4 +76,14 @@ iPhone 17 Pro Max（iOS 26.2）の Simulator の Safari と、ホーム画面に
 
 ## 実装メモ
 
-（統合の担当が書き足します）
+### 2026-09-26：全機能の `?mock` ブラウザ確認
+
+- `feat/99-mock-e2e` に、画面仕様とセキュリティ修正を含む main（`22b4c1d`）を `git merge main` で取り込んだ。main 自体と機能の実装ファイルは変更していない。
+- `e2e/playwright.config.ts` と `e2e/*.spec.ts` を追加。`pnpm exec playwright test -c e2e/playwright.config.ts` が Vite を自動起動し、Chromium の 390×844 で `/m3e/?mock` を操作する。ローカルの 5190 番が先に使用されていたため 5191 番を使う。DSH は起動しない。画面写真は Git 管理外の `tmp/e2e-shots/` に保存する。
+- 00〜10 の `?mock` で確認できる完了条件を 62 件にした。一覧・ワークスペース・会話・スクロール位置・入力・新規セッション・承認／質問／プラン・対応待ち・検索・設定と API キー・補助画面・戻る操作・切断表示と、各機能のエラー／空状態を含む。実物の DSH と iPhone 実機に依存する条件は、この試験の対象外。
+- `integ/dry-run:tests/99-integration-mock.test.ts` を現在の機能拡張の読み込み方とシナリオに合わせて移植した。全 10 機能と 31 シナリオを同時に登録し、衝突、権限候補、検索、対応待ちを確認する。`pnpm typecheck`、`pnpm test`（608 件通過）、`pnpm build` は通過。
+- ブラウザ試験の最終結果は下記の不具合を除き 60 件通過、2 件失敗。不具合は担当機能の実装を変更せず、そのまま再現試験と写真を残した。
+  - 04：`e2e/chat-details.spec.ts` の 04b。`?mock#/s/trace-example/trace` で「要約」を検索後、検索語を消すと全記録に戻るが末尾にスクロールせず、末尾との差が 2200px のままになる。`web/src/features/trace/TraceView.tsx:79-92,116-122` の検索変更時のスクロール処理が関係する。正確な内部原因は未確定。
+  - 01：`e2e/operations.spec.ts` の 01i。Chromium のマウスポインターで一覧の会話を長押しすると操作シートは押下中に表示されるが、ボタンを離すと閉じる。`web/src/features/home/gestures.ts:20-28,39-46` と `web/src/app/overlay/OverlayHost.tsx:34-39` が該当する。タッチ実機で同じかどうかは未確認。
+- Node の統合試験で、07 の検索用 4 会話がワークスペースに登録されない既知差異を確認した。`web/src/features/search/mock.ts:42-48` で `kit.addSession` だけを呼ぶため、検索には出るが一覧からは開けない。差異を固定した試験にしてあり、機能側で直したときはその期待値を更新する。
+- トレーラ付きの `git commit` は実行ガードから「不透明なシェルラッパー」と判定され、実行前に拒否された。別経路での再試行はしていない。この試験・実装メモの変更はステージ済みで未コミット。
