@@ -4,8 +4,13 @@ import { selectRecentSessions } from './search-utils.ts'
 type SearchSessionList = Pick<SessionListState, 'ids' | 'byId' | 'current' | 'phase'>
 type SearchWorkspaceList = Pick<WorkspaceSnapshot, 'archivedSessionIds'>
 
-function sessionVisible(row: SessionSummary, current: string | undefined, archived: ReadonlySet<string>): boolean {
-  return row.origin !== 'subagent' && !archived.has(row.id) && (!row.blank || row.id === current)
+function sessionVisible(
+  row: SessionSummary,
+  current: string | undefined,
+  archived: ReadonlySet<string>,
+  showSubagents: boolean,
+): boolean {
+  return (showSubagents || row.origin !== 'subagent') && !archived.has(row.id) && (!row.blank || row.id === current)
 }
 
 /**
@@ -17,6 +22,7 @@ export function filterVisibleSearchItems<T extends { sessionId: string }>(
   items: readonly T[],
   list: SearchSessionList,
   workspaces: SearchWorkspaceList,
+  showSubagents = false,
 ): T[] {
   const currentIds = new Set(list.ids)
   const archived = new Set(workspaces.archivedSessionIds)
@@ -24,7 +30,7 @@ export function filterVisibleSearchItems<T extends { sessionId: string }>(
     const row = list.byId[item.sessionId]
     // Search excludes even the selected provisional blank row, like DSH's UI.
     return currentIds.has(item.sessionId) && row !== undefined && !row.blank
-      && sessionVisible(row, list.current, archived)
+      && sessionVisible(row, list.current, archived, showSubagents)
   })
 }
 
@@ -33,11 +39,12 @@ export function selectVisibleRecentSessions(
   list: SearchSessionList,
   workspaces: SearchWorkspaceList,
   limit = 5,
+  showSubagents = false,
 ): SessionSummary[] {
   const archived = new Set(workspaces.archivedSessionIds)
   const visible = list.ids.flatMap(id => {
     const row = list.byId[id]
-    return row !== undefined && sessionVisible(row, list.current, archived) ? [row] : []
+    return row !== undefined && sessionVisible(row, list.current, archived, showSubagents) ? [row] : []
   })
   return selectRecentSessions(visible, limit)
 }

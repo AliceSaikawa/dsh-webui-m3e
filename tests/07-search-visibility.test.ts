@@ -2,6 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { SessionListState, SessionSummary } from '../web/src/dsh/services.ts'
 import {
+  createHomePreferencesStore,
+  homePreferencesStorageKey,
+  type PreferenceStorage,
+} from '../web/src/features/home/preferences-store.ts'
+import {
   filterVisibleSearchItems,
   selectVisibleRecentSessions,
 } from '../web/src/features/search/search-visibility.ts'
@@ -122,3 +127,120 @@ test('recent rows are filtered before taking the five newest and input snapshots
   assert.deepEqual(selectVisibleRecentSessions(list, workspaces, 1), [rows[0]])
   assert.deepEqual(selectVisibleRecentSessions(list, workspaces, 0), [])
 })
+
+test('changing the subagent flag reevaluates cached search items without changing their order or content', () => {
+  const list = sessionList([
+    session('親', 1),
+    session('子', 2, { origin: 'subagent', parentId: '親' }),
+  ])
+  const rawResults = Object.freeze([item('子'), item('親')])
+  assert.deepEqual(filterVisibleSearchItems(rawResults, list, noArchivedSessions), [rawResults[1]])
+  assert.deepEqual(filterVisibleSearchItems(rawResults, list, noArchivedSessions, false), [rawResults[1]])
+  const enabled = filterVisibleSearchItems(rawResults, list, noArchivedSessions, true)
+  assert.deepEqual(enabled, rawResults)
+  assert.equal(enabled[0], rawResults[0])
+  assert.deepEqual(filterVisibleSearchItems(rawResults, list, noArchivedSessions, false), [rawResults[1]])
+  assert.deepEqual(rawResults.map(row => row.sessionId), ['子', '親'])
+})
+
+test('showing subagents never restores archived, missing or query-excluded blank rows', () => {
+  const parent = session('親', 1)
+  const child = session('子', 2, { origin: 'subagent', parentId: parent.id })
+  const selectedBlank = session('選択中の空の子', 3, { origin: 'subagent', blank: true })
+  const list = sessionList([
+    parent, child, selectedBlank,
+    session('未選択の空の子', 4, { origin: 'subagent', blank: true }),
+    session('保管済みの子', 5, { origin: 'subagent' }),
+    session('辞書にだけ残る子', 6, { origin: 'subagent' }),
+  ], { current: selectedBlank.id })
+  list.ids = list.ids.filter(id => id !== '辞書にだけ残る子').concat('メタデータ欠落')
+  const rawResults = [...Object.keys(list.byId), 'メタデータ欠落', '不明'].map(item)
+  const workspaces = { archivedSessionIds: ['保管済みの子'] }
+  for (const showSubagents of [false, true]) {
+    assert.deepEqual(
+      filterVisibleSearchItems(rawResults, list, workspaces, showSubagents).map(row => row.sessionId),
+      showSubagents ? [parent.id, child.id] : [parent.id],
+    )
+    assert.deepEqual(
+      selectVisibleRecentSessions(list, workspaces, 5, showSubagents),
+      showSubagents ? [selectedBlank, child, parent] : [parent],
+    )
+  }
+})
+
+test('recent limits apply after subagent and archive filtering with the flag both off and on', () => {
+  const ordinary = Array.from({ length: 6 }, (_, index) => session(`通常${index + 1}`, index + 1))
+  const child = session('子', 100, { origin: 'subagent' })
+  const archivedChild = session('保管済みの子', 200, { origin: 'subagent' })
+  const list = sessionList([archivedChild, child, ...ordinary])
+  const workspaces = { archivedSessionIds: [archivedChild.id] }
+  assert.deepEqual(selectVisibleRecentSessions(list, workspaces).map(row => row.id), ['通常6', '通常5', '通常4', '通常3', '通常2'])
+  assert.deepEqual(selectVisibleRecentSessions(list, workspaces, 5, true).map(row => row.id), ['子', '通常6', '通常5', '通常4', '通常3'])
+  assert.deepEqual(selectVisibleRecentSessions(list, workspaces, 2, false).map(row => row.id), ['通常6', '通常5'])
+  assert.deepEqual(selectVisibleRecentSessions(list, workspaces, 2, true).map(row => row.id), ['子', '通常6'])
+})
+
+test('the existing home preferences store updates both cached search results and recent rows', () => {
+  const stored = new Map([[homePreferencesStorageKey, JSON.stringify({ workspaceId: null, showSubagents: true })]])
+  const preferences = createHomePreferencesStore(() => ({
+    getItem: key => stored.get(key) ?? null,
+    setItem: (key, value) => { stored.set(key, value) },
+  }))
+  const list = sessionList([session('親', 1), session('子', 2, { origin: 'subagent' })])
+  const rawResults = Object.freeze([item('親'), item('子')])
+  const readVisible = () => {
+    const { showSubagents } = preferences.getSnapshot()
+    return {
+      search: filterVisibleSearchItems(rawResults, list, noArchivedSessions, showSubagents).map(row => row.sessionId),
+      recent: selectVisibleRecentSessions(list, noArchivedSessions, 5, showSubagents).map(row => row.id),
+    }
+  }
+  let visible = readVisible()
+  const unsubscribe = preferences.subscribe(() => { visible = readVisible() })
+  assert.deepEqual(visible, { search: ['親', '子'], recent: ['子', '親'] })
+  preferences.setShowSubagents(false)
+  assert.deepEqual(visible, { search: ['親'], recent: ['親'] })
+  preferences.setShowSubagents(true)
+  assert.deepEqual(visible, { search: ['親', '子'], recent: ['子', '親'] })
+  assert.equal(JSON.parse(stored.get(homePreferencesStorageKey)!).showSubagents, true)
+  assert.equal(rawResults.length, 2)
+  unsubscribe()
+})
+
+const unavailableStorage: { name: string; storage: () => PreferenceStorage | undefined }[] = [
+  { name: 'storage is unavailable', storage: () => undefined },
+  { name: 'reading and writing throw', storage: () => ({
+    getItem() { throw new Error('読み込みできません') },
+    setItem() { throw new Error('保存できません') },
+  }) },
+  { name: 'writing throws', storage: () => ({
+    getItem: () => null,
+    setItem() { throw new Error('保存できません') },
+  }) },
+]
+
+for (const { name, storage } of unavailableStorage) {
+  test(`home preferences still update search in memory when ${name}`, () => {
+    const preferences = createHomePreferencesStore(storage)
+    const list = sessionList([session('親', 1), session('子', 2, { origin: 'subagent' })])
+    const rawResults = Object.freeze([item('親'), item('子')])
+    const readVisible = () => {
+      const { showSubagents } = preferences.getSnapshot()
+      return {
+        search: filterVisibleSearchItems(rawResults, list, noArchivedSessions, showSubagents).map(row => row.sessionId),
+        recent: selectVisibleRecentSessions(list, noArchivedSessions, 5, showSubagents).map(row => row.id),
+      }
+    }
+    let visible = readVisible()
+    const unsubscribe = preferences.subscribe(() => { visible = readVisible() })
+    assert.deepEqual(visible, { search: ['親'], recent: ['親'] })
+    preferences.setShowSubagents(true)
+    preferences.refresh()
+    assert.equal(preferences.getSnapshot().showSubagents, true)
+    assert.deepEqual(visible, { search: ['親', '子'], recent: ['子', '親'] })
+    preferences.setShowSubagents(false)
+    preferences.refresh()
+    assert.deepEqual(visible, { search: ['親'], recent: ['親'] })
+    unsubscribe()
+  })
+}
