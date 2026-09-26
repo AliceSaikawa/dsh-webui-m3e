@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildPatch, buildReset, decodeSchema, formatSetting, groupNamespaces, pageSummary, parseFieldInput, schemaFields, valueAt,
+  buildPatch, buildReset, decodeSchema, formatSetting, groupNamespaces, pageSummary, parseFieldInput, schemaFields, selectFieldState, valueAt,
   type SettingField, type SettingsNamespace,
 } from '../web/src/features/settings/schema.ts'
 
@@ -138,6 +138,22 @@ test('上位の無効状態を子へ伝え、説明文が英語だけなら日�
   assert.equal(child.disabled, true)
   assert.equal(child.label, '回数')
   assert.equal(child.description, '説明は標準の画面で確認できます。')
+})
+
+test('未設定の選択欄と候補外の値を区別し、false・0・空文字・null の候補は選択済みにする', () => {
+  const [field] = schemaFields(namespace({ schema: { uid: 1, refs: {
+    1: { type: 'object', dict: { mode: 2 } }, 2: { type: 'union', list: [3, 4, 5, 6] },
+    3: { type: 'const', value: false }, 4: { type: 'const', value: 0 },
+    5: { type: 'const', value: '' }, 6: { type: 'const', value: null },
+  } } }))
+  assert.ok(field)
+  assert.equal(field.kind, 'select')
+  assert.deepEqual(selectFieldState(field, field.value), { index: -1, placeholder: '未設定' })
+  assert.deepEqual(selectFieldState(field, '未対応の値'), { index: -1, placeholder: '現在の値は選択肢にありません' })
+  for (const [index, value] of [false, 0, '', null].entries()) {
+    assert.deepEqual(selectFieldState(field, value), { index, placeholder: undefined })
+  }
+  assert.deepEqual(selectFieldState({ options: [] }, null), { index: -1, placeholder: '現在の値は選択肢にありません' })
 })
 
 test('伏せる項目の保存済み値は項目モデルにもページの要約にも渡さない', () => {
@@ -341,5 +357,13 @@ test('空欄や有限でない数値を保存せず、必須の文字入力を�
   const required = numericField({ kind: 'text', required: true })
   assert.deepEqual(parseFieldInput(required, '  '), { ok: false, message: '値を入力してください。' })
   assert.deepEqual(parseFieldInput(required, ' 作業用 '), { ok: true, value: ' 作業用 ' })
-  assert.deepEqual(parseFieldInput({ ...required, required: false }, ''), { ok: true, value: '' })
+})
+
+test('任意の文字入力を空にすると unset 用の値になり、空白だけの入力も既定値に戻す', () => {
+  const field = numericField({ kind: 'text', path: ['reasoningEffort'] })
+  for (const input of ['', ' ', '\t\n', '　']) {
+    assert.deepEqual(parseFieldInput(field, input), { ok: true, value: undefined })
+  }
+  assert.deepEqual(parseFieldInput(field, 'high'), { ok: true, value: 'high' })
+  assert.deepEqual(parseFieldInput(field, ' 作業用 '), { ok: true, value: ' 作業用 ' })
 })

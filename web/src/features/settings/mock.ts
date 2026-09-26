@@ -192,6 +192,12 @@ export function extendMock(kit: MockKit): void {
   kit.scenario('settings-readonly', () => { writable = false })
   kit.scenario('settings-conflict', () => { firstWriteConflict = true })
   kit.scenario('settings-rejected', () => { rejectWrites = true })
+  kit.scenario('settings-unset', () => {
+    const row = namespaces.get('agent-default-model')!
+    unset(row.base ?? {}, ['mode'])
+    unset(row.user ?? {}, ['mode'])
+    row.value = merge(row.base ?? {}, row.user ?? {})
+  })
   kit.scenario('settings-keys-readonly', () => { keysWritable = false })
   kit.scenario('settings-keys-unavailable', () => { keyLookupFails = true })
 }

@@ -46,8 +46,8 @@ export function createSettingsStore(api: SettingsApi) {
       const generation = { ...state.generation }
       const namespaces = result.value.namespaces.map(row => {
         const previous = find(row.ns)
-        // Revisions are monotonic only while the same server connection lasts.
-        if (revisionEpoch === epoch && previous && row.revision < previous.revision) return previous
+        // A namespace may be registered again on the same connection with revision 0.
+        // Request order and connection epochs, not revision size, reject stale reads.
         if (previous && row.revision !== previous.revision) generation[row.ns] = (generation[row.ns] ?? 0) + 1
         return row
       })
@@ -77,7 +77,7 @@ export function createSettingsStore(api: SettingsApi) {
   function documentUpdated(ns: unknown, revision?: unknown): void {
     if (typeof ns !== 'string') return
     if (connectionState !== undefined && connectionState !== 'connected') return
-    if (revisionEpoch === connectionEpoch && typeof revision === 'number' && revision <= (find(ns)?.revision ?? -1)) return
+    if (revisionEpoch === connectionEpoch && typeof revision === 'number' && revision === find(ns)?.revision) return
     if (saving) { reloadAfterSave = true; return }
     void reload()
   }
