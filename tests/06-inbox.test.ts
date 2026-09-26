@@ -122,7 +122,7 @@ test('完了の同時刻は一覧の順を保ち、不正な時刻は最後に�
   assert.equal(rows.completed[2]?.description, '完了 ・ 時刻不明')
 })
 
-test('inbox シナリオだけで 3 種の要求と別ワークスペースの完了 2 件を揃え、回答で件数が減る', { timeout: 1000 }, async () => {
+test('06だけを登録した inbox シナリオで3種の要求と完了2件を揃え、回答と既読で件数が減る', { timeout: 1000 }, async () => {
   const ctx = createMockContext({ scenario: 'inbox', extensions: [{ extendMock }] })
   const store = new InteractionStore()
   const dispose = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
@@ -145,11 +145,10 @@ test('inbox シナリオだけで 3 種の要求と別ワークスペースの�
       assert.equal(read().pending.length, 2 - index)
       assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
     }
-    // Simulate the controller's observed read update; the shared mock's open is not equivalent yet.
-    ctx.mock.updateList(list => { delete list.byId[INBOX_MOCK_IDS.completed]!.completed })
+    ctx.sessions.open(INBOX_MOCK_IDS.completed)
     assert.equal(count(), 1)
     assert.deepEqual(read().completed.map(row => row.sessionId), [INBOX_MOCK_IDS.otherCompleted])
-    ctx.mock.updateList(list => { delete list.byId[INBOX_MOCK_IDS.otherCompleted]!.completed })
+    ctx.sessions.open(INBOX_MOCK_IDS.otherCompleted)
     assert.equal(count(), 0)
     assert.deepEqual(read(), { pending: [], completed: [] })
   } finally { dispose(); store.dispose(); ctx.dispose() }
