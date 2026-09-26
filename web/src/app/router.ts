@@ -13,6 +13,9 @@ function index(): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0
 }
 
+/** Position within this app's history, used to distinguish forward and back motion. */
+export function getRouteHistoryIndex(): number { return index() }
+
 export function initializeRouter(): void {
   if (typeof window.history.state?.[stateKey] !== 'number') {
     window.history.replaceState({ ...window.history.state, [stateKey]: 0 }, '', window.location.href)

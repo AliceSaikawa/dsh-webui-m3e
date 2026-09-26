@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
-import { composerApi, permissionDefaultsOf, requireMatched, unwrapResult } from '../web/src/features/composer/api.ts'
+import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
+import { composerApi, permissionDefaultsOf, requireMatched } from '../web/src/features/composer/api.ts'
 import { extendMock, mockModelCatalog, mockPermissions } from '../web/src/features/composer/mock.ts'
 
 test('composer RPC は sessionId と中断信号を実物と同じ位置へ渡す', async () => {
@@ -38,8 +39,12 @@ test('composer RPC は sessionId と中断信号を実物と同じ位置へ渡�
 
 test('RPC の失敗と未対応コマンドを成功として扱わない', () => {
   const failed = { ok: false as const, error: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } }
-  assert.throws(() => unwrapResult(failed), /会話が見つかりません/)
-  assert.throws(() => requireMatched(failed), /会話が見つかりません/)
+  assert.throws(() => requireMatched(failed), error => {
+    assert.ok(error instanceof RemoteCallError)
+    assert.match(error.message, /会話が見つかりません/)
+    assert.equal(error.rpcError, failed.error)
+    return true
+  })
   assert.throws(() => requireMatched({ ok: true, value: { matched: false } }), /使えません/)
   assert.doesNotThrow(() => requireMatched({ ok: true, value: { matched: true } }))
 })
@@ -223,5 +228,31 @@ test('先行・後続の会話の削除を反映し、同じ ID の再追加に�
       assert.deepEqual(await api.selectModel(sessionId, selection), selection)
       assert.deepEqual(ctx.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: selection })
     }
+  } finally { ctx.dispose() }
+})
+
+test('モデル変更は他機能が後から更新した共有 projection の使用済みモデルを保持する', async () => {
+  const used = { provider: 'ollama', model: 'local' }
+  const ctx = createMockContext({ extensions: [
+    { extendMock },
+    { extendMock(kit) { kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: used, next: used }) } },
+  ] })
+  try {
+    const sessionId = MOCK_IDS.sessions.readme
+    const api = composerApi(ctx.remote)
+    const projection = ctx.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection')
+    const selection = { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'low' }
+    await api.selectModel(sessionId, selection)
+    assert.deepEqual(projection.getSnapshot(), { lastUsed: used, next: selection })
+
+    // Another feature or a completed turn can replace the shared projection again.
+    ctx.mock.setProjection(sessionId, 'modelSelection', { lastUsed: selection, next: selection })
+    await api.selectModel(sessionId, used)
+    assert.deepEqual(projection.getSnapshot(), { lastUsed: selection, next: used })
+    assert.deepEqual(ctx.sessions.list.getSnapshot().byId[sessionId]?.projectionValues?.modelSelection, { lastUsed: selection, next: used })
+
+    ctx.mock.setProjection(sessionId, 'modelSelection', { lastUsed: null, next: null })
+    await api.selectModel(sessionId, selection)
+    assert.deepEqual(projection.getSnapshot(), { lastUsed: null, next: selection })
   } finally { ctx.dispose() }
 })

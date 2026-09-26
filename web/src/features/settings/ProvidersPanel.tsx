@@ -19,16 +19,16 @@ function KeyEntry({ row, store, close }: { row: ProviderRow; store: ProviderStor
   const state = useSyncExternalStore(draft.subscribe, draft.getSnapshot, draft.getSnapshot)
   const providers = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const current = providers.rows.find(item => item.id === row.id)
-  const canWrite = current?.writable === true && current.ref === row.ref
+  const canWrite = current?.writable === true && current.ref === row.ref && !providers.busy
   useEffect(() => { draft.activate(); return () => draft.dispose() }, [draft])
   async function save() {
     if (canWrite && await draft.submit()) { close(); showSnackbar('API キーを保存しました') }
   }
   return <div className="settings-sheet">
-    <h2>{row.name} の API キー</h2>
-    <p className="muted">{statusLabels[current?.status ?? 'unknown']}。入力した値は送信時に消去し、保存後は表示しません。</p>
+    <h2>API キー</h2>
+    <p className="muted">保存すると、あとから表示できません</p>
     <M3eFormField variant="outlined" error={Boolean(state.error)} className="settings-key-input">
-      <label slot="label" htmlFor={id}>新しい API キー</label>
+      <label slot="label" htmlFor={id}>API キー</label>
       <input id={id} type={state.visible ? 'text' : 'password'} value={state.draft}
         autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={state.busy || !canWrite}
         aria-describedby={`${id}-error`} onChange={event => draft.input(event.currentTarget.value)}
@@ -40,19 +40,18 @@ function KeyEntry({ row, store, close }: { row: ProviderRow; store: ProviderStor
     </M3eFormField>
     {state.error && <p role="alert" className="settings-error" id={`${id}-error`}>{state.error}</p>}
     {state.busy && <p role="status" className="settings-saving">保存しています…</p>}
-    <div className="actions">
-      {current?.status === 'registered' && <M3eButton variant="text" disabled={state.busy || !canWrite} onClick={() => {
-        // The shared overlay host unmounts lower sheets: close before confirming.
-        close()
-        openDialog(dismiss => <RemoveKey row={row} store={store} close={dismiss} />, { label: 'API キーの登録を消す確認' })
-      }}>登録を消す</M3eButton>}
-      <M3eButton variant="text" disabled={state.busy} onClick={close}>キャンセル</M3eButton>
-      <M3eButton disabled={state.busy || !canWrite || !state.draft.trim()} onClick={() => { void save() }}>保存</M3eButton>
+    <div className="settings-key-actions">
+      <M3eButton variant="outlined" disabled={state.busy || !canWrite || current?.status !== 'registered'} onClick={() => {
+        // Keep the sheet entry in the stack. The host disposes this draft while
+        // confirming and mounts an empty input sheet again after cancellation.
+        openDialog(dismiss => <RemoveKey row={row} store={store} close={dismiss} removed={close} />, { label: 'API キーの登録を消す確認' })
+      }}>登録を消す</M3eButton>
+      <M3eButton variant="filled" disabled={state.busy || !canWrite || !state.draft.trim()} onClick={() => { void save() }}>保存</M3eButton>
     </div>
   </div>
 }
 
-function RemoveKey({ row, store, close }: { row: ProviderRow; store: ProviderStore; close(): void }) {
+function RemoveKey({ row, store, close, removed }: { row: ProviderRow; store: ProviderStore; close(): void; removed(): void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const providers = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
@@ -62,14 +61,14 @@ function RemoveKey({ row, store, close }: { row: ProviderRow; store: ProviderSto
     if (busy || !canWrite) return
     setBusy(true); setError(null)
     const outcome = await store.remove(row)
-    if (outcome.ok) { close(); showSnackbar('API キーの登録を消しました') }
+    if (outcome.ok) { close(); removed(); showSnackbar('API キーの登録を消しました') }
     else { setError(outcome.message); setBusy(false) }
   }
   return <>
     <h2>API キーの登録を消す</h2>
     <p>{row.name} のキーの登録を消します。同じキーを使うほかの提供元にも影響する場合があります。</p>
     {error && <p role="alert" className="settings-error">{error}</p>}
-    <div className="actions">
+    <div className="actions settings-actions">
       <M3eButton variant="text" disabled={busy} onClick={close}>キャンセル</M3eButton>
       <M3eButton disabled={busy || !canWrite} onClick={() => { void remove() }}>{busy ? '登録を消しています…' : '登録を消す'}</M3eButton>
     </div>
@@ -99,7 +98,7 @@ export function ProvidersPanel() {
     <M3eActionList className="settings-card">
       {state.rows.map(row => <M3eListAction key={row.id} disabled={!row.writable || state.busy}
         onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>
-        <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'computer' : 'key'} /></span>{row.name}
+        <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'dns' : 'key'} /></span>{row.name}
         <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>
         {row.writable && <span slot="trailing"><Icon name="chevron_right" /></span>}
       </M3eListAction>)}

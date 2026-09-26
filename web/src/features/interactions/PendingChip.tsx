@@ -4,11 +4,12 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { usePendingInteractions } from '../../dsh/interactions.ts'
 import { presentInteraction, pruneInteractionDrafts } from './InteractionSheet.tsx'
 import { hasPlanReview } from './answers.ts'
+import { deferredInteractions } from './presentation.ts'
 
 export function PendingChip({ sessionId }: { sessionId: string }) {
   const pending = usePendingInteractions()
   useLayoutEffect(() => { pruneInteractionDrafts(new Set(pending.map(item => item.key))) }, [pending])
-  const deferred = pending.filter(item => item.sessionId === sessionId && item.deferred)
+  const deferred = deferredInteractions(pending, sessionId)
   if (!deferred.length) return null
   return <div className="interaction-pending-chips">{deferred.map(item => <M3eAssistChip key={item.key}
     onClick={() => presentInteraction(item, { from: 'conversation' })}>

@@ -23,6 +23,7 @@ export interface TextRow extends RowBase {
   readonly kind: 'assistant' | 'reasoning'
   readonly text: string
   readonly streaming: boolean
+  readonly durationMs?: number
 }
 export interface ToolRow extends RowBase {
   readonly kind: 'tool'
@@ -187,6 +188,60 @@ function resultsOf(event: SessionWireEvent): { callId: string; result: ResultInf
   return callId === undefined ? [] : [{ callId, result: { event, content, isError: failure || data.isError === true || message.isError === true, ...(failure ? { error: data.error } : {}) } }]
 }
 
+/** Only explicit per-block boundaries establish the full reasoning interval. */
+function reasoningDurations(value: unknown, content: readonly unknown[]): ReadonlyMap<number, number> {
+  const boundaries = new Map<number, { type: string; start?: number; end?: number; text?: string; invalid: boolean }>()
+  if (!Array.isArray(value)) return new Map()
+  let dropsToolCalls = false
+  for (const candidate of value) {
+    const record = objectOf(candidate)
+    if (record === undefined) continue
+    const chunk = record.type === 'chunk' ? objectOf(record.chunk) : undefined
+    if (chunk?.type === 'finish') {
+      dropsToolCalls = objectOf(chunk.reason)?.kind === 'max-tokens'
+      continue
+    }
+    const type = chunk?.type === 'block-start' ? stringOf(chunk.blockType)
+      : chunk?.type === 'block-end' ? stringOf(objectOf(chunk.block)?.type)
+      : chunk?.type === 'text-delta' || record.type === 'text-chunks' ? 'text'
+      : chunk?.type === 'reasoning-delta' || record.type === 'reasoning-chunks' ? 'reasoning'
+      : chunk?.type === 'tool-call-delta' || record.type === 'tool-call-chunks' ? 'tool-call'
+      : undefined
+    if (type === undefined) continue
+    const index = chunk?.index ?? record.index
+    if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0) continue
+    const previous = boundaries.get(index)
+    const state = previous ?? { type, invalid: false }
+    boundaries.set(index, state)
+    if (state.type !== type) state.invalid = true
+    if (type !== 'reasoning' || (chunk?.type !== 'block-start' && chunk?.type !== 'block-end')) continue
+    const time = record.time
+    if (typeof time !== 'number' || !Number.isSafeInteger(time) || time < 0) {
+      state.invalid = true
+      continue
+    }
+    if (chunk.type === 'block-start') {
+      if (state.start !== undefined || state.end !== undefined) state.invalid = true
+      state.start = time
+    } else {
+      if (state.start === undefined || state.end !== undefined) state.invalid = true
+      state.end = time
+      state.text = stringOf(objectOf(chunk.block)?.text)
+    }
+  }
+  const durations = new Map<number, number>()
+  // The DSH assembler keeps first-seen order, not numeric stream indices, and
+  // omits tool calls when a max-token finish truncates the accepted message.
+  const ordered = [...boundaries.values()].filter(block => !dropsToolCalls || block.type !== 'tool-call')
+  if (ordered.length !== content.length || ordered.some((block, index) => objectOf(content[index])?.type !== block.type)) return durations
+  for (const [index, { type, start, end, text, invalid }] of ordered.entries()) {
+    if (type !== 'reasoning' || invalid || start === undefined || end === undefined || text === undefined || objectOf(content[index])?.text !== text) continue
+    const duration = end - start
+    if (Number.isSafeInteger(duration) && duration >= 0) durations.set(index, duration)
+  }
+  return durations
+}
+
 /** Produce one immutable display list without mutating the controller journal. */
 export function buildChatRows(
   records: readonly SessionWireEvent[],
@@ -243,12 +298,16 @@ export function buildChatRows(
     } else if (event.type === 'assistant/message') {
       const message = objectOf(data.message) ?? data
       const content = Array.isArray(message.content) ? message.content : []
+      const durations = reasoningDurations(data.stream, content)
       content.forEach((value, index) => {
         const block = contentOf([value])[0]
         if (block === undefined) return
         const blockBase = { ...base, key: assistantBlockKey(data.turn, data.step, index, base.key) }
         if (block.type === 'text' || block.type === 'reasoning') {
-          rows.push({ ...blockBase, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: false })
+          const durationMs = block.type === 'reasoning' ? durations.get(index) : undefined
+          rows.push({ ...blockBase, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: false,
+            ...(durationMs === undefined ? {} : { durationMs }),
+          })
         } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
           rows.push(toolRow(block.id, block.name, block.arguments, blockBase))
         }
@@ -294,18 +353,23 @@ export function buildChatRows(
 
 export interface CommandPresentation {
   readonly label: string
-  readonly icon: 'check_circle' | 'error' | 'info'
+  readonly icon: 'terminal' | 'error' | 'info'
   readonly failureReason?: string
 }
 
-/** Keep missing outcomes neutral and expose failures without opening details. */
+/** Keep missing outcomes neutral and failures distinct in the collapsed row. */
 export function commandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'status'>): CommandPresentation {
   const name = row.name ? `/${row.name} ` : 'コマンド'
   if (row.status === 'error') {
     return { label: `${name}の実行に失敗しました`, icon: 'error', failureReason: row.text.trim() || '詳しい理由は記録されていません。' }
   }
-  if (row.status === 'success') return { label: `${name}を実行しました`, icon: 'check_circle' }
+  if (row.status === 'success') return { label: `${name}を実行しました`, icon: 'terminal' }
   return { label: `${name}の結果を受け取りました`, icon: 'info' }
+}
+
+/** Tool identity stays independent of its running or failed status. */
+export function toolIcon(name: string): 'description' | 'terminal' {
+  return name === 'read_file' ? 'description' : 'terminal'
 }
 
 export function summarizeToolArguments(raw: string, maxLength = 100): string | undefined {

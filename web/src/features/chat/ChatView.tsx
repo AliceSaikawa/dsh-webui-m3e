@@ -2,15 +2,16 @@ import { useMemo, useRef } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { ChatMarkdown } from './ChatMarkdown.tsx'
-import { openSheet, showSnackbar } from '../../app/overlay/index.ts'
+import { showSnackbar } from '../../app/overlay/index.ts'
 import { back } from '../../app/router.ts'
 import { useSession } from '../../dsh/session.ts'
 import type { SessionFace } from '../../dsh/services.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { AttachmentImage, FileAttachment, PreviewImage } from './Attachments.tsx'
 import { MessageActions } from './MessageActions.tsx'
+import { ChatSheets, useChatSheets } from './ChatSheets.tsx'
 import { ToolDetail } from './ToolDetail.tsx'
-import { buildChatRows, commandPresentation, formatDuration, summarizeToolArguments, type ChatRow } from './model.ts'
+import { buildChatRows, commandPresentation, formatDuration, summarizeToolArguments, toolIcon, type ChatRow } from './model.ts'
 import { useChatScroll } from './useChatScroll.ts'
 import './chat.css'
 
@@ -19,6 +20,7 @@ function Progress({ children }: { children: string }) {
 }
 
 function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string; face?: SessionFace; active: boolean }) {
+  const sheets = useChatSheets()
   if (row.kind === 'user') return <article className="chat-user" aria-label="自分のメッセージ">
     <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}>
       {row.text && <p className="chat-bubble">{row.text}</p>}
@@ -29,25 +31,26 @@ function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string
   if (row.kind === 'assistant') return row.text ? <article className="chat-assistant" aria-label="AI のメッセージ" aria-busy={row.streaming}>
     <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}><ChatMarkdown>{row.text}</ChatMarkdown></MessageActions>
   </article> : null
-  if (row.kind === 'reasoning') return <details className="chat-reasoning"><summary><Icon name="psychology" />{row.streaming ? '考えています…' : '考えた内容'}<Icon className="chat-chevron" name="expand_more" /></summary>
+  if (row.kind === 'reasoning') return <details className="chat-reasoning"><summary><Icon name="psychology" /><span className="chat-row-label">{row.streaming ? '考えています…' : '考えた内容'}</span>
+    {row.durationMs !== undefined && <span className="chat-reasoning-duration">{formatDuration(row.durationMs)}</span>}<Icon className="chat-chevron" name="expand_more" /></summary>
     <ChatMarkdown>{row.text || '内容を待っています…'}</ChatMarkdown></details>
   if (row.kind === 'tool') {
     const summary = summarizeToolArguments(row.arguments)
     const label = row.status === 'running' ? '実行中' : row.status === 'error' ? '失敗' : '完了'
     return <button type="button" className={`chat-tool ${row.status === 'error' ? 'chat-tool-error' : ''}`}
-      onClick={() => openSheet(close => <ToolDetail sessionId={sessionId} initial={row} close={close} />, { label: 'ツール呼び出しの詳細' })}>
-      <Icon name={row.status === 'error' ? 'error' : row.status === 'running' ? 'pending' : 'terminal'} />
+      onClick={() => sheets.open(close => <ToolDetail sessionId={sessionId} initial={row} close={close} />, { label: 'ツール呼び出しの詳細' })}>
+      <Icon name={toolIcon(row.name)} />
       <span className="chat-tool-body"><strong>{row.name || 'ツール'}</strong><span>{summary && <span className="chat-tool-summary">{summary}</span>}
-        <span>{label}{row.durationMs !== undefined && ` ・ ${formatDuration(row.durationMs)}`}</span></span></span><Icon name="chevron_right" />
+        <span>{label}{row.durationMs !== undefined && ` ・ ${formatDuration(row.durationMs)}`}</span></span></span><Icon name={row.status === 'error' ? 'error' : row.status === 'running' ? 'pending' : 'chevron_right'} />
     </button>
   }
   if (row.kind === 'system') return <p className="chat-system">{row.text}</p>
   if (row.kind === 'command') {
     const presentation = commandPresentation(row)
-    if (row.status === 'error') return <aside className="chat-error-card" role="alert"><Icon name={presentation.icon} />
-      <div><h3>{presentation.label}</h3><ChatMarkdown>{presentation.failureReason ?? row.text}</ChatMarkdown></div></aside>
-    return row.text ? <details className="chat-command"><summary><Icon name={presentation.icon} />{presentation.label}<Icon name="expand_more" /></summary><ChatMarkdown>{row.text}</ChatMarkdown></details>
-      : <p className="chat-system">{presentation.label}</p>
+    const text = presentation.failureReason ?? row.text
+    const className = `chat-command${row.status === 'error' ? ' chat-command-error' : ''}`
+    return text ? <details className={className}><summary><Icon name={presentation.icon} /><span className="chat-row-label">{presentation.label}</span><Icon className="chat-chevron" name="expand_more" /></summary><ChatMarkdown>{text}</ChatMarkdown></details>
+      : <p className={`${className} chat-command-static`}><Icon name={presentation.icon} /><span>{presentation.label}</span></p>
   }
   if (row.kind !== 'pending') return null
   return <article className="chat-user chat-pending" aria-label="送信中のメッセージ">
@@ -58,7 +61,9 @@ function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string
 }
 
 /** A key resets scroll and expanded rows when routing to a different session. */
-export function ChatView({ sessionId, active }: { sessionId: string; active: boolean }) { return <SessionChat key={sessionId} sessionId={sessionId} active={active} /> }
+export function ChatView({ sessionId, active }: { sessionId: string; active: boolean }) {
+  return <ChatSheets key={sessionId}><SessionChat sessionId={sessionId} active={active} /></ChatSheets>
+}
 
 function SessionChat({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { face, snapshot, records, stream } = useSession(sessionId)

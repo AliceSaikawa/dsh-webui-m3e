@@ -10,6 +10,7 @@ import { navigate } from '../../app/router.ts'
 import { defer, usePendingInteractions, type PendingInteraction, type PendingQuestion, type AskUserQuestionItem } from '../../dsh/interactions.ts'
 import { buildPlanApproval, buildQuestionAnswers, hasAnswer, hasPlanReview, questionDraft, selectOption, type QuestionDraft } from './answers.ts'
 import { PresentationQueue } from './presentation-queue.ts'
+import { questionPresentation } from './presentation.ts'
 import './interactions.css'
 
 type Origin = 'conversation' | 'inbox'
@@ -87,7 +88,7 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
 
   return <section className={`interaction-sheet${plan ? ' interaction-sheet--plan' : ''}`} data-from={from} aria-busy={busy}>
     {pending.kind === 'approval' ? <>
-      <div className="interaction-heading"><Icon name="front_hand" /><h2>ツールの承認</h2></div>
+      <div className="interaction-heading"><h2>ツールの承認</h2></div>
       <p className="interaction-question"><strong>{pending.toolName}</strong> を実行しようとしています</p>
       {pending.reason && <p className="interaction-detail">{pending.reason}</p>}
       {pending.callId && <M3eButton variant="text" disabled={busy || !active} onClick={trace}>トレースで見る</M3eButton>}
@@ -105,6 +106,7 @@ function QuestionSheet({ pending, plan, busy, error, later, submit }: {
   const body = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const item = pending.items[state.index]
+  const presentation = questionPresentation(pending.items, state.index)
   const draft = questionDraft(state.drafts, item?.id ?? '')
   const last = state.index === pending.items.length - 1
   const planItem = item?.intent?.kind === 'plan-review'
@@ -112,7 +114,8 @@ function QuestionSheet({ pending, plan, busy, error, later, submit }: {
 
   useLayoutEffect(() => {
     if (body.current) body.current.scrollTop = 0
-    heading.current?.focus({ preventScroll: true })
+    const focusTarget = heading.current ?? body.current
+    focusTarget?.focus({ preventScroll: true })
   }, [state.index])
   function update(next: DraftState) { drafts.set(pending.key, next); setState(next) }
   function edit(next: QuestionDraft) {
@@ -132,15 +135,16 @@ function QuestionSheet({ pending, plan, busy, error, later, submit }: {
   }
 
   return <>
-    <header className="interaction-heading">
-      {plan ? <M3eIconButton aria-label="あとで" disabled={busy} onClick={later}><Icon name="close" /></M3eIconButton> : <Icon name="help" />}
-      <h2>{plan ? 'プランの確認' : 'AI からの質問'}</h2>
-    </header>
-    {pending.items.length > 0 && <p className="interaction-progress" aria-live="polite">質問 {state.index + 1} / {pending.items.length}</p>}
-    <div className="interaction-body" ref={body}>
+    {plan && <header className="interaction-heading">
+      <M3eIconButton aria-label="あとで" disabled={busy} onClick={later}><Icon name="close" /></M3eIconButton>
+      <h2>プランの確認</h2>
+    </header>}
+    {presentation.progress && <p className="interaction-progress" aria-live="polite">{presentation.progress}</p>}
+    <div className="interaction-body" ref={body} tabIndex={presentation.standalonePlan ? -1 : undefined}
+      role={presentation.standalonePlan ? 'region' : undefined} aria-label={presentation.standalonePlan ? 'プランの本文' : undefined}>
       {item ? <>
-        {item.header && <p className="interaction-item-header">{item.header}</p>}
-        <h3 id={labelId} className="interaction-question" ref={heading} tabIndex={-1}>{item.question}</h3>
+        {presentation.header && <p className="interaction-item-header">{presentation.header}</p>}
+        {presentation.title && <h3 id={labelId} className="interaction-question" ref={heading} tabIndex={-1}>{presentation.title}</h3>}
         {item.detail && (planItem ? <Markdown>{item.detail}</Markdown> : <p className="interaction-detail">{item.detail}</p>)}
         {planItem ? state.editingPlan && <label className="interaction-custom">直してほしいこと
           <textarea rows={5} autoFocus value={draft.custom} disabled={busy} onChange={event => edit({ selected: [], custom: event.target.value })} />

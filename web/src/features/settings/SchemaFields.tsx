@@ -4,9 +4,10 @@ import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eOption } from '@m3e/react/option'
 import { M3eFormField } from '@m3e/react/form-field'
-import { formatSetting, parseFieldInput, selectFieldState, valueAt, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
+import { formatSetting, parseFieldInput, selectFieldState, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
 import { createSettingInput } from './input.ts'
+import { findSettingField, settingFieldAccess } from './field-access.ts'
 
 interface FieldsProps {
   fields: SettingField[]
@@ -20,8 +21,28 @@ export function SchemaFields({ fields, ...props }: FieldsProps) {
       <legend>{field.label}</legend>
       {field.description && <p className="settings-field-help">{field.description}</p>}
       <SchemaFields fields={field.children ?? []} {...props} />
+      <GroupReset field={field} {...props} />
     </fieldset>
     : <FieldEditor key={`${field.path.join('/')}:${index}`} field={field} {...props} />)}</>
+}
+
+function GroupReset({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
+  const [saving, setSaving] = useState(false)
+  const access = settingFieldAccess(namespace, field)
+  const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
+  if (!field.overridden || !field.path.length) return null
+  async function reset() {
+    if (saving) return
+    setSaving(true)
+    try { await store.edit(namespace.ns, field.path) } finally { setSaving(false) }
+  }
+  return <div>
+    <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || saving}
+      onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>
+    {access.resetBlocked && <p className="settings-field-help">保護された項目や変更できない項目があるため、まとめて既定値に戻せません。</p>}
+    {saving && <div className="settings-saving" role="status">保存しています…</div>}
+    {error && <p className="settings-error" role="alert">{error}</p>}
+  </div>
 }
 
 function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
@@ -48,7 +69,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
         const accepted = await store.edit(namespace.ns, latestField.path, reset ? undefined : next)
         if (!accepted) return { ok: false }
         const row = store.getSnapshot().namespaces.find(item => item.ns === namespace.ns)
-        return { ok: true, value: inputValue(latestField, valueAt(row?.value, latestField.path)) }
+        return { ok: true, value: inputValue(latestField, row && findSettingField(row, latestField.path)?.value) }
       },
     })
   })
@@ -92,6 +113,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
   const errorId = `${id}-error`
   const describedBy = `${helpId}${error ? ` ${errorId}` : ''}`
   const readonly = field.kind === 'readonly' || field.kind === 'masked'
+  const access = settingFieldAccess(namespace, field)
   return <div className="settings-field">
     {field.kind === 'switch' ? <div className="settings-switch-row">
       <span id={`${id}-label`}>{field.label}</span>
@@ -123,8 +145,9 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
     </M3eFormField>}
     <p className="settings-field-help" id={helpId}>{[field.description, timing].filter(Boolean).join('\n')}</p>
     {error && <p className="settings-error" role="alert" id={errorId}>{error}</p>}
-    {!readonly && field.overridden && <M3eButton variant="text" className="settings-reset" disabled={disabled || editing.saving}
+    {field.kind !== 'masked' && field.overridden && field.path.length > 0 && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || editing.saving}
       onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>}
+    {access.resetBlocked && <p className="settings-field-help">保護された項目や変更できない項目があるため、まとめて既定値に戻せません。</p>}
     {editing.saving && <div className="settings-saving" role="status">保存しています…</div>}
     {editing.saved && !editing.saving && !error && <div className="settings-saving" role="status">保存しました</div>}
   </div>

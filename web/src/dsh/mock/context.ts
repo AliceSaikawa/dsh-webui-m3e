@@ -19,6 +19,14 @@ export interface MockKit {
   emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
   streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number }): Promise<void>
   setProjection(sessionId: string, key: string, value: unknown): void
+  /** Read the latest shared projection as an isolated copy; an absent key is undefined. */
+  getProjection<T = unknown>(sessionId: string, key: string): T | undefined
+  /** Replace a projection from its latest value; spread current to preserve other fields. */
+  updateProjection<T>(sessionId: string, key: string, update: (current: T | undefined) => T): void
+  /** Register the settings feature's authoritative synchronous value reader once. */
+  registerSettingsReader(reader: (namespace: string) => unknown): void
+  /** Read an isolated copy; no reader or missing namespace returns undefined. */
+  getSettingsValue<T = unknown>(namespace: string): T | undefined
   /** Set lifecycle/error scenarios without changing a session's stable identity. */
   setSessionState(sessionId: string, patch: Partial<SessionSnapshot>): void
   removeSession(sessionId: string): void
@@ -26,6 +34,8 @@ export interface MockKit {
   patch(path: string, impl: unknown): void
   updateList(update: (state: SessionListState) => SessionListState | void): void
   scenario(name: string, setup: (kit: MockKit) => void): void
+  /** Match the selected scenario before emitting demos; undefined means the default demo. */
+  isScenario(...names: (string | undefined)[]): boolean
 }
 export type MockExtension = {
   /** Diagnostic origin supplied by the feature-module collector. */
@@ -64,10 +74,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const startupEvents = new Set<{ event: string; owner?: SessionModel; deliver(): void; cancel(): void }>()
   const timers = new Map<ReturnType<typeof setTimeout>, { resolve(): void; owner?: SessionModel }>()
   const scenarios = new Map<string, (kit: MockKit) => void>()
+  let settingsReader: ((namespace: string) => unknown) | undefined
   const attachments = new Map<string, { attachment: ImageAttachmentRef; data: Uint8Array }>([
     [imageAttachment.attachmentId, { attachment: imageAttachment, data: Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0)) }],
   ])
   const remote: Record<string, unknown> = {}
+  const selectedScenario = options.scenario
   const pageSize = Math.max(1, options.pageSize ?? 100)
   const connectionState = observable<'connected' | 'disconnected' | 'connecting'>('connected')
   const list = observable<SessionListState>({ ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
@@ -315,6 +327,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     get mock() { return kit },
     dispose() {
       disposed = true
+      settingsReader = undefined
       for (const pending of startupEvents) pending.cancel()
       startupEvents.clear()
       for (const [timer, pending] of timers) { clearTimeout(timer); pending.resolve() }
@@ -473,7 +486,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       }
       const model: SessionModel = { summary: structuredClone(summary), records, start, snapshot, events: eventSource, projections, submissions: new Map(), binding: { sessionId: summary.id, session: face, eventSource, ctx: scope } }
       models.set(summary.id, model)
-      for (const [key, value] of Object.entries(summary.projectionValues ?? {})) project(model, key).set(value)
+      for (const [key, value] of Object.entries(model.summary.projectionValues ?? {})) project(model, key).set(value)
       list.update((state) => ({ ...state, ids: [...state.ids, summary.id], byId: { ...state.byId, [summary.id]: model.summary } }))
     },
     addRemote(namespace, impl) {
@@ -525,8 +538,22 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     },
     setProjection(sessionId, key, value) {
       const model = getModel(sessionId)
-      project(model, key).set(value)
-      updateSummary(model, { projectionValues: { ...model.summary.projectionValues, [key]: value } })
+      const next = structuredClone(value)
+      project(model, key).set(next)
+      updateSummary(model, { projectionValues: { ...model.summary.projectionValues, [key]: next } })
+    },
+    getProjection<T>(sessionId: string, key: string): T | undefined {
+      return structuredClone(getModel(sessionId).projections.get(key)?.getSnapshot()) as T | undefined
+    },
+    updateProjection(sessionId, key, update) {
+      kit.setProjection(sessionId, key, update(kit.getProjection(sessionId, key)))
+    },
+    registerSettingsReader(reader) {
+      if (settingsReader) { console.warn('偽の設定の読み取り元が重複しています。'); return }
+      if (!disposed) settingsReader = reader
+    },
+    getSettingsValue<T>(namespace: string): T | undefined {
+      return structuredClone(settingsReader?.(namespace)) as T | undefined
     },
     setSessionState(sessionId, patch) {
       const model = getModel(sessionId)
@@ -605,6 +632,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       if (scenarios.has(name)) { console.warn(`偽の状態が重複しています: ${name}`); return }
       scenarios.set(name, setup)
     },
+    isScenario(...names) { return names.includes(selectedScenario) },
   }
 
   for (const workspace of sharedWorkspaces) kit.addWorkspace(workspace)
@@ -626,10 +654,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     try { extension.extendMock(kit) }
     catch (error) { console.error(`偽データの拡張に失敗しました: ${extension.source ?? `拡張 ${index + 1}`}`, error) }
   }
-  if (options.scenario) {
-    const setup = scenarios.get(options.scenario)
+  if (selectedScenario) {
+    const setup = scenarios.get(selectedScenario)
     if (setup) setup(kit)
-    else console.warn(`偽の状態が見つかりません: ${options.scenario}`)
+    else console.warn(`偽の状態が見つかりません: ${selectedScenario}`)
   }
   preparing = false
   return ctx
