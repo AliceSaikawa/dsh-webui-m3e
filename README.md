@@ -1,10 +1,20 @@
 # dsh-webui-m3e
 
+A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). It is served beside the stock UI and switched per device. The UI text is Japanese only.
+
 DeepSeek Harness（DSH）のスマートフォン向け Web UI を、Material 3 Expressive で作り直すプラグインです。今の UI はそのまま残し、端末ごとに切り替えて使います。
+
+これは個人のプロジェクトで、DeepSeek の公式のものではありません。
 
 ## 今の状態
 
-段階 1 の共通基盤を実装しています。M3E の画面枠、ハッシュによる画面遷移、会話のチャット／トレース切り替え、シート・ダイアログ、外観、DSH の共有窓口、機能ごとに拡張できる偽データが揃いました。各機能の中身は段階 2 用の仮の部品です。PWA の設定と実物の DSH での統合確認は後の段階で行います。
+段階 1（共通の土台）と段階 2（機能ごとの画面）の実装が終わり、偽データ（`?mock`）の上で確かめています。
+
+- 画面：一覧とワークスペース、チャット、入力欄と新しいセッション、トレース、承認・質問・プランの確認、対応待ち、検索、設定、会話の ⋮ メニューと補助の画面、ホーム画面に追加する Web アプリ
+- 確かめ方：Node の単体テスト（`pnpm test`）と、Playwright で `?mock` の画面を幅 390px で操作する試験（`e2e/`）
+- まだのこと：実物の DSH とつないだ確認と、iPhone の実機での確認（段階 3）。本番の DSH の版に合わせた依存の固定
+
+設計と進め方は [docs/design/](docs/design/README.md)、画面の仕様は [docs/ui-spec.md](docs/ui-spec.md) にあります。
 
 開発中は `pnpm dev` のあと `http://localhost:5173/m3e/?mock` を開きます。DSH の起動は不要です。偽データは開発時だけ読み込まれ、本番ビルドには含まれません。`features/*/routes.tsx` と `features/*/mock.ts` は自動で集めるので、機能の担当は共有登録ファイルを編集する必要がありません。
 
@@ -38,6 +48,7 @@ pnpm dev         # http://localhost:5173/m3e/?mock（DSH は起動しない）
 pnpm test        # 既存のテストと、ルーター・承認/質問・セッション・偽データの単体テスト
 pnpm typecheck
 pnpm build       # dist/（M3E の画面）、lib/index.js（サーバー側）、lib/client.js（今の画面に入る部品）
+pnpm exec playwright test -c e2e/playwright.config.ts   # ?mock の画面を幅 390px で操作する試験（開発サーバーは自動で起動）
 ```
 
 開発用の状態は URL で選べます。
@@ -58,3 +69,7 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
 入れ直すときは package.json の version を上げてください。同じ版のままだと、pnpm が古いファイルを使い続けます。DSH を再起動すると、`http://<host>/m3e/` で開けます。先に `/` で一度ログインして、Cookie を持った状態にしておく必要があります。
+
+## ライセンス
+
+MIT です。[LICENSE](LICENSE) を見てください。

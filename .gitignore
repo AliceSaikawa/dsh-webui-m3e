@@ -7,3 +7,4 @@ lib/
 .env.local
 tmp/
 .claude/scheduled_tasks.lock
+.claude/
