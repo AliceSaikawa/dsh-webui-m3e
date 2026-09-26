@@ -14,7 +14,7 @@ export const HOME_MOCK_IDS = {
 const start = Date.parse('2026-09-25T09:30:00+09:00')
 
 const rows: readonly SessionSummary[] = [
-  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', completed: true, running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } } } },
+  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', completed: false, running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } } } },
   { id: HOME_MOCK_IDS.waiting, displayTitle: 'ワークスペースの確認', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: start - 60_000, projectionValues: { modelSelection: { lastUsed: { provider: 'local', model: 'Qwen' } } } },
   { id: HOME_MOCK_IDS.child, displayTitle: '一覧の表示をレビュー', cwd: '/mock/dsh-webui-m3e', parentId: MOCK_IDS.sessions.readme, origin: 'subagent', running: false, blank: false, updatedAt: start - 120_000 },
   { id: HOME_MOCK_IDS.idle, displayTitle: '一覧のメニューを検討', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start - 86_400_000 },
@@ -74,11 +74,17 @@ export function extendMock(kit: MockKit): void {
   kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } })
   kit.addRemote('directoryPicker', createDirectoryMock())
 
-  // The delayed request arrives after the shared interaction handlers register.
-  void kit.emit('user-questions/request', {
-    agent: HOME_MOCK_IDS.waiting,
-    questions: [{ id: 'home-workspace-choice', header: '作業場所', question: 'どのフォルダで作業を続けますか？', options: [{ label: '今のワークスペース' }, { label: '別のワークスペース' }] }],
-  }, { afterMs: 500 }).catch(() => { /* Disposing an unanswered fixture ends its request. */ })
+  kit.scenario('home', (home) => {
+    home.updateList((state) => {
+      const completed = state.byId[HOME_MOCK_IDS.completed]
+      if (completed) state.byId[completed.id] = { ...completed, completed: true }
+    })
+    // Keep demo inbox items local to this scenario; handlers register before delivery.
+    void home.emit('user-questions/request', {
+      agent: HOME_MOCK_IDS.waiting,
+      questions: [{ id: 'home-workspace-choice', header: '作業場所', question: 'どのフォルダで作業を続けますか？', options: [{ label: '今のワークスペース' }, { label: '別のワークスペース' }] }],
+    }, { afterMs: 500 }).catch(() => { /* Disposing an unanswered fixture ends its request. */ })
+  })
 
   kit.scenario('empty', () => removeAllSessions(kit))
   kit.scenario('no-workspace', () => {

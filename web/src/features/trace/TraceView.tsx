@@ -5,13 +5,13 @@ import { M3eSearchBar } from '@m3e/react/search'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
-import { selectTrace, filterTrace, rowDescription, turnHeading, type TraceKind, type TraceRow } from './model.ts'
+import { selectTrace, filterTrace, rowDescription, traceRowIcon, turnHeading, type TraceRow } from './model.ts'
 import { RecordSheet } from './RecordSheet.tsx'
 import { isTraceAtBottom, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
 import { retainTraceSession, traceEmptyMessage, type TraceSessionData } from './view-state.ts'
+import { closeTraceSheet } from './sheet-lifecycle.ts'
 import './trace.css'
 
-const icons: Record<TraceKind, string> = { user: 'person', assistant: 'smart_toy', tool: 'terminal', subtool: 'subdirectory_arrow_right', compaction: 'summarize' }
 interface ScrollAnchor { id?: string; offset: number; height: number; top: number }
 function restoreAnchor(node: HTMLDivElement, saved: ScrollAnchor) {
   const row = [...node.querySelectorAll<HTMLElement>('[data-trace-row]')].find(item => item.dataset.traceRow === saved.id)
@@ -73,7 +73,9 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     }
   }
 
-  useEffect(() => () => closeSheet.current?.(), [])
+  // Tab changes preserve this panel. Release its sheet on hiding as well as on
+  // route/session unmount, in the layout phase before the destination paints.
+  useLayoutEffect(() => () => closeTraceSheet(closeSheet), [active])
   useLayoutEffect(() => {
     const activating = active && !wasActive.current
     wasActive.current = active
@@ -135,7 +137,7 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
   }
   const showRecord = (row: TraceRow) => {
     if (!current.current.active) return
-    closeSheet.current?.()
+    closeTraceSheet(closeSheet)
     closeSheet.current = openSheet(close => <RecordSheet sessionId={sessionId} initialRow={row} close={close} />,
       { label: '記録の詳細', sessionId })
   }
@@ -160,9 +162,9 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
           <M3eActionList aria-label={turn.number === null ? '記録' : `ターン ${turn.number} の記録`}>
             {turn.rows.map(row => <M3eListAction key={row.id} className={`trace-row${row.failed ? ' trace-row-error' : ''}`}
               disabled={!active}
-              style={{ marginInlineStart: Math.min(row.depth, 4) * 16 }} data-trace-row={row.id}
+              style={{ marginInlineStart: `calc(var(--app-space) * ${Math.min(row.depth, 4)})` }} data-trace-row={row.id}
               onClick={() => showRecord(row)} aria-label={`${row.title}、${rowDescription(row)}、詳細を開く`}>
-              <Icon name={icons[row.kind]} slot="leading" />
+              <Icon name={traceRowIcon(row)} slot="leading" />
               <span className="trace-row-title">{row.title}</span>
               <span slot="supporting-text" className="trace-row-description">{rowDescription(row)}</span>
               <Icon name={row.failed ? 'error' : row.running ? 'pending' : 'chevron_right'} slot="trailing" />

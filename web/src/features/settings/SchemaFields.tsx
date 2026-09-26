@@ -4,7 +4,7 @@ import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eOption } from '@m3e/react/option'
 import { M3eFormField } from '@m3e/react/form-field'
-import { formatSetting, parseFieldInput, valueAt, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
+import { formatSetting, parseFieldInput, selectFieldState, valueAt, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
 import { createSettingInput } from './input.ts'
 
@@ -55,6 +55,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
   const editing = useSyncExternalStore(input.subscribe, input.getSnapshot, input.getSnapshot)
   const draft = String(editing.value ?? '')
   const choice = editing.value
+  const selection = selectFieldState(field, choice)
   const error = validation ?? state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = namespace.applies === 'restart' ? 'DSH の再起動後に反映されます' : 'すぐ反映されます'
   useEffect(() => {
@@ -99,13 +100,13 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
     </div> : field.kind === 'select' ? <M3eFormField variant="outlined" error={Boolean(error)}>
       <label slot="label" htmlFor={id}>{field.label}</label>
       <M3eSelect id={id} aria-label={field.label} aria-describedby={describedBy} disabled={disabled}
-        value={String(field.options?.findIndex(option => Object.is(option.value, choice)) ?? -1)}
+        value={String(selection.index)}
         onChange={event => {
           const index = Number((event.currentTarget as M3eSelectElement).value)
           const option = field.options?.[index]
           if (option) void changeChoice(option.value)
         }}>
-        {!field.options?.some(option => Object.is(option.value, choice)) && <M3eOption value="-1" disabled>現在の値は選択肢にありません</M3eOption>}
+        {selection.placeholder && <M3eOption value="-1" disabled>{selection.placeholder}</M3eOption>}
         {field.options?.map((option, index) => <M3eOption key={index} value={String(index)}>{option.label}</M3eOption>)}
       </M3eSelect>
     </M3eFormField> : readonly ? <>

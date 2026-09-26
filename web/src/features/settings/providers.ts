@@ -57,11 +57,10 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     // The existing UI treats active routes without a named reference as using
     // provider-native authentication (including local gateways).
     const native = !named && live.has(entry.provider)
-    const canName = !named && namespace?.ns === 'llm-pi-ai'
     return {
       id: entry.provider, name: entry.displayName, ns: entry.settingsNs, path: [...entry.settingsPath],
-      revision: namespace?.revision, ref: native ? undefined : named ?? (canName ? derivedRef(entry.provider) : undefined),
-      needsReference: Boolean(canName && !native),
+      revision: namespace?.revision, ref: native ? undefined : named ?? derivedRef(entry.provider),
+      needsReference: !named && !native,
       status: native ? 'unnecessary' : 'unknown', writable: false,
     }
   })
@@ -72,10 +71,12 @@ export function createProviderStore(remote: ProviderRemote) {
   let sequence = 0
   let epoch = 0
   let connected = true
+  let refreshVersion = 0
+  let pendingChange: { generation: number; done: Promise<void>; finish(): void } | undefined
   const listeners = new Set<() => void>()
   const publish = (patch: Partial<ProviderState>) => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
   const unavailable = '提供元と API キーの登録状況を読み込めませんでした。もう一度お試しください。'
-  async function load(): Promise<boolean> {
+  async function read(): Promise<boolean> {
     const request = ++sequence
     const generation = epoch
     if (!connected) return false
@@ -94,7 +95,9 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
-          writable: settings.value.writable && status?.writable === true }
+          // A derived reference is useful for status everywhere. Only pi-ai's
+          // missing-reference write contract has been confirmed.
+          writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
       })
       const incomplete = resolved.some(row => row.status === 'unknown')
       publish({ phase: 'ready', rows: resolved, error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
@@ -103,6 +106,17 @@ export function createProviderStore(remote: ProviderRemote) {
       if (request === sequence && generation === epoch) publish({ phase: 'error', error: unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
       return false
     }
+  }
+  async function load(): Promise<boolean> {
+    const generation = epoch
+    // Event refreshes cannot supersede the operation's own validation read.
+    // Remember them so validation can repeat if its snapshot became outdated.
+    while (pendingChange?.generation === generation) {
+      refreshVersion++
+      await pendingChange.done
+      if (generation !== epoch) return false
+    }
+    return read()
   }
   function connectionChanged(isConnected: boolean): void {
     if (connected === isConnected) return
@@ -113,10 +127,17 @@ export function createProviderStore(remote: ProviderRemote) {
   async function change(target: ProviderRow, value?: string): Promise<KeyOutcome> {
     if (state.busy || !connected) return { ok: false, message: '接続と処理中の操作を確認してください。' }
     const generation = epoch
+    let finish!: () => void
+    const operation = { generation, done: new Promise<void>(resolve => { finish = resolve }), finish: () => finish() }
+    pendingChange = operation
     publish({ busy: true })
     let referenceWritten = false
     try {
-      if (!await load() || generation !== epoch) return { ok: false, message: unavailable }
+      let validatedVersion: number
+      do {
+        validatedVersion = refreshVersion
+        if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
+      } while (validatedVersion !== refreshVersion)
       const row = state.rows.find(item => item.id === target.id)
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
@@ -132,13 +153,16 @@ export function createProviderStore(remote: ProviderRemote) {
       value = undefined
       if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
       if (!result.ok) return { ok: false, message: referenceWritten ? '参照先を設定しましたが、キーを保存できませんでした。入力し直してください。' : 'API キーの変更が拒否されました。登録状況を確認してください。' }
-      await load()
+      await read()
+      if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
       return { ok: true }
     } catch {
       return { ok: false, message: 'API キーを変更できませんでした。接続と登録状況を確認してください。' }
     } finally {
       value = undefined
+      if (pendingChange === operation) pendingChange = undefined
       if (generation === epoch) publish({ busy: false })
+      operation.finish()
     }
   }
   return {

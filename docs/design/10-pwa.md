@@ -157,3 +157,12 @@ iPhone のホーム画面に追加して、アプリのように全画面で開�
 - ビルド後の `dist/index.html` の明暗 theme-color と `dist/manifest.webmanifest` の2つの色が新しい値であることを確認した。`git diff --check` も成功した。
 - `?mock` の画面操作、DSH・開発サーバーの起動、HTTP 確認は行っていない。実機での色表示はオーケストレーターへ引き継ぐ。今回の変更は土台から指定された色への置換だけで、DSH プラグインの再調査は不要と判断した。
 - 担当外で必要になった変更：なし。main の操作、merge、rebase は行っていない。
+
+### 2026-09-26：統合時の index 別表記の認証・保存指定を修正
+
+- 指摘2への対応として、`src/host/index.ts` の `resolveTarget` で、正規化後の絶対パスが `DIST_INDEX` と一致する場合も既存の index 処理へ渡すようにした。`/m3e//index.html` と `/m3e/assets/%2e%2e%2findex.html` も `authorizeIndex` を通り、許可された応答は描画処理と `Cache-Control: no-store` を使う。
+- 通常の index と静的ファイルの配信処理、標準画面の切り替えスクリプト、登録する `/m3e` の prefix は変更していない。`/m3e/` 外へのルート登録は追加していない。設計書の元の担当範囲を超えるルート判定の修正は、今回の統合担当からの明示指示に基づく。
+- `tests/host-routes.test.ts` に、正規化後の index 判定、通常・別表記の認証拒否と許可、描画と `no-store`、assets の immutable と Worker・マニフェストの `no-cache`、既存 prefix と index フックの維持を追加した。認証拒否時はファイルの読み取りも描画も行わないことを確かめた。
+- 修正前の `node --test tests/host-routes.test.ts` は追加した3件が失敗した。別表記が通常のファイルパスとなり、認証なしで200、保存指定が `no-cache` になることを stub で再現した。修正後の `node --test tests/host-routes.test.ts tests/10-pwa.test.ts` は23件すべて成功した。
+- DSH・HTTP サーバーは起動していない。ハンドラを直接呼び、ファイル読み取り・認証・描画を stub にした確認であり、実際の DSH の認証やブラウザの動作は未確認。今回の操作に拒否はなかった。
+- 指摘1と合わせた最終検証：`pnpm typecheck` 成功、`pnpm test` 534 件すべて成功、`pnpm build` 成功。ビルドの 500 kB 超の chunk 警告は残る（JavaScript 1,578.50 kB、gzip 397.02 kB）。

@@ -13,7 +13,7 @@ function WorkspaceItem({ item, homePath, selected, onSelect, onActions, connecte
   const gesture = useRowGesture({ onClick: onSelect, onLongPress: connected ? onActions : undefined })
   return <div className="home-workspace-entry" {...gesture.handlers}>
     <M3eNavMenuItem data-workspace-id={item.workspaceId} selected={selected} aria-current={selected ? 'true' : undefined} aria-label={`${item.title}、${shortenHomePath(item.path, homePath)}`}>
-      <Icon slot="icon" name="folder" />
+      <Icon slot="icon" name={selected ? 'folder_open' : 'folder'} />
       <span slot="label" className="home-workspace-label"><strong>{item.title}</strong><small>{shortenHomePath(item.path, homePath)}</small></span>
     </M3eNavMenuItem>
   </div>

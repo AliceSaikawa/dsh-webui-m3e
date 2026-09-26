@@ -3,7 +3,7 @@
 .inbox-error { margin: 0 0 var(--app-space); padding: var(--app-space); border-radius: var(--app-radius); background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .inbox-loading { margin: 0 0 var(--app-space); color: var(--md-sys-color-on-surface-variant); }
 .inbox-section + .inbox-section { margin-top: calc(var(--app-space) * 1.5); }
-.inbox-section h2 { margin: 0 0 8px; padding-inline: var(--app-space); font-size: 14px; color: var(--md-sys-color-primary); }
+.inbox-section h2 { margin: 0 0 calc(var(--app-space) / 2); padding-inline: var(--app-space); font-size: 14px; color: var(--md-sys-color-primary); }
 .inbox-section m3e-action-list { display: block; border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
 .inbox-row { min-height: 80px; --m3e-list-item-container-shape: var(--app-radius); }
 .inbox-row + .inbox-row { border-top: 1px solid var(--md-sys-color-outline-variant); }

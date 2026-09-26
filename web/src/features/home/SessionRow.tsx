@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { M3eCheckbox } from '@m3e/react/checkbox'
-import { M3eIconButton } from '@m3e/react/icon-button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
 import { usePendingInteractions } from '../../dsh/interactions.ts'
@@ -43,11 +42,11 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   const [dragging, setDragging] = useState(false)
   const [destination, setDestination] = useState('')
   return <li className={`home-session ${dragging ? 'home-session-dragging' : ''}`} data-session-id={row.id}>
-    {gesture.offset !== 0 && <div className="home-archive-background" aria-hidden="true"><Icon name="archive" /><span>アーカイブ</span></div>}
+    {gesture.offset !== 0 && <div className="home-archive-background" aria-hidden="true"><Icon name="inventory_2" /><span>アーカイブ</span></div>}
     <div className="home-session-surface" style={{ transform: `translateX(${gesture.offset}px)` }}>
       <button type="button" className="home-session-button" {...gesture.handlers} disabled={disabled || opening || mode === 'sort' || (mode === 'select' && !editable)}
         aria-label={`${row.displayTitle}${state ? `、${state}` : ''}${editable ? '' : '、子の会話・閲覧のみ'}`} aria-pressed={mode === 'select' && editable ? selected : undefined}
-        onKeyDown={event => { if (mode === 'normal' && canMutate && editable && event.shiftKey && event.key === 'F10') { event.preventDefault(); onActions() } }}>
+        onContextMenu={event => event.preventDefault()}>
         {mode === 'select' && <span inert className="home-selection"><M3eCheckbox checked={editable && selected} disabled={!editable} tabIndex={-1} aria-hidden="true" /></span>}
         <span className="home-model-avatar" aria-hidden="true">
           {icon.kind === 'initial' ? icon.initial : <span className="home-model-glyph" style={{ '--home-model-icon': `url("${icon.kind === 'deepseek' ? deepseekIcon : genericIcon}")` } as CSSProperties} />}
@@ -56,6 +55,7 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
         <span className="home-session-text"><strong>{row.displayTitle}</strong><small>{folderName(row.cwd)} ・ {formatUpdatedAt(row.updatedAt)}</small>
           {!editable && <small>{opening ? '子の会話を開いています…' : '子の会話・閲覧のみ'}</small>}
           {state && <span className="home-sr-only">{state}</span>}</span>
+        {mode === 'normal' && <Icon name="chevron_right" className="home-row-chevron" />}
       </button>
       {mode === 'sort' && editable && <button type="button" className="home-drag-handle" aria-label={`${row.displayTitle}を並べ替え。上下キーでも移動できます`}
         disabled={disabled || !canMutate} onKeyDown={event => {
@@ -80,7 +80,6 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
           const value = drag.current; drag.current = null; setDragging(false); setDestination('')
           if (value?.active) onMove(value.before)
         }} onPointerCancel={() => { drag.current = null; setDragging(false); setDestination('') }}><Icon name="drag_handle" /></button>}
-      {mode === 'normal' && editable && <M3eIconButton className="home-row-more" aria-label={`${row.displayTitle}の操作`} disabled={disabled || opening || !canMutate} onClick={onActions}><Icon name="more_horiz" /></M3eIconButton>}
     </div>
     {dragging && <span role="status" className="home-drag-destination">{destination}</span>}
   </li>

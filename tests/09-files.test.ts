@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { appendFilePage, directoryChanged, fileBreadcrumbs, fileChanged, fileKind, fileRoute, fileSize, FileVersionChanged, readImageFile, sortFileEntries, type WorkspaceDirectoryEntry, type WorkspaceFilesRemote } from '../web/src/features/session-tools/files.ts'
+import { appendFilePage, directoryChanged, fileBreadcrumbs, fileChanged, fileKind, fileRoute, fileSize, FileVersionChanged, imageMediaTypes, readImageFile, readTextFilePage, sortFileEntries, type WorkspaceDirectoryEntry, type WorkspaceFilesRemote } from '../web/src/features/session-tools/files.ts'
 import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock-files.ts'
 
 test('file entries place directories first and use natural names without mutating the listing', () => {
@@ -11,10 +11,45 @@ test('file entries place directories first and use natural names without mutatin
 
 test('file kind handles case, binary types, unknown text, and dots in parent paths', () => {
   assert.equal(fileKind('docs/README.MD'), 'markdown')
-  for (const extension of ['png', 'JPG', 'jpeg', 'gif', 'webp', 'svg']) assert.equal(fileKind(`photo.${extension}`), 'image')
+  for (const extension of ['png', 'JPG', 'jpeg', 'gif', 'webp']) assert.equal(fileKind(`photo.${extension}`), 'image')
   assert.equal(fileKind('artifact.bin'), 'binary')
   assert.equal(fileKind('docs.md/README'), 'text')
   assert.equal(fileKind('main.ts'), 'text')
+})
+
+test('SVG は画像用 Blob の対象にせず、スクリプトを含む内容も元の文字として読む', async () => {
+  for (const path of ['image.svg', 'docs/image.SVG', 'docs.png/image.SvG', 'docs/image.png.svg']) {
+    assert.equal(fileKind(path), 'text')
+  }
+  assert.equal(imageMediaTypes.svg, undefined)
+
+  const source = '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script></svg>'
+  const signal = new AbortController().signal
+  const api: WorkspaceFilesRemote = {
+    ...createWorkspaceFilesMock().remote,
+    async read(sessionId, path, range, requestedSignal) {
+      assert.equal(sessionId, 's')
+      assert.equal(path, 'image.svg')
+      assert.deepEqual(range, { offset: 1, limit: 5000 })
+      assert.equal(requestedSignal, signal)
+      return { ok: true, value: { absolutePath: '/work/image.svg', version: 'v1', offset: 1, text: source, lines: 1, eof: true } }
+    },
+    async readBytes() { assert.fail('SVG は画像として読み込まない') },
+  }
+  const content = await readTextFilePage(api, 's', 'image.svg', 1, signal)
+  assert.equal(content.kind, 'text')
+  if (content.kind !== 'text') assert.fail('SVG の元の文字が必要です。')
+  assert.equal(appendFilePage(undefined, content.page).text, source)
+})
+
+test('PNG・JPEG・GIF・WebP の画像分類と Blob の MIME 型を維持する', () => {
+  for (const [extension, mediaType] of [
+    ['png', 'image/png'], ['jpg', 'image/jpeg'], ['jpeg', 'image/jpeg'], ['gif', 'image/gif'], ['webp', 'image/webp'],
+  ] as const) {
+    assert.equal(fileKind(`image.${extension}`), 'image')
+    assert.equal(fileKind(`image.${extension.toUpperCase()}`), 'image')
+    assert.equal(imageMediaTypes[extension], mediaType)
+  }
 })
 
 test('file URLs preserve special path characters and breadcrumbs remain rooted', () => {

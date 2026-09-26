@@ -13,8 +13,8 @@ import { StatsSheet } from './StatsSheet.tsx'
 import './session-tools.css'
 
 const labels: Record<MenuAction, [string, string]> = {
-  rename: ['題名を変える', 'edit'], stats: ['統計', 'bar_chart'], files: ['ファイル', 'folder'],
-  jobs: ['ジョブ', 'work'], subagents: ['サブエージェント', 'account_tree'], goal: ['ゴール', 'flag'], archive: ['アーカイブ', 'archive'],
+  rename: ['題名を変える', 'edit'], stats: ['統計', 'monitoring'], files: ['ファイル', 'folder'],
+  jobs: ['ジョブ', 'pending_actions'], subagents: ['サブエージェント', 'account_tree'], goal: ['ゴール', 'flag'], archive: ['アーカイブ', 'inventory_2'],
 }
 
 export function SessionMenuButton({ sessionId }: { sessionId: string }) {

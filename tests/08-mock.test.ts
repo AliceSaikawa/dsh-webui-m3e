@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
-import { groupNamespaces, schemaFields, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
+import { groupNamespaces, schemaFields, selectFieldState, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 
 function setup(scenario?: string) {
@@ -93,6 +93,25 @@ test('読み取り専用では保存も既定値への復元も拒否する', as
       if (!result.ok) assert.equal(result.error.code, 'settings/readonly')
     }
     assert.deepEqual(await namespace(remote), initial)
+  } finally { ctx.dispose() }
+})
+
+test('未設定シナリオでは任意の選択欄を未設定として表示し、選択・既定値への復帰ができる', async () => {
+  const { ctx, remote } = setup('settings-unset')
+  try {
+    const initial = await namespace(remote)
+    const field = schemaFields(initial).find(item => item.path[0] === 'mode')!
+    assert.equal(field.kind, 'select')
+    assert.equal(field.required, false)
+    assert.equal(field.value, undefined)
+    assert.deepEqual(selectFieldState(field, field.value), { index: -1, placeholder: '未設定' })
+    const chosen = field.options![0]!.value
+    const saved = unwrapRemoteResult(await remote.update(initial.ns, { mode: chosen }, initial.revision))
+    assert.deepEqual(selectFieldState(field, saved.value.mode), { index: 0, placeholder: undefined })
+    const reset = unwrapRemoteResult(await remote.mutate(initial.ns, [{ op: 'unset', path: ['mode'] }], saved.revision))
+    assert.equal(Object.hasOwn(reset.value, 'mode'), false)
+    assert.deepEqual(selectFieldState(field, reset.value.mode), { index: -1, placeholder: '未設定' })
+    assert.equal(reset.value.name, initial.value.name)
   } finally { ctx.dispose() }
 })
 

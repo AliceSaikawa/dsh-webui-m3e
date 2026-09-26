@@ -90,7 +90,7 @@ export function HomeScreen() {
   const toolbar = <>
     {mode === 'normal' ? <M3eIconButton aria-label="ワークスペースを切り替え" onClick={() => setDrawerOpen(true)}><Icon name="menu" /></M3eIconButton>
       : <M3eIconButton aria-label="操作を終了" disabled={busy} onClick={() => changeMode('normal')}><Icon name="close" /></M3eIconButton>}
-    <h1>{mode === 'sort' ? '並べ替え' : mode === 'select' ? `${selectedIds.length} 件選択中` : workspace?.title ?? '一覧'}</h1>
+    <h1 className="home-title">{mode === 'sort' ? '並べ替え' : mode === 'select' ? `${selectedIds.length} 件選択中` : workspace?.title ?? '一覧'}</h1>
     {mode === 'normal' && <M3eIconButton aria-label="一覧のメニュー" onClick={event => { if (event.currentTarget instanceof HTMLElement) void menu.current?.toggle(event.currentTarget) }}><Icon name="more_vert" /></M3eIconButton>}
     {mode === 'sort' && <M3eButton disabled={busy} onClick={() => changeMode('normal')}>完了</M3eButton>}
     {mode === 'select' && <M3eButton disabled={busy || !connected || !selectedIds.length} onClick={() => { void archive(selectedIds) }}>{selectedIds.length} 件をアーカイブ</M3eButton>}
@@ -145,7 +145,7 @@ export function HomeScreen() {
       <M3eMenuItem disabled={!workspace || !rows.length || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />選んでアーカイブ</M3eMenuItem>
       <M3eMenuItem disabled={!workspace || !connected || loading} onClick={() => { menu.current?.hide(); if (workspace) renameWorkspace(dsh, workspace) }}><Icon slot="icon" name="edit" />名前を変える</M3eMenuItem>
       <M3eMenuItem role="menuitemcheckbox" aria-checked={preferences.showSubagents} onClick={() => { menu.current?.hide(); setShowSubagents(!preferences.showSubagents) }}>
-        サブエージェントも表示<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>
+        <Icon slot="icon" name="account_tree" />サブエージェントも表示<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>
       </M3eMenuItem>
     </M3eMenu>
   </M3eDrawerContainer>

@@ -175,9 +175,16 @@ export function schemaFields(namespace: SettingsNamespace): SettingField[] {
   return fields(schema, [])
 }
 
-export function parseFieldInput(field: SettingField, input: string): { ok: true; value: string | number } | { ok: false; message: string } {
+export function selectFieldState(field: Pick<SettingField, 'options'>, value: SettingValue | undefined): { index: number; placeholder?: string } {
+  const index = field.options?.findIndex(option => Object.is(option.value, value)) ?? -1
+  return { index, placeholder: index >= 0 ? undefined : value === undefined ? '未設定' : '現在の値は選択肢にありません' }
+}
+
+export function parseFieldInput(field: SettingField, input: string): { ok: true; value: string | number | undefined } | { ok: false; message: string } {
   if (field.kind !== 'number') {
-    if (field.required && !input.trim()) return { ok: false, message: '値を入力してください。' }
+    if (!input.trim()) return field.required
+      ? { ok: false, message: '値を入力してください。' }
+      : { ok: true, value: undefined }
     return { ok: true, value: input }
   }
   if (!input.trim()) return { ok: false, message: '数値を入力してください。' }
