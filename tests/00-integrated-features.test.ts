@@ -33,13 +33,13 @@ test('06・07・09 の偽データを同時登録し、基準データ到着後�
     ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
     syncConversationSelection(ctx.sessions, selected, true)
     assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    assert.equal(countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot()), 3)
+    assert.equal(countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds), 3)
     ctx.mock.updateList(() => baseline)
     syncConversationSelection(ctx.sessions, selected, true)
     assert.equal(ctx.sessions.list.getSnapshot().current, selected)
-    const beforeRead = countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot())
+    const beforeRead = countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds)
     syncConversationSelection(ctx.sessions, INBOX_MOCK_IDS.completed, true)
-    assert.equal(countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot()), beforeRead - 1)
+    assert.equal(countInbox(pending.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds), beforeRead - 1)
 
     // Search lives outside the conversation and still sees the shared fixtures.
     syncConversationSelection(ctx.sessions, undefined, false)
