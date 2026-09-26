@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   buildChatRows, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
-  isNearBottom, preservePrependScroll, summarizeToolArguments,
+  isNearBottom, preservePrependScroll, summarizeToolArguments, toolIcon,
 } from '../web/src/features/chat/model.ts'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
 import type { JsonValue, PendingSubmission, SessionWireEvent, StreamChunk } from '../web/src/dsh/services.ts'
@@ -164,12 +164,19 @@ test('command outcomes retain success, failure, and unknown states with Japanese
   const commands = rows.filter(row => row.kind === 'command')
   assert.deepEqual(commands.map(row => row.status), ['success', 'error', 'error', 'unknown', 'unknown'])
   assert.deepEqual(commands.map(commandPresentation), [
-    { label: '/permission を実行しました', icon: 'check_circle' },
+    { label: '/permission を実行しました', icon: 'terminal' },
     { label: '/permission の実行に失敗しました', icon: 'error', failureReason: '設定を変更できませんでした。' },
     { label: 'コマンドの実行に失敗しました', icon: 'error', failureReason: '詳しい理由は記録されていません。' },
     { label: 'コマンドの結果を受け取りました', icon: 'info' },
     { label: 'コマンドの結果を受け取りました', icon: 'info' },
   ])
+})
+
+test('tool identity uses the file icon only for read_file and keeps a terminal fallback', () => {
+  assert.equal(toolIcon('read_file'), 'description')
+  assert.equal(toolIcon('bash'), 'terminal')
+  assert.equal(toolIcon('new_tool'), 'terminal')
+  assert.equal(toolIcon(''), 'terminal')
 })
 
 test('system messages read the installed message payload and preserve structured text content', () => {

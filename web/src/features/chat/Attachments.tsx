@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { openFullSheet } from '../../app/overlay/index.ts'
 import type { FileAttachmentRef, ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
+import { useChatSheets } from './ChatSheets.tsx'
 
 export function FileAttachment({ attachment }: { attachment: FileAttachmentRef }) {
   const bytes = Math.max(0, attachment.bytes)
@@ -12,9 +12,10 @@ export function FileAttachment({ attachment }: { attachment: FileAttachmentRef }
 }
 
 export function PreviewImage({ url, name = '添付画像', beforeExpand }: { url: string; name?: string; beforeExpand?: () => void }) {
+  const sheets = useChatSheets()
   const expand = () => {
     beforeExpand?.()
-    openFullSheet(close => <div className="chat-image-full"><header><h2>{name}</h2><M3eButton onClick={close}>閉じる</M3eButton></header>
+    sheets.openFull(close => <div className="chat-image-full"><header><h2>{name}</h2><M3eButton onClick={close}>閉じる</M3eButton></header>
       <img src={url} alt={name} /></div>, { label: '画像の表示' })
   }
   return <button type="button" className="chat-image-button" onClick={expand} aria-label={`${name}を全画面で表示`}>
@@ -26,6 +27,7 @@ export function PreviewImage({ url, name = '添付画像', beforeExpand }: { url
 export function AttachmentImage({ attachment, face, full = false, beforeExpand }: {
   attachment: ImageAttachmentRef; face?: SessionFace; full?: boolean; beforeExpand?: () => void
 }) {
+  const sheets = useChatSheets()
   const [source, setSource] = useState<{ id: string; url: string }>()
   const [failed, setFailed] = useState(false)
   const [retry, setRetry] = useState(0)
@@ -49,7 +51,7 @@ export function AttachmentImage({ attachment, face, full = false, beforeExpand }
   if (full) return <img src={source.url} alt={name} onError={() => setFailed(true)} />
   const expand = () => {
     beforeExpand?.()
-    openFullSheet(close => <div className="chat-image-full"><header><h2>{name}</h2><M3eButton onClick={close}>閉じる</M3eButton></header>
+    sheets.openFull(close => <div className="chat-image-full"><header><h2>{name}</h2><M3eButton onClick={close}>閉じる</M3eButton></header>
       <AttachmentImage attachment={attachment} face={face} full /></div>, { label: '画像の表示' })
   }
   return <button type="button" className="chat-image-button" onClick={expand} aria-label={`${name}を全画面で表示`}>

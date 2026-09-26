@@ -39,6 +39,18 @@ test('追加の偽履歴はシステム、ファイル、入れ子と長いツ�
   } finally { ctx.dispose() }
 })
 
+test('仕様確認の偽履歴に12秒の思考、read_file、失敗bash、成否のコマンドを含む', () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const rows = buildChatRows(foldSessionWindow(ctx.sessions.binding('chat-spec-check')!.eventSource.getSnapshot()).records)
+    const reasoning = rows.find(row => row.kind === 'reasoning')
+    assert.ok(reasoning?.kind === 'reasoning')
+    assert.equal(reasoning.durationMs, 12_000)
+    assert.deepEqual(rows.flatMap(row => row.kind === 'tool' ? [[row.name, row.status]] : []), [['read_file', 'success'], ['bash', 'error']])
+    assert.deepEqual(rows.flatMap(row => row.kind === 'command' ? [[row.name, row.status, !!row.text]] : []), [['check', 'error', true], ['status', 'success', false]])
+  } finally { ctx.dispose() }
+})
+
 test('処理エラーと読込エラーのシナリオを既存の公開入口で用意する', () => {
   for (const scenario of ['chat-error', 'open-error']) {
     const ctx = createMockContext({ scenario, extensions: [{ extendMock }] })
