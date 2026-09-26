@@ -4,7 +4,7 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import type { RemoteResult } from '../web/src/dsh/services.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { createSettingsStore, fieldKey, type SettingsApi } from '../web/src/features/settings/store.ts'
-import type { SettingsDescription, SettingsNamespace } from '../web/src/features/settings/schema.ts'
+import { parseFieldInput, schemaFields, type SettingsDescription, type SettingsNamespace } from '../web/src/features/settings/schema.ts'
 
 const ns = 'agent-loop'
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -74,6 +74,61 @@ test('再接続では revision 3 の基準を 0 に更新し、続けて二回�
   assert.equal(current(h.store).value.timeout, 60)
   assert.equal(current(h.store).value.name, '再起動後の設定')
   assert.deepEqual(notices, [])
+})
+
+test('同じ接続で revision が 3 から 0 に戻っても、競合後に読み直して二回保存できる', async () => {
+  const h = restartingHarness()
+  const notices: string[] = []
+  h.store.subscribeNotice(message => notices.push(message))
+  await h.store.connectionChanged('connected')
+  assert.equal(current(h.store).revision, 3)
+  const generation = h.store.getSnapshot().generation[ns] ?? 0
+  h.restart()
+  assert.equal(await h.store.edit(ns, ['timeout'], 60), false)
+  assert.equal(current(h.store).revision, 0)
+  assert.ok(h.store.getSnapshot().generation[ns]! > generation)
+  assert.deepEqual(notices, ['ほかの場所で設定が変わりました。読み直しました'])
+  assert.equal(await h.store.edit(ns, ['timeout'], 60), true)
+  assert.equal(await h.store.edit(ns, ['name'], '再登録後の設定'), true)
+  assert.deepEqual(h.revisions, [3, 0, 1])
+  assert.equal(current(h.store).revision, 2)
+  assert.equal(current(h.store).value.timeout, 60)
+  assert.equal(current(h.store).value.name, '再登録後の設定')
+})
+
+test('同じ接続の小さい revision の通知でも再読込し、同じ番号だけを無視する', async () => {
+  const h = restartingHarness()
+  const original = h.api.describe
+  let describes = 0
+  h.api.describe = () => { describes++; return original() }
+  await h.store.connectionChanged('connected')
+  h.store.documentUpdated(ns, 3)
+  await tick()
+  assert.equal(describes, 1)
+  h.restart()
+  h.store.documentUpdated(ns, 0)
+  await tick()
+  assert.equal(describes, 2)
+  assert.equal(current(h.store).revision, 0)
+  assert.equal(await h.store.edit(ns, ['timeout'], 60), true)
+  assert.deepEqual(h.revisions, [0])
+})
+
+test('同じ接続で新しい読込の revision が小さくても、遅れて届いた古い高い revision は捨てる', async () => {
+  const h = restartingHarness()
+  await h.store.connectionChanged('connected')
+  const original = h.api.describe
+  const old = await original()
+  const delayed = deferred<RemoteResult<SettingsDescription>>()
+  h.api.describe = () => delayed.promise
+  const earlier = h.store.reload()
+  h.restart()
+  h.api.describe = original
+  assert.equal(await h.store.reload(), true)
+  assert.equal(current(h.store).revision, 0)
+  delayed.resolve(old)
+  assert.equal(await earlier, false)
+  assert.equal(current(h.store).revision, 0)
 })
 
 test('再接続前の describe が後から届いても、新接続の revision 0 を上書きしない', async () => {
@@ -287,7 +342,7 @@ test('先行する保存が競合したとき、古い画面から待機中の�
   } finally { h.ctx.dispose() }
 })
 
-test('外部の更新通知で再読込し、古い revision や不正な通知は無視する', async () => {
+test('外部の更新通知で再読込し、同じ revision や不正な通知は無視する', async () => {
   const h = harness()
   try {
     await h.store.reload()
@@ -299,7 +354,6 @@ test('外部の更新通知で再読込し、古い revision や不正な通知�
     assert.equal(current(h.store).value.timeout, 90)
     assert.equal(h.store.getSnapshot().generation[ns], 1)
     h.store.documentUpdated(ns, 2)
-    h.store.documentUpdated(ns, 1)
     h.store.documentUpdated(null)
     await tick()
     assert.equal(h.describes, 2)
@@ -403,6 +457,34 @@ test('通常の未設定の項目は初回から保存できる', async () => {
     assert.equal(await h.store.edit(row.ns, ['reasoningEffort'], 'high'), true)
     assert.equal(current(h.store, row.ns).value.reasoningEffort, 'high')
     assert.deepEqual(h.calls, [{ kind: 'update', ns: row.ns, input: { reasoningEffort: 'high' }, revision: row.revision }])
+  } finally { h.ctx.dispose() }
+})
+
+test('任意の文字項目を空欄にすると unset で上書きを消し、ほかの設定を保つ', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    const name = 'agent-default-model'
+    const before = current(h.store, name)
+    let revision = before.revision
+    for (const input of ['', '   ']) {
+      assert.equal(await h.store.edit(name, ['reasoningEffort'], 'high'), true)
+      revision++
+      const field = schemaFields(current(h.store, name)).find(item => item.path[0] === 'reasoningEffort')
+      assert.ok(field)
+      const parsed = parseFieldInput(field, input)
+      assert.deepEqual(parsed, { ok: true, value: undefined })
+      if (!parsed.ok) return
+      assert.equal(await h.store.edit(name, field.path, parsed.value), true)
+      assert.deepEqual(h.calls.at(-1), { kind: 'mutate', ns: name, input: [{ op: 'unset', path: ['reasoningEffort'] }], revision })
+      revision++
+      const after = current(h.store, name)
+      assert.equal(after.revision, revision)
+      assert.equal(Object.hasOwn(after.value, 'reasoningEffort'), false)
+      assert.equal(Object.hasOwn(after.user!, 'reasoningEffort'), false)
+      assert.deepEqual(after.value, before.value)
+      assert.deepEqual(after.user, before.user)
+    }
   } finally { h.ctx.dispose() }
 })
 

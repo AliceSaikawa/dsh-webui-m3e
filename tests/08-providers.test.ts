@@ -49,6 +49,120 @@ test('偽データは登録済み・未登録・不要を分け、登録と削�
   } finally { ctx.dispose() }
 })
 
+test('保存と削除の再確認中に更新通知が重なっても操作を完了する', async () => {
+  for (const operation of ['save', 'remove']) {
+    for (const event of ['credentials/reference-updated', 'llm/adapters-updated', 'settings/document-updated']) {
+      const { ctx, remote } = setup()
+      try {
+        const store = createProviderStore(remote)
+        await store.load()
+        const target = row(store, operation === 'save' ? 'cloud' : 'deepseek-official')
+        const started = deferred<void>()
+        const release = deferred<void>()
+        const describe = remote.settings.describe
+        let reads = 0
+        remote.settings.describe = async () => {
+          const answer = structuredClone(await describe())
+          if (++reads === 1) { started.resolve(); await release.promise }
+          return answer
+        }
+        const refreshes: Promise<boolean>[] = []
+        const on = ctx.remote.$on as (name: string, handler: () => void) => () => void
+        const off = on(event, () => { refreshes.push(store.load()) })
+        const draft = createKeyDraft(value => store.save(target, value))
+        draft.input('overlapping-event-input'); draft.toggle()
+        const pending = operation === 'save' ? draft.submit() : store.remove(target).then(result => result.ok)
+        await started.promise
+        await ctx.mock.emit(event, target.ref)
+        assert.equal(store.getSnapshot().busy, true)
+        release.resolve()
+        assert.equal(await pending, true)
+        await Promise.all(refreshes)
+        assert.equal(row(store, target.id).status, operation === 'save' ? 'registered' : 'missing')
+        assert.equal(store.getSnapshot().error, null)
+        assert.ok(reads >= 3, '通知が重なった検証用の取得をやり直し、操作後にも状態を取得する')
+        if (operation === 'save') assert.deepEqual(draft.getSnapshot(), { draft: '', visible: false, busy: false, error: null })
+        assert.doesNotMatch(JSON.stringify(store.getSnapshot()), /overlapping-event-input/)
+        off(); draft.dispose()
+      } finally { ctx.dispose() }
+    }
+  }
+})
+
+test('更新通知が重なった再確認は最新の参照先を取り直し古い参照への保存を止める', async () => {
+  const { ctx, remote } = setup()
+  try {
+    const store = createProviderStore(remote)
+    await store.load()
+    const target = row(store)
+    const started = deferred<void>()
+    const release = deferred<void>()
+    const describe = remote.settings.describe
+    let reads = 0
+    let writes = 0
+    remote.settings.describe = async () => {
+      const answer = structuredClone(await describe())
+      if (++reads === 1) { started.resolve(); await release.promise }
+      return answer
+    }
+    remote.credentials.set = async () => { writes++; return success({}) }
+    const refreshes: Promise<boolean>[] = []
+    const on = ctx.remote.$on as (name: string, handler: () => void) => () => void
+    const off = on('settings/document-updated', () => { refreshes.push(store.load()) })
+    const pending = store.save(target, 'must-not-use-outdated-reference')
+    await started.promise
+    const updated = await remote.settings.update(target.ns, { providers: { cloud: { apiKeyEnv: 'CHANGED_API_KEY' } } }, target.revision!)
+    assert.equal(updated.ok, true)
+    release.resolve()
+    assert.equal((await pending).ok, false)
+    await Promise.all(refreshes)
+    assert.equal(writes, 0)
+    assert.equal(row(store).ref, 'CHANGED_API_KEY')
+    off()
+  } finally { ctx.dispose() }
+})
+
+test('参照指定のない未稼働の非 pi-ai 提供元も導出参照で状態だけを照会する', async () => {
+  for (const configured of [false, true]) {
+    const { ctx, remote } = setup()
+    try {
+      const list = remote.llm.listProviders
+      remote.llm.listProviders = async () => success(unwrapRemoteResult(await list()).filter(item => item.id !== 'deepseek-official'))
+      const describe = remote.settings.describe
+      remote.settings.describe = async () => {
+        const description = structuredClone(unwrapRemoteResult(await describe()))
+        description.namespaces.find(item => item.ns === 'llm-deepseek')!.value = {}
+        return success(description)
+      }
+      const lookup = remote.credentials.describe
+      const lookedUp: string[][] = []
+      remote.credentials.describe = async refs => {
+        lookedUp.push(refs)
+        const result = unwrapRemoteResult(await lookup(refs))
+        result.DEEPSEEK_OFFICIAL_API_KEY = { configured, writable: true }
+        return success(result)
+      }
+      let writes = 0
+      remote.settings.update = async () => { writes++; return failure('変更してはいけません') }
+      remote.credentials.set = async () => { writes++; return failure('変更してはいけません') }
+      remote.credentials.unset = async () => { writes++; return failure('変更してはいけません') }
+      const store = createProviderStore(remote)
+      assert.equal(await store.load(), true)
+      const target = row(store, 'deepseek-official')
+      assert.equal(target.ref, 'DEEPSEEK_OFFICIAL_API_KEY')
+      assert.equal(target.status, configured ? 'registered' : 'missing')
+      assert.equal(target.writable, false)
+      assert.equal(store.getSnapshot().error, null)
+      const requested = lookedUp[0]
+      assert.ok(requested)
+      assert.ok(requested.includes('DEEPSEEK_OFFICIAL_API_KEY'))
+      assert.equal((await store.save(target, 'must-not-write-derived-only-reference')).ok, false)
+      assert.equal((await store.remove(target)).ok, false)
+      assert.equal(writes, 0)
+    } finally { ctx.dispose() }
+  }
+})
+
 test('設定全体とキー専用の読み取り専用状態はどちらも登録と削除を止める', async () => {
   for (const scenario of ['settings-readonly', 'settings-keys-readonly']) {
     const { ctx, remote } = setup(scenario)
@@ -229,15 +343,15 @@ test('設定の参照先が外部で変わったら古い入力シートの保�
   } finally { ctx.dispose() }
 })
 
-test('切断前に始まった照会と保存の応答は切断後の状態を巻き戻さない', async () => {
-  for (const operation of ['load', 'save']) {
+test('切断前に始まった照会・保存前再確認・保存の応答は切断後の状態を巻き戻さない', async () => {
+  for (const operation of ['load', 'validation', 'save']) {
     const { ctx, remote } = setup()
     try {
       const store = createProviderStore(remote)
       await store.load()
       const started = deferred<void>()
       const pending = deferred<RemoteResult<Record<string, unknown>>>()
-      if (operation === 'load') remote.credentials.describe = async () => { started.resolve(); return pending.promise }
+      if (operation !== 'save') remote.credentials.describe = async () => { started.resolve(); return pending.promise }
       else remote.credentials.set = async () => { started.resolve(); return pending.promise }
       const request = operation === 'load' ? store.load() : store.save(row(store), 'old-connection-input')
       await started.promise
@@ -251,6 +365,49 @@ test('切断前に始まった照会と保存の応答は切断後の状態を�
       assert.deepEqual(store.getSnapshot(), disconnected)
     } finally { ctx.dispose() }
   }
+})
+
+test('保存後の遅い再取得と待機した通知は再接続後の操作を妨げない', async () => {
+  const { ctx, remote } = setup()
+  try {
+    const store = createProviderStore(remote)
+    await store.load()
+    const oldRefreshStarted = deferred<void>()
+    const oldRefreshRelease = deferred<void>()
+    const describe = remote.settings.describe
+    let reads = 0
+    remote.settings.describe = async () => {
+      const answer = structuredClone(await describe())
+      if (++reads === 2) { oldRefreshStarted.resolve(); await oldRefreshRelease.promise }
+      return answer
+    }
+    const oldSave = store.save(row(store), 'input-from-old-connection')
+    await oldRefreshStarted.promise
+    const oldEvent = store.load()
+    store.connectionChanged(false)
+    store.connectionChanged(true)
+    assert.equal(await store.load(), true)
+    assert.equal(row(store).status, 'registered')
+    const newWriteStarted = deferred<void>()
+    const newWriteRelease = deferred<void>()
+    const unset = remote.credentials.unset
+    remote.credentials.unset = async ref => {
+      newWriteStarted.resolve(); await newWriteRelease.promise
+      return unset(ref)
+    }
+    const newSave = store.remove(row(store))
+    await newWriteStarted.promise
+    const current = structuredClone(store.getSnapshot())
+    assert.equal(current.busy, true)
+    oldRefreshRelease.resolve()
+    assert.equal((await oldSave).ok, false)
+    assert.equal(await oldEvent, false)
+    assert.deepEqual(store.getSnapshot(), current)
+    newWriteRelease.resolve()
+    assert.equal((await newSave).ok, true)
+    assert.equal(row(store).status, 'missing')
+    assert.equal(store.getSnapshot().busy, false)
+  } finally { ctx.dispose() }
 })
 
 test('権限の偽データは03の既定値とプリセット候補に一致する', async () => {
