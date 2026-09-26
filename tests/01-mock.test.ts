@@ -19,7 +19,7 @@ test('ホームの偽データは共有履歴を保ち、3 ワークスペース
     assert.deepEqual(workspaces.map((workspace) => workspace.sessionIds.length), [6, 1, 0])
     assert.equal(list.ids.length, 7)
     assert.equal(list.byId[MOCK_IDS.sessions.approval]?.running, true)
-    assert.equal(list.byId[HOME_MOCK_IDS.completed]?.completed, true)
+    assert.equal(list.byId[HOME_MOCK_IDS.completed]?.completed, false)
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.origin, 'subagent')
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.parentId, MOCK_IDS.sessions.readme)
     for (const workspace of workspaces) for (const id of workspace.sessionIds) assert.ok(list.byId[id])
@@ -116,11 +116,12 @@ test('子の追加は同じ親の既存の行・補助情報と別の親のカ�
   } finally { ctx.dispose() }
 })
 
-test('返事待ちの会話はハンドラ登録後に質問を受け取り、回答で待ち状態を解消する', { timeout: 2000 }, async () => {
-  const ctx = createMockContext({ extensions: [extension] })
+test('homeの会話は未読完了と質問を用意し、回答で待ち状態を解消する', { timeout: 2000 }, async () => {
+  const ctx = createMockContext({ extensions: [extension], scenario: 'home' })
   const store = new InteractionStore()
   const dispose = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
   try {
+    assert.equal(ctx.sessions.list.getSnapshot().byId[HOME_MOCK_IDS.completed]?.completed, true)
     assert.equal(store.getSnapshot().length, 0)
     await new Promise<void>((resolve) => {
       const unsubscribe = store.subscribe(() => {
@@ -245,8 +246,8 @@ test('picker-truncated は 1,000 件だけを返し、省略を通知する', as
 })
 
 test('偽データのコンテキスト間でフォルダとアーカイブの変更を共有しない', async () => {
-  const first = createMockContext({ extensions: [extension] })
-  const second = createMockContext({ extensions: [extension] })
+  const first = createMockContext({ extensions: [extension], scenario: 'home' })
+  const second = createMockContext({ extensions: [extension], scenario: 'home' })
   try {
     const firstPicker = first.remote.directoryPicker as ReturnType<typeof createDirectoryMock>
     const secondPicker = second.remote.directoryPicker as ReturnType<typeof createDirectoryMock>
