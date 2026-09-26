@@ -10,8 +10,9 @@ import { useOverlays } from '../../app/overlay/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { useSession } from '../../dsh/session.ts'
+import { sessionAccess } from '../../dsh/session-access.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { usePendingInteractions, resetDeferred } from '../../dsh/interactions.ts'
+import { usePendingInteractions } from '../../dsh/interactions.ts'
 import { shouldHideComposer } from '../../dsh/interaction-presentation.ts'
 import { ChatView } from '../chat/ChatView.tsx'
 import { TraceView } from '../trace/TraceView.tsx'
@@ -24,6 +25,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
   const { snapshot } = useSession(sessionId)
+  const access = sessionAccess(list.byId[sessionId], snapshot)
   const pending = usePendingInteractions(sessionId)
   const current = pending.find(item => !item.deferred)
   const overlays = useOverlays()
@@ -45,7 +47,6 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
       selectedTab.current?.focus({ preventScroll: true })
     }
   }, [tab])
-  useEffect(() => { resetDeferred(sessionId) }, [sessionId])
   useEffect(() => {
     if (!current) return
     return presentInteraction(current, { from: 'conversation' })
@@ -60,7 +61,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
       <M3eTab ref={element => { traceTabRef.current = element }} selected={tab === 'trace'} onClick={() => navigate(`${base}/trace`, { replace: true })}>トレース</M3eTab>
     </M3eTabs>
     <main ref={contentRef} className="screen-content conversation-content">
-      {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><div className="placeholder"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><div className="actions"><M3eButton onClick={back}>一覧に戻る</M3eButton><M3eButton onClick={() => window.location.reload()}>読み直す</M3eButton></div></div></div>
+      {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><div className="placeholder"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><div className="actions"><M3eButton onClick={back}>戻る</M3eButton><M3eButton onClick={() => window.location.reload()}>もう一度開く</M3eButton></div></div></div>
         : <>
           <RetainedScrollPanel active={tab === 'chat'} label="チャット">
             <ChatView sessionId={sessionId} active={tab === 'chat'} />
@@ -70,6 +71,8 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
           </RetainedScrollPanel>
         </>}
     </main>
-    {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!composerHidden && <Composer target={{ kind: 'session', sessionId }} />}</footer>}
+    {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!composerHidden && (access.canCompose
+      ? <Composer target={{ kind: 'session', sessionId }} />
+      : <p>{access.mode === 'one-shot' ? 'このサブエージェントの会話は読むだけです。' : '子の会話の情報を確認できないため、読むだけです。'}</p>)}</footer>}
   </section>
 }

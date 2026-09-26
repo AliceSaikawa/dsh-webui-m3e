@@ -8,6 +8,19 @@ export function conversationSessionId(pathname: string): string | undefined {
   catch { return undefined }
 }
 
+/** Tools and non-conversation routes do not end a deferred conversation visit. */
+export function createConversationVisitTracker(onReentry: (sessionId: string) => void): (sessionId: string | undefined) => void {
+  const visited = new Set<string>()
+  let lastSessionId: string | undefined
+  return (sessionId) => {
+    if (sessionId === undefined || sessionId === lastSessionId) return
+    const returning = visited.has(sessionId)
+    visited.add(sessionId)
+    lastSessionId = sessionId
+    if (returning) onReentry(sessionId)
+  }
+}
+
 /** Match the controller's selectability independently of the first list fetch. */
 export function canSelectConversation(
   sessions: Pick<ISessions, 'list' | 'subagentAddress'>,
