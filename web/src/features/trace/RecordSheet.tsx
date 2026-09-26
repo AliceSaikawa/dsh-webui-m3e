@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { M3eButton } from '@m3e/react/button'
-import type { ContentBlock, ImageAttachmentRef, SessionFace, TokenUsage } from '../../dsh/services.ts'
+import { M3eExpandableListItem, M3eList, M3eListItem, type M3eExpandableListItemElement } from '@m3e/react/list'
+import { Icon } from '../../app/icons/Icon.tsx'
+import type { ContentBlock, ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
-import { findTraceRow, formatCount, formatDuration, prettyJson, selectTrace, terminationLabel, type TraceRow } from './model.ts'
+import { findTraceRow, formatCount, prettyJson, selectTrace, terminationLabel, type TraceRow } from './model.ts'
+import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from './record-summary.ts'
 
 function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef; face: SessionFace | undefined }) {
   const [url, setUrl] = useState('')
@@ -50,59 +54,73 @@ function Content({ content, face }: { content: readonly ContentBlock[]; face: Se
   })}</div>
 }
 
-function Usage({ usage }: { usage: TokenUsage | undefined }) {
-  if (!usage) return <p className="muted">トークン数は記録されていません。</p>
-  return <dl className="trace-metrics">
-    <div><dt>入力（キャッシュを除く）</dt><dd>{formatCount(usage.inputTokens)}</dd></div>
-    <div><dt>出力</dt><dd>{formatCount(usage.outputTokens)}</dd></div>
-    <div><dt>キャッシュ読み込み</dt><dd>{usage.cacheReadTokens === undefined ? '未記録' : formatCount(usage.cacheReadTokens)}</dd></div>
-    <div><dt>キャッシュ書き込み</dt><dd>{usage.cacheWriteTokens === undefined ? '未記録' : formatCount(usage.cacheWriteTokens)}</dd></div>
-  </dl>
+function InfoRow({ icon, label, supporting }: { icon: string; label: string; supporting: string }) {
+  return <M3eListItem className="trace-record-row">
+    <Icon slot="leading" name={icon} />{label}
+    <span slot="supporting-text">{supporting}</span>
+  </M3eListItem>
 }
 
-/** Closed input details do not resolve or mount the potentially long history. */
-function InputDetails({ row, face }: { row: TraceRow; face: SessionFace | undefined }) {
-  const [expanded, setExpanded] = useState(false)
-  return <details onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary>入力</summary>
-    {expanded && <><p className="trace-note">読み込み済みの入力記録です。未読み込みの履歴や内部の指示は含みません。</p><Content content={row.input} face={face} /></>}
-  </details>
+/**
+ * A Canvas `record` row that opens its detail in place instead of nesting a
+ * sheet. A lazy row renders nothing while closed, so a closed input never
+ * resolves or mounts the potentially long history.
+ */
+function ExpandRow({ icon, label, supporting, initiallyOpen = false, lazy = false, render }: {
+  icon: string; label: string; supporting?: string; initiallyOpen?: boolean; lazy?: boolean; render: () => ReactNode
+}) {
+  const [mounted, setMounted] = useState(!lazy || initiallyOpen)
+  const initialized = useRef(false)
+  // The wrapper assigns `open` on every render, which would undo the user's
+  // toggle. Set the initial state once and let the element own it afterwards.
+  const attach = useCallback((element: M3eExpandableListItemElement | null) => {
+    if (!element || initialized.current) return
+    initialized.current = true
+    if (initiallyOpen) element.open = true
+  }, [initiallyOpen])
+  const own = (event: Event) => event.target === event.currentTarget
+  // The collapsible measures its content right after `opening`; render first.
+  return <M3eExpandableListItem ref={attach} className="trace-record-row"
+    onOpening={lazy ? (event: Event) => { if (own(event)) flushSync(() => setMounted(true)) } : undefined}
+    onClosed={lazy ? (event: Event) => { if (own(event)) setMounted(false) } : undefined}>
+    <Icon slot="leading" name={icon} />{label}
+    {supporting && <span slot="supporting-text">{supporting}</span>}
+    <div slot="items" role="listitem" className="trace-record-panel">{mounted && render()}</div>
+  </M3eExpandableListItem>
 }
 
 export function RecordSheet({ sessionId, initialRow, close }: { sessionId: string; initialRow: TraceRow; close: () => void }) {
   const { face, records, stream, snapshot } = useSession(sessionId)
   const row = useMemo(() => findTraceRow(selectTrace(records, stream, snapshot.running), initialRow.id) ?? initialRow,
     [records, stream, snapshot.running, initialRow])
-  const counts = { reasoning: 0, text: 0, calls: 0 }
-  for (const block of row.content) {
-    if (block.type === 'reasoning') counts.reasoning++
-    if (block.type === 'text') counts.text++
-    if (block.type === 'tool-call') counts.calls++
-  }
+  const duration = <InfoRow icon="timer" label="所要時間" supporting={recordDurationText(row)} />
   return <article className="trace-record">
     <h2>{row.title}{row.turn === null ? '' : `（ターン ${row.turn}）`}</h2>
     {row.termination ? <p className={row.failed ? 'trace-error' : 'muted'} role="status">{terminationLabel(row.termination)}：{row.termination.message}</p>
       : row.failed && <p className="trace-error" role="status">失敗{row.error ? `：${row.error}` : ''}</p>}
-    {row.kind !== 'user' && <><h3>所要時間</h3><p>{row.running ? '開始済み・実行中' : formatDuration(row.durationMs)}
-      {row.firstOutputMs !== undefined && <><br />最初の出力まで {formatDuration(row.firstOutputMs)}</>}
-    </p></>}
-    {row.retries > 0 && <p>未確定の試行 {row.retries} 回</p>}
-    {!!row.attempts?.length && <details><summary>確定しなかった試行</summary><ol>{row.attempts.map((attempt, index) =>
-      <li key={attempt.seq}>試行 {index + 1}：{attempt.termination
-        ? `${terminationLabel(attempt.termination)}・${attempt.termination.message}`
-        : '終了理由は記録されていません。'}</li>)}</ol></details>}
-    {(row.kind === 'assistant' || row.kind === 'compaction') && <>
-      <h3>トークン</h3><Usage usage={row.usage} />
-      <InputDetails key={row.id} row={row} face={face} />
-      <details><summary>出力{row.kind === 'assistant' && <span className="trace-note">思考 {counts.reasoning} ・ テキスト {counts.text} ・ ツール呼び出し {counts.calls}</span>}</summary>
-        <Content content={row.content} face={face} />
-      </details>
-    </>}
-    {(row.kind === 'tool' || row.kind === 'subtool') && <>
-      {row.depth > 0 && <p className="trace-note">入れ子の深さ：{row.depth}</p>}
-      <details open><summary>引数</summary>{row.arguments ? <pre>{prettyJson(row.arguments)}</pre> : <p>引数は記録されていません。</p>}</details>
-      <details open><summary>結果</summary>{row.running ? <p>結果を待っています。</p> : <Content content={row.content} face={face} />}</details>
-    </>}
+    {row.depth > 0 && <p className="trace-note">入れ子の深さ：{row.depth}</p>}
+    {(row.kind === 'assistant' || row.kind === 'compaction') && <M3eList className="trace-record-list" aria-label="記録の内容">
+      {duration}
+      <InfoRow icon="data_usage" label="トークン" supporting={recordUsageText(row.usage)} />
+      {row.retries > 0 && (row.attempts?.length
+        ? <ExpandRow icon="history" label="確定しなかった試行" supporting={`未確定の試行 ${row.retries} 回`} render={() =>
+          <ol>{row.attempts?.map((attempt, index) => <li key={attempt.seq}>試行 {index + 1}：{attempt.termination
+            ? `${terminationLabel(attempt.termination)}・${attempt.termination.message}`
+            : '終了理由は記録されていません。'}</li>)}</ol>} />
+        : <InfoRow icon="history" label="確定しなかった試行" supporting={`未確定の試行 ${row.retries} 回`} />)}
+      <ExpandRow key={`input:${row.id}`} icon="input" label="入力" supporting={recordInputSupporting} lazy render={() => <>
+        <p className="trace-note">読み込み済みの入力記録です。未読み込みの履歴や内部の指示は含みません。</p>
+        <Content content={row.input} face={face} />
+      </>} />
+      <ExpandRow icon="output" label="出力" supporting={recordOutputText(row)} render={() => <Content content={row.content} face={face} />} />
+    </M3eList>}
+    {(row.kind === 'tool' || row.kind === 'subtool') && <M3eList className="trace-record-list" aria-label="記録の内容">
+      <ExpandRow icon="data_object" label="引数" supporting={row.arguments ? undefined : '記録されていません'} initiallyOpen={!!row.arguments}
+        render={() => row.arguments ? <pre>{prettyJson(row.arguments)}</pre> : <p>引数は記録されていません。</p>} />
+      <ExpandRow icon="output" label="結果" supporting={recordResultText(row)} initiallyOpen
+        render={() => row.running ? <p>結果を待っています。</p> : <Content content={row.content} face={face} />} />
+      {duration}
+    </M3eList>}
     {row.kind === 'user' && <><h3>本文と添付</h3><Content content={row.content} face={face} /></>}
     <div className="actions"><M3eButton variant="text" onClick={close}>閉じる</M3eButton></div>
   </article>

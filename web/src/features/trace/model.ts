@@ -19,6 +19,7 @@ export interface TraceRow {
   step?: number
   seq: number
   title: string
+  toolName?: string
   content: ContentBlock[]
   /** Resolved only when details read it; list rendering must not access it. */
   readonly input: ContentBlock[]
@@ -64,12 +65,33 @@ export function blocks(value: unknown): ContentBlock[] {
 export function elapsed(start: number | undefined, end: number | undefined): number | undefined {
   return start === undefined || end === undefined ? undefined : Math.max(0, end - start)
 }
-const durationFormatter = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 })
 const countFormatter = new Intl.NumberFormat('ja-JP')
+/** Match chat's units and rounding; absent timestamps remain unmeasured. */
 export function formatDuration(ms: number | undefined): string {
-  return ms === undefined ? '未計測' : `${durationFormatter.format(ms / 1000)} 秒`
+  if (ms === undefined) return '未計測'
+  if (!Number.isFinite(ms) || ms < 0) return '不明'
+  if (ms < 1000) return `${Math.round(ms)} ミリ秒`
+  if (ms < 60000) return `${Number((ms / 1000).toFixed(1))} 秒`
+  const minutes = Math.floor(ms / 60000)
+  const seconds = Math.floor((ms % 60000) / 1000)
+  return `${minutes} 分 ${seconds} 秒`
 }
 export function formatCount(value: number): string { return countFormatter.format(value) }
+const rowIcons: Record<TraceKind, string> = {
+  user: 'person', assistant: 'smart_toy', tool: 'terminal', subtool: 'subdirectory_arrow_right', compaction: 'summarize',
+}
+export function traceRowIcon(row: TraceRow): string {
+  if (row.kind === 'tool' || row.kind === 'subtool') {
+    if (row.toolName === 'read_file') return 'description'
+    if (row.toolName === 'bash') return 'terminal'
+  }
+  return rowIcons[row.kind]
+}
+function fillToolName(row: TraceRow, name: string | undefined): void {
+  if (row.toolName !== undefined || name === undefined) return
+  row.toolName = name
+  row.title = `${row.kind === 'subtool' ? 'サブツール' : 'ツール'}：${name}`
+}
 export function prettyJson(value: unknown): string {
   if (typeof value === 'string') {
     try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
@@ -357,7 +379,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       const callId = string(sub ? data.subCallId : data.callId)
       if (!callId) continue
       const row: TraceRow = { ...rowOf(event, sub ? 'subtool' : 'tool', turn, `${sub ? 'サブツール' : 'ツール'}：${string(data.name) ?? '名前不明'}`),
-        callId, parentCallId: string(data.parentCallId), rootCallId: string(data.rootCallId),
+        toolName: string(data.name), callId, parentCallId: string(data.parentCallId), rootCallId: string(data.rootCallId),
         startedAt: event.time, running: true, arguments: typeof data.arguments === 'string' ? data.arguments : prettyJson(data.arguments), depth: sub ? 1 : 0 }
       tools.set(`${turn.id}:${sub ? 'sub:' : ''}${callId}`, row)
       turn.rows.push(row)
@@ -371,6 +393,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
           row = { ...rowOf(event, 'tool', turn, `ツール：${string(data.name) ?? '名前不明'}`), id: `tool:${event.seq}:${result.toolCallId}`, callId: result.toolCallId }
           turn.rows.push(row)
         }
+        fillToolName(row, string(data.name))
         row.content = result.content
         row.completedAt = event.time
         row.running = false
@@ -387,6 +410,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
         tools.set(`${turn.id}:sub:${callId}`, row)
         turn.rows.push(row)
       }
+      fillToolName(row, string(data.name))
       row.completedAt = event.time
       row.running = false
       row.content = blocks(data.content)

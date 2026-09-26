@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
-import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, rowDescription, selectTrace, turnHeading } from '../web/src/features/trace/model.ts'
+import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, rowDescription, selectTrace, traceRowIcon, turnHeading } from '../web/src/features/trace/model.ts'
+import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from '../web/src/features/trace/record-summary.ts'
+import { formatDuration as chatFormatDuration } from '../web/src/features/chat/model.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { extendMock } from '../web/src/features/trace/mock.ts'
@@ -692,10 +694,66 @@ test('a first and final failed attempt is labelled as uncommitted rather than as
   assert.doesNotMatch(rowDescription(row), /再試行/)
 })
 
-test('reused Japanese formatters preserve durations, unknown values and grouped counts', () => {
+test('durations use the chat units while unmeasured values stay distinct from invalid ones', () => {
   assert.equal(formatDuration(undefined), '未計測')
-  assert.equal(formatDuration(0), '0 秒')
-  assert.equal(formatDuration(1234567), '1,234.57 秒')
+  assert.equal(formatDuration(Number.NaN), '不明')
+  assert.equal(formatDuration(-1), '不明')
+  assert.equal(formatDuration(0), '0 ミリ秒')
+  assert.equal(formatDuration(850), '850 ミリ秒')
+  assert.equal(formatDuration(4100), '4.1 秒')
+  assert.equal(formatDuration(18430), '18.4 秒')
+  assert.equal(formatDuration(90000), '1 分 30 秒')
+  assert.equal(formatDuration(1234567), '20 分 34 秒')
+  assert.equal(formatDuration(90000), chatFormatDuration(90000))
+  assert.equal(formatDuration(4100), chatFormatDuration(4100))
   assert.equal(formatCount(1234567), '1,234,567')
-  assert.equal(formatDuration(1234567), '1,234.57 秒')
+})
+
+test('tool rows choose icons by tool name and keep the kind icon otherwise', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }),
+    record(2, 'tool/call', 110, { turn: 1, callId: 'r', name: 'read_file', arguments: '{}' }),
+    record(3, 'tool/call', 120, { turn: 1, callId: 'b', name: 'bash', arguments: '{}' }),
+    record(4, 'tool/call', 130, { turn: 1, callId: 'u', name: 'inspect_files', arguments: '{}' }),
+    record(5, 'tool/ptc-dispatch-start', 140, { turn: 1, rootCallId: 'u', parentCallId: 'u', subCallId: 's', name: 'read_file', arguments: '{}' }),
+  ])
+  assert.ok(turn)
+  const icons = Object.fromEntries(turn.rows.map(row => [`${row.kind}:${row.toolName}`, traceRowIcon(row)]))
+  assert.deepEqual(icons, {
+    'tool:read_file': 'description', 'tool:bash': 'terminal', 'tool:inspect_files': 'terminal', 'subtool:read_file': 'description',
+  })
+  const [user] = buildTrace([record(1, 'turn/start', 100, { turn: 1 }), record(2, 'user/message', 110, { turn: 1, content: [text('質問')] })])[0]?.rows ?? []
+  assert.ok(user)
+  assert.equal(traceRowIcon(user), 'person')
+})
+
+test('a tool name that first arrives with the result names the row and its icon', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 100, { turn: 1 }),
+    record(2, 'tool/call', 110, { turn: 1, callId: 'late' }),
+    record(3, 'tool/result', 150, { turn: 1, name: 'read_file', message: { content: [{ type: 'tool-result', toolCallId: 'late', content: [text('本文')] }] } }),
+  ])
+  const row = turn?.rows[0]
+  assert.ok(row)
+  assert.equal(row.title, 'ツール：read_file')
+  assert.equal(traceRowIcon(row), 'description')
+  assert.equal(filterTrace([turn], 'read_file')[0]?.rows.length, 1)
+})
+
+test('record detail rows summarize time, tokens, input and output as in Canvas', () => {
+  assert.equal(recordDurationText({ running: false, durationMs: 4100, firstOutputMs: 800 }), '4.1 秒（最初の出力まで 800 ミリ秒）')
+  assert.equal(recordDurationText({ running: false, durationMs: undefined }), '未計測')
+  assert.equal(recordDurationText({ running: true, durationMs: 4100 }), '開始済み・実行中')
+  assert.equal(recordUsageText({ inputTokens: 11668, outputTokens: 812, cacheReadTokens: 9200 }),
+    '入力 11,668（キャッシュを除く） ・ 出力 812 ・ キャッシュ読み込み 9,200 ・ キャッシュ書き込み 未記録')
+  assert.equal(recordUsageText(undefined), 'トークン数は記録されていません')
+  assert.equal(recordInputSupporting, '送ったメッセージとツールの結果')
+  assert.equal(recordOutputText({ kind: 'assistant', running: false, content: [
+    { type: 'reasoning', text: '考え' }, { type: 'text', text: '答え' }, { type: 'tool-call', id: 'a', name: 'bash', arguments: '{}' },
+    { type: 'tool-call', id: 'b', name: 'read_file', arguments: '{}' },
+  ] }), '思考 1 ・ テキスト 1 ・ ツール呼び出し 2')
+  assert.equal(recordOutputText({ kind: 'compaction', running: false, content: [] }), 'まとめた要約')
+  assert.equal(recordResultText({ running: true, failed: false }), '結果を待っています')
+  assert.equal(recordResultText({ running: false, failed: true }), '失敗')
+  assert.equal(recordResultText({ running: false, failed: false }), undefined)
 })
