@@ -22,7 +22,7 @@ export function renameWorkspace(dsh: DshServices, workspace: WorkspaceView) {
 
 export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void) {
   if (row.origin === 'subagent') return
-  openSheet(close => <div className="home-actions"><h2>セッションの操作</h2><p className="muted">{row.displayTitle}</p>
+  openSheet(close => <div className="home-actions"><h2>{row.displayTitle}</h2>
     <M3eButton onClick={() => {
       close()
       prompt('題名を変える', row.displayTitle, async title => {
@@ -32,8 +32,8 @@ export function sessionActions(dsh: DshServices, row: SessionSummary, archive: (
         unwrapRemoteResult(await face.rename(title))
       })
     }}><Icon name="edit" />題名を変える</M3eButton>
-    <M3eButton onClick={() => { close(); archive() }}><Icon name="archive" />アーカイブ</M3eButton>
-  </div>, { label: 'セッションの操作' })
+    <M3eButton onClick={() => { close(); archive() }}><Icon name="inventory_2" />アーカイブ</M3eButton>
+  </div>, { label: row.displayTitle })
 }
 
 function DeleteWorkspace({ dsh, workspace, close }: { dsh: DshServices; workspace: WorkspaceView; close(): void }) {
