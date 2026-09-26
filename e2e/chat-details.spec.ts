@@ -37,16 +37,26 @@ test('02e 生成中の過去閲覧位置をタブ往復後も保つ', async ({ p
   await visit(page, '/s/chat-long-streaming', 'chat-long-streaming')
   const chat = page.locator('.chat-scroll')
   await expect(page.locator('.chat-assistant[aria-busy="true"]')).toBeVisible()
-  await chat.hover()
-  await page.mouse.wheel(0, -600)
-  await chat.evaluate(node => { node.scrollTop = 420; node.dispatchEvent(new Event('scroll')) })
+  await chat.evaluate(node => {
+    node.scrollTop = Math.floor((node.scrollHeight - node.clientHeight) / 2)
+    node.dispatchEvent(new Event('scroll'))
+  })
   await expect(button(page, '最新へ')).toBeVisible()
+  const anchor = await chat.evaluate(node => {
+    const top = node.getBoundingClientRect().top
+    const row = [...node.querySelectorAll<HTMLElement>('[data-chat-key]')].find(item => item.getBoundingClientRect().bottom > top + 10)
+    return { key: row?.dataset.chatKey, offset: (row?.getBoundingClientRect().top ?? top) - top }
+  })
+  expect(anchor.key).toBeTruthy()
   const streaming = await page.locator('.chat-assistant[aria-busy="true"]').textContent()
   await page.getByRole('tab', { name: 'トレース', exact: true }).click()
   // Wait for real streaming progress, without modifying application state.
   await expect(page.locator('.chat-assistant[aria-busy="true"]')).not.toHaveText(streaming ?? '')
   await page.getByRole('tab', { name: 'チャット', exact: true }).click()
-  await expect.poll(() => chat.evaluate(node => node.scrollTop)).toBeCloseTo(420, 0)
+  await expect.poll(() => chat.evaluate((node, saved) => {
+    const row = [...node.querySelectorAll<HTMLElement>('[data-chat-key]')].find(item => item.dataset.chatKey === saved.key)
+    return row ? Math.abs(row.getBoundingClientRect().top - node.getBoundingClientRect().top - saved.offset) : Infinity
+  }, anchor)).toBeLessThan(5)
   await shot(page, '02-streaming-restored')
   await button(page, '最新へ').click()
   await expect.poll(() => chat.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop)).toBeLessThan(4)
@@ -59,14 +69,14 @@ test('02f 処理エラーの表示', async ({ page }) => {
   await shot(page, '02-agent-error')
 })
 
-test('02g 読込エラーから再読込・一覧への復帰', async ({ page }) => {
+test('02g 読込エラーの再試行・一覧への復帰', async ({ page }) => {
   await visit(page, '/s/chat-open-error', 'open-error')
   await expect(page.getByRole('alert')).toBeVisible()
   await expect(page.getByLabel('メッセージ入力欄')).toHaveCount(0)
   await shot(page, '02-open-error')
-  await button(page, '読み直す').click()
+  await button(page, 'もう一度開く').click()
   await expect(page.getByRole('alert')).toBeVisible()
-  await button(page, '一覧に戻る').click()
+  await button(page, '戻る').last().click()
   await expect(page).toHaveURL(/#\/$/)
 })
 
