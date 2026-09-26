@@ -6,6 +6,7 @@ import { navigate } from '../../app/router.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useChatSheets } from './ChatSheets.tsx'
 import { messageForkOperation, type ForkState } from './fork-operation.ts'
+import { beginChatLongPress } from './long-press.ts'
 
 const noSubscription = () => () => {}
 const idle: ForkState = { status: 'idle' }
@@ -51,22 +52,24 @@ function ActionsSheet({ sessionId, text, seq, close }: { sessionId: string; text
 /** Message operations open only after a hold; scrolling cancels the hold. */
 export function MessageActions({ sessionId, text, seq, children, active }: { sessionId: string; text: string; seq?: number; children: ReactNode; active: boolean }) {
   const sheets = useChatSheets()
-  const hold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null)
-  const triggered = useRef(false)
-  const cancel = () => { if (hold.current) clearTimeout(hold.current.timer); hold.current = null }
+  const hold = useRef<{ press: ReturnType<typeof beginChatLongPress>; x: number; y: number; pointerId: number } | null>(null)
+  const cancel = () => { hold.current?.press.cancel(); hold.current = null }
+  const finish = () => { hold.current?.press.finish(); hold.current = null }
   useLayoutEffect(() => { if (!active) cancel(); return cancel }, [active])
   const show = () => { if (active) sheets.open(close => <ActionsSheet sessionId={sessionId} text={text} seq={seq} close={close} />, { label: 'メッセージの操作' }) }
   const start = (event: PointerEvent<HTMLDivElement>) => {
     cancel()
-    triggered.current = false
     if (!active || !event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
-    hold.current = { x: event.clientX, y: event.clientY, timer: setTimeout(() => { hold.current = null; triggered.current = true; show() }, 550) }
+    hold.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId,
+      press: beginChatLongPress(document, event.pointerId, show) }
   }
   const move = (event: PointerEvent<HTMLDivElement>) => {
-    if (hold.current && Math.hypot(event.clientX - hold.current.x, event.clientY - hold.current.y) > 10) cancel()
+    if (hold.current?.pointerId !== event.pointerId) return
+    hold.current.press.move(event.clientX - hold.current.x, event.clientY - hold.current.y)
   }
-  return <div className="chat-message-action" onPointerDown={start} onPointerMove={move} onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel}
-    onContextMenu={event => event.preventDefault()} onClickCapture={event => { if (triggered.current) { triggered.current = false; event.preventDefault(); event.stopPropagation() } }}>
+  const leave = () => { if (hold.current?.press.didFire()) finish(); else cancel() }
+  return <div className="chat-message-action" onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onPointerLeave={leave}
+    onContextMenu={event => event.preventDefault()}>
     {children}
   </div>
 }
