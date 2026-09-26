@@ -1,25 +1,25 @@
-.interaction-sheet { padding: 4px; min-width: 0; }
-.interaction-heading { display: flex; align-items: center; gap: 12px; }
-.interaction-heading > .material-symbols-outlined { color: var(--md-sys-color-primary); }
-.interaction-heading h2 { margin: 12px 0; font-size: 22px; }
-.interaction-question { margin: 16px 0; font-size: 20px; font-weight: 550; line-height: 1.5; overflow-wrap: anywhere; }
+.interaction-sheet { padding: calc(var(--app-space) / 4); min-width: 0; }
+.interaction-heading { display: flex; align-items: center; gap: calc(var(--app-space) * .75); }
+.interaction-heading h2 { margin: calc(var(--app-space) * .75) 0; font-size: 22px; }
+.interaction-question { margin: var(--app-space) 0; font-size: 20px; font-weight: 550; line-height: 1.5; overflow-wrap: anywhere; }
 .interaction-progress, .interaction-item-header, .interaction-hint { color: var(--md-sys-color-on-surface-variant); font-size: 13px; }
-.interaction-progress { margin: 4px 0 12px; }
-.interaction-item-header { margin-bottom: 4px; }
-.interaction-detail { color: var(--md-sys-color-on-surface-variant); white-space: pre-wrap; }
-.interaction-options { display: grid; gap: 8px; margin: 20px 0; }
-.interaction-option { display: flex; align-items: center; gap: 8px; min-height: 56px; margin: 0; padding: 8px; border-radius: calc(var(--app-radius) / 2); background: var(--md-sys-color-surface-container-high); cursor: pointer; }
+.interaction-progress { margin: calc(var(--app-space) / 4) 0 calc(var(--app-space) * .75); }
+.interaction-item-header { margin: calc(var(--app-space) * .75) 0 calc(var(--app-space) / 4); }
+.interaction-hint { margin: calc(var(--app-space) / 2) 0; }
+.interaction-detail { margin: var(--app-space) 0; color: var(--md-sys-color-on-surface-variant); white-space: pre-wrap; }
+.interaction-options { display: grid; gap: calc(var(--app-space) / 2); margin: calc(var(--app-space) * 1.25) 0; }
+.interaction-option { display: flex; align-items: center; gap: calc(var(--app-space) / 2); min-height: 56px; margin: 0; padding: calc(var(--app-space) / 2); border-radius: calc(var(--app-radius) / 2); background: var(--md-sys-color-surface-container-high); cursor: pointer; }
 .interaction-option m3e-radio, .interaction-option m3e-checkbox { flex: none; }
-.interaction-option-text { display: grid; gap: 4px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.interaction-option-text { display: grid; gap: calc(var(--app-space) / 4); min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .interaction-option-text small { font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
-.interaction-custom { margin: 20px 0 8px; font-size: 14px; }
-.interaction-custom textarea { display: block; margin-top: 8px; resize: vertical; min-height: 80px; }
-.interaction-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.interaction-custom { margin: calc(var(--app-space) * 1.25) 0 calc(var(--app-space) / 2); font-size: 14px; }
+.interaction-custom textarea { display: block; margin-top: calc(var(--app-space) / 2); padding: calc(var(--app-space) * .75); border-radius: calc(var(--app-radius) * 3 / 7); resize: vertical; min-height: 80px; }
+.interaction-actions { display: flex; flex-wrap: wrap; gap: calc(var(--app-space) / 2); margin-top: var(--app-space); }
 .interaction-actions > m3e-button { flex: 1 1 140px; min-height: 48px; }
-.interaction-footer { padding-top: 4px; }
-.interaction-error { color: var(--md-sys-color-error); }
-.interaction-sheet--plan { display: flex; flex-direction: column; height: calc(var(--app-height, 100dvh) - 96px); min-height: 160px; }
+.interaction-footer { padding-top: calc(var(--app-space) / 4); }
+.interaction-error { margin: var(--app-space) 0; color: var(--md-sys-color-error); }
+.interaction-sheet--plan { display: flex; flex-direction: column; height: calc(var(--app-height, 100dvh) - var(--app-space) * 6); min-height: 160px; }
 .interaction-sheet--plan > .interaction-heading, .interaction-sheet--plan > .interaction-progress, .interaction-sheet--plan > .interaction-footer { flex: none; }
 .interaction-sheet--plan .interaction-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.interaction-pending-chips { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; }
+.interaction-pending-chips { display: flex; flex-wrap: wrap; gap: calc(var(--app-space) / 2); padding-bottom: calc(var(--app-space) / 2); }
 .interaction-pending-chips m3e-assist-chip { min-height: 44px; max-width: 100%; }

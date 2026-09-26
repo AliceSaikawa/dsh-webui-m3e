@@ -2,10 +2,35 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { buildPlanApproval, buildQuestionAnswer, buildQuestionAnswers, hasAnswer, hasPlanReview, selectOption } from '../web/src/features/interactions/answers.ts'
 import { PresentationQueue } from '../web/src/features/interactions/presentation-queue.ts'
+import { questionPresentation } from '../web/src/features/interactions/presentation.ts'
 import { InteractionStore, type AskUserQuestionItem } from '../web/src/dsh/interactions-store.ts'
 
 const question: AskUserQuestionItem = { id: 'database', question: 'どちらにしますか', options: [{ label: '選択肢 A' }, { label: '選択肢 B' }] }
 const plan: AskUserQuestionItem = { id: 'plan', question: '進めますか', detail: '# 計画', intent: { kind: 'plan-review', approve: 'このプランで進める' } }
+
+test('単独のプランでは進捗と質問の見出し・題名を出さず、本文は変更しない', () => {
+  const item = Object.freeze({ ...plan, header: 'プラン', question: '計画' })
+  assert.deepEqual(questionPresentation([item], 0), { standalonePlan: true, progress: undefined, header: undefined, title: undefined })
+  assert.equal(item.detail, '# 計画')
+})
+
+test('通常の質問は進捗から始まり、1 問だけでも問いと見出しを残す', () => {
+  const item = { ...question, header: 'データベース' }
+  assert.deepEqual(questionPresentation([item], 0), { standalonePlan: false, progress: '質問 1 / 1', header: 'データベース', title: 'どちらにしますか' })
+  assert.equal(questionPresentation([item, { ...item, id: 'next' }], 0).progress, '質問 1 / 2')
+  assert.equal(questionPresentation([item, { ...item, id: 'next' }], 1).progress, '質問 2 / 2')
+})
+
+test('プランと通常質問が混在するときは進捗と各問いの題名を残す', () => {
+  assert.deepEqual(questionPresentation([plan, question], 0), { standalonePlan: false, progress: '質問 1 / 2', header: undefined, title: plan.question })
+  assert.deepEqual(questionPresentation([plan, question], 1), { standalonePlan: false, progress: '質問 2 / 2', header: undefined, title: question.question })
+})
+
+test('存在しない問いの進捗や題名を作らない', () => {
+  const absent = { standalonePlan: false, progress: undefined, header: undefined, title: undefined }
+  assert.deepEqual(questionPresentation([], 0), absent)
+  assert.deepEqual(questionPresentation([question], 1), absent)
+})
 
 test('単一選択は 1 件だけを answers に入れ、入力を変えない', () => {
   const draft = { selected: ['選択肢 B', '選択肢 A'], custom: '' }
