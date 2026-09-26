@@ -26,3 +26,9 @@ export function traceScrollAction(state: TraceScrollState, trigger: TraceScrollT
 export function isTraceAtBottom(scrollTop: number, scrollHeight: number, clientHeight: number): boolean {
   return clientHeight > 0 && scrollHeight - scrollTop - clientHeight < 48
 }
+
+/** A growing list can leave the current position above its new end without user input. */
+export function traceFollowAfterScroll(following: boolean, atBottom: boolean, reason: 'scroll' | 'user-up'): boolean {
+  if (reason === 'user-up') return false
+  return atBottom || following
+}

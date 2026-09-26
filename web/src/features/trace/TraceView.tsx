@@ -7,7 +7,7 @@ import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { selectTrace, filterTrace, rowDescription, traceRowIcon, turnHeading, type TraceRow } from './model.ts'
 import { RecordSheet } from './RecordSheet.tsx'
-import { isTraceAtBottom, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
+import { isTraceAtBottom, traceFollowAfterScroll, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
 import { retainTraceSession, traceEmptyMessage, type TraceSessionData } from './view-state.ts'
 import { closeTraceSheet } from './sheet-lifecycle.ts'
 import './trace.css'
@@ -50,6 +50,7 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
   current.current = { active, query, hasRows: turns.some(turn => turn.rows.length > 0), loadingOlder: loading || snapshot.loadingOlder }
   const wasActive = useRef(false)
   const searchChanged = useRef(false)
+  const touchStartY = useRef<number | null>(null)
 
   const updateScroll = (trigger: TraceScrollTrigger) => {
     // Guard before accessing dimensions, including callbacks already in the queue.
@@ -83,6 +84,7 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
       // A pending prepend must not compete with the shell's restoration later.
       anchor.current = null
       searchChanged.current = false
+      touchStartY.current = null
       return
     }
     // The parent restores its snapshot after child layout effects. Defer the
@@ -120,6 +122,7 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     follow.current = !value.trim()
     setQuery(value)
   }
+  const stopFollowing = () => { follow.current = traceFollowAfterScroll(follow.current, false, 'user-up') }
   const loadOlder = async () => {
     if (!current.current.active) return
     const node = scroll.current
@@ -143,10 +146,19 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
   }
 
   return <section className="trace-view" aria-label="トレース">
-    <div className="trace-scroll" ref={scroll} data-scroll-area onScroll={active ? () => {
+    <div className="trace-scroll" ref={scroll} data-scroll-area
+      onWheel={active ? event => { if (event.deltaY < 0) stopFollowing() } : undefined}
+      onTouchStart={active ? event => { touchStartY.current = event.touches[0]?.clientY ?? null } : undefined}
+      onTouchMove={active ? event => { if (touchStartY.current !== null && (event.touches[0]?.clientY ?? touchStartY.current) > touchStartY.current) stopFollowing() } : undefined}
+      onTouchEnd={active ? () => { touchStartY.current = null } : undefined}
+      onTouchCancel={active ? () => { touchStartY.current = null } : undefined}
+      onKeyDown={active ? event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) stopFollowing() } : undefined}
+      onPointerDown={active ? event => { const node = scroll.current; if (node && event.target === node && event.clientX >= node.getBoundingClientRect().right - 20) stopFollowing() } : undefined}
+      onScroll={active ? () => {
       if (!current.current.active) return
       const node = scroll.current
-      if (node && !anchor.current) follow.current = isTraceAtBottom(node.scrollTop, node.scrollHeight, node.clientHeight)
+      if (node && !anchor.current) follow.current = traceFollowAfterScroll(follow.current,
+        isTraceAtBottom(node.scrollTop, node.scrollHeight, node.clientHeight), 'scroll')
     } : undefined}>
       <div className="trace-body" ref={body}>
         {snapshot.hasMore && <div className="trace-older"><M3eButton variant="text" disabled={!active || loading || snapshot.loadingOlder} onClick={() => { void loadOlder() }}>
