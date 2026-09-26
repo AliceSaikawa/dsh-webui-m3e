@@ -70,6 +70,7 @@ export function resolveTarget(pathname: string): string | 'index' | undefined {
   const rest = pathname.slice(MOUNT.length)
   if (rest === '' || rest === '/' || rest === '/index.html') return 'index'
   const target = resolve(normalize(join(DIST_ROOT, rest)))
+  if (target === DIST_INDEX) return 'index'
   if (!target.startsWith(DIST_ROOT + sep)) return undefined
   return target
 }
