@@ -48,6 +48,21 @@ export function extendMock(kit: MockKit): void {
     ] }
     state.subagentsByParent = { ...state.subagentsByParent, [parent]: { entries: children, parentAvailable: true, state: 'ready', error: null } }
   })
+  kit.scenario('subagents-unloaded', () => {
+    for (const child of children) kit.setSessionState(child.id, { subagent: null })
+    kit.updateList(state => {
+      const catalogs = { ...state.subagentsByParent }
+      delete catalogs[parent]
+      state.subagentsByParent = catalogs
+    })
+    kit.patch('sessions.refreshSubagents', async (parentSessionId: string) => {
+      kit.updateList(state => {
+        if (parentSessionId === parent) {
+          state.subagentsByParent = { ...state.subagentsByParent, [parent]: { entries: children, parentAvailable: true, state: 'ready', error: null } }
+        }
+      })
+    })
+  })
 
   const goals = new Map<string, GoalView>()
   function publish(sessionId: string, goal: GoalView | undefined) {

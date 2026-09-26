@@ -21,11 +21,12 @@ export function JobsScreen({ sessionId }: { sessionId: string }) {
   return <PageScaffold title="ジョブ"><div className="st-content">
     {jobs.length === 0 ? <p className="st-muted">ジョブはありません。</p> : <ul className="st-list" aria-label="ジョブの一覧">
       {jobs.map(job => <li key={job.id} className="st-row">
-        <Icon name={job.kind === 'subagent' ? 'smart_toy' : 'terminal'} />
+        <Icon name={job.kind === 'subagent' ? 'account_tree' : 'terminal'} />
         <div className="st-row-main">
           <p className="st-title">{job.label}</p>
           <p className="st-muted">{jobKindLabel(job.kind)} ・ {jobStatusLabel(job.status)} ・ {jobDurationLabel(job, now)}</p>
         </div>
+        {job.status === 'failed' && <Icon name="error" className="st-job-error" />}
       </li>)}
     </ul>}
   </div></PageScaffold>
