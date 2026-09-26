@@ -309,3 +309,45 @@
 - `pnpm build`：成功。既存と同種の 500 KB 超のチャンク警告あり（JavaScript 約 1,479 KB、同梱フォント約 4 MB）。
 - `?mock` の画面操作はなし。DSH・開発サーバー起動、HTTP 確認、ブラウザ操作は行っていない。統合画面、iPhone の画像選択・キーボード、実 DSH の通信はオーケストレーターおよび段階 3 の確認に残す。
 - 今回、拒否された操作はなし。担当外で必要になった変更はなし。
+
+### 2026-09-26：統合後の仕様照合と横断レビュー（feat/03-composer-spec）
+
+レビュー対象は `dec19bd`。今回の作業開始時は、オーケストレーターが切り替えた `feat/03-composer-spec`、HEAD は `c3a9099`、作業ツリーはクリーンだった。指定された `spec-conv.out.md`、`cross.out.md`、`user-decisions.md` を読み、ユーザー決定を優先した。main の変更、merge・rebase、未到着の土台の新入口の使用は行っていない。
+
+#### 入力欄と補助シートの表示
+
+- シートの本文だけに `composer-sheet-copy` を付けて伸縮させ、左右のアイコンは `composer-sheet-icon` で幅 24px・伸縮なしにした。計画モードの行にも同じ指定を使い、アイコンの span が本文と同じ幅を取る問題を解消した。
+- 送信は `arrow_upward`、権限は `shield` 付き outlined の `M3eAssistChip` にした。順番待ちは `schedule` 付き chip を右寄せする。M3E の chip の公開型・slot・CSS 変数をローカル依存で確認し、順番待ちは elevated variant の色と影を公開変数で調整した。
+- ＋シートを `image`・`checklist`・`smart_toy` に合わせ、ファイル・コマンドの補足文、モデル末尾の `chevron_right` を追加した。ファイル候補は folder / description、コマンドは plan→checklist・permission→shield・model→smart_toy・その他→terminal、モデルは ollama→dns・その他→smart_toy、権限は danger-full-access→warning・その他→shield とする。識別には変更可能な表示名を使わない。
+- 余白と角丸は既存の `--app-space`・`--app-radius` から計算した。ボタン行は折り返せるようにし、実行中も権限を表示して送信グループを右寄せする。今回指定されていないフォントサイズ・アイコン幅・操作領域の高さは独立した値として維持した。実際の 390px 幅での収まりは未確認。
+
+#### 新しい会話の @ と / の候補の調査結果
+
+- **調べた公開 API では、会話を作る前に候補を取得できない。** ユーザー決定 3 に従い、候補を開くときの会話作成は今回は実装しない。現在の初回送信時の作成を維持する。
+- インストール済み `dsh-client-ui-reference/lib/client.js:108–109` は `fileReferences.list(session.sessionId, query, signal)` を呼ぶ。`dsh-api-session-controller/lib/types/file-references.js:55–63` と `dsh-file-reference/lib/types/index.d.ts:22–29` は、第一引数を対象会話の Agent としている。workspaceId や cwd で作成前の候補を取る引数はない。
+- `/` も `dsh-client-ui-commands/lib/client.js:518–522` の `commands.list(sessionId)` を使う。`dsh-commands/lib/types/index.js:252–261` の一覧は Agent ごとの有効なコマンド構成を返す。全体の固定一覧や別会話の一覧を代用すると、対象会話の候補と一致する保証がない。
+- 両 API の Agent 引数は `dsh-api-session-controller/lib/types/agent.js:173–190` の Typert lookup で sessionId から解決する。既存の Agent がなければ保存済み会話を再開し、会話がなければ `session/not-found` になる（同 `211–227`、`403–423`）。ID を仮に用意するだけでは取得できない。
+- `dsh-client-ui-conversation/lib/client.js:13408–13427` の InputHub は会話の scope / binding を必要とする。新規表示に対応する `session-maybe` の枠（同 `16630–16648`）があっても、作成前の候補取得 API は提供していない。
+- **候補を初めて開く時点で会話を作る案の利点**：対象ワークスペースと Agent の実際の候補を既存 API で取得できる。作成済み ID を下書きに保持すれば、初回送信にも同じ会話を使える。
+- **同案の欠点**：候補を見るだけで永続的な空の会話が増え、「何も送らずに戻ったら作らない」という現在の動作が変わる。作成・ワークスペース登録の失敗を候補表示でも扱う必要がある。作成待ちの二重操作、再表示、ワークスペース切替、放置した空の会話の扱いも決める必要がある。自動削除は送信や別画面の操作と競合し得るため、この回では追加しない。
+- 調査は `/Users/user/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/` 配下の上記パッケージの lib を読むだけで行った。DSH の起動・通信確認はしていない。
+
+#### 偽データの共有状態と結果の展開
+
+- モデル選択用の独自 Map を削除した。選択のたびに `kit.updateList` の公開コールバックから現在の `modelSelection` を読み、他機能や完了した処理が書いた `lastUsed` を保持して `next` を更新する。後登録の拡張、後続の更新、明示的な null の回帰テストを追加した。
+- `api.ts` の独自 `unwrapResult` を削除し、既存の土台の `unwrapRemoteResult` を使う。`requireMatched` と各 RPC の成功値・元のエラー情報の扱いを維持した。モデル選択が Host の全体既定値の保存も伴うことに合わせて、API の説明コメントも訂正した。
+
+#### 担当外で必要になった変更
+
+- **既定権限の引き継ぎは未実装。** 現行 `MockKit` には、登録済みの 08 の settings を読む公開入口がない。`addSession` は同期 void で、既存の `sessions.create` を取得してラップする入口もなく、設定の非同期取得を会話の作成完了前に待てない。08 の `settings.describe()` に `permission.defaultPreset` があることは確認したが、03 から読める形ではない。
+- 00 に必要なのは、拡張の登録順に依存せず既存 Remote の設定を参照する入口と、`sessions.create` が待つ非同期の初期化処理（または同等の共有既定値の仕組み）。その土台を使って 03 が作成時の permission projection を設定できるようにする必要がある。既存会話・明示された projection は変更しない。08 のファイル変更、settings の二重登録、登録の傍受による独自の設定複製、土台の内部構造へのアクセスは行っていない。
+- 会話を作らずに候補を出す方針を維持する場合は、DSH 側にワークスペースや適用するプリセットを指定できる候補 API が必要。これは 03 の担当外。代案の早期作成も上記の判断事項を伴うため、今回は実装せず報告する。
+- 子の会話の選択・編集可否（ユーザー決定 5 の continuable 対応を含む）、所有画面からの離脱時のシート閉鎖、TextPromptDialog の確定文言は、作業中の土台の新入口を使えるようになった後の対応が必要。この回では既存の入口と動作を維持した。
+
+#### 今回の検証と引き継ぎ
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：529 件すべて成功。共有モデル projection を後から更新しても `lastUsed` を保つ回帰テストを追加し、既存の API エラーテストを共通関数利用に合わせた。
+- `pnpm build`：成功。既存と同種の 500 KB 超のチャンク警告あり（JavaScript 約 1,579 KB、同梱フォント約 4 MB）。
+- `?mock` で操作した画面：なし。指示に従い、DSH・開発サーバー起動、HTTP 確認、ブラウザ操作は行っていない。アイコン・chip・候補の配置、折り返し、iPhone のキーボードはオーケストレーターの画面検証に残す。
+- 新規候補の取得と偽データの既定権限の引き継ぎは上記の理由で未実装。担当外のファイルは変更せず、必要な変更と選択肢をこの節へ記録した。今回、拒否された操作はない。

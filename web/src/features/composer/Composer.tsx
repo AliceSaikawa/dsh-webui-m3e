@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
+import { M3eAssistChip } from '@m3e/react/chips'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eSplitButton } from '@m3e/react/split-button'
 import { M3eTextareaAutosize, type M3eTextareaAutosizeElement } from '@m3e/react/textarea-autosize'
@@ -17,6 +18,7 @@ import { prepareImage } from './images.ts'
 import { errorText, ModelSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
+import { commandIcon } from './presentation.ts'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -219,10 +221,10 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}
-    {queue.length > 0 && <M3eButton className="composer-queue-chip" variant="tonal" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: '順番待ちの編集' }) }}>順番待ち {queue.length} 件</M3eButton>}
+    {queue.length > 0 && <div className="composer-queue"><M3eAssistChip className="composer-queue-chip" variant="elevated" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: '順番待ちの編集' }) }}><Icon slot="icon" name="schedule" />順番待ち {queue.length} 件</M3eAssistChip></div>}
     <div className="composer-input-wrap">
       {suggesting && !busy && (token ? files.length > 0 : commandMatches.length > 0) && <div className="composer-suggestions" aria-label={token ? 'ファイルの候補' : 'コマンドの候補'}>
-        {token ? files.map(file => <SheetRow key={file.path} icon={file.kind === 'directory' ? 'folder' : 'description'} onClick={() => { const next = replaceReference(draft.text, token, file.path, file.kind); insert(next.text, next.cursor); setSuggesting(false) }}>{file.path}</SheetRow>) : commandMatches.map(command => <SheetRow key={command.name} detail={command.description} onClick={() => { insert(`/${command.name} `); setSuggesting(false) }}>/{command.name}</SheetRow>)}
+        {token ? files.map(file => <SheetRow key={file.path} icon={file.kind === 'directory' ? 'folder' : 'description'} onClick={() => { const next = replaceReference(draft.text, token, file.path, file.kind); insert(next.text, next.cursor); setSuggesting(false) }}>{file.path}</SheetRow>) : commandMatches.map(command => <SheetRow key={command.name} icon={commandIcon(command.name)} detail={command.description} onClick={() => { insert(`/${command.name} `); setSuggesting(false) }}>/{command.name}</SheetRow>)}
       </div>}
       <div className="composer-frame">
         {draft.images.length > 0 && <div className="composer-images">{draft.images.map(image => <figure key={image.id}><img src={image.previewUrl} alt={image.name || '添付画像'} /><M3eIconButton aria-label={`${image.name || '画像'} を外す`} disabled={busy} onClick={() => update({ images: draft.images.filter(item => item.id !== image.id) })}><Icon name="close" /></M3eIconButton></figure>)}</div>}
@@ -231,14 +233,14 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         {hint && <small id={hintId} className="composer-hint">{hint}</small>}
         {preparing && <small role="status">画像を準備しています…</small>}
         <div className="composer-controls">
-          <M3eIconButton aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
-          <M3eButton className="composer-permission" variant="tonal" disabled={!connected || busy} onClick={() => { void openPermissions() }}><span className="composer-permission-label">{permissionName}</span></M3eButton>
+          <M3eIconButton variant="outlined" aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
+          <M3eAssistChip className="composer-permission" variant="outlined" disabled={!connected || busy} title={permissionName} onClick={() => { void openPermissions() }}><Icon slot="icon" name="shield" /><span className="composer-permission-label">{permissionName}</span></M3eAssistChip>
           <span className="composer-spacer" />
           {snapshot.running && <M3eIconButton aria-label="実行を停止" disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}
           {snapshot.running ? <M3eSplitButton className="composer-send-group" variant="filled">
-            <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}>{busy ? '送信中' : '順番待ち'}</M3eButton>
+            <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}><Icon slot="icon" name="arrow_upward" />{busy ? '送信中' : '順番待ち'}</M3eButton>
             <M3eIconButton slot="trailing-button" aria-label="送り方を選ぶ" disabled={!canSend} onClick={() => { closeSheet.current = openSheet(close => <div className="composer-sheet"><h2>送り方を選ぶ</h2><SheetRow icon="schedule" onClick={() => { close(); void send('queue') }}>順番待ち</SheetRow><SheetRow icon="bolt" onClick={() => { close(); void send('steer') }}>割り込み</SheetRow></div>, { label: '送り方を選ぶ' }) }}><Icon name="arrow_drop_down" /></M3eIconButton>
-          </M3eSplitButton> : <M3eButton variant="filled" disabled={!canSend} onClick={() => { void send('queue') }}>{busy ? '送信中' : '送信'}</M3eButton>}
+          </M3eSplitButton> : <M3eIconButton variant="filled" aria-label={busy ? '送信中' : '送信'} disabled={!canSend} onClick={() => { void send('queue') }}><Icon name="arrow_upward" /></M3eIconButton>}
         </div>
       </div>
     </div>

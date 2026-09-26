@@ -35,11 +35,9 @@ const files: readonly FileReference[] = [
 
 export function extendMock(kit: MockKit): void {
   const known = new Set<string>()
-  const selected = new Map<string, ModelSelectionProjection>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {
     known.add(sessionId)
     const selection = (initial.modelSelection ?? { lastUsed: null, next: null }) as ModelSelectionProjection
-    selected.set(sessionId, selection)
     kit.setProjection(sessionId, 'permissions', initial.permissions ?? structuredClone(mockPermissions))
     kit.setProjection(sessionId, 'plan', initial.plan ?? { active: false, pending: false })
     kit.setProjection(sessionId, 'modelSelection', selection)
@@ -59,7 +57,6 @@ export function extendMock(kit: MockKit): void {
   const removeSession = kit.removeSession.bind(kit)
   kit.removeSession = (sessionId) => {
     known.delete(sessionId)
-    selected.delete(sessionId)
     removeSession(sessionId)
   }
 
@@ -84,8 +81,9 @@ export function extendMock(kit: MockKit): void {
         return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
       }
       const value: ModelSelection = { provider: input.provider, model: input.model, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) }
-      const projection: ModelSelectionProjection = { lastUsed: selected.get(input.sessionId)?.lastUsed ?? null, next: value }
-      selected.set(input.sessionId, projection)
+      let current: ModelSelectionProjection | undefined
+      kit.updateList(state => { current = state.byId[input.sessionId]?.projectionValues?.modelSelection as ModelSelectionProjection | undefined })
+      const projection: ModelSelectionProjection = { lastUsed: current?.lastUsed ?? null, next: value }
       kit.setProjection(input.sessionId, 'modelSelection', projection)
       return success({ selected: value })
     },
