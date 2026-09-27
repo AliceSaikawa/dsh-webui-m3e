@@ -27,11 +27,11 @@ test('長い会話を2回読み込み、元の共有履歴と表示済みの末�
   } finally { ctx.dispose() }
 })
 
-test('追加の偽履歴はシステム、ファイル、入れ子と長いツール結果を含む', () => {
+test('追加の偽履歴はシステム、注入された指示、ファイル、入れ子と長いツール結果を含む', () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const rows = buildChatRows(foldSessionWindow(ctx.sessions.binding('chat-samples')!.eventSource.getSnapshot()).records)
-    assert.deepEqual(rows.map(row => row.kind), ['system', 'user', 'tool'])
+    assert.deepEqual(rows.map(row => row.kind), ['system', 'context', 'user', 'tool'])
     const result = rows.find(row => row.kind === 'tool')!
     assert.equal(result.status, 'success')
     assert.equal(result.durationMs, 1000)

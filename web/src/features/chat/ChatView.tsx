@@ -45,7 +45,13 @@ const Row = memo(function Row({ row, sessionId, face, active }: { row: ChatRow; 
         <span>{label}{row.durationMs !== undefined && ` ・ ${formatDuration(row.durationMs)}`}</span></span></span><Icon name={row.status === 'error' ? 'error' : row.status === 'running' ? 'pending' : 'chevron_right'} />
     </button>
   }
-  if (row.kind === 'system') return <p className="chat-system">{row.text}</p>
+  if (row.kind === 'system' || row.kind === 'context') {
+    const title = row.kind === 'system' ? 'システムプロンプト' : row.role === 'recall' ? '別の会話から参照' : '追加された文脈'
+    const label = row.kind === 'context' ? row.label : null
+    return <details className="chat-context"><summary><Icon name={row.kind === 'system' ? 'settings' : row.role === 'recall' ? 'history' : 'description'} />
+      <span className="chat-row-label">{title}{label && <span className="chat-context-source">{label}</span>}</span><Icon className="chat-chevron" name="expand_more" /></summary>
+      <pre className="chat-context-body">{row.text}</pre></details>
+  }
   if (row.kind === 'command') {
     const presentation = commandPresentation(row)
     const text = presentation.failureReason ?? row.text

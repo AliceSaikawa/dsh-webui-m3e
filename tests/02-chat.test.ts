@@ -354,3 +354,19 @@ test('live rows reuse settled rows and unchanged stream blocks by identity', () 
   assert.deepEqual(second.map(row => row.kind === 'assistant' || row.kind === 'reasoning' ? [row.text, row.streaming] : row.kind), ['user', ['考えた', false], ['返事', true]])
   assert.deepEqual(second, buildChatRows(records, live('返事')))
 })
+
+test('context that DSH injects as a user message is not shown as the user speaking', () => {
+  const records: SessionWireEvent[] = [
+    event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'システムの指示' }] } }),
+    event(2, 'user/message', { source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md' }, { path: 'AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>指示</system-reminder>' }] }),
+    event(3, 'user/message', { source: { kind: 'session-reference', references: [{ label: '前の会話' }] }, content: [{ type: 'text', text: '参照した内容' }] }),
+    event(4, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: '本人の質問' }] }),
+  ]
+  const rows = buildChatRows(records)
+  assert.deepEqual(rows.map(row => row.kind), ['system', 'context', 'context', 'user'])
+  const [, instructions, recall, user] = rows
+  assert.ok(instructions?.kind === 'context' && recall?.kind === 'context')
+  assert.deepEqual([instructions.role, instructions.label, instructions.text], ['inject', '~/.dsh/AGENTS.md, AGENTS.md', '<system-reminder>指示</system-reminder>'])
+  assert.deepEqual([recall.role, recall.label], ['recall', '前の会話'])
+  assert.equal(user?.kind === 'user' && user.text, '本人の質問')
+})
