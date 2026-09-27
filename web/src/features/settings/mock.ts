@@ -189,6 +189,12 @@ export function extendMock(kit: MockKit): void {
   }
 
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
+    // Mirrors dsh-tool-subagent's section validator, which rejects this before persisting.
+    const next = merge(current.base ?? {}, user)
+    if (current.ns === 'subagent-model-selection' && next.enabled === true
+      && (!Array.isArray(next.allowedModels) || next.allowedModels.length === 0)) {
+      return failure('settings/rejected', 'enabled subagent model selection requires at least one allowed model')
+    }
     current.user = user
     current.value = merge(current.base ?? {}, user)
     current.revision++

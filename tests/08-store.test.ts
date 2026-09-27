@@ -599,6 +599,30 @@ test('続けて選んだサブエージェントのモデルは直列化して�
   } finally { h.ctx.dispose() }
 })
 
+test('許可モデルが空なら有効化を拒否し、無効中の選択後は有効化できる', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    const name = 'subagent-model-selection'
+    const route = { provider: 'deepseek', model: 'deepseek-v4' }
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['enabled'], value: true },
+    ]), false)
+    assert.equal(subagentSelection(current(h.store, name).value).enabled, false)
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['allowedModels'], value: [route] },
+    ]), true)
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['enabled'], value: true },
+    ]), true)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['allowedModels'], value: [] },
+    ]), false)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
+  } finally { h.ctx.dispose() }
+})
+
 test('購読解除後は状態変更と通知のコールバックを呼ばない', async () => {
   const h = harness('settings-conflict')
   try {

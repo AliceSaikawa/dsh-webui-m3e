@@ -11,8 +11,9 @@ import { composerApi, type ModelCatalog, type ModelSelection } from '../composer
 import { reasoningEffortLabel } from '../composer/helpers.ts'
 import { modelChoices, modelValue } from '../composer/model-picker.ts'
 import {
-  chooseModel, modelResetOperations, modelSaveOperations, modelSelectionState, savedModel,
-  selectedEffort, subagentResetOperations, subagentSelection, toggleAllowedModel,
+  canEnableSubagent, canToggleAllowedModel, chooseModel, effortSelectionState,
+  modelResetOperations, modelSaveOperations, modelSelectionState, savedModel,
+  subagentResetOperations, subagentSelection, toggleAllowedModel, withReasoningEffort,
   type SubagentSelection,
 } from './model-settings.ts'
 import { namespaceTitle } from './schema.ts'
@@ -58,15 +59,15 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
       <h2>{namespaceTitle(namespace.ns)}</h2>
       <div className="settings-fields" key={`${namespace.ns}:${state.generation[namespace.ns] ?? 0}`}>
         {namespace.ns === 'agent-default-model'
-          ? <DefaultModel namespace={namespace} state={state} store={store} choices={choices} loading={catalog.phase === 'loading'} />
-          : <SubagentModels namespace={namespace} state={state} store={store} choices={choices} loading={catalog.phase === 'loading'} />}
+          ? <DefaultModel namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} />
+          : <SubagentModels namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} />}
       </div>
     </section>)}
   </>
 }
 
 type Choice = ReturnType<typeof modelChoices>[number]
-interface EditorProps { namespace: SettingsNamespace; state: SettingsState; store: SettingsStore; choices: Choice[]; loading: boolean }
+interface EditorProps { namespace: SettingsNamespace; state: SettingsState; store: SettingsStore; choices: Choice[]; available: boolean; loading: boolean }
 const timing = (row: SettingsNamespace) => row.applies === 'restart' ? 'DSH の再起動後に反映されます' : 'すぐ反映されます'
 
 function EditStatus({ namespace, state, saving, saved, reset }: {
@@ -85,7 +86,7 @@ function EditStatus({ namespace, state, saving, saved, reset }: {
   </div>
 }
 
-function DefaultModel({ namespace, state, store, choices, loading }: EditorProps) {
+function DefaultModel({ namespace, state, store, choices, available }: EditorProps) {
   const modelId = useId()
   const effortId = useId()
   const [draft, setDraft] = useState<ModelSelection | undefined>(() => savedModel(namespace.value))
@@ -97,18 +98,18 @@ function DefaultModel({ namespace, state, store, choices, loading }: EditorProps
   const selection = modelSelectionState(current, choices)
   const choice = choices.find(item => item.value === selection.value)
   const reasoning = choice?.model.reasoning
-  const effort = selectedEffort(current, choice)
+  const effort = effortSelectionState(current, choice)
   const error = state.fieldErrors[fieldKey(namespace.ns, ['model'])]
   useEffect(() => { if (!saving) setDraft(savedModel(namespace.value)) }, [namespace.value, saving])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       if (modelSelect.current) modelSelect.current.value = selection.value
-      if (effortSelect.current) effortSelect.current.value = effort
+      if (effortSelect.current) effortSelect.current.value = effort.value
     })
     return () => cancelAnimationFrame(frame)
-  }, [selection.value, effort, choices.length, Boolean(reasoning)])
+  }, [selection.value, effort.value, choices.length, Boolean(reasoning)])
   async function save(next: ModelSelection) {
-    if (saving || !state.writable) return
+    if (saving || !state.writable || !available) return
     setDraft(next); setSaved(false); setSaving(true)
     try { setSaved(await store.editModelSettings('agent-default-model', () => modelSaveOperations(next))) }
     finally {
@@ -129,7 +130,7 @@ function DefaultModel({ namespace, state, store, choices, loading }: EditorProps
     <div className="settings-field"><M3eFormField variant="outlined" error={Boolean(error)}>
       <label slot="label" htmlFor={modelId}>モデル</label>
       <M3eSelect ref={modelSelect} id={modelId} aria-label="モデル"
-        disabled={!state.writable || saving || loading || choices.length === 0}
+        disabled={!state.writable || saving || !available || choices.length === 0}
         onChange={event => {
           const value = (event.currentTarget as M3eSelectElement).value
           const selected = choices.find(item => item.value === value)
@@ -143,12 +144,16 @@ function DefaultModel({ namespace, state, store, choices, loading }: EditorProps
     </M3eFormField></div>
     <div className="settings-field" hidden={!reasoning}><M3eFormField variant="outlined" error={Boolean(error)}>
       <label slot="label" htmlFor={effortId}>推論の強さ</label>
-      <M3eSelect ref={effortSelect} id={effortId} aria-label="推論の強さ" disabled={!state.writable || saving || loading}
+      <M3eSelect ref={effortSelect} id={effortId} aria-label="推論の強さ" disabled={!state.writable || saving || !available}
         onChange={event => {
-          const value = (event.currentTarget as M3eSelectElement).value
-          if (current && typeof value === 'string' && reasoning?.efforts.some(item => item.id === value)) void save({ ...current, reasoningEffort: value })
+          const value = (event.currentTarget as M3eSelectElement).value ?? ''
+          if (current && typeof value === 'string' && (value === '' || reasoning?.efforts.some(item => item.id === value)))
+            void save(withReasoningEffort(current, value))
         }}>
-        {!effort && <><span slot="value">既定</span><M3eOption value="" disabled>既定</M3eOption></>}
+        {!effort.value && <span slot="value">既定（モデルに任せる）</span>}
+        <M3eOption value="">既定（モデルに任せる）</M3eOption>
+        {effort.unknownLabel && <span slot="value">{effort.unknownLabel}</span>}
+        {effort.unknownLabel && <M3eOption value={effort.value} disabled>{effort.unknownLabel}</M3eOption>}
         {reasoning?.efforts.map((item, index) => <M3eOption key={item.id} value={item.id}>{reasoningEffortLabel(item.id, index)}</M3eOption>)}
       </M3eSelect>
     </M3eFormField></div>
@@ -156,7 +161,7 @@ function DefaultModel({ namespace, state, store, choices, loading }: EditorProps
   </>
 }
 
-function SubagentModels({ namespace, state, store, choices, loading }: EditorProps) {
+function SubagentModels({ namespace, state, store, choices, available, loading }: EditorProps) {
   const [draft, setDraft] = useState<SubagentSelection>(() => subagentSelection(namespace.value))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -178,15 +183,22 @@ function SubagentModels({ namespace, state, store, choices, loading }: EditorPro
     })
   }
   function changeEnabled(enabled: boolean) {
-    if (!state.writable) return
+    if (!state.writable || !available || (enabled && !canEnableSubagent(draft))) return
     setDraft(current => ({ ...current, enabled }))
-    commit(() => [{ op: 'set', path: ['enabled'], value: enabled }])
+    commit(row => {
+      if (enabled && !canEnableSubagent(subagentSelection(row.value))) return []
+      return [{ op: 'set', path: ['enabled'], value: enabled }]
+    })
   }
   function changeAllowed(target: { provider: string; model: string }, checked: boolean) {
-    if (!state.writable || !draft.enabled) return
+    if (!state.writable || !available || !canToggleAllowedModel(draft, target, checked)) return
     setDraft(current => ({ ...current, allowedModels: toggleAllowedModel(current.allowedModels, target, checked) }))
-    commit(row => [{ op: 'set', path: ['allowedModels'], value: toggleAllowedModel(subagentSelection(row.value).allowedModels, target, checked)
-      .map(item => ({ provider: item.provider, model: item.model })) }])
+    commit(row => {
+      const latest = subagentSelection(row.value)
+      if (!canToggleAllowedModel(latest, target, checked)) return []
+      return [{ op: 'set', path: ['allowedModels'], value: toggleAllowedModel(latest.allowedModels, target, checked)
+        .map(item => ({ provider: item.provider, model: item.model })) }]
+    })
   }
   function reset() {
     if (saving || !state.writable) return
@@ -204,24 +216,28 @@ function SubagentModels({ namespace, state, store, choices, loading }: EditorPro
   const checked = (target: { provider: string; model: string }) => draft.allowedModels.some(item => item.provider === target.provider && item.model === target.model)
   return <>
     <div className="settings-field settings-switch-row">
-      <span>有効にする</span>
-      <M3eSwitch aria-label="サブエージェントのモデルを有効にする" checked={draft.enabled} disabled={!state.writable}
+      <div><span>有効にする</span>
+        {!draft.enabled && !canEnableSubagent(draft) && <p className="settings-field-help">先に使ってよいモデルを 1 つ以上選んでください</p>}
+      </div>
+      <M3eSwitch aria-label="サブエージェントのモデルを有効にする" checked={draft.enabled}
+        disabled={!state.writable || !available || (!draft.enabled && !canEnableSubagent(draft))}
         onChange={event => changeEnabled((event.currentTarget as M3eSwitchElement).checked)} />
     </div>
     <div className="settings-field">
       <h3>使わせてよいモデル</h3>
       {loading && <p className="settings-field-help">モデル一覧を読み込み中…</p>}
-      {!loading && choices.length === 0 && <p className="settings-field-help">選べるモデルがありません。</p>}
+      {available && choices.length === 0 && <p className="settings-field-help">選べるモデルがありません。</p>}
+      {draft.enabled && draft.allowedModels.length === 1 && <p className="settings-field-help">有効の間は 1 つ以上必要です</p>}
       <div className="settings-model-options">
         {choices.map(item => <label className="settings-model-option" key={item.value}>
           <M3eCheckbox aria-label={item.label} checked={checked({ provider: item.provider, model: item.model.id })}
-            disabled={!state.writable || !draft.enabled || loading}
+            disabled={!state.writable || !available || !canToggleAllowedModel(draft, { provider: item.provider, model: item.model.id }, false) && checked({ provider: item.provider, model: item.model.id })}
             onChange={event => changeAllowed({ provider: item.provider, model: item.model.id }, (event.currentTarget as HTMLElement & { checked: boolean }).checked)} />
           <span>{item.label}</span>
         </label>)}
         {unknown.map(item => <label className="settings-model-option" key={modelValue(item)}>
           <M3eCheckbox aria-label={`一覧にないモデル：${item.provider} / ${item.model}`} checked
-            disabled={!state.writable || !draft.enabled}
+            disabled={!state.writable || !available || !canToggleAllowedModel(draft, item, false)}
             onChange={event => changeAllowed(item, (event.currentTarget as HTMLElement & { checked: boolean }).checked)} />
           <span>一覧にないモデル：{item.provider} / {item.model}</span>
         </label>)}

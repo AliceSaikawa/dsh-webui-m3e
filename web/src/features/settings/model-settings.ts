@@ -32,6 +32,18 @@ export function selectedEffort(saved: ModelSelection | undefined, choice: ModelC
     ? saved?.reasoningEffort ?? '' : ''
 }
 
+export function effortSelectionState(saved: ModelSelection | undefined, choice: ModelChoice | undefined) {
+  const value = saved?.reasoningEffort ?? ''
+  return { value, unknownLabel: value && choice?.model.reasoning &&
+    !choice.model.reasoning.efforts.some(effort => effort.id === value)
+    ? `一覧にない推論の強さ：${value}` : undefined }
+}
+
+export function withReasoningEffort(current: ModelSelection, effort: string): ModelSelection {
+  return effort ? { ...current, reasoningEffort: effort }
+    : { provider: current.provider, model: current.model }
+}
+
 export function modelSaveOperations(next: ModelSelection): SettingsOperation[] {
   return [
     { op: 'set', path: ['provider'], value: next.provider },
@@ -58,6 +70,16 @@ export function toggleAllowedModel(current: readonly AllowedModel[], target: All
   return checked
     ? current.some(matches) ? [...current] : [...current, target]
     : current.filter(item => !matches(item))
+}
+
+export function canEnableSubagent(current: SubagentSelection): boolean {
+  return current.allowedModels.length > 0
+}
+
+export function canToggleAllowedModel(current: SubagentSelection, target: AllowedModel, checked: boolean): boolean {
+  return checked || !current.enabled ||
+    !current.allowedModels.some(item => item.provider === target.provider && item.model === target.model) ||
+    current.allowedModels.length > 1
 }
 
 export const modelResetOperations: SettingsOperation[] = [
