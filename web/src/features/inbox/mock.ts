@@ -16,7 +16,7 @@ export function extendMock(kit: MockKit): void {
     const sessions = [
       { id: INBOX_MOCK_IDS.approval, displayTitle: '対応待ちのテスト', completed: false },
       { id: INBOX_MOCK_IDS.question, displayTitle: '一覧の表示方法', completed: false },
-      { id: INBOX_MOCK_IDS.plan, displayTitle: 'スマートフォン画面の改善', completed: false },
+      { id: INBOX_MOCK_IDS.plan, displayTitle: 'スマートフォン画面の改善と対応待ちの長い題名が行の内側で省略されることを確認する', completed: false },
       { id: INBOX_MOCK_IDS.completed, displayTitle: '操作手順の見直し', completed: true },
       { id: INBOX_MOCK_IDS.otherCompleted, displayTitle: '調査結果の整理', completed: true },
     ]
@@ -28,7 +28,7 @@ export function extendMock(kit: MockKit): void {
     // Requests are independent of feature 05's fixtures and remain in arrival order.
     void inbox.emit('approval/request', { agent: INBOX_MOCK_IDS.approval, toolName: 'bash', callId: 'inbox-test', reason: '画面のテストを実行します。' }, { afterMs: 0 }).catch(() => {})
     void inbox.emit('user-questions/request', { agent: INBOX_MOCK_IDS.question, questions: [
-      { id: 'inbox-layout', question: '一覧には何を表示しますか？', options: [{ label: 'すべて表示' }, { label: '未完了だけ表示' }] },
+      { id: 'inbox-layout', question: '一覧には何を表示しますか？画面の幅が狭い場合でも、返事が必要な項目の補足文を読みやすく表示できますか？', options: [{ label: 'すべて表示' }, { label: '未完了だけ表示' }] },
     ] }, { afterMs: 0 }).catch(() => {})
     void inbox.emit('user-questions/request', { agent: INBOX_MOCK_IDS.plan, questions: [
       { id: 'inbox-review', question: 'このプランで作業を始めますか？', detail: '## 作業の進め方\n\n1. 対応待ちを一覧にします。\n2. 返事をすると件数が減ることを確かめます。',
