@@ -105,6 +105,41 @@ test('閉じる最中のルート離脱では、待っていた割り込みを�
   assert.deepEqual(log, [])
 })
 
+test('新しいsheetは前の終了まで作らず、初回の遅いcloseで開いた面を閉じない', async () => {
+  let finishPrevious!: () => void
+  let initialCloseStarted = false
+  let visible = false
+  const presentation = new OverlayPresentation(() => {})
+  presentation.register(1, {
+    async show() {},
+    async hide() { await new Promise<void>(resolve => { finishPrevious = resolve }) },
+  })
+  presentation.select(1)
+  await tick()
+  presentation.select(2)
+  await tick()
+  assert.equal(presentation.shouldMount(2, 2), false)
+  finishPrevious()
+  await tick()
+  assert.equal(presentation.shouldMount(2, 2), true)
+
+  // A newly mounted element only enters its initial close path if still closed
+  // at its first update. Registration opens it synchronously in this handoff.
+  const next: OverlaySurface = {
+    async show() { visible = true },
+    async hide() { visible = false },
+  }
+  presentation.register(2, next)
+  queueMicrotask(() => {
+    if (visible) return
+    initialCloseStarted = true
+    setTimeout(() => { visible = false }, 30)
+  })
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.equal(initialCloseStarted, false)
+  assert.equal(visible, true)
+})
+
 test('sheetの早いclosedイベントではなくpopoverの終了まで待つ', async () => {
   class Sheet extends EventTarget {
     open = true
