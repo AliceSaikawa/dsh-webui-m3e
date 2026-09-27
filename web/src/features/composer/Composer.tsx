@@ -11,11 +11,11 @@ import { useConnection } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
+import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
 import { prepareImage } from './images.ts'
-import { errorText, ModelSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
+import { errorText, ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
@@ -45,6 +45,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const [commands, setCommands] = useState<readonly CommandDescriptor[]>([])
   const [files, setFiles] = useState<readonly FileReference[]>([])
   const [catalog, setCatalog] = useState<ModelCatalog>()
+  const catalogCache = useRef<ModelCatalog | undefined>(undefined)
+  const catalogRequest = useRef<Promise<ModelCatalog> | undefined>(undefined)
   const [defaults, setDefaults] = useState<PermissionProjection>()
   const [cursor, setCursor] = useState(draft.text.length)
   const [suggesting, setSuggesting] = useState(false)
@@ -62,7 +64,6 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const hint = isKnownCommand(draft.text, commands) ? commands.find(command => draft.text.startsWith(`/${command.name} `))?.input?.hint : undefined
   const permission = target.kind === 'new' ? defaults && { ...defaults, currentValue: draft.permission ?? defaults.currentValue } : permissions
   const selectedModel = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
-  const modelName = catalog?.groups.find(group => group.id === selectedModel?.provider)?.models.find(model => model.id === selectedModel?.model)?.name ?? selectedModel?.model ?? '既定のモデル'
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(snapshot.queue)
   const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
@@ -73,6 +74,17 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     const next = { ...readDraft(draftKey), ...patch }
     writeDraft(draftKey, next)
   }
+  const loadCatalog = useCallback((force = false): Promise<ModelCatalog> => {
+    if (!force && catalogCache.current) return Promise.resolve(catalogCache.current)
+    if (catalogRequest.current) return catalogRequest.current
+    const request = api.modelCatalog().then(value => {
+      catalogCache.current = value
+      if (mounted.current) setCatalog(value)
+      return value
+    }).finally(() => { if (catalogRequest.current === request) catalogRequest.current = undefined })
+    catalogRequest.current = request
+    return request
+  }, [api])
   useEffect(() => {
     mounted.current = true
     const pending = pendingDelivery(draftKey)
@@ -86,10 +98,10 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   useEffect(() => {
     if (!connected) return
     let active = true
-    void api.modelCatalog().then(value => { if (active) setCatalog(value) }).catch(() => { /* Retry when the model sheet is opened. */ })
+    void loadCatalog().catch(() => { /* The sheet shows the error and offers retry. */ })
     if (target.kind === 'new') void api.defaultPermissions().then(value => { if (active) setDefaults(value) }).catch(() => { /* No invented presets. */ })
     return () => { active = false }
-  }, [api, connected, target.kind])
+  }, [api, connected, loadCatalog, target.kind])
   useEffect(() => {
     if (!sessionId || !connected) return
     let active = true
@@ -136,7 +148,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     // The stock /model command belongs to its UI plugin, not the Host command list.
     if (draft.text.trim() === '/model' && draft.images.length === 0) {
       setSuggesting(false)
-      await openModels()
+      openModels()
       return
     }
     locked.current = true; setBusy(true); setSuggesting(false); setAuxError('')
@@ -170,18 +182,18 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     setBusy(false)
     if (result.sessionId && result.sessionReady) navigate(`/s/${encodeURIComponent(result.sessionId)}`, { replace: true })
   }
-  async function openModels() {
+  async function applyModel(selection: ModelSelection): Promise<ModelSelection> {
+    const commandText = readDraft(draftKey).text.trim() === '/model' ? { text: '' } : {}
+    if (target.kind === 'new') { update({ model: selection, ...commandText }); return selection }
+    if (!face) throw new Error('会話を開いてからモデルを選んでください。')
+    const applied = await api.selectModel(sessionId, selection)
+    update({ model: undefined, ...commandText })
+    return applied
+  }
+  function openModels() {
     setAuxError('')
-    try {
-      const models = await api.modelCatalog()
-      if (!mounted.current) return
-      setCatalog(models)
-      closeSheet.current = openSheet(close => <ModelSheet catalog={models} selected={selectedModel ?? models.default} close={close} apply={async selection => {
-        const commandText = readDraft(draftKey).text.trim() === '/model' ? { text: '' } : {}
-        if (target.kind === 'new') update({ model: selection, ...commandText })
-        else if (face) { await api.selectModel(sessionId, selection); update({ model: undefined, ...commandText }) }
-      }} />, { label: 'モデルの選択' })
-    } catch (error) { setAuxError(errorText(error, 'モデル一覧を取得できませんでした。')) }
+    closeSheet.current = openSheet(() => <ModelPickerSheet initialCatalog={catalog} selected={selectedModel} loadCatalog={loadCatalog}
+      applyModel={applyModel} disabled={!connected || busy} />, { label: 'モデルの選択' })
   }
   async function openPermissions() {
     try {
@@ -196,11 +208,12 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }
   function openPlus() {
     setSuggesting(false)
-    closeSheet.current = openSheet(close => <PlusSheet close={close} plan={planActive} disabled={!connected || busy} modelName={modelName}
+    closeSheet.current = openSheet(close => <PlusSheet close={close} plan={planActive} disabled={!connected || busy}
+      initialCatalog={catalog} selected={selectedModel} loadCatalog={loadCatalog} applyModel={applyModel}
       onImage={() => imageInput.current?.click()}
       onReference={() => { insert(draft.text + (draft.text && !/\s$/.test(draft.text) ? ' @' : '@')); if (!sessionId) setAuxError('ファイルの候補は、最初の送信で会話を作ったあとに使えます。') }}
       onCommand={() => { insert(draft.text.startsWith('/') ? draft.text : '/' + draft.text); if (!sessionId) setAuxError('コマンドの候補は会話を作ったあとに表示します。入力したコマンドは初回送信時に確認します。') }}
-      onModel={() => { void openModels() }} onPlan={async active => {
+      onPlan={async active => {
         if (target.kind === 'new') update({ plan: active })
         else if (face) { requireMatched(await face.command(active ? '/plan' : '/plan off')); update({ plan: undefined }) }
       }} />, { label: '入力の補助' })

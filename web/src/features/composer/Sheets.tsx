@@ -1,5 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { M3eButton } from '@m3e/react/button'
+import { M3eFormField } from '@m3e/react/form-field'
+import { M3eOption } from '@m3e/react/option'
+import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eSwitch } from '@m3e/react/switch'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
@@ -8,8 +11,9 @@ import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.
 import type { QueueAction } from '../../dsh/services.ts'
 import type { ModelCatalog, ModelSelection, PermissionProjection } from './api.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
+import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
-import { modelIcon, permissionIcon } from './presentation.ts'
+import { permissionIcon } from './presentation.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
   // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
@@ -25,10 +29,17 @@ export function SheetRow({ icon, trailingIcon, children, detail, selected, disab
   </button>
 }
 
-export function PlusSheet({ close, plan, disabled, modelName, onImage, onReference, onCommand, onModel, onPlan }: {
-  close(): void; plan: boolean; disabled: boolean; modelName: string
-  onImage(): void; onReference(): void; onCommand(): void; onModel(): void; onPlan(active: boolean): Promise<void>
-}) {
+export interface ModelPickerProps {
+  initialCatalog?: ModelCatalog
+  selected?: ModelSelection | null
+  loadCatalog(force?: boolean): Promise<ModelCatalog>
+  applyModel(selection: ModelSelection): Promise<ModelSelection>
+}
+
+export function PlusSheet({ close, plan, disabled, onImage, onReference, onCommand, onPlan, ...modelProps }: {
+  close(): void; plan: boolean; disabled: boolean
+  onImage(): void; onReference(): void; onCommand(): void; onPlan(active: boolean): Promise<void>
+} & ModelPickerProps) {
   const [active, setActive] = useState(plan)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -44,36 +55,91 @@ export function PlusSheet({ close, plan, disabled, modelName, onImage, onReferen
     <SheetRow icon="alternate_email" detail="入力欄で @ を打っても出せる" onClick={() => choose(onReference)}>ファイルを参照</SheetRow>
     <SheetRow icon="terminal" detail="入力欄で / を打っても出せる" onClick={() => choose(onCommand)}>コマンド</SheetRow>
     <div className="composer-switch-row"><Icon name="checklist" className="composer-sheet-icon" /><span className="composer-sheet-copy">計画モード</span><M3eSwitch aria-label="計画モード" checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
-    <SheetRow icon="smart_toy" trailingIcon="chevron_right" detail={modelName} disabled={disabled || busy} onClick={() => choose(onModel)}>モデル</SheetRow>
+    <ModelPicker {...modelProps} disabled={disabled || busy} />
     {error && <p role="alert">{error}</p>}
   </div>
 }
 
-export function ModelSheet({ catalog, selected, apply, close }: {
-  catalog: ModelCatalog; selected: ModelSelection | null | undefined; apply(selection: ModelSelection): Promise<void>; close(): void
-}) {
+export function ModelPickerSheet({ disabled, ...props }: ModelPickerProps & { disabled: boolean }) {
+  return <div className="composer-sheet"><h2>モデルの選択</h2><ModelPicker {...props} disabled={disabled} /></div>
+}
+
+function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabled }: ModelPickerProps & { disabled: boolean }) {
+  const [catalog, setCatalog] = useState(initialCatalog)
+  const [current, setCurrent] = useState(selected)
+  const [loading, setLoading] = useState(!initialCatalog)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  async function choose(selection: ModelSelection) {
-    if (busy) return
-    setBusy(true); setError('')
-    try { await apply(selection); close() } catch (error) { setError(errorText(error)); setBusy(false) }
+  const requestBusy = useRef(false)
+  const modelSelect = useRef<M3eSelectElement>(null)
+  const effortSelect = useRef<M3eSelectElement>(null)
+  const modelId = useId()
+  const effortId = useId()
+  const choices = catalog ? modelChoices(catalog) : []
+  const reasoning = reasoningForSelection(current, choices)
+  const selectedEffort = effortValue(current, choices)
+  useEffect(() => {
+    if (initialCatalog) return
+    let active = true
+    void loadCatalog().then(value => { if (active) { setCatalog(value); setCurrent(previous => previous ?? value.default); setLoading(false) } })
+      .catch(cause => { if (active) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')); setLoading(false) } })
+    return () => { active = false }
+  }, [initialCatalog, loadCatalog])
+  useEffect(() => {
+    if (!selectedEffort) return
+    const frame = requestAnimationFrame(() => {
+      if (effortSelect.current) effortSelect.current.value = selectedEffort
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [selectedEffort])
+  async function retry() {
+    setLoading(true); setError('')
+    try { const value = await loadCatalog(true); setCatalog(value); setCurrent(previous => previous ?? value.default) }
+    catch (cause) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')) }
+    finally { setLoading(false) }
   }
-  return <div className="composer-sheet"><h2>モデルの選択</h2>
-    {catalog.failures.length > 0 && <p role="status">一部のモデル一覧を取得できませんでした。</p>}
-    {catalog.groups.length === 0 && <p>選べるモデルがありません。</p>}
-    {catalog.groups.map(group => <section key={group.id}><h3>{group.name}</h3>
-      {group.models.map(model => {
-        const isSelected = selected?.provider === group.id && selected.model === model.id
-        return <div key={model.id}>
-          <SheetRow icon={modelIcon(group.id)} selected={isSelected} disabled={busy} onClick={() => { void choose({ provider: group.id, model: model.id }) }}>{model.name}</SheetRow>
-          {isSelected && model.reasoning && <fieldset className="composer-efforts" disabled={busy}><legend>考える深さ</legend>
-            {model.reasoning.efforts.map((effort, index) => <M3eButton key={effort.id} variant={(selected.reasoningEffort ?? model.reasoning?.defaultEffort) === effort.id ? 'filled' : 'tonal'} onClick={() => { void choose({ provider: group.id, model: model.id, reasoningEffort: effort.id }) }}>{reasoningEffortLabel(effort.id, index)}</M3eButton>)}
-          </fieldset>}
-        </div>
-      })}
-    </section>)}
+  async function choose(selection: ModelSelection) {
+    if (requestBusy.current || disabled || loading) return
+    requestBusy.current = true; setBusy(true); setError('')
+    try { setCurrent(await applyModel(selection)) }
+    catch (cause) {
+      setError(errorText(cause, 'モデルを切り替えられませんでした。'))
+      if (modelSelect.current) modelSelect.current.value = modelValue(current)
+      if (effortSelect.current) effortSelect.current.value = selectedEffort
+    } finally { requestBusy.current = false; setBusy(false) }
+  }
+  return <div className="composer-model-picker">
+    <M3eFormField variant="outlined">
+      <label slot="label" htmlFor={modelId}>モデル</label>
+      <M3eSelect ref={modelSelect} id={modelId} aria-label="モデル" value={modelValue(current)} disabled={disabled || busy || loading || choices.length === 0}
+        onChange={event => {
+          const value = (event.currentTarget as M3eSelectElement).value
+          const selection = typeof value === 'string' ? selectionFromModelValue(value, choices) : undefined
+          if (selection) void choose(selection)
+        }}>
+        {loading && <M3eOption value="" disabled>読み込み中</M3eOption>}
+        {!loading && choices.length === 0 && <M3eOption value="" disabled>選べるモデルがありません</M3eOption>}
+        {choices.map(choice => <M3eOption key={choice.value} value={choice.value}>{choice.label}</M3eOption>)}
+      </M3eSelect>
+    </M3eFormField>
+    {loading && <p role="status">モデル一覧を読み込み中…</p>}
+    {catalog && catalog.failures.length > 0 && <div role="status">
+      <p>一部のモデル一覧を取得できませんでした。</p>
+      {catalog.failures.map(failure => <p key={failure.id}>{failure.name}：{errorText(new Error(failure.message), 'モデル一覧を取得できませんでした。')}</p>)}
+    </div>}
+    {reasoning && <M3eFormField variant="outlined">
+      <label slot="label" htmlFor={effortId}>考える深さ</label>
+      <M3eSelect ref={effortSelect} id={effortId} aria-label="考える深さ" value={selectedEffort} disabled={disabled || busy || loading}
+        onChange={event => {
+          const value = (event.currentTarget as M3eSelectElement).value
+          if (current && typeof value === 'string' && reasoning.efforts.some(effort => effort.id === value)) void choose({ ...current, reasoningEffort: value })
+        }}>
+        {reasoning.efforts.map((effort, index) => <M3eOption key={effort.id} value={effort.id}>{reasoningEffortLabel(effort.id, index)}</M3eOption>)}
+      </M3eSelect>
+    </M3eFormField>}
+    {busy && <p role="status">選択を反映中…</p>}
     {error && <p role="alert">{error}</p>}
+    {!loading && (!catalog || catalog.failures.length > 0) && <M3eButton disabled={busy} onClick={() => { void retry() }}>もう一度読み込む</M3eButton>}
   </div>
 }
 
