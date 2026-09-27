@@ -31,8 +31,10 @@
 .composer-sheet-row:disabled { opacity: .5; cursor: default; }
 .composer-switch-row { display: flex; gap: calc(var(--app-space) * .75); align-items: center; padding: calc(var(--app-space) * .5) calc(var(--app-space) * .75); min-height: 56px; }
 .composer-switch-row m3e-switch { flex: none; }
-.composer-efforts { display: flex; gap: calc(var(--app-space) * .5); flex-wrap: wrap; margin: calc(var(--app-space) * .5) calc(var(--app-space) * .75) var(--app-space); padding: calc(var(--app-space) * .5) 0; border: 0; }
-.composer-efforts legend { font-size: 14px; margin-bottom: calc(var(--app-space) * .25); }
+.composer-model-picker { display: grid; gap: calc(var(--app-space) * .75); padding: calc(var(--app-space) * .5) calc(var(--app-space) * .75) var(--app-space); }
+.composer-model-picker m3e-form-field { min-width: 0; width: 100%; }
+.composer-model-picker m3e-select { width: 100%; }
+.composer-model-picker p { margin: 0; color: var(--md-sys-color-on-surface-variant); }
 .composer-queue-preview { white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
 .composer-readonly { text-align: center; font-size: 14px; color: var(--md-sys-color-on-surface-variant); }
 .composer-new-intro { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; min-height: 100%; padding: calc(var(--app-space) * 1.5); }
