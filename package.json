@@ -1,6 +1,6 @@
 {
   "name": "dsh-webui-m3e",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "Material 3 Expressive mobile Web UI for DeepSeek Harness, served beside the stock UI and switched per device.",
   "license": "MIT",
