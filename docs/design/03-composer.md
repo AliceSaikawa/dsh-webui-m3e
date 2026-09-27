@@ -360,3 +360,12 @@
 - アニメーション有効・一覧応答 200ms 遅延のもとで、読み込み中に Escape で閉じてすぐ開き直す操作を 2 回繰り返す試験を追加した。ネイティブのシートが閉じ終わるまでは背景へのクリックを遮るため、試験では各 Escape のあとシートの DOM が消えた時点で次の「＋」を押す。シート 1 枚、選択値、閉じたあとの overflow と inert を確認した。
 - 最終検証：`pnpm typecheck` 成功、`pnpm test` 704 件成功、`pnpm build` 成功、Playwright 全件 71 件成功。追加した反復操作試験は `--repeat-each 5` で 5 回成功（専用ファイル全体の 5 回反復でも 30 件成功）。実物の DSH での応答速度・モデル一覧と反映は段階 3 に残る。
 - 修正前の `main` で新しい試験を実行する準備として、変更した 3 ファイルのコピーを `/Users/user/AI/tmp/dsh-model-baseline/` に置いた。その後、`git show main:web/src/features/composer/Composer.tsx > web/src/features/composer/Composer.tsx` が保護フックから `Opaque shell wrappers are blocked unless Codex can split them into allowed commands.` と拒否されたため、差し替えをせずに停止した。オーケストレーターの追加指示で修正前の試験は取りやめた。旧実装の固まり方はオーケストレーターがブラウザで再現済みであり、新試験の旧実装での失敗はドロップダウンを前提とするため自明。コピーは残し、`main` のファイル差し替えは行わない。
+
+### 2026-09-27：モデル選択の状態更新と二重送信の修正
+
+- `openSheet` の描画関数は開いた時点の Composer の値を閉じ込めるため、シート内の `disabled` と会話選択を `useConnection`・`useSession`・下書きの購読から計算するようにした。既存会話の選択は `modelSelection.next` の更新に追従し、適用関数は呼ばれた時点の API・会話 face・接続状態を Composer の ref から読む。
+- モデルの反映要求は Composer ごとに共有する controller に移した。シートを閉じて開き直しても反映中の表示と無効状態を引き継ぎ、二重の `selectModel` を拒む。成功時の選択と失敗理由も開いているシートへ伝え、失敗時はモデルと深さを元の値へ戻す。
+- 深さの選択値とモデルの `defaultEffort` がともにないときは、先頭の候補を選択済みにせず「既定」を表示する。純粋関数の単体試験を追加した。`?mock` の失敗・遅延は試験から明示した場合だけ有効で、通常の挙動は変えない。
+- アニメーションを有効にした Playwright で、失敗時の復元、反映中の閉じ直し、順番待ちシートから編集ダイアログへの切り替えを追加した。後者は Issue #5 のシート切り替え競合に対する別の入口での回帰試験。
+- 接続回復の e2e は省いた。`scenario=disconnected` で開いたシートから再接続を試すと、偽接続の再構成に伴い会話画面とシートが閉じるため、同じシートの再有効化を検証できなかった。実 DSH の再接続でシートが維持される場合の動作も未確認。
+- 検証：`pnpm typecheck` 成功、`pnpm test` 705 件成功、`pnpm build` 成功、Playwright 全件 74 件成功。新規の失敗・反映中・シート切り替えの 3 件はそれぞれ 5 回連続で成功（15 件）。`?mock` の幅は Playwright 設定の 390px。実 DSH は起動していない。

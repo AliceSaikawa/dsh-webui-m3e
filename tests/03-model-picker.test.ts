@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ModelCatalog } from '../web/src/features/composer/api.ts'
-import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
+import { createModelApplyController, effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
 
 const catalog: ModelCatalog = {
   default: { provider: 'first', model: 'shared', reasoningEffort: 'high' },
@@ -34,4 +34,25 @@ test('考える深さは対応モデルだけにあり、選択値かモデル�
   assert.equal(effortValue({ provider: 'first', model: 'shared' }, choices), 'high')
   assert.equal(reasoningForSelection({ provider: 'second', model: 'shared' }, choices), undefined)
   assert.equal(reasoningForSelection(null, choices), undefined)
+  const unknownDefault: ModelCatalog = { ...catalog, groups: [{ id: 'first', name: '提供元一', models: [{
+    id: 'shared', name: '共通', reasoning: { efforts: [{ id: 'low', name: '低' }] },
+  }] }] }
+  assert.equal(effortValue({ provider: 'first', model: 'shared' }, modelChoices(unknownDefault)), '')
+})
+
+test('反映要求はシートを開き直しても一つだけ進み、成功と失敗を共有する', async () => {
+  const controller = createModelApplyController()
+  const firstSelection = { provider: 'first', model: 'shared' }
+  let finish!: (value: typeof firstSelection) => void
+  const first = controller.run(firstSelection, () => new Promise(resolve => { finish = resolve }))
+  assert.equal(controller.getSnapshot().pending, true)
+  await assert.rejects(controller.run({ provider: 'second', model: 'shared' }, async value => value), /反映中/u)
+  finish(firstSelection)
+  assert.deepEqual(await first, firstSelection)
+  assert.deepEqual(controller.getSnapshot().selected, firstSelection)
+  assert.equal(controller.getSnapshot().pending, false)
+  const failure = new Error('反映できませんでした。')
+  await assert.rejects(controller.run(firstSelection, async () => { throw failure }), error => error === failure)
+  assert.equal(controller.getSnapshot().error, failure)
+  assert.deepEqual(controller.getSnapshot().selected, firstSelection)
 })

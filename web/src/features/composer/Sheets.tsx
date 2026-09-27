@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eFormField } from '@m3e/react/form-field'
 import { M3eOption } from '@m3e/react/option'
@@ -6,12 +6,15 @@ import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eSwitch } from '@m3e/react/switch'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
+import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { QueueAction } from '../../dsh/services.ts'
-import type { ModelCatalog, ModelSelection, PermissionProjection } from './api.ts'
+import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
+import type { ComposerTarget } from './Composer.tsx'
+import { readDraft, subscribeDraft } from './drafts.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
-import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from './model-picker.ts'
+import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue, type ModelApplyController } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 import { permissionIcon } from './presentation.ts'
 
@@ -31,15 +34,20 @@ export function SheetRow({ icon, trailingIcon, children, detail, selected, disab
 
 export interface ModelPickerProps {
   initialCatalog?: ModelCatalog
-  selected?: ModelSelection | null
+  target: ComposerTarget
+  draftKey: string
+  modelApply: ModelApplyController
   loadCatalog(force?: boolean): Promise<ModelCatalog>
   applyModel(selection: ModelSelection): Promise<ModelSelection>
 }
 
-export function PlusSheet({ close, plan, disabled, onImage, onReference, onCommand, onPlan, ...modelProps }: {
-  close(): void; plan: boolean; disabled: boolean
+export function PlusSheet({ close, plan, onImage, onReference, onCommand, onPlan, ...modelProps }: {
+  close(): void; plan: boolean
   onImage(): void; onReference(): void; onCommand(): void; onPlan(active: boolean): Promise<void>
 } & ModelPickerProps) {
+  const { connected } = useConnection()
+  const applyState = useSyncExternalStore(modelProps.modelApply.subscribe, modelProps.modelApply.getSnapshot, modelProps.modelApply.getSnapshot)
+  const disabled = !connected || applyState.composerBusy || applyState.pending
   const [active, setActive] = useState(plan)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -55,22 +63,32 @@ export function PlusSheet({ close, plan, disabled, onImage, onReference, onComma
     <SheetRow icon="alternate_email" detail="入力欄で @ を打っても出せる" onClick={() => choose(onReference)}>ファイルを参照</SheetRow>
     <SheetRow icon="terminal" detail="入力欄で / を打っても出せる" onClick={() => choose(onCommand)}>コマンド</SheetRow>
     <div className="composer-switch-row"><Icon name="checklist" className="composer-sheet-icon" /><span className="composer-sheet-copy">計画モード</span><M3eSwitch aria-label="計画モード" checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
-    <ModelPicker {...modelProps} disabled={disabled || busy} />
+    <ModelPicker {...modelProps} extraDisabled={busy} />
     {error && <p role="alert">{error}</p>}
   </div>
 }
 
-export function ModelPickerSheet({ disabled, ...props }: ModelPickerProps & { disabled: boolean }) {
-  return <div className="composer-sheet"><h2>モデルの選択</h2><ModelPicker {...props} disabled={disabled} /></div>
+export function ModelPickerSheet(props: ModelPickerProps) {
+  return <div className="composer-sheet"><h2>モデルの選択</h2><ModelPicker {...props} /></div>
 }
 
-function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabled }: ModelPickerProps & { disabled: boolean }) {
+function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog, applyModel, extraDisabled = false }: ModelPickerProps & { extraDisabled?: boolean }) {
+  const { connected } = useConnection()
+  const sessionId = target.kind === 'session' ? target.sessionId : ''
+  const { face, snapshot, projection } = useSession(sessionId)
+  const modelSelection = projection<ModelSelectionProjection>('modelSelection')
+  const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
+  const draftSnapshot = useCallback(() => readDraft(draftKey), [draftKey])
+  const draft = useSyncExternalStore(subscribe, draftSnapshot, draftSnapshot)
+  const applyState = useSyncExternalStore(modelApply.subscribe, modelApply.getSnapshot, modelApply.getSnapshot)
   const [catalog, setCatalog] = useState(initialCatalog)
-  const [current, setCurrent] = useState(selected)
+  const observed = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
+  const [current, setCurrent] = useState<ModelSelection | undefined>(() => observed ?? applyState.selected)
   const [loading, setLoading] = useState(!initialCatalog)
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const requestBusy = useRef(false)
+  const busy = applyState.pending
+  const disabled = extraDisabled || !connected || applyState.composerBusy || busy
+    || (target.kind === 'session' && (!face || snapshot.removed || snapshot.openState !== 'open'))
   const modelSelect = useRef<M3eSelectElement>(null)
   const effortSelect = useRef<M3eSelectElement>(null)
   const modelId = useId()
@@ -78,6 +96,7 @@ function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabl
   const choices = catalog ? modelChoices(catalog) : []
   const reasoning = reasoningForSelection(current, choices)
   const selectedEffort = effortValue(current, choices)
+  const observedKey = observed ? `${modelValue(observed)}:${observed.reasoningEffort ?? ''}` : ''
   useEffect(() => {
     if (initialCatalog) return
     let active = true
@@ -85,6 +104,17 @@ function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabl
       .catch(cause => { if (active) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')); setLoading(false) } })
     return () => { active = false }
   }, [initialCatalog, loadCatalog])
+  useEffect(() => {
+    if (!connected || catalog || loading) return
+    let active = true
+    setLoading(true); setError('')
+    void loadCatalog(true).then(value => { if (active) { setCatalog(value); setLoading(false) } })
+      .catch(cause => { if (active) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')); setLoading(false) } })
+    return () => { active = false }
+  }, [connected])
+  useEffect(() => { if (!busy) setCurrent(observed ?? applyState.selected) }, [observedKey])
+  useEffect(() => { if (applyState.selected) setCurrent(applyState.selected) }, [applyState.selected])
+  useEffect(() => { if (!busy && applyState.error) setCurrent(observed) }, [busy, applyState.error])
   useEffect(() => {
     if (!selectedEffort) return
     const frame = requestAnimationFrame(() => {
@@ -99,14 +129,12 @@ function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabl
     finally { setLoading(false) }
   }
   async function choose(selection: ModelSelection) {
-    if (requestBusy.current || disabled || loading) return
-    requestBusy.current = true; setBusy(true); setError('')
+    if (disabled || loading) return
     try { setCurrent(await applyModel(selection)) }
-    catch (cause) {
-      setError(errorText(cause, 'モデルを切り替えられませんでした。'))
+    catch {
       if (modelSelect.current) modelSelect.current.value = modelValue(current)
       if (effortSelect.current) effortSelect.current.value = selectedEffort
-    } finally { requestBusy.current = false; setBusy(false) }
+    }
   }
   return <div className="composer-model-picker">
     <M3eFormField variant="outlined">
@@ -134,12 +162,13 @@ function ModelPicker({ initialCatalog, selected, loadCatalog, applyModel, disabl
           const value = (event.currentTarget as M3eSelectElement).value
           if (current && typeof value === 'string' && reasoning.efforts.some(effort => effort.id === value)) void choose({ ...current, reasoningEffort: value })
         }}>
+        {!selectedEffort && <><span slot="value">既定</span><M3eOption value="" disabled>既定</M3eOption></>}
         {reasoning.efforts.map((effort, index) => <M3eOption key={effort.id} value={effort.id}>{reasoningEffortLabel(effort.id, index)}</M3eOption>)}
       </M3eSelect>
     </M3eFormField>}
     {busy && <p role="status">選択を反映中…</p>}
-    {error && <p role="alert">{error}</p>}
-    {!loading && (!catalog || catalog.failures.length > 0) && <M3eButton disabled={busy} onClick={() => { void retry() }}>もう一度読み込む</M3eButton>}
+    {(error || applyState.error !== undefined) && <p role="alert">{error || errorText(applyState.error, 'モデルを切り替えられませんでした。')}</p>}
+    {!loading && (!catalog || catalog.failures.length > 0) && <M3eButton disabled={disabled} onClick={() => { void retry() }}>もう一度読み込む</M3eButton>}
   </div>
 }
 

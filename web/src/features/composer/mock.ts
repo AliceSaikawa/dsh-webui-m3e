@@ -75,6 +75,13 @@ export function extendMock(kit: MockKit): void {
   kit.addRemote('session', {
     async modelCatalog() { return success(structuredClone(mockModelCatalog)) },
     async selectModel(input: ModelSelection & { sessionId: string }) {
+      const testWindow = globalThis as typeof globalThis & {
+        __m3eTestSelectModelDelay?: number
+        __m3eTestSelectModelFailure?: boolean
+      }
+      const delay = Math.min(2000, Math.max(0, testWindow.__m3eTestSelectModelDelay ?? 0))
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      if (testWindow.__m3eTestSelectModelFailure) return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
       if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。')
       const model = mockModelCatalog.groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
       if (!model || (input.reasoningEffort !== undefined && !model.reasoning?.efforts.some((effort) => effort.id === input.reasoningEffort))) {

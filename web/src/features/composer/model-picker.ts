@@ -32,5 +32,40 @@ export function reasoningForSelection(selection: ModelSelection | null | undefin
 export function effortValue(selection: ModelSelection | null | undefined, choices: readonly ModelChoice[]): string {
   const reasoning = reasoningForSelection(selection, choices)
   return reasoning?.efforts.find(effort => effort.id === selection?.reasoningEffort)?.id
-    ?? reasoning?.defaultEffort ?? reasoning?.efforts[0]?.id ?? ''
+    ?? reasoning?.defaultEffort ?? ''
 }
+
+export interface ModelApplySnapshot {
+  readonly pending: boolean
+  readonly composerBusy: boolean
+  readonly selected?: ModelSelection
+  readonly error?: unknown
+}
+
+/** One request per Composer, shared by every sheet opened for that Composer. */
+export function createModelApplyController() {
+  let snapshot: ModelApplySnapshot = { pending: false, composerBusy: false }
+  const listeners = new Set<() => void>()
+  const publish = (next: ModelApplySnapshot) => { snapshot = next; listeners.forEach(listener => listener()) }
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    setComposerBusy(value: boolean) {
+      if (snapshot.composerBusy !== value) publish({ ...snapshot, composerBusy: value })
+    },
+    async run(selection: ModelSelection, apply: (selection: ModelSelection) => Promise<ModelSelection>): Promise<ModelSelection> {
+      if (snapshot.pending) throw new Error('モデルの選択を反映中です。')
+      publish({ ...snapshot, pending: true, error: undefined })
+      try {
+        const selected = await apply(selection)
+        publish({ ...snapshot, pending: false, selected, error: undefined })
+        return selected
+      } catch (error) {
+        publish({ ...snapshot, pending: false, error })
+        throw error
+      }
+    },
+  }
+}
+
+export type ModelApplyController = ReturnType<typeof createModelApplyController>
