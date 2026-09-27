@@ -1,8 +1,8 @@
 # dsh-webui-m3e
 
-DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 3 Expressive の画面で操作するためのプラグインです。
+日本語 | [English](README.en.md) | [简体中文](README.zh-CN.md)
 
-A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). The UI text is Japanese only.
+DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 3 Expressive の画面で操作するためのプラグインです。
 
 <p>
   <img src="docs/images/home.png" alt="セッションの一覧" width="200">
