@@ -60,7 +60,7 @@ When reinstalling, increment `version` in `package.json` before rebuilding the p
 Choose which interface to use on this device with any of the following options. Your choice is saved separately on each device.
 
 - In the usual interface: `設定 → 一般 → この端末で M3E の画面を使う` (Settings → General → Use the M3E interface on this device)
-- In this interface: `設定 → 今の画面に戻す` (Settings → Return to the current interface)
+- In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
 - Add `?ui=m3e` or `?ui=classic` to the URL
 
 If either interface fails to load, open `http://<host>/?ui=classic` to return to the usual interface.
