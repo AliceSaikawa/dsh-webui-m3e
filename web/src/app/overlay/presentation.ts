@@ -15,6 +15,10 @@ export class OverlayPresentation {
   constructor(released: (id: number) => void) { this.released = released }
   get activeId(): number | undefined { return this.active }
   isUserClose(id: number): boolean { return this.active === id && this.closing !== id }
+  /** Keep mounted layers, but create a new target only after the prior native teardown. */
+  shouldMount(id: number, topId: number | undefined): boolean {
+    return this.surfaces.has(id) || (this.active === undefined && id === topId)
+  }
   register(id: number, surface: OverlaySurface): () => void {
     this.surfaces.set(id, surface)
     void this.advance()

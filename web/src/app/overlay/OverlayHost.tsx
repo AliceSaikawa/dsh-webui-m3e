@@ -67,7 +67,8 @@ export function OverlayHost() {
   const [retained, setRetained] = useState(entries)
   const [previous, setPrevious] = useState(entries)
   const presentation = useMemo(() => new OverlayPresentation(id => {
-    if (!getOverlays().some(entry => entry.id === id)) setRetained(current => current.filter(entry => entry.id !== id))
+    // Rerender also when the old entry remains in the stack: a waiting target can mount now.
+    setRetained(current => getOverlays().some(entry => entry.id === id) ? [...current] : current.filter(entry => entry.id !== id))
   }), [])
   if (previous !== entries) {
     setPrevious(entries)
@@ -86,5 +87,7 @@ export function OverlayHost() {
     return () => nodes.forEach((node, index) => { node.style.overflow = original[index] ?? '' })
   }, [locked])
   // Stable keys retain form input, busy state and in-flight request results beneath an interruption.
-  return retained.map(entry => <OverlayLayer key={entry.id} entry={entry} presentation={presentation} />)
+  const topId = entries.at(-1)?.id
+  return retained.filter(entry => presentation.shouldMount(entry.id, topId))
+    .map(entry => <OverlayLayer key={entry.id} entry={entry} presentation={presentation} />)
 }
