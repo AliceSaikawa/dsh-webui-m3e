@@ -77,7 +77,7 @@ test('全機能を登録しても01の質問と未読完了はhomeシナリオ�
     const before = buildInboxRows(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot(), inbox.ctx.workspaces.list.getSnapshot(), Date.now())
     const otherCompletedIds = new Set(before.completed.filter((row) => !inboxCompletedIds.has(row.sessionId)).map((row) => row.sessionId))
     assert.deepEqual(new Set(before.completed.filter((row) => inboxCompletedIds.has(row.sessionId)).map((row) => row.sessionId)), inboxCompletedIds)
-    assert.equal(countInbox(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot()), 5 + otherCompletedIds.size, '06の5件に、その時点の他機能の完了件数を加える')
+    assert.equal(countInbox(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot(), inbox.ctx.workspaces.list.getSnapshot().archivedSessionIds), 5 + otherCompletedIds.size, '06の5件に、その時点の他機能の完了件数を加える')
     t.diagnostic(`inbox の他機能の未読完了: ${otherCompletedIds.size} 件（${[...otherCompletedIds].join(', ') || 'なし'}）`)
     for (const pending of inbox.store.getSnapshot()) {
       if (pending.kind === 'approval') await pending.answer('allowed-once')

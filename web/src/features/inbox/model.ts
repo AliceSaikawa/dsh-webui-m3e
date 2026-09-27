@@ -67,15 +67,21 @@ export function relativeTime(updatedAt: number, now: number): string {
   return `${Math.floor(seconds / 86400)} 日前`
 }
 
-function completedSessions(list: SessionListState): SessionSummary[] {
+/** Archived sessions leave the completed list; pending requests still need an answer. */
+function completedSessions(list: SessionListState, archivedSessionIds: readonly string[]): SessionSummary[] {
+  const archived = new Set(archivedSessionIds)
   return [...new Set(list.ids)].flatMap(id => {
     const session = list.byId[id]
-    return session?.completed === true ? [session] : []
+    return session?.completed === true && !archived.has(id) ? [session] : []
   })
 }
 
-export function countInbox(pending: readonly PendingInteraction[], list: SessionListState): number {
-  return pending.length + completedSessions(list).length
+export function countInbox(
+  pending: readonly PendingInteraction[],
+  list: SessionListState,
+  archivedSessionIds: readonly string[],
+): number {
+  return pending.length + completedSessions(list, archivedSessionIds).length
 }
 
 export function buildInboxRows(
@@ -112,7 +118,7 @@ export function buildInboxRows(
   }
   return {
     pending: pending.map(item => ({ key: item.key, ...identity(item.sessionId), ...describePending(item), pending: item })),
-    completed: completedSessions(list)
+    completed: completedSessions(list, workspaces.archivedSessionIds)
       .sort((a, b) => (Number.isFinite(b.updatedAt) ? b.updatedAt : 0) - (Number.isFinite(a.updatedAt) ? a.updatedAt : 0))
       .map(session => ({
         key: session.id,

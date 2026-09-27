@@ -230,3 +230,41 @@ test('gateway の入力不備と内部エラーは包まれた RPC エラーも�
     })
   }
 })
+
+test('consecutive transient appends fold only the new chunks and match a full fold', () => {
+  const entries: SessionEventLikeEntry[] = [durable(1)]
+  let reads = 0
+  const feed = source(window([...entries]))
+  const journal = createSessionJournal(feed)
+  const unsubscribe = journal.subscribe(() => {})
+  journal.getSnapshot()
+  const append = (chunk: StreamChunk, revision: number) => {
+    const entry = transient(chunk, 1 + revision / 1000)
+    entries.push(entry)
+    const all = [...entries]
+    feed.replace({ get entries() { reads++; return all }, revision, hasMore: false, change: { kind: 'append', entries: [entry] } })
+  }
+  append({ type: 'block-start', index: 0, blockType: 'reasoning' }, 2)
+  append({ type: 'reasoning-delta', index: 0, text: '考え' }, 3)
+  append({ type: 'block-end', index: 0, block: { type: 'reasoning', text: '考えた' } }, 4)
+  const settled = journal.getSnapshot().stream?.blocks?.[0]
+  for (let revision = 5; revision < 205; revision++) append({ type: 'text-delta', index: 1, text: 'あ' }, revision)
+  append({ type: 'reasoning-delta', index: 0, text: '確定後の断片' }, 205)
+  const stream = journal.getSnapshot().stream
+  assert.equal(reads, 0, 'the whole window is not rescanned for each chunk')
+  assert.equal(stream?.blocks?.[0], settled, 'a completed block keeps its identity')
+  assert.deepEqual(stream?.content, [{ type: 'reasoning', text: '考えた' }, { type: 'text', text: 'あ'.repeat(200) }])
+  assert.deepEqual(stream, foldSessionWindow(window(entries)).stream)
+  unsubscribe()
+})
+
+test('a skipped transient revision refolds the whole window so missed chunks are kept', () => {
+  const first = transient({ type: 'text-delta', index: 0, text: '返' })
+  const feed = source(window([durable(1), first]))
+  const journal = createSessionJournal(feed)
+  journal.getSnapshot()
+  const missed = transient({ type: 'text-delta', index: 0, text: '事' }, 1.6)
+  const latest = transient({ type: 'text-delta', index: 0, text: 'です' }, 1.7)
+  feed.replace({ ...window([durable(1), first, missed, latest], 3), change: { kind: 'append', entries: [latest] } })
+  assert.deepEqual(journal.getSnapshot().stream?.content, [{ type: 'text', text: '返事です' }])
+})

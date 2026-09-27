@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { memo, useMemo, useRef } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { ChatMarkdown } from './ChatMarkdown.tsx'
@@ -11,7 +11,7 @@ import { AttachmentImage, FileAttachment, PreviewImage } from './Attachments.tsx
 import { MessageActions } from './MessageActions.tsx'
 import { ChatSheets, useChatSheets } from './ChatSheets.tsx'
 import { ToolDetail } from './ToolDetail.tsx'
-import { buildChatRows, commandPresentation, formatDuration, summarizeToolArguments, toolIcon, type ChatRow } from './model.ts'
+import { appendLiveRows, buildSettledChat, commandPresentation, formatDuration, summarizeToolArguments, toolIcon, type ChatRow } from './model.ts'
 import { useChatScroll } from './useChatScroll.ts'
 import './chat.css'
 
@@ -19,7 +19,8 @@ function Progress({ children }: { children: string }) {
   return <div className="chat-progress" role="status"><span aria-hidden="true" className="chat-progress-dot" />{children}</div>
 }
 
-function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string; face?: SessionFace; active: boolean }) {
+/** Memoized so rows that keep their identity skip Markdown rendering while a reply streams. */
+const Row = memo(function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string; face?: SessionFace; active: boolean }) {
   const sheets = useChatSheets()
   if (row.kind === 'user') return <article className="chat-user" aria-label="自分のメッセージ">
     <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}>
@@ -58,7 +59,7 @@ function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string
       ? <PreviewImage key={index} url={attachment.value.previewUrl} name={attachment.value.name} />
       : <FileAttachment key={index} attachment={attachment.value} />)}</div><small>送信中…</small>
   </article>
-}
+})
 
 /** A key resets scroll and expanded rows when routing to a different session. */
 export function ChatView({ sessionId, active }: { sessionId: string; active: boolean }) {
@@ -67,7 +68,8 @@ export function ChatView({ sessionId, active }: { sessionId: string; active: boo
 
 function SessionChat({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { face, snapshot, records, stream } = useSession(sessionId)
-  const rows = useMemo(() => buildChatRows(records, stream, snapshot.pendingSubmissions), [records, stream, snapshot.pendingSubmissions])
+  const settled = useMemo(() => buildSettledChat(records), [records])
+  const rows = useMemo(() => appendLiveRows(settled, stream, snapshot.pendingSubmissions), [settled, stream, snapshot.pendingSubmissions])
   const revision = useMemo(() => ({ rows, error: snapshot.lastAgentError, waiting: snapshot.awaitingFirstTurn, open: snapshot.openState }), [rows, snapshot.lastAgentError, snapshot.awaitingFirstTurn, snapshot.openState])
   const scroll = useChatScroll({ face, revision, active, ready: snapshot.openState === 'open', loadingOlder: snapshot.loadingOlder, hasMore: snapshot.hasMore,
     onLoadError: () => showSnackbar('前のメッセージを読み込めませんでした。もう一度お試しください。') })

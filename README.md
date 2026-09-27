@@ -26,7 +26,7 @@ A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). The UI 
 
 ## 必要なもの
 
-- DeepSeek Harness（0.1.5-rc.1 で開発しています）
+- DeepSeek Harness 0.1.5-rc.3（この版で起動と接続を確かめています）
 - ビルドのための Node.js 22 以上と pnpm
 
 ## 入れ方

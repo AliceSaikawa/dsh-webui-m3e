@@ -29,7 +29,7 @@ function observe(ctx: MockContext) {
     ctx,
     store,
     rows: () => buildInboxRows(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now()),
-    count: () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot()),
+    count: () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds),
     dispose() { stop(); ctx.dispose() },
   }
 }

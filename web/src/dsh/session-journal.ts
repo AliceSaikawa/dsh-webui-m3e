@@ -1,14 +1,24 @@
 import type {
-  ContentBlock, FinishReason, ObservableSnapshot, SessionBinding, SessionEventWindow,
-  SessionWireEvent, StreamChunk, TokenUsage,
+  ContentBlock, FinishReason, ObservableSnapshot, SessionBinding, SessionEventLikeEntry,
+  SessionEventWindow, SessionWireEvent, StreamChunk, TokenUsage,
 } from './services.ts'
+
+/** A live block folded by stream index; a block-end or finish completes it. */
+export interface StreamBlock {
+  readonly index: number
+  readonly block: ContentBlock
+  readonly complete: boolean
+}
 
 /** The controller restores the assistant baseline and validates nextIndex first. */
 export interface AssistantStream {
   readonly attemptId: string
   readonly turn: number
   readonly step: number
-  readonly chunks: readonly StreamChunk[]
+  /** Raw chunks; the journal folds them into `blocks` and leaves this out. */
+  readonly chunks?: readonly StreamChunk[]
+  /** Folded blocks in index order, kept by identity while a block does not change. */
+  readonly blocks?: readonly StreamBlock[]
   readonly content: readonly ContentBlock[]
   readonly usage?: TokenUsage
   readonly finishReason?: FinishReason
@@ -27,10 +37,11 @@ export const emptyJournalSource: ObservableSnapshot<SessionJournal> = {
 /**
  * Fold a complete controller window, so a reconnect replaces old transient text.
  * Durable entries keep every wire field and are returned in ascending seq order.
- * block-end is authoritative; stream indices are block indices, not append order.
+ * block-end is authoritative and later deltas for that index are ignored;
+ * stream indices are block indices, not append order.
  */
 export function foldSessionWindow(window: SessionEventWindow): SessionJournal {
-  return { records: readRecords(window), stream: foldStream(window) }
+  return { records: readRecords(window), stream: streamOf(applyChunks(undefined, window.entries)) }
 }
 
 function readRecords(window: SessionEventWindow): readonly SessionWireEvent[] {
@@ -49,64 +60,88 @@ function hasSameRecords(window: SessionEventWindow, records: readonly SessionWir
   return index === records.length
 }
 
-function foldStream(window: SessionEventWindow): AssistantStream | null {
-  const blocks = new Map<number, ContentBlock>()
-  let active: { attemptId: string; turn: number; step: number } | undefined
-  let chunks: StreamChunk[] = []
-  let usage: TokenUsage | undefined
-  let finishReason: FinishReason | undefined
-  for (const entry of window.entries) {
+/**
+ * Mutable fold state for one attempt. Chunks are applied once each, so a long
+ * response costs one step per chunk rather than a rescan of the whole window.
+ */
+interface StreamFold {
+  attemptId: string
+  turn: number
+  step: number
+  readonly blocks: Map<number, StreamBlock>
+  usage?: TokenUsage
+  finishReason?: FinishReason
+}
+
+function applyChunks(fold: StreamFold | undefined, entries: readonly SessionEventLikeEntry[]): StreamFold | undefined {
+  for (const entry of entries) {
     if (entry.type === 'event') continue
     const { attemptId, turn, step, chunk } = entry.event.data
-    if (active?.attemptId !== attemptId) {
-      active = { attemptId, turn, step }
-      blocks.clear()
-      chunks = []
-      usage = undefined
-      finishReason = undefined
-    }
-    chunks.push(chunk)
-    switch (chunk.type) {
-      case 'block-start':
-        if (chunk.blockType === 'text' || chunk.blockType === 'reasoning') {
-          blocks.set(chunk.index, { type: chunk.blockType, text: '' })
-        }
-        break
-      case 'text-delta': {
-        const previous = blocks.get(chunk.index)
-        blocks.set(chunk.index, { type: 'text', text: (previous?.type === 'text' ? previous.text : '') + chunk.text })
-        break
-      }
-      case 'reasoning-delta': {
-        const previous = blocks.get(chunk.index)
-        blocks.set(chunk.index, { type: 'reasoning', text: (previous?.type === 'reasoning' ? previous.text : '') + chunk.text })
-        break
-      }
-      case 'tool-call-delta': {
-        const previous = blocks.get(chunk.index)
-        const tool = previous?.type === 'tool-call' ? previous : undefined
-        blocks.set(chunk.index, {
-          type: 'tool-call', id: chunk.id, name: chunk.name ?? tool?.name ?? '',
-          arguments: (tool?.arguments ?? '') + chunk.argumentsDelta,
-        })
-        break
-      }
-      case 'block-end':
-        blocks.set(chunk.index, chunk.block)
-        break
-      case 'usage':
-        usage = chunk.usage
-        break
-      case 'finish':
-        finishReason = chunk.reason
-        break
-    }
+    if (fold?.attemptId !== attemptId) fold = { attemptId, turn, step, blocks: new Map() }
+    applyChunk(fold, chunk)
   }
-  return active === undefined ? null : {
-    ...active, chunks,
-    content: [...blocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block),
-    ...(usage === undefined ? {} : { usage }),
-    ...(finishReason === undefined ? {} : { finishReason }),
+  return fold
+}
+
+function applyChunk(fold: StreamFold, chunk: StreamChunk): void {
+  if (chunk.type === 'usage') { fold.usage = chunk.usage; return }
+  if (chunk.type === 'finish') { fold.finishReason = chunk.reason; return }
+  const { blocks } = fold
+  if (chunk.type === 'block-end') {
+    blocks.set(chunk.index, { index: chunk.index, block: chunk.block, complete: true })
+    return
+  }
+  if (chunk.type === 'block-start') {
+    if (chunk.blockType === 'text' || chunk.blockType === 'reasoning') {
+      blocks.set(chunk.index, { index: chunk.index, block: { type: chunk.blockType, text: '' }, complete: false })
+    }
+    return
+  }
+  const previous = blocks.get(chunk.index)
+  if (previous?.complete) return
+  if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
+    const type = chunk.type === 'text-delta' ? 'text' : 'reasoning'
+    const prefix = previous?.block.type === type ? previous.block.text : ''
+    blocks.set(chunk.index, { index: chunk.index, block: { type, text: prefix + chunk.text }, complete: false })
+  } else {
+    const call = previous?.block.type === 'tool-call' ? previous.block : undefined
+    blocks.set(chunk.index, {
+      index: chunk.index, complete: false,
+      block: { type: 'tool-call', id: chunk.id, name: chunk.name ?? call?.name ?? '', arguments: (call?.arguments ?? '') + chunk.argumentsDelta },
+    })
+  }
+}
+
+/** Read folded blocks, folding raw chunks or the restored content when a stream has no blocks. */
+export function streamBlocksOf(stream: AssistantStream): readonly StreamBlock[] {
+  if (stream.blocks !== undefined) return stream.blocks
+  if (stream.chunks === undefined || stream.chunks.length === 0) {
+    return stream.content.map((block, index) => ({ index, block, complete: stream.finishReason !== undefined }))
+  }
+  const fold: StreamFold = { attemptId: stream.attemptId, turn: stream.turn, step: stream.step, blocks: new Map() }
+  for (const chunk of stream.chunks) applyChunk(fold, chunk)
+  if (stream.finishReason !== undefined) fold.finishReason ??= stream.finishReason
+  return streamOf(fold)?.blocks ?? []
+}
+
+/** Blocks that did not change keep their identity, so settled rows can skip re-rendering. */
+const completedBlocks = new WeakMap<StreamBlock, StreamBlock>()
+function streamOf(fold: StreamFold | undefined): AssistantStream | null {
+  if (fold === undefined) return null
+  let blocks = [...fold.blocks.values()].sort((a, b) => a.index - b.index)
+  if (fold.finishReason !== undefined) {
+    blocks = blocks.map(value => {
+      if (value.complete) return value
+      let complete = completedBlocks.get(value)
+      if (complete === undefined) completedBlocks.set(value, complete = { ...value, complete: true })
+      return complete
+    })
+  }
+  return {
+    attemptId: fold.attemptId, turn: fold.turn, step: fold.step, blocks,
+    content: blocks.map(value => value.block),
+    ...(fold.usage === undefined ? {} : { usage: fold.usage }),
+    ...(fold.finishReason === undefined ? {} : { finishReason: fold.finishReason }),
   }
 }
 
@@ -114,6 +149,7 @@ function foldStream(window: SessionEventWindow): AssistantStream | null {
 export function createSessionJournal(source: ObservableSnapshot<SessionEventWindow>): ObservableSnapshot<SessionJournal> {
   let lastWindow: SessionEventWindow | undefined
   let value = EMPTY_JOURNAL
+  let fold: StreamFold | undefined
   const listeners = new Set<() => void>()
   let unsubscribe: (() => void) | undefined
   const getSnapshot = () => {
@@ -125,10 +161,15 @@ export function createSessionJournal(source: ObservableSnapshot<SessionEventWind
       const transientAppend = lastWindow !== undefined
         && window.change.kind === 'append'
         && window.change.entries.every(entry => entry.type === 'transient')
-        && (window.revision === lastWindow.revision + 1 || hasSameRecords(window, value.records))
+      const nextRevision = lastWindow !== undefined && window.revision === lastWindow.revision + 1
+      // Only the very next revision may extend the stream fold; a skipped
+      // revision may have carried chunks this cache never saw.
+      fold = transientAppend && nextRevision
+        ? applyChunks(fold, window.change.entries)
+        : applyChunks(undefined, window.entries)
       value = {
-        records: transientAppend ? value.records : readRecords(window),
-        stream: foldStream(window),
+        records: transientAppend && (nextRevision || hasSameRecords(window, value.records)) ? value.records : readRecords(window),
+        stream: streamOf(fold),
       }
       lastWindow = window
     }

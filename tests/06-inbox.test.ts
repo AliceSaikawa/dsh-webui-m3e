@@ -82,17 +82,17 @@ test('一覧に未到着のセッションでも返事待ちを落とさず、�
 
 test('両方空・片方だけの区分を返し、件数も表示対象と一致する', () => {
   assert.deepEqual(buildInboxRows([], listOf(), workspaceState(), now), { pending: [], completed: [] })
-  assert.equal(countInbox([], listOf()), 0)
+  assert.equal(countInbox([], listOf(), []), 0)
   const pendingOnly = buildInboxRows([approval], listOf(), workspaceState(), now)
   assert.equal(pendingOnly.completed.length, 0)
-  assert.equal(countInbox([approval], listOf()), 1)
+  assert.equal(countInbox([approval], listOf(), []), 1)
   const list = listOf(summary('done', { completed: true }), summary('idle', { completed: false }))
   const completedOnly = buildInboxRows([], list, workspaceState(), now)
   assert.equal(completedOnly.pending.length, 0)
   assert.equal(completedOnly.completed.length, 1)
-  assert.equal(countInbox([], list), 1)
+  assert.equal(countInbox([], list, []), 1)
   const all = buildInboxRows([approval, question, plan], list, workspaceState(), now)
-  assert.equal(countInbox([approval, question, plan], list), all.pending.length + all.completed.length)
+  assert.equal(countInbox([approval, question, plan], list, []), all.pending.length + all.completed.length)
 })
 
 test('同じセッションの複数の返事待ちは個別に数え、一覧の欠損や重複は完了件数を増やさない', () => {
@@ -103,7 +103,16 @@ test('同じセッションの複数の返事待ちは個別に数え、一覧�
   const rows = buildInboxRows(pending, list, workspaceState(), now)
   assert.equal(rows.completed.length, 1)
   assert.equal(rows.pending.length, 2)
-  assert.equal(countInbox(pending, list), 3)
+  assert.equal(countInbox(pending, list, []), 3)
+})
+
+test('アーカイブした完了会話は行と件数から外し、返事待ちは残す', () => {
+  const list = listOf(summary('approval', { completed: true }), summary('archived', { completed: true }), summary('kept', { completed: true }))
+  const workspaces = workspaceState([], { archivedSessionIds: ['archived', 'approval'] })
+  const rows = buildInboxRows([approval], list, workspaces, now)
+  assert.deepEqual(rows.completed.map(row => row.sessionId), ['kept'])
+  assert.deepEqual(rows.pending.map(row => row.sessionId), ['approval'])
+  assert.equal(countInbox([approval], list, workspaces.archivedSessionIds), 2)
 })
 
 test('相対時刻は分・時間・日の境界と未来・不正な値を扱う', () => {
@@ -129,7 +138,7 @@ test('06だけを登録した inbox シナリオで3種の要求と完了2件を
   try {
     await nextTurn()
     const read = () => buildInboxRows(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now())
-    const count = () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot())
+    const count = () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds)
     assert.deepEqual(read().pending.map(row => row.icon), ['terminal', 'help', 'checklist'])
     assert.deepEqual(read().completed.map(row => row.sessionId), [INBOX_MOCK_IDS.completed, INBOX_MOCK_IDS.otherCompleted])
     assert.deepEqual(read().completed.map(row => row.workspaceName), ['画面の開発', '調査ノート'])
@@ -161,10 +170,10 @@ test('取消イベントで行と件数が消え、会話の選択は変わら�
   const rejected = assert.rejects(result, { code: 'ASK_ABORTED' })
   const list = listOf(summary('question'))
   list.current = '別の会話'
-  assert.equal(countInbox(store.getSnapshot(), list), 1)
+  assert.equal(countInbox(store.getSnapshot(), list, []), 1)
   controller.abort()
   await rejected
-  assert.equal(countInbox(store.getSnapshot(), list), 0)
+  assert.equal(countInbox(store.getSnapshot(), list, []), 0)
   assert.deepEqual(buildInboxRows(store.getSnapshot(), list, workspaceState(), now), { pending: [], completed: [] })
   assert.equal(list.current, '別の会話')
 })
@@ -185,7 +194,7 @@ test('ワークスペースの初回取得失敗は未登録と区別し、pendi
   assert.equal(rows.pending[0]?.workspaceName, 'ワークスペースを確認できません')
   assert.equal(rows.completed[0]?.workspaceName, 'ワークスペースを確認できません')
   assert.equal(rows.pending[0]?.pending, approval)
-  assert.equal(countInbox([approval], list), 2)
+  assert.equal(countInbox([approval], list, []), 2)
   assert.deepEqual(inboxStatus(rows, list, workspaces), {
     workspaceError: 'ワークスペース一覧を取得できませんでした。所属を確認できません。',
     loadingMessage: null,
@@ -207,7 +216,7 @@ test('取得済みの一覧を保った失敗では前回の所属と警告を�
   assert.equal(rows.completed[0]?.workspaceName, '前回の所属（更新未確認）')
   assert.equal(rows.pending[1]?.workspaceName, 'ワークスペースを確認できません')
   assert.equal(inboxStatus(rows, list, workspaces).workspaceError, 'ワークスペース一覧を取得できませんでした。所属は前回取得した情報です。')
-  assert.equal(countInbox([approval, question], list), 3)
+  assert.equal(countInbox([approval, question], list, []), 3)
   assert.deepEqual(workspaces, original)
 })
 
@@ -239,7 +248,7 @@ test('一覧より先に届いた返事待ちは読み込み中の題名・所�
   assert.equal(rows.pending[0]?.title, 'セッションを読み込み中')
   assert.equal(rows.pending[0]?.workspaceName, 'ワークスペースを読み込み中')
   assert.equal(rows.pending[0]?.pending, approval)
-  assert.equal(countInbox([approval], list), 1)
+  assert.equal(countInbox([approval], list, []), 1)
   assert.equal(inboxStatus(rows, list, workspaces).showEmpty, false)
   assert.equal(inboxStatus(rows, list, workspaces).loadingMessage, '対応待ちを読み込んでいます')
   const readyRows = buildInboxRows([approval], listOf(summary('approval', { displayTitle: '' })), workspaces, now)
@@ -268,7 +277,7 @@ test('再接続による読み込み中は既存の行を残し、保持した�
   assert.equal(rows.completed[0]?.workspaceName, '保存済みの所属（更新中）')
   assert.equal(rows.pending.length, 1)
   assert.equal(rows.completed.length, 1)
-  assert.equal(countInbox([approval], list), 2)
+  assert.equal(countInbox([approval], list, []), 2)
   assert.deepEqual(inboxStatus(rows, list, workspaces), {
     workspaceError: null, loadingMessage: '対応待ちを読み込んでいます', showEmpty: false,
   })

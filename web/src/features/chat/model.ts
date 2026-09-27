@@ -2,7 +2,7 @@ import type {
   ContentBlock, FileAttachmentRef, ImageAttachmentRef, PendingSubmission,
   SessionWireEvent,
 } from '../../dsh/services.ts'
-import type { AssistantStream } from '../../dsh/session-journal.ts'
+import { streamBlocksOf, type AssistantStream, type StreamBlock } from '../../dsh/session-journal.ts'
 
 /** Unknown content is kept as a label, without attempting to render its payload. */
 export type ChatContentBlock = Exclude<ContentBlock, { type: 'tool-result' }>
@@ -123,47 +123,11 @@ function contentOf(value: unknown): ChatContentBlock[] {
 
 const textOf = (content: readonly ChatContentBlock[]): string => content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n\n')
 
-export interface StreamBlock {
-  readonly index: number
-  readonly block: ContentBlock
-  readonly complete: boolean
-}
+export type { StreamBlock }
 
 /** Fold by block index rather than arrival order; final blocks replace all deltas. */
-export function getStreamBlocks(stream: AssistantStream): StreamBlock[] {
-  if (stream.chunks.length === 0) {
-    return stream.content.map((block, index) => ({ index, block, complete: stream.finishReason !== undefined }))
-  }
-  const blocks = new Map<number, StreamBlock>()
-  let finished = false
-  for (const chunk of stream.chunks) {
-    if (chunk.type === 'usage') continue
-    if (chunk.type === 'finish') { finished = true; continue }
-    const previous = blocks.get(chunk.index)
-    if (chunk.type === 'block-end') {
-      blocks.set(chunk.index, { index: chunk.index, block: chunk.block, complete: true })
-      continue
-    }
-    if (chunk.type === 'block-start') {
-      if (chunk.blockType === 'text' || chunk.blockType === 'reasoning') {
-        blocks.set(chunk.index, { index: chunk.index, block: { type: chunk.blockType, text: '' }, complete: false })
-      }
-      continue
-    }
-    if (previous?.complete) continue
-    if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') {
-      const type = chunk.type === 'text-delta' ? 'text' : 'reasoning'
-      const prefix = previous?.block.type === type ? previous.block.text : ''
-      blocks.set(chunk.index, { index: chunk.index, block: { type, text: prefix + chunk.text }, complete: false })
-    } else if (chunk.type === 'tool-call-delta') {
-      const previousCall = previous?.block.type === 'tool-call' ? previous.block : undefined
-      blocks.set(chunk.index, {
-        index: chunk.index, complete: false,
-        block: { type: 'tool-call', id: chunk.id, name: chunk.name ?? previousCall?.name ?? '', arguments: (previousCall?.arguments ?? '') + chunk.argumentsDelta },
-      })
-    }
-  }
-  return [...blocks.values()].sort((a, b) => a.index - b.index).map(value => finished || stream.finishReason !== undefined ? { ...value, complete: true } : value)
+export function getStreamBlocks(stream: AssistantStream): readonly StreamBlock[] {
+  return streamBlocksOf(stream)
 }
 
 interface ResultInfo {
@@ -242,12 +206,19 @@ function reasoningDurations(value: unknown, content: readonly unknown[]): Readon
   return durations
 }
 
-/** Produce one immutable display list without mutating the controller journal. */
-export function buildChatRows(
-  records: readonly SessionWireEvent[],
-  stream: AssistantStream | null = null,
-  pendingSubmissions: readonly PendingSubmission[] = [],
-): ChatRow[] {
+/** Rows built from durable records, plus what live rows need to join them. */
+export interface SettledChat {
+  readonly rows: readonly ChatRow[]
+  readonly keys: ReadonlySet<string>
+  readonly shownCalls: ReadonlySet<string>
+  toolRow(callId: string, name: string, args: string, base: RowBase): ToolRow
+}
+
+/**
+ * Build the rows for durable records once per records array. A streaming
+ * response only changes the live rows, so these rows keep their identity.
+ */
+export function buildSettledChat(records: readonly SessionWireEvent[]): SettledChat {
   const events = records.filter(isChatEvent).sort((a, b) => a.seq - b.seq)
   const calls = new Map<string, { event: SessionWireEvent; name: string; arguments: string }>()
   const results = new Map<string, ResultInfo>()
@@ -277,7 +248,6 @@ export function buildChatRows(
     for (const block of contentOf(message?.content)) if (block.type === 'tool-call') assistantCallIds.add(block.id)
   }
   const toolRow = (callId: string, name: string, args: string, base: RowBase): ToolRow => {
-    shownCalls.add(callId)
     const result = results.get(callId)
     const call = calls.get(callId)
     const duration = result !== undefined && call !== undefined ? result.event.time - call.event.time : undefined
@@ -309,12 +279,14 @@ export function buildChatRows(
             ...(durationMs === undefined ? {} : { durationMs }),
           })
         } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
+          shownCalls.add(block.id)
           rows.push(toolRow(block.id, block.name, block.arguments, blockBase))
         }
       })
     } else if (event.type === 'tool/result') {
       for (const { callId } of resultsOf(event)) {
         if (shownCalls.has(callId) || assistantCallIds.has(callId)) continue
+        shownCalls.add(callId)
         const call = calls.get(callId)
         rows.push(toolRow(callId, call?.name ?? 'ツール', call?.arguments ?? '', { ...base, key: `${base.key}:${callId}` }))
       }
@@ -332,15 +304,35 @@ export function buildChatRows(
       rows.push({ ...base, kind: 'command', name, text: stringOf(data.text) ?? '', status })
     }
   }
+  return { rows, keys: new Set(rows.map(row => row.key)), shownCalls, toolRow }
+}
+
+/** A text block that has not changed keeps its row, so its Markdown is not rendered again. */
+const liveTextRows = new WeakMap<StreamBlock, TextRow>()
+
+/** Append the live stream and unsent submissions to settled rows without touching them. */
+export function appendLiveRows(
+  settled: SettledChat,
+  stream: AssistantStream | null,
+  pendingSubmissions: readonly PendingSubmission[] = [],
+): ChatRow[] {
+  const rows = [...settled.rows]
   if (stream !== null) {
-    const settledKeys = new Set(rows.map(row => row.key))
-    for (const { index, block, complete } of getStreamBlocks(stream)) {
+    const shownCalls = new Set<string>()
+    for (const value of getStreamBlocks(stream)) {
+      const { index, block, complete } = value
       const base = { key: assistantBlockKey(stream.turn, stream.step, index, `stream:${stream.attemptId}`) }
-      if (settledKeys.has(base.key)) continue
+      if (settled.keys.has(base.key)) continue
       if (block.type === 'text' || block.type === 'reasoning') {
-        rows.push({ ...base, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: !complete })
-      } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
-        rows.push(toolRow(block.id, block.name, block.arguments, base))
+        let row = liveTextRows.get(value)
+        if (row?.key !== base.key) {
+          row = { ...base, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: !complete }
+          liveTextRows.set(value, row)
+        }
+        rows.push(row)
+      } else if (block.type === 'tool-call' && !settled.shownCalls.has(block.id) && !shownCalls.has(block.id)) {
+        shownCalls.add(block.id)
+        rows.push(settled.toolRow(block.id, block.name, block.arguments, base))
       }
     }
   }
@@ -349,6 +341,15 @@ export function buildChatRows(
     rows.push({ key: `pending:${submission.requestId}`, kind: 'pending', time: submission.time, submission, text: submission.text })
   }
   return rows
+}
+
+/** Produce one immutable display list without mutating the controller journal. */
+export function buildChatRows(
+  records: readonly SessionWireEvent[],
+  stream: AssistantStream | null = null,
+  pendingSubmissions: readonly PendingSubmission[] = [],
+): ChatRow[] {
+  return appendLiveRows(buildSettledChat(records), stream, pendingSubmissions)
 }
 
 export interface CommandPresentation {

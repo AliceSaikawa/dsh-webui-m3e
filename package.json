@@ -1,6 +1,6 @@
 {
   "name": "dsh-webui-m3e",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Material 3 Expressive mobile Web UI for DeepSeek Harness, served beside the stock UI and switched per device.",
   "license": "MIT",
@@ -32,7 +32,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/cordis-plugin-loader": "1.0.3",
-    "@deepseek-ai/dsh-client-store": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.1.5-rc.3",
     "@m3e/react": "2.8.2",
     "@m3e/web": "2.8.2",
     "@material/material-color-utilities": "0.4.0",

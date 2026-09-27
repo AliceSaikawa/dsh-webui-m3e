@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  buildChatRows, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
+  appendLiveRows, buildChatRows, buildSettledChat, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
   isNearBottom, preservePrependScroll, summarizeToolArguments, toolIcon,
 } from '../web/src/features/chat/model.ts'
-import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
+import type { AssistantStream, StreamBlock } from '../web/src/dsh/session-journal.ts'
 import type { JsonValue, PendingSubmission, SessionWireEvent, StreamChunk } from '../web/src/dsh/services.ts'
 import { readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
 
@@ -338,4 +338,19 @@ test('duration labels use known elapsed time without a live clock', () => {
   assert.equal(formatDuration(1250), '1.3 秒')
   assert.equal(formatDuration(62000), '1 分 2 秒')
   assert.equal(formatDuration(Number.NaN), '不明')
+})
+
+test('live rows reuse settled rows and unchanged stream blocks by identity', () => {
+  const records = [event(1, 'user/message', { content: [{ type: 'text', text: '質問' }] })]
+  const settled = buildSettledChat(records)
+  const done: StreamBlock = { index: 0, block: { type: 'reasoning', text: '考えた' }, complete: true }
+  const live = (text: string): AssistantStream => ({ attemptId: 'a', turn: 1, step: 1, content: [], blocks: [done, { index: 1, block: { type: 'text', text }, complete: false }] })
+  const first = appendLiveRows(settled, live('返'))
+  const second = appendLiveRows(settled, live('返事'))
+  assert.equal(second[0], settled.rows[0])
+  assert.equal(second[0], first[0])
+  assert.equal(second[1], first[1], 'the completed reasoning row is not rebuilt')
+  assert.notEqual(second[2], first[2])
+  assert.deepEqual(second.map(row => row.kind === 'assistant' || row.kind === 'reasoning' ? [row.text, row.streaming] : row.kind), ['user', ['考えた', false], ['返事', true]])
+  assert.deepEqual(second, buildChatRows(records, live('返事')))
 })
