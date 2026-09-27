@@ -38,3 +38,7 @@
 .settings-appearance-options { display: grid; }
 .settings-appearance-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; margin: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
 .settings-appearance-option m3e-radio { flex: none; }
+.settings-model-options { display: grid; min-width: 0; }
+.settings-model-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; min-width: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
+.settings-model-option span { min-width: 0; overflow-wrap: anywhere; }
+.settings-model-option m3e-checkbox { flex: none; }
