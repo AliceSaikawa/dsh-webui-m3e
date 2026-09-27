@@ -393,17 +393,6 @@ test('08a 設定の各ページ・保存・既定値・外観・標準画面の�
     await action(page, label!).first().click()
     await expect(page.locator('h1')).toHaveText(label)
     await shot(page, `08-${id}`)
-    if (id === 'models') {
-      const input = page.getByLabel('名前', { exact: true }).first()
-      await input.fill('統合試験のモデル')
-      await input.press('Tab')
-      await expect(page.getByText('保存しました', { exact: true })).toBeVisible()
-      await button(page, '戻る').click()
-      await action(page, 'モデル').first().click()
-      await expect(page.getByLabel('名前', { exact: true }).first()).toHaveValue('統合試験のモデル')
-      await page.getByLabel('名前を既定値に戻す').first().click()
-      await expect(page.getByLabel('名前', { exact: true }).first()).not.toHaveValue('統合試験のモデル')
-    }
     await button(page, '戻る').click()
   }
   await action(page, '外観').click()

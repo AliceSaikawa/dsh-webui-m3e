@@ -12,6 +12,7 @@
 .settings-namespace > h2 { font-size: 18px; margin: var(--app-space) calc(var(--app-space) / 4); }
 .settings-fields { border-radius: var(--app-radius); padding: calc(var(--app-space) / 4) var(--app-space); background: var(--md-sys-color-surface-container-low); }
 .settings-field { padding: calc(var(--app-space) * 1.125) 0; min-width: 0; }
+.settings-field[hidden] { display: none; }
 .settings-field + .settings-field { border-top: 1px solid var(--md-sys-color-outline-variant); }
 .settings-field h3 { margin: 0 0 calc(var(--app-space) * .75); font-size: 16px; }
 .settings-field label { overflow-wrap: anywhere; margin-block: calc(var(--app-space) / 2); }
@@ -38,3 +39,7 @@
 .settings-appearance-options { display: grid; }
 .settings-appearance-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; margin: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
 .settings-appearance-option m3e-radio { flex: none; }
+.settings-model-options { display: grid; min-width: 0; }
+.settings-model-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; min-width: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
+.settings-model-option span { min-width: 0; overflow-wrap: anywhere; }
+.settings-model-option m3e-checkbox { flex: none; }

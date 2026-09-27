@@ -82,7 +82,7 @@ M3E Canvas のモックと、会話で決めたことをまとめたものです
   - 「今の画面に戻す」：Cookie `dsh-webui` を `classic` にして `/` へ移ります。
   - 「外観」（明暗）：この端末だけで持ち、DSH の `ui-theme` とは共有しません（2026-09-25 決定）。
 - 下の区分は「DSH の設定」で、DSH 全体の設定です。名前空間ごとのスキーマから、画面を自動で作ります。12 個の名前空間を次の 5 行に束ねます。
-  - モデル：`agent-default-model`、`subagent-model-selection`
+  - モデル：`agent-default-model` は「提供元 / モデル名」と推論の強さをドロップダウンで選び、`subagent-model-selection` は有効の切り替えと許可するモデルのチェックで選びます。推論の強さは対応モデルだけに表示し、一覧にない保存済みモデルも残します。
   - 権限：`permission`
   - エージェント：`agent-presets`、`agent-loop`
   - 提供元と API キー：`llm-*` と認証情報。キーは書き込むだけで、登録済みかどうかだけを出します。

@@ -3,11 +3,11 @@ import type { RemoteResult } from '../../dsh/services.ts'
 import type { SettingObject, SettingsDescription, SettingsNamespace, SettingValue } from './schema.ts'
 import type { ProviderAddress, ProviderEntry } from './providers.ts'
 
-type ResetOperation = { op: 'unset'; path: string[] }
+type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
   describe(): Promise<RemoteResult<SettingsDescription>>
   update(ns: string, patch: SettingObject, expectedRevision: number): Promise<RemoteResult<SettingsNamespace>>
-  mutate(ns: string, operations: ResetOperation[], expectedRevision: number): Promise<RemoteResult<SettingsNamespace>>
+  mutate(ns: string, operations: MutateOperation[], expectedRevision: number): Promise<RemoteResult<SettingsNamespace>>
 }
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
@@ -35,7 +35,41 @@ function unset(value: SettingObject, path: readonly string[]): void {
   if (Object.keys(child).length === 0) delete value[key]
 }
 
+function set(value: SettingObject, path: readonly string[], next: SettingValue): void {
+  const [key, ...rest] = path
+  if (!key || !allowedKey(key)) return
+  if (rest.length === 0) { value[key] = structuredClone(next); return }
+  if (!isObject(value[key])) value[key] = {}
+  set(value[key] as SettingObject, rest, next)
+}
+
+/** Shapes follow DSH 0.1.5-rc.1: dsh-agent-default-model and dsh-tool-subagent's model selection. */
+function modelFixture(ns: 'agent-default-model' | 'subagent-model-selection'): SettingsNamespace {
+  if (ns === 'agent-default-model') {
+    const base: SettingObject = { provider: 'deepseek', model: 'deepseek-v4' }
+    const user: SettingObject = { reasoningEffort: 'high' }
+    const refs = {
+      0: { type: 'object', dict: { provider: 1, model: 2, reasoningEffort: 3 } },
+      1: { type: 'string', meta: { title: '提供元', required: true } },
+      2: { type: 'string', meta: { title: 'モデル', required: true } },
+      3: { type: 'string', meta: { title: '推論の強さ' } },
+    }
+    return { ns, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user), secrets: [], applies: 'live' }
+  }
+  const base: SettingObject = { enabled: false, allowedModels: [] }
+  const refs = {
+    0: { type: 'object', dict: { enabled: 1, allowedModels: 2 } },
+    1: { type: 'boolean', meta: { title: 'モデルを選べるようにする' } },
+    2: { type: 'array', inner: 3, meta: { title: '使ってよいモデル' } },
+    3: { type: 'object', dict: { provider: 4, model: 5 } },
+    4: { type: 'string', meta: { title: '提供元' } },
+    5: { type: 'string', meta: { title: 'モデル' } },
+  }
+  return { ns, revision: 1, schema: { uid: 0, refs }, base, user: {}, value: merge(base, {}), secrets: [], applies: 'live' }
+}
+
 function fixture(ns: string, name: string, index: number): SettingsNamespace {
+  if (ns === 'agent-default-model' || ns === 'subagent-model-selection') return modelFixture(ns)
   const base: SettingObject = {
     enabled: true,
     name,
@@ -73,16 +107,6 @@ function fixture(ns: string, name: string, index: number): SettingsNamespace {
     base.apiKeyEnv = 'DEEPSEEK_API_KEY'
   }
   if (ns === 'llm-pi-ai') base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
-  if (ns === 'agent-default-model') {
-    dict.reasoningEffort = 16
-    refs[16] = { type: 'string', meta: { title: '考える深さ', description: '任意の文字列で指定します。' } }
-    base.provider = 'deepseek'
-    base.model = 'deepseek-v4'
-    dict.provider = 19
-    dict.model = 20
-    refs[19] = { type: 'string', meta: { title: '提供元' } }
-    refs[20] = { type: 'string', meta: { title: 'モデル' } }
-  }
   if (ns === 'agent-presets') {
     base.default = 'default'
     dict.default = 19
@@ -165,6 +189,12 @@ export function extendMock(kit: MockKit): void {
   }
 
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
+    // Mirrors dsh-tool-subagent's section validator, which rejects this before persisting.
+    const next = merge(current.base ?? {}, user)
+    if (current.ns === 'subagent-model-selection' && next.enabled === true
+      && (!Array.isArray(next.allowedModels) || next.allowedModels.length === 0)) {
+      return failure('settings/rejected', 'enabled subagent model selection requires at least one allowed model')
+    }
     current.user = user
     current.value = merge(current.base ?? {}, user)
     current.revision++
@@ -182,11 +212,14 @@ export function extendMock(kit: MockKit): void {
     async mutate(ns, operations, expectedRevision) {
       const result = checkWrite(ns, expectedRevision)
       if (!result.ok) return result
-      if (operations.some(operation => operation.op !== 'unset' || !operation.path.length || operation.path.some(key => !key || !allowedKey(key)))) {
+      if (operations.some(operation => !['set', 'unset'].includes(operation.op) || !operation.path.length || operation.path.some(key => !key || !allowedKey(key)))) {
         return failure('settings/rejected', '設定項目の場所が不正です。')
       }
       const user = structuredClone(result.value.user ?? {})
-      for (const operation of operations) unset(user, operation.path)
+      for (const operation of operations) {
+        if (operation.op === 'set') set(user, operation.path, operation.value)
+        else unset(user, operation.path)
+      }
       return commit(result.value, user)
     },
   }
@@ -217,7 +250,7 @@ export function extendMock(kit: MockKit): void {
   kit.scenario('settings-conflict', () => { firstWriteConflict = true })
   kit.scenario('settings-rejected', () => { rejectWrites = true })
   kit.scenario('settings-unset', () => {
-    const row = namespaces.get('agent-default-model')!
+    const row = namespaces.get('agent-loop')!
     unset(row.base ?? {}, ['mode'])
     unset(row.user ?? {}, ['mode'])
     row.value = merge(row.base ?? {}, row.user ?? {})

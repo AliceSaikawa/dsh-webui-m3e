@@ -9,7 +9,7 @@ function setup(scenario?: string) {
   const ctx = createMockContext({ extensions: [{ extendMock }], scenario })
   return { ctx, remote: ctx.remote.settings as SettingsMockRemote }
 }
-async function namespace(remote: SettingsMockRemote, ns = 'agent-default-model'): Promise<SettingsNamespace & { base: SettingObject; user: SettingObject }> {
+async function namespace(remote: SettingsMockRemote, ns = 'agent-loop'): Promise<SettingsNamespace & { base: SettingObject; user: SettingObject }> {
   const description = unwrapRemoteResult(await remote.describe())
   const row = description.namespaces.find(item => item.ns === ns)!
   assert.ok(row.base)
@@ -29,10 +29,14 @@ test('設定の偽データは全ページと全種類、反映時期、除外�
       models: 2, permission: 1, agent: 2, providers: 4, tools: 3, other: 1,
     })
     assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live', 'restart']))
-    for (const item of description.namespaces) {
+    for (const item of description.namespaces.filter(row => !['agent-default-model', 'subagent-model-selection'].includes(row.ns))) {
       const kinds = new Set(leaves(schemaFields(item)).map(field => field.kind))
       for (const kind of ['switch', 'text', 'number', 'select', 'group', 'readonly']) assert.ok(kinds.has(kind as SettingField['kind']), `${item.ns}: ${kind}`)
     }
+    const model = await namespace(remote, 'agent-default-model')
+    assert.deepEqual(model.value, { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' })
+    const subagent = await namespace(remote, 'subagent-model-selection')
+    assert.deepEqual(subagent.value, { enabled: false, allowedModels: [] })
     const protectedRow = await namespace(remote, 'llm-deepseek')
     const masked = leaves(schemaFields(protectedRow)).find(field => field.kind === 'masked')!
     assert.equal(Object.hasOwn(masked, 'value'), false)
@@ -67,13 +71,13 @@ test('偽データの主要設定をトップへ要約し、モデルの保存�
   const { ctx, remote } = setup()
   try {
     const groups = groupNamespaces(unwrapRemoteResult(await remote.describe()).namespaces)
-    assert.equal(pageSummary('models', groups.models), 'deepseek-v4')
+    assert.equal(pageSummary('models', groups.models), 'deepseek-v4・推論の強さ：high')
     assert.equal(pageSummary('permission', groups.permission), 'ワークスペース書込')
     assert.equal(pageSummary('agent', groups.agent), 'プリセット：default・ツールの同時実行数：4')
     assert.equal(pageSummary('tools', groups.tools), '検索モデル：deepseek-chat・検索の上限回数：5')
-    const model = await namespace(remote)
+    const model = await namespace(remote, 'agent-default-model')
     const changed = unwrapRemoteResult(await remote.update(model.ns, { model: '別のモデル' }, model.revision))
-    assert.equal(pageSummary('models', [changed]), '別のモデル')
+    assert.equal(pageSummary('models', [changed]), '別のモデル・推論の強さ：high')
   } finally { ctx.dispose() }
 })
 

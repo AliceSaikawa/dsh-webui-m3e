@@ -5,8 +5,9 @@ import { findSettingField, settingFieldAccess } from './field-access.ts'
 export interface SettingsApi {
   describe(): Promise<RemoteResult<SettingsDescription>>
   update(ns: string, patch: Record<string, SettingValue>, revision: number): Promise<RemoteResult<SettingsNamespace>>
-  mutate(ns: string, ops: ReturnType<typeof buildReset>, revision: number): Promise<RemoteResult<SettingsNamespace>>
+  mutate(ns: string, ops: SettingsOperation[], revision: number): Promise<RemoteResult<SettingsNamespace>>
 }
+export type SettingsOperation = { op: 'set'; path: string[]; value: SettingValue } | { op: 'unset'; path: string[] }
 export interface SettingsState extends SettingsDescription {
   phase: 'loading' | 'ready' | 'error'
   error: string | null
@@ -78,7 +79,9 @@ export function createSettingsStore(api: SettingsApi) {
     if (saving) { reloadAfterSave = true; return }
     void reload()
   }
-  async function edit(ns: string, path: SettingPath, value?: SettingValue): Promise<boolean> {
+  async function write(ns: string, path: SettingPath, prepare: (row: SettingsNamespace) => {
+    send: () => Promise<RemoteResult<SettingsNamespace>>; resetGroup?: boolean
+  } | undefined): Promise<boolean> {
     const key = fieldKey(ns, path)
     const generation = state.generation[ns] ?? 0
     const epoch = connectionEpoch
@@ -86,18 +89,14 @@ export function createSettingsStore(api: SettingsApi) {
     const operation = async () => {
       const row = find(ns)
       if (epoch !== connectionEpoch || !row || !state.writable || generation !== (state.generation[ns] ?? 0)) return
-      const field = findSettingField(row, path)
-      if (!field) return
-      const access = settingFieldAccess(row, field)
-      if (!(value === undefined ? access.edit || access.reset : access.edit)) return
+      const change = prepare(row)
+      if (!change) return
       saving++
       const fieldErrors = { ...state.fieldErrors }
       delete fieldErrors[key]
       publish({ busy: { ...state.busy, [ns]: true }, fieldErrors })
       try {
-        const result = value === undefined
-          ? await api.mutate(ns, buildReset(path), row.revision)
-          : await api.update(ns, buildPatch(path, value), row.revision)
+        const result = await change.send()
         if (epoch !== connectionEpoch) return
         if (result.ok) {
           // In-flight describes must never replace this accepted revision.
@@ -106,7 +105,7 @@ export function createSettingsStore(api: SettingsApi) {
           if (!current || result.value.revision >= current.revision) publish({
             namespaces: state.namespaces.map(item => item.ns === ns ? result.value : item),
             // Child drafts from before a group reset must not restore overrides.
-            ...(value === undefined && field.kind === 'group' ? { generation: invalidate(ns) } : {}),
+            ...(change.resetGroup ? { generation: invalidate(ns) } : {}),
           })
           accepted = true
         } else if (result.error.code === 'settings/conflict') {
@@ -133,11 +132,35 @@ export function createSettingsStore(api: SettingsApi) {
     await next
     return accepted
   }
+  function edit(ns: string, path: SettingPath, value?: SettingValue): Promise<boolean> {
+    return write(ns, path, row => {
+      const field = findSettingField(row, path)
+      if (!field) return undefined
+      const access = settingFieldAccess(row, field)
+      if (!(value === undefined ? access.edit || access.reset : access.edit)) return undefined
+      return {
+        send: () => value === undefined
+          ? api.mutate(ns, buildReset(path), row.revision)
+          : api.update(ns, buildPatch(path, value), row.revision),
+        resetGroup: value === undefined && field.kind === 'group',
+      }
+    })
+  }
+  /** Build model edits only when their turn reaches the queue, using the latest saved value. */
+  function editModelSettings(ns: 'agent-default-model' | 'subagent-model-selection',
+    ops: (row: SettingsNamespace) => SettingsOperation[], reset = false): Promise<boolean> {
+    const path = ns === 'agent-default-model' ? ['model'] : ['enabled']
+    return write(ns, path, row => {
+      const operations = ops(row)
+      if (!operations.length) return undefined
+      return { send: () => api.mutate(ns, operations, row.revision), resetGroup: reset }
+    })
+  }
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     subscribeNotice(listener: (message: string) => void) { notices.add(listener); return () => { notices.delete(listener) } },
-    reload, edit, documentUpdated, connectionChanged,
+    reload, edit, editModelSettings, documentUpdated, connectionChanged,
   }
 }
 export type SettingsStore = ReturnType<typeof createSettingsStore>

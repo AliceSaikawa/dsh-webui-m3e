@@ -5,6 +5,7 @@ import type { RemoteResult } from '../web/src/dsh/services.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { createSettingsStore, fieldKey, type SettingsApi } from '../web/src/features/settings/store.ts'
 import { parseFieldInput, schemaFields, type SettingsDescription, type SettingsNamespace } from '../web/src/features/settings/schema.ts'
+import { modelResetOperations, modelSaveOperations, subagentSelection } from '../web/src/features/settings/model-settings.ts'
 
 const ns = 'agent-loop'
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -525,9 +526,8 @@ test('通常の未設定の項目は初回から保存できる', async () => {
     assert.equal(described.ok, true)
     if (!described.ok) return
     const row = described.value.namespaces.find(item => item.ns === 'agent-default-model')!
-    const schema = row.schema as { uid: number; refs: Record<string, { dict?: Record<string, number>; type?: string }> }
-    schema.refs['0']!.dict!.reasoningEffort = 16
-    schema.refs['16'] = { type: 'string' }
+    row.user = {}
+    row.value = { ...row.base }
     h.api.describe = async () => success(described.value)
     h.api.update = async (name, patch, revision) => {
       h.calls.push({ kind: 'update', ns: name, input: patch, revision })
@@ -562,9 +562,64 @@ test('任意の文字項目を空欄にすると unset で上書きを消し、�
       assert.equal(after.revision, revision)
       assert.equal(Object.hasOwn(after.value, 'reasoningEffort'), false)
       assert.equal(Object.hasOwn(after.user!, 'reasoningEffort'), false)
-      assert.deepEqual(after.value, before.value)
-      assert.deepEqual(after.user, before.user)
+      assert.deepEqual(after.value, before.base)
+      assert.deepEqual(after.user, {})
     }
+  } finally { h.ctx.dispose() }
+})
+
+test('既定モデルの完全な変更と復帰はそれぞれ一度の書き込みで行う', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    assert.equal(await h.store.editModelSettings('agent-default-model', () =>
+      modelSaveOperations({ provider: 'ollama', model: 'local' })), true)
+    assert.deepEqual(current(h.store, 'agent-default-model').value, { provider: 'ollama', model: 'local' })
+    assert.deepEqual(h.calls, [{ kind: 'mutate', ns: 'agent-default-model', revision: 1, input: modelSaveOperations({ provider: 'ollama', model: 'local' }) }])
+    assert.equal(await h.store.editModelSettings('agent-default-model', () => modelResetOperations, true), true)
+    assert.deepEqual(current(h.store, 'agent-default-model').value, { provider: 'deepseek', model: 'deepseek-v4' })
+    assert.equal(h.calls.length, 2)
+  } finally { h.ctx.dispose() }
+})
+
+test('続けて選んだサブエージェントのモデルは直列化して両方残す', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    const routeA = { provider: 'deepseek', model: 'deepseek-v4' }
+    const routeB = { provider: 'ollama', model: 'local' }
+    const add = (target: typeof routeA) => h.store.editModelSettings('subagent-model-selection', row => [
+      { op: 'set', path: ['allowedModels'], value: [
+        ...subagentSelection(row.value).allowedModels.map(item => ({ provider: item.provider, model: item.model })), target,
+      ] },
+    ])
+    assert.deepEqual(await Promise.all([add(routeA), add(routeB)]), [true, true])
+    assert.deepEqual(subagentSelection(current(h.store, 'subagent-model-selection').value).allowedModels, [routeA, routeB])
+    assert.equal(h.calls.filter(call => call.ns === 'subagent-model-selection' && call.kind === 'mutate').length, 2)
+  } finally { h.ctx.dispose() }
+})
+
+test('許可モデルが空なら有効化を拒否し、無効中の選択後は有効化できる', async () => {
+  const h = harness()
+  try {
+    await h.store.reload()
+    const name = 'subagent-model-selection'
+    const route = { provider: 'deepseek', model: 'deepseek-v4' }
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['enabled'], value: true },
+    ]), false)
+    assert.equal(subagentSelection(current(h.store, name).value).enabled, false)
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['allowedModels'], value: [route] },
+    ]), true)
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['enabled'], value: true },
+    ]), true)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
+    assert.equal(await h.store.editModelSettings(name, () => [
+      { op: 'set', path: ['allowedModels'], value: [] },
+    ]), false)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
   } finally { h.ctx.dispose() }
 })
 
