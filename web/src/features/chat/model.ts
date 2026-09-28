@@ -45,6 +45,7 @@ export interface ContextRow extends RowBase {
   readonly role: 'inject' | 'recall'
   /** Producer named by the durable source, such as the instruction file paths. */
   readonly label: string | null
+  readonly content: readonly ChatContentBlock[]
   readonly text: string
 }
 export interface CommandRow extends RowBase {
@@ -297,7 +298,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       // messages whose source is not the user; only the user's own input is a bubble.
       const source = objectOf(data.source)
       if (source !== undefined && source.kind !== 'user') {
-        rows.push({ ...base, kind: 'context', ...contextProvenance(source), text: textOf(content) })
+        rows.push({ ...base, kind: 'context', ...contextProvenance(source), content, text: textOf(content) })
       } else {
         rows.push({ ...base, kind: 'user', content, text: textOf(content) })
       }

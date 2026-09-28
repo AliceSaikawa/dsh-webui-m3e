@@ -40,6 +40,8 @@
 .chat-error-text { color: var(--md-sys-color-error); }
 /* Injected context keeps the model-facing text verbatim, bounded so a long instruction file does not take over the chat. */
 .chat-context-source { display: block; margin-top: 2px; font-size: 12px; opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-context-attachments { justify-content: flex-start; padding: 0 calc(var(--app-space) * .875) calc(var(--app-space) * .75); }
+.chat-context-attachments:empty { display: none; }
 .chat-context-body { margin: 0 calc(var(--app-space) * .875) calc(var(--app-space) * .75); max-height: 40vh; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-pending { opacity: .65; }
 .chat-pending > small { display: block; text-align: right; padding-top: calc(var(--app-space) * .5); }

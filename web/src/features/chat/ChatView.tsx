@@ -50,7 +50,10 @@ const Row = memo(function Row({ row, sessionId, face, active }: { row: ChatRow; 
     const label = row.kind === 'context' ? row.label : null
     return <details className="chat-context"><summary><Icon name={row.kind === 'system' ? 'settings' : row.role === 'recall' ? 'history' : 'description'} />
       <span className="chat-row-label">{title}{label && <span className="chat-context-source">{label}</span>}</span><Icon className="chat-chevron" name="expand_more" /></summary>
-      <pre className="chat-context-body">{row.text}</pre></details>
+      {row.text && <pre className="chat-context-body">{row.text}</pre>}
+      {row.kind === 'context' && <div className="chat-attachments chat-context-attachments">{row.content.map((block, index) => block.type === 'image'
+        ? <AttachmentImage key={index} attachment={block.attachment} face={face} />
+        : block.type === 'file' ? <FileAttachment key={index} attachment={block.attachment} /> : null)}</div>}</details>
   }
   if (row.kind === 'command') {
     const presentation = commandPresentation(row)
