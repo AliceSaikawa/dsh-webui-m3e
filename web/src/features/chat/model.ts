@@ -39,6 +39,15 @@ export interface SystemRow extends RowBase {
   readonly kind: 'system'
   readonly text: string
 }
+/** Producer-supplied context that DSH logs as a user message; the model reads it, the user did not write it. */
+export interface ContextRow extends RowBase {
+  readonly kind: 'context'
+  readonly role: 'inject' | 'recall'
+  /** Producer named by the durable source, such as the instruction file paths. */
+  readonly label: string | null
+  readonly content: readonly ChatContentBlock[]
+  readonly text: string
+}
 export interface CommandRow extends RowBase {
   readonly kind: 'command'
   readonly name: string
@@ -50,7 +59,7 @@ export interface PendingRow extends RowBase {
   readonly submission: PendingSubmission
   readonly text: string
 }
-export type ChatRow = UserRow | TextRow | ToolRow | SystemRow | CommandRow | PendingRow
+export type ChatRow = UserRow | ContextRow | TextRow | ToolRow | SystemRow | CommandRow | PendingRow
 
 type ObjectValue = Record<string, unknown>
 const objectOf = (value: unknown): ObjectValue | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined
@@ -119,6 +128,27 @@ function contentOf(value: unknown): ChatContentBlock[] {
     }
     return [{ type: 'unsupported', originalType: block.type }]
   })
+}
+
+function distinctStrings(list: unknown, field: string): string[] {
+  if (!Array.isArray(list)) return []
+  const seen: string[] = []
+  for (const entry of list) {
+    const value = stringOf(objectOf(entry)?.[field])
+    if (value && !seen.includes(value)) seen.push(value)
+  }
+  return seen
+}
+
+/** Mirrors DSH's contextProvenance: the row header names who injected the context. */
+function contextProvenance(source: ObjectValue): Pick<ContextRow, 'role' | 'label'> {
+  const kind = stringOf(source.kind) || null
+  const joined = (names: string[]) => names.length > 0 ? names.join(', ') : kind
+  if (kind === 'session-reference') return { role: 'recall', label: joined(distinctStrings(source.references, 'label')) }
+  if (kind === 'agent-instructions') return { role: 'inject', label: joined(distinctStrings(source.changes, 'path')) }
+  if (kind === 'plugin') return { role: 'inject', label: stringOf(source.plugin) || kind }
+  if (kind === 'skill-invocation') return { role: 'inject', label: stringOf(source.name) || kind }
+  return { role: 'inject', label: kind }
 }
 
 const textOf = (content: readonly ChatContentBlock[]): string => content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n\n')
@@ -264,7 +294,14 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     const base = { key: `event:${event.seq}`, seq: event.seq, time: event.time }
     if (event.type === 'user/message') {
       const content = contentOf(data.content)
-      rows.push({ ...base, kind: 'user', content, text: textOf(content) })
+      // DSH logs injected context (instruction files, skills, recalls) as user
+      // messages whose source is not the user; only the user's own input is a bubble.
+      const source = objectOf(data.source)
+      if (source !== undefined && source.kind !== 'user') {
+        rows.push({ ...base, kind: 'context', ...contextProvenance(source), content, text: textOf(content) })
+      } else {
+        rows.push({ ...base, kind: 'user', content, text: textOf(content) })
+      }
     } else if (event.type === 'assistant/message') {
       const message = objectOf(data.message) ?? data
       const content = Array.isArray(message.content) ? message.content : []

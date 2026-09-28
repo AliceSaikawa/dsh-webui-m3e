@@ -20,17 +20,18 @@ export function extendMock(kit: MockKit): void {
   kit.addSession(summary('chat-long', '長い会話'), records)
   kit.addSession(summary('chat-samples', '添付と長い結果'), [
     event(0, 'turn/start', { turn: 1 }),
-    event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: '添付とツール結果の表示を確認できます。' }] } }),
-    event(2, 'user/message', { role: 'user', content: [{ type: 'text', text: '結果を確認して' }, { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } }] }),
-    event(3, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }] } }),
-    event(4, 'tool/call', { callId: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }),
-    event(5, 'tool/result', { message: { role: 'user', source: { kind: 'tool', callId: 'chat-long-result' }, content: [{ type: 'tool-result', toolCallId: 'chat-long-result', content: [
+    event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'あなたはコーディングを手伝う AI です。\n\n添付とツール結果の表示を確認できます。' }] } }),
+    event(2, 'user/message', { id: 'chat-samples-instructions', role: 'user', source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>\nThe following workspace instructions may be relevant to your work.\n\nInstructions from: ~/.dsh/AGENTS.md\n\n# 個人共通の作業方針\n\n- 説明は日本語で、結論から書く。\n</system-reminder>' }] }),
+    event(3, 'user/message', { role: 'user', content: [{ type: 'text', text: '結果を確認して' }, { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } }] }),
+    event(4, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }] } }),
+    event(5, 'tool/call', { callId: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }),
+    event(6, 'tool/result', { message: { role: 'user', source: { kind: 'tool', callId: 'chat-long-result' }, content: [{ type: 'tool-result', toolCallId: 'chat-long-result', content: [
       { type: 'text', text: Array.from({ length: 210 }, (_, index) => `${index + 1} 行目の確認結果`).join('\n') },
       { type: 'tool-result', toolCallId: 'chat-nested', content: [{ type: 'text', text: '入れ子の最後の結果です。' }] },
       { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '手順の画像.png' } },
       { type: 'file', attachment: { attachmentId: 'mock-output', name: '結果.txt', bytes: 4096 } },
     ] }] } }),
-    event(6, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    event(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
   ])
   const reasoning = '記録の開始と終了から、考えた内容の所要時間を確認しました。'
   kit.addSession(summary('chat-spec-check', 'チャットの仕様確認'), [

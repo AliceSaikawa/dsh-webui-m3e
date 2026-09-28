@@ -35,13 +35,14 @@
 
 | 元のもの | 出し方 |
 |---|---|
-| `user/message` の `text` | 右寄せの吹き出し（`primaryContainer` の色） |
+| `user/message` の `text` | 右寄せの吹き出し（`primaryContainer` の色）。`source.kind` が `user` のものだけ |
+| `user/message` で `source.kind` が `user` 以外 | 指示ファイルやスキルなどが注入した文脈。「追加された文脈」（別の会話からの参照は「別の会話から参照」）の畳んだ行にし、出どころ（ファイルのパスなど）を添える。開くと元の文をそのまま出す。DSH の `ContextInjectionRow` と同じ見分け方 |
 | `user/message` の `image` | 吹き出しの下に小さな画像。`readAttachment` で読み、タップで全画面に広げる |
 | `user/message` の `file` | ファイル名と大きさのチップ |
 | `assistant/message` の `reasoning` | 「考えた内容」の行。ふだんは畳み、タップで開く。生成中は「考えています…」 |
 | `assistant/message` の `text` | 左寄せ、背景なしの本文。00 の `Markdown` 部品で描く |
 | `assistant/message` の `tool-call` と、対応する `tool/result` | 1 本の行にまとめる（下の「ツールの行」） |
-| `system/message` | 中央寄せの小さな文字 |
+| `system/message` | 「システムプロンプト」の畳んだ行。開くと元の文をそのまま出す（DSH の `SystemPromptRow` と同じ） |
 | `command/done` | 「/名前 を実行しました」の小さな行。結果の文（`text`）があれば、タップで開く |
 | `pendingSubmissions` | 送ったばかりの自分のメッセージを、薄い色で先に出す（`previewUrl` で画像も） |
 | `lastAgentError` | 会話の最後に「AI の処理が止まりました」のカード |
