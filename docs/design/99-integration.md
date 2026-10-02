@@ -247,3 +247,12 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 実画面例は `docs/images/conversation-picker.png`（390px）と `conversation-picker-search.png`（375px）。偽fixtureだけの実PNGであり、モック内の過去の「pnpm test失敗」表示は今回の試験結果ではない。詳細証拠はtask内 `records/mobile-picker-*`。
 
 ユーザーがwork branch push/draft PRを許可したため `feat/mobile-conversation-switcher` を準備する。remote mainの `571edab` はREADME警告だけの追加だった。元main checkoutを変更せず、work branchへ取得済みorigin/mainを通常mergeして既存警告と共通祖先を保つ。main push/merge・force push・deploy・通知購読・認証/ネットワーク設定変更は行わない。実DSH、iPhone/Safari/PWA、実AT、Libraryのprepare_uploads未提供は未完了のまま。
+
+### 2026-10-02：Issue #13 の M3E index 埋め込み防止
+
+- PR #12 マージ後の `9ea0a0228db1c5cb07010d9a2a2c02c7d194d47d` から、隔離した `fix/13-frame-ancestors` で修正した。認証済み index の共通応答に `Content-Security-Policy: frame-ancestors 'none'` と互換用の `X-Frame-Options: DENY` を追加した。直接表示・標準画面からの移動・standalone PWA が既存の利用経路であり、iframe 埋め込みを必要とする仕様は見つからなかった。
+- 認証判定・本文の生成・`no-store`・静的資産と PWA ファイルのキャッシュは変更していない。CSP は埋め込み元の制限だけに限定し、起動用 inline script や通信に新しい制限を加えていない。DSH 標準 UI と認証側が返す応答は対象外。
+- `tests/host-routes.test.ts` の既存 2 試験を強化し、10 種類の index 表記を GET/HEAD で確かめる。未認証時は本文の読み取り・描画を行わず、認証済み応答は両ヘッダーを返す。追加したヘッダー assertion は修正前に失敗、修正後に成功した。試験件数は増やしておらず、強化した試験を含め `pnpm test` は 738 件成功。`pnpm typecheck`、`pnpm build`、`git diff --check` も成功。既存の 500 kB 超 chunk 警告は残る。
+- ビルド済み Host の `apply()` を fixture 認証・fixture `renderIndex` に接続した実 HTTP 試験で、修正前後 20 組の index 応答を比較した。本文・起動スクリプトは一致し、HEAD の本文は空、修正後だけ両ヘッダーが付く。未認証 2 件、非対応 method 3 件、静的資産・Worker・manifest 3 件の対照も成功した。これは実 DSH の認証・通信を検証したものではない。
+- 独立した境界調査と候補差分の回避経路・回帰レビューでは、現行 index へ到達する具体的な未対処経路や回帰は見つからなかった。
+- Chromium による iframe 確認は、ブラウザー起動時の `socket() failed: Operation not permitted` で停止した。ブラウザー試験本体・画面 E2E・録画は未実行で、別経路による回避はしていない。新しい画像・動画は 0 bytes。実 DSH、プロキシ、Safari/iPhone/PWA 実機、実際の承認操作は未検証。ドラフト PR にはこの制限を明記する。
