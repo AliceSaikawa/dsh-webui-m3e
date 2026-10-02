@@ -72,6 +72,22 @@ export function extendMock(kit: MockKit): void {
     active.setSessionState('chat-error', { lastAgentError: '応答の生成中に接続が切れました。接続を確認してから、続きのメッセージを送ってください。', running: false })
     active.addWorkspace({ workspaceId: 'ws-chat-error', path: '/mock/chat-error', title: '処理エラーの確認', sessionIds: ['chat-error'], createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString() })
   })
+  kit.scenario('chat-injected-context', active => {
+    const sessionId = 'chat-injected-context'
+    active.addSession(summary(sessionId, '追加された文脈の確認'), [
+      event(0, 'turn/start', { turn: 1 }),
+      event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'システムの検証用原文\n<b>そのまま読む</b>' }] } }),
+      event(2, 'user/message', { role: 'user', source: { kind: 'plugin', plugin: '検証用プラグイン' }, content: [
+        { type: 'text', text: '<system-reminder>\n# 追加された検証用原文\n<b>そのまま読む</b>\n</system-reminder>' },
+        { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '文脈の画像.png' } },
+        { type: 'file', attachment: { attachmentId: 'context-file', name: '文脈の資料.txt', bytes: 2048 } },
+      ] }),
+      event(3, 'user/message', { role: 'user', source: { kind: 'session-reference', references: [{ label: '検証用の参照会話' }] }, content: [{ type: 'text', text: '別の会話の検証用原文' }] }),
+      event(4, 'user/message', { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '私が送った検証用メッセージ' }] }),
+      event(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    active.updateWorkspace('ws-chat-check', workspace => ({ sessionIds: [...workspace.sessionIds, sessionId] }))
+  })
   kit.scenario('open-error', active => {
     active.addSession(summary('chat-open-error', '開けない会話'), [])
     active.setSessionState('chat-open-error', { openState: 'error', openError: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } })

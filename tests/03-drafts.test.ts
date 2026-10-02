@@ -33,11 +33,56 @@ test('端末の下書きを会話ごとに復元し、送った会話だけ消�
     assert.equal(readDraft('new:bad-marker').workspaceAttachment, undefined)
     entries.set('m3e:composer:session:wrong-id:workspaceAttachment', JSON.stringify(marker))
     assert.equal(readDraft('session:wrong-id').workspaceAttachment, undefined)
+    entries.set('m3e:composer:session:uncertain-saved', '受理されたか分からない依頼')
+    entries.set('m3e:composer:session:uncertain-saved:deliveryOutcome', 'unknown')
+    const uncertain = readDraft('session:uncertain-saved')
+    assert.equal(uncertain.deliveryOutcome, 'unknown')
+    assert.match(uncertain.error ?? '', /送信結果を確認できません/)
+    writeDraft('session:uncertain-saved', { ...uncertain, text: '編集した依頼' })
+    assert.equal(entries.get('m3e:composer:session:uncertain-saved:deliveryOutcome'), 'unknown')
+    clearDraft('session:uncertain-saved')
+    assert.equal(entries.has('m3e:composer:session:uncertain-saved:deliveryOutcome'), false)
+    entries.set('m3e:composer:session:invalid-outcome:deliveryOutcome', 'accepted')
+    assert.equal(readDraft('session:invalid-outcome').deliveryOutcome, undefined)
     // A denied storage area still keeps a usable in-memory draft.
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('保存領域を利用できません') } })
     writeDraft('session:storage-off', { text: '端末内のメモリに保持', images: [] })
     assert.equal(readDraft('session:storage-off').text, '端末内のメモリに保持')
     assert.equal(readDraft('session:storage-off-empty').text, '')
+  } finally {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+    if (savedStorage) Object.defineProperty(globalThis, 'localStorage', savedStorage)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
+})
+
+test('metadata write or removal failures cannot stop an available text overwrite or affect another conversation', () => {
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const savedStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} })
+  try {
+    for (const removal of [false, true]) {
+      const key = `session:partial-storage-${removal}`
+      const textKey = `m3e:composer:${key}`
+      const entries = new Map([[textKey, '以前の長い合成下書き'], ['m3e:composer:session:unrelated-storage', '別の会話の文章']])
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+        getItem: (name: string) => entries.get(name) ?? null,
+        setItem(name: string, value: string) {
+          if (!removal && name.endsWith(':deliveryOutcome')) throw new Error('synthetic metadata quota exceeded')
+          entries.set(name, value)
+        },
+        removeItem(name: string) {
+          if (removal && name.endsWith(':deliveryOutcome')) throw new Error('synthetic metadata removal denied')
+          entries.delete(name)
+        },
+      } })
+      writeDraft(key, { text: '編集後', images: [], ...(removal ? {} : { deliveryOutcome: 'unknown' as const }) })
+      assert.equal(readDraft(key).text, '編集後')
+      assert.equal(entries.get(textKey), '編集後')
+      assert.equal(entries.get('m3e:composer:session:unrelated-storage'), '別の会話の文章')
+      assert.equal(entries.size, 2)
+    }
   } finally {
     if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow)
     else Reflect.deleteProperty(globalThis, 'window')

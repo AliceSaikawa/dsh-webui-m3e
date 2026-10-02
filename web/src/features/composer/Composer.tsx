@@ -10,6 +10,8 @@ import { navigate } from '../../app/router.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
+import { sessionAccess } from '../../dsh/session-access.ts'
+import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
@@ -33,6 +35,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const api = useMemo(() => composerApi(services.remote), [services.remote])
   const sessionId = target.kind === 'session' ? target.sessionId : ''
   const { face, snapshot, projection } = useSession(sessionId)
+  const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissions = projection<PermissionProjection>('permissions')
   const { connected } = useConnection()
@@ -56,6 +59,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const imageInput = useRef<HTMLInputElement>(null)
   const root = useRef<HTMLDivElement>(null)
   const locked = useRef(false)
+  const restoreRetryFocus = useRef(false)
   const mounted = useRef(true)
   const closeSheet = useRef<(() => void) | undefined>(undefined)
   const latestModelContext = useRef({ api, services, target, sessionId, face, snapshot })
@@ -161,7 +165,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     setAuxError('')
     await prepareDraftImages(draftKey, files, prepareImage)
   }
-  async function send(mode: 'queue' | 'steer' = draft.retryMode ?? 'queue') {
+  async function send(mode: 'queue' | 'steer' = draft.retryMode ?? 'queue', restoreFocus = false) {
     if (!canSend || locked.current || services.connection.state.getSnapshot() !== 'connected') return
     // The stock /model command belongs to its UI plugin, not the Host command list.
     if (draft.text.trim() === '/model' && draft.images.length === 0) {
@@ -169,6 +173,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       openModels()
       return
     }
+    restoreRetryFocus.current = restoreFocus
     locked.current = true; setBusy(true); setSuggesting(false); setAuxError('')
     update({ error: undefined })
     finishDelivery(await deliverDraft({ target, draftKey, sessions: services.sessions, api, mode }))
@@ -177,11 +182,16 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     if (result.error !== undefined) {
       const key = result.createdId ? `session:${result.createdId}` : draftKey
       const retained = readDraft(key)
-      writeDraft(key, { ...retained, error: errorText(result.error, retained.error) })
+      writeDraft(key, { ...retained, error: retained.deliveryOutcome === 'unknown' ? retained.error : errorText(result.error, retained.error) })
     }
     locked.current = false
+    const restoreFocus = restoreRetryFocus.current
+    restoreRetryFocus.current = false
     if (!mounted.current) return
     setBusy(false)
+    if (restoreFocus) requestAnimationFrame(() => {
+      if (mounted.current && document.activeElement === document.body && !textArea.current?.disabled) textArea.current?.focus()
+    })
     if (result.createdId && result.sessionReady !== false) navigate(`/s/${encodeURIComponent(result.createdId)}`, { replace: true })
   }
   async function recoverWorkspace() {
@@ -238,14 +248,14 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, '停止できませんでした。もう一度お試しください。')) }
   }
 
-  if (snapshot.subagent !== null) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
+  if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
     {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
       <p>会話は作成済みです。登録の再試行では新しい会話を作りません。メッセージは送信ボタンから送れます。</p>
       {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
       <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
     </div>}
-    {sendError && <div className="composer-error" role="alert"><strong>送れませんでした</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={() => { void send() }}>もう一度送る</M3eButton></div>}
+    {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? '送信結果が不明です' : '送れませんでした'}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={event => { void send(undefined, (event as MouseEvent).detail === 0) }}>もう一度送る</M3eButton></div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}

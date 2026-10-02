@@ -19,6 +19,7 @@ import { TraceView } from '../trace/TraceView.tsx'
 import { Composer } from '../composer/Composer.tsx'
 import { presentInteraction } from '../interactions/InteractionSheet.tsx'
 import { PendingChip } from '../interactions/PendingChip.tsx'
+import { ConversationPickerButton } from './ConversationPicker.tsx'
 import { SessionMenuButton } from '../session-tools/SessionMenu.tsx'
 
 export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: string; tab?: 'chat' | 'trace' }) {
@@ -54,7 +55,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   const base = `/s/${encodeURIComponent(sessionId)}`
   return <section className="screen conversation-screen"><header className="top-bar">
     <M3eIconButton aria-label="戻る" onClick={back}><Icon name="arrow_back" /></M3eIconButton>
-    <h1>{list.byId[sessionId]?.displayTitle ?? '会話'}</h1><SessionMenuButton sessionId={sessionId} />
+    <h1>{list.byId[sessionId]?.displayTitle ?? '会話'}</h1><ConversationPickerButton sessionId={sessionId} /><SessionMenuButton sessionId={sessionId} />
   </header><ConnectionBanner />
     <M3eTabs className="conversation-tabs" stretch disableSwipe disablePagination variant="primary" previousPageLabel="前のタブ" nextPageLabel="次のタブ">
       <M3eTab ref={element => { chatTabRef.current = element }} selected={tab === 'chat'} onClick={() => navigate(base, { replace: true })}>チャット</M3eTab>

@@ -1,4 +1,4 @@
-import { test, expect, visit, button } from './helpers'
+import { test, expect, visit, button, shot } from './helpers'
 import type { Page, Locator } from '@playwright/test'
 
 test.use({ reducedMotion: 'no-preference' })
@@ -6,6 +6,24 @@ test.use({ reducedMotion: 'no-preference' })
 const assist = (page: Page) => page.locator('m3e-bottom-sheet[aria-label="入力の補助"]')
 const model = (page: Page) => assist(page).locator('m3e-select[aria-label="モデル"]')
 const effort = (page: Page) => assist(page).locator('m3e-select[aria-label="考える深さ"]')
+
+async function holdModelCatalog(page: Page) {
+  await page.addInitScript(() => {
+    const testWindow = window as Window & {
+      __m3eTestModelCatalogGate?: Promise<void>
+      __m3eTestReleaseModelCatalog?: () => void
+    }
+    testWindow.__m3eTestModelCatalogGate = new Promise<void>(resolve => {
+      testWindow.__m3eTestReleaseModelCatalog = resolve
+    })
+  })
+}
+
+async function releaseModelCatalog(page: Page) {
+  await page.evaluate(() => {
+    (window as Window & { __m3eTestReleaseModelCatalog?: () => void }).__m3eTestReleaseModelCatalog?.()
+  })
+}
 
 async function choose(page: Page, select: Locator, label: string) {
   await select.click()
@@ -38,24 +56,23 @@ test('考える深さをドロップダウンで変更する', async ({ page }) 
 })
 
 test('遅いモデル一覧を補助シート内で待ち、応答後に選べる', async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as Window & { __m3eTestModelCatalogDelay?: number }).__m3eTestModelCatalogDelay = 200
-  })
+  await holdModelCatalog(page)
   await visit(page, '/s/readme-review')
   await button(page, '入力の補助を開く').click()
   await expect(assist(page)).toHaveCount(1)
   await expect(assist(page).getByText('モデル一覧を読み込み中…')).toBeVisible()
   await expect(model(page)).toBeDisabled()
+  await shot(page, '03-model-catalog-loading')
+  await releaseModelCatalog(page)
   await expect(model(page)).toBeEnabled()
   await choose(page, model(page), 'ローカル / ローカル（ollama）')
   await expect(model(page)).toHaveJSProperty('value', '6:ollamalocal')
   await expect(assist(page)).toHaveCount(1)
+  await shot(page, '03-model-catalog-ready')
 })
 
 test('読み込み中に補助シートを閉じて開き直しても一枚だけ残る', async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as Window & { __m3eTestModelCatalogDelay?: number }).__m3eTestModelCatalogDelay = 200
-  })
+  await holdModelCatalog(page)
   await visit(page, '/s/readme-review')
   await button(page, '入力の補助を開く').click()
   await expect(assist(page).getByText('モデル一覧を読み込み中…')).toBeVisible()
@@ -65,8 +82,12 @@ test('読み込み中に補助シートを閉じて開き直しても一枚だ�
     await page.keyboard.press('Escape')
     await expect(assist(page), `${attempt + 1} 回目の Escape で閉じる`).toHaveCount(0)
     await button(page, '入力の補助を開く').click()
+    await expect(assist(page).getByText('モデル一覧を読み込み中…')).toBeVisible()
+    await expect(model(page)).toBeDisabled()
   }
   await expect(assist(page)).toHaveCount(1)
+  await shot(page, '03-model-catalog-reopened-loading')
+  await releaseModelCatalog(page)
   await expect(model(page)).toBeEnabled()
   await choose(page, model(page), 'ローカル / ローカル（ollama）')
   await expect(model(page)).toHaveJSProperty('value', '6:ollamalocal')

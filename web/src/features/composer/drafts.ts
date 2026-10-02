@@ -1,5 +1,6 @@
 import type { PreparedImage } from './types.ts'
 import type { ModelSelection } from './api.ts'
+import { uncertainDeliveryMessage } from './delivery-status.ts'
 
 export interface Draft {
   text: string
@@ -13,12 +14,14 @@ export interface Draft {
   workspaceAttachment?: { workspaceId: string; sessionId: string }
   workspaceAttachmentError?: string
   error?: string
+  deliveryOutcome?: 'unknown'
 }
 const drafts = new Map<string, Draft>()
 const listeners = new Map<string, Set<() => void>>()
 const preparations = new Map<string, Map<symbol, number>>()
 const prefix = 'm3e:composer:'
 const attachmentKey = (key: string) => prefix + key + ':workspaceAttachment'
+const outcomeKey = (key: string) => prefix + key + ':deliveryOutcome'
 function storage() { return 'window' in globalThis ? globalThis.localStorage : undefined }
 
 export function subscribeDraft(key: string, listener: () => void): () => void {
@@ -37,7 +40,9 @@ export function readDraft(key: string): Draft {
   if (cached) return cached
   let text = ''
   let workspaceAttachment: Draft['workspaceAttachment']
+  let deliveryOutcome: Draft['deliveryOutcome']
   try { text = storage()?.getItem(prefix + key) ?? '' } catch { /* Storage can be unavailable. */ }
+  try { if (storage()?.getItem(outcomeKey(key)) === 'unknown') deliveryOutcome = 'unknown' } catch { /* Keep text usable without metadata. */ }
   try {
     const saved: unknown = JSON.parse(storage()?.getItem(attachmentKey(key)) ?? 'null')
     if (typeof saved === 'object' && saved !== null) {
@@ -48,18 +53,27 @@ export function readDraft(key: string): Draft {
       }
     }
   } catch { /* Ignore unavailable or malformed recovery metadata. */ }
-  const draft: Draft = { text, images: [], ...(workspaceAttachment ? { workspaceAttachment } : {}) }
+  const draft: Draft = { text, images: [], ...(workspaceAttachment ? { workspaceAttachment } : {}),
+    ...(deliveryOutcome ? { deliveryOutcome, error: uncertainDeliveryMessage } : {}) }
   drafts.set(key, draft)
   return draft
 }
 export function writeDraft(key: string, draft: Draft): void {
   drafts.set(key, draft)
+  // Updating an existing text value can succeed when adding metadata exceeds
+  // quota. Keep every available write independent of metadata failures.
+  try {
+    if (draft.text) storage()?.setItem(prefix + key, draft.text)
+    else storage()?.removeItem(prefix + key)
+  } catch { /* Keep the in-memory text if persistent storage is unavailable. */ }
+  try {
+    if (draft.deliveryOutcome === 'unknown') storage()?.setItem(outcomeKey(key), 'unknown')
+    else storage()?.removeItem(outcomeKey(key))
+  } catch { /* Outcome metadata cannot be guaranteed when storage rejects it. */ }
   try {
     if (draft.workspaceAttachment) storage()?.setItem(attachmentKey(key), JSON.stringify(draft.workspaceAttachment))
     else storage()?.removeItem(attachmentKey(key))
-    if (draft.text) storage()?.setItem(prefix + key, draft.text)
-    else storage()?.removeItem(prefix + key)
-  } catch { /* Keep the in-memory draft when storage is full or disabled. */ }
+  } catch { /* Preserve usable text even if recovery metadata cannot be saved. */ }
   listeners.get(key)?.forEach(listener => listener())
 }
 export function clearDraft(key: string): void {
