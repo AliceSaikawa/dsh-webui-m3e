@@ -193,3 +193,31 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 `records/consolidation-final-e2e.log` とJSON、`consolidation-unit.log`、`consolidation-typecheck-final.log`、`consolidation-build-final.log`、`consolidation-final-focused-e2e.log`へ証拠を保存。修正前の単体5失敗・画面6失敗、逆順probeの失敗、型検査の一時失敗も保全した。今回の通し画面試験は500MB枠と期限動画の余裕を維持するためtraceを無効化したが、実画面のmilestone PNGを保存した。
 
 修正前後各6枚を追加して実画像は計151枚。過去の動画・各manifestを保持し、期限向けの90秒concat入力と手順を準備する。撮影のない時間帯やコーディング画面は補わず、新動画の再エンコードは期限の全体統合へ残す。Libraryのprepare_uploads利用不可、確認済みfile IDs空、開始したhelperの別経路切替禁止は継続。手動再送のHost重複受理防止、実DSH・iPhone/Safari/PWA、実ATは未確認。公開・push・merge・deployは行っていない。
+
+
+### 2026-10-02：境界付き反復・応答順序・保持資源の確認
+
+`b71bcf8` の製品を固定し、機能追加や製品修正をせず、`e2e/robustness.spec.ts` と記録を追加した。初めに `records/robustness-invariants.json` へ会話分離、切断中の送信禁止、最新候補、待機解除、固定IDでの保持件数を定義。既存Chromiumだけをworker1で利用し、未導入のPlaywright Firefox/WebKitは実行・インストールしない。
+
+六つの独立した内部AI担当が読み取りレビューと最終再レビューを行った。人間の専門家評価や実SDK通信試験ではない。
+
+| 担当・専門領域 | 基準・懸念と根拠 | 試験の補強・再評価 |
+| --- | --- | --- |
+| review_requirements：要求・設計 | 会話ごとの自分宛て1件だけでは相手本文混入を除外しない | 相手本文0件も追加。製品修正を必要とする根拠なし |
+| review_integration：ビルド・SDK | gateがprompt前だと受理前遅延だけを測る。計測は実Vite singletonを読むこと | cases0/2は実mockの既知受理結果を後から逆順で返し、case1は受理前の切断拒否へ分離。SDK契約変更なし。重要な製品指摘なし |
+| review_privacy：品質・保持 | 診断配列・global context・累積生成数や意図的履歴をheap漏れと混同しない | 固定routeの件数に限定し、観測限界をJSONへ明記。startup1等の既存保持は安定baselineとして比較。重要な製品指摘なし |
+| review_verification：分析・反証 | 汎用見出しだけでは旧会話でも条件を満たす。古い応答の処理前に判定しない | 対象displayTitle/home固有DOMを待ち、旧応答解放後に2RAFを挟む。補強を確認。重要な製品指摘なし |
+| review_accessibility：利用・保守 | 切替完了・日本語の切断理由・再送明示性を守る | 固有見出しのbarrierを確認。新しいAT/focus保証はせず、既存キーボード再送試験を別に反復。重要な製品指摘なし |
+| review_overall：全体統合 | 有限反復・受理前/後・保持件数と履歴を区別する | 同期と相手本文の補強を確認し、製品修正を追加しない判断を支持 |
+
+初回の六試験は計測コードの厳密な挿入patternがVite出力に一致せず起動前で停止した。製品不具合として数えず、挿入matcherを修正して6/6成功。最終固定試験では新しい六試験を各3回、計18件成功（113.8秒）。375/390pxで計36回の切断/再接続・tab往復、計24組の候補応答逆順、計18組の二会話送信を確認した。後者には受理後の応答順序12組と、受理前の切断拒否/明示再送6組がある。実Hostの冪等性は測らない。
+
+固定routeからhomeへ戻るたび、下書きキー2・下書き購読0・準備0・flight所有/別名0・未終了submission0・pointerdown0を確認。mock model20、attachment1、remote handler2、mock observableのactive購読7も各warm baselineから増えない。observable生成数108/109は累積値で、シナリオ間の生存数比較には使わない。待ちstartup1は既存の偽fixtureで安定している。mock履歴と診断配列の意図的増加を除外しており、heap/GC/無制限運用の漏れ否定ではない。保存値のbytesや画像永続化はこの試験で測らず、前段の証拠と分ける。
+
+既存11代表試験を各2回、計22件成功（31.1秒）。新規作成待ち・部分storage障害・子の待ちと会話往復・キーボード再送/他会話focus・切断復帰を再確認。型検査・単体734件・buildも成功。既存chunk警告のみ。本番JSは前段と同じ `index-DyGv6V37.js`。18+22件の成功を全101件通し実行と称さず、前段の全95件成功とは別に記録する。
+
+選択した今回の実PNG8枚を追加して源画像159枚。反復で同名の一時画像は上書きされるため、最後の実mtimeの画像だけを保存した。accepted-pendingも同cycle内の二時点を同名で撮っており、保存したのは子の応答完了/通常応答待ちの最後の時点だけ。両時点保全や連続録画とは称しない。
+
+90秒の最初のconcat動画は解像度切替で2025frameとなり、PTSに最大0.667秒の隙間を検出したため最終版から除外して保全。元PNGを既存ffmpegで一枚ずつ390x844へ揃えてpipeで渡し、画像一式を複製せずに最終動画 `records/m3e-mock-timelapse-robustness-verified.mp4` を生成。90秒・H264・24fps・2160frame・1,719,151バイト、最大PTS差0.041667秒、全decodeと抽出6画像の目視確認に成功。159源画像のSHAを確認してから一度ずつstreamした。実際の経過時間を再現する動画ではなく、偽fixtureには合成の失敗表示も含む。
+
+記録の詳細は `records/robustness-observations.json`、`robustness-manifest.json`、`robustness-video-verified-audit.json`、六担当のreview記録とレポート。既存成果物は保持。現task使用約319.5MB、観測最大415,191,040バイト、上限500MB以内。追加install・外部API・実DSH・認証変更・公開・Library retryはなし。Library prepare_uploads不可/file IDs空と、実Host/実機/AT確認の未完了は継続。08:51:46 UTCまでの残り時間と最終1時間は親タスクの監査へ渡し、将来の撮影やencodeを実施済みと扱わない。
