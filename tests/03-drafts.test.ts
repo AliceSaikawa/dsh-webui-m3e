@@ -56,3 +56,37 @@ test('端末の下書きを会話ごとに復元し、送った会話だけ消�
     else Reflect.deleteProperty(globalThis, 'localStorage')
   }
 })
+
+test('metadata write or removal failures cannot stop an available text overwrite or affect another conversation', () => {
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const savedStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} })
+  try {
+    for (const removal of [false, true]) {
+      const key = `session:partial-storage-${removal}`
+      const textKey = `m3e:composer:${key}`
+      const entries = new Map([[textKey, '以前の長い合成下書き'], ['m3e:composer:session:unrelated-storage', '別の会話の文章']])
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+        getItem: (name: string) => entries.get(name) ?? null,
+        setItem(name: string, value: string) {
+          if (!removal && name.endsWith(':deliveryOutcome')) throw new Error('synthetic metadata quota exceeded')
+          entries.set(name, value)
+        },
+        removeItem(name: string) {
+          if (removal && name.endsWith(':deliveryOutcome')) throw new Error('synthetic metadata removal denied')
+          entries.delete(name)
+        },
+      } })
+      writeDraft(key, { text: '編集後', images: [], ...(removal ? {} : { deliveryOutcome: 'unknown' as const }) })
+      assert.equal(readDraft(key).text, '編集後')
+      assert.equal(entries.get(textKey), '編集後')
+      assert.equal(entries.get('m3e:composer:session:unrelated-storage'), '別の会話の文章')
+      assert.equal(entries.size, 2)
+    }
+  } finally {
+    if (savedWindow) Object.defineProperty(globalThis, 'window', savedWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+    if (savedStorage) Object.defineProperty(globalThis, 'localStorage', savedStorage)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
+})

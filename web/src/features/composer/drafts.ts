@@ -60,14 +60,20 @@ export function readDraft(key: string): Draft {
 }
 export function writeDraft(key: string, draft: Draft): void {
   drafts.set(key, draft)
+  // Updating an existing text value can succeed when adding metadata exceeds
+  // quota. Keep every available write independent of metadata failures.
+  try {
+    if (draft.text) storage()?.setItem(prefix + key, draft.text)
+    else storage()?.removeItem(prefix + key)
+  } catch { /* Keep the in-memory text if persistent storage is unavailable. */ }
   try {
     if (draft.deliveryOutcome === 'unknown') storage()?.setItem(outcomeKey(key), 'unknown')
     else storage()?.removeItem(outcomeKey(key))
+  } catch { /* Outcome metadata cannot be guaranteed when storage rejects it. */ }
+  try {
     if (draft.workspaceAttachment) storage()?.setItem(attachmentKey(key), JSON.stringify(draft.workspaceAttachment))
     else storage()?.removeItem(attachmentKey(key))
-    if (draft.text) storage()?.setItem(prefix + key, draft.text)
-    else storage()?.removeItem(prefix + key)
-  } catch { /* Keep the in-memory draft when storage is full or disabled. */ }
+  } catch { /* Preserve usable text even if recovery metadata cannot be saved. */ }
   listeners.get(key)?.forEach(listener => listener())
 }
 export function clearDraft(key: string): void {

@@ -1,5 +1,5 @@
 import type { ISessions } from '../../dsh/services.ts'
-import { clearDraft, readDraft, writeDraft } from './drafts.ts'
+import { clearDraft, readDraft, writeDraft, type Draft } from './drafts.ts'
 
 export interface WorkspaceAttachment { workspaceId: string; sessionId: string }
 export interface WorkspaceRecoveryResult { sessionId?: string; sessionReady?: boolean; error?: unknown }
@@ -31,9 +31,17 @@ export async function sessionIsAddressable(sessions: Pick<ISessions, 'scope' | '
   return sessions.scope(sessionId) !== undefined
 }
 
-export function clearWorkspaceOrigin(attachment: WorkspaceAttachment): void {
+export function clearWorkspaceOrigin(attachment: WorkspaceAttachment, delivered: Draft): void {
   const originKey = `new:${attachment.workspaceId}`
-  if (readDraft(originKey).workspaceAttachment?.sessionId === attachment.sessionId) clearDraft(originKey)
+  const origin = readDraft(originKey)
+  // This is local draft ownership after a confirmed send/recovery, not a
+  // guess about Host acceptance or a content-based submission deduplication.
+  const unchanged = origin.text === delivered.text && origin.images.length === delivered.images.length
+    && origin.images.every((image, index) => image === delivered.images[index])
+    && origin.model?.provider === delivered.model?.provider && origin.model?.model === delivered.model?.model
+    && origin.model?.reasoningEffort === delivered.model?.reasoningEffort
+    && origin.permission === delivered.permission && origin.plan === delivered.plan
+  if (origin.workspaceAttachment?.sessionId === attachment.sessionId && unchanged) clearDraft(originKey)
 }
 
 /** Separate from sending: adopt the same published identity and retry only its Workspace attachment. */
@@ -69,7 +77,7 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
     const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = current
     writeDraft(`session:${sessionId}`, rest)
     if (draftKey !== `session:${sessionId}`) clearDraft(draftKey)
-    clearWorkspaceOrigin(attachment)
+    clearWorkspaceOrigin(attachment, current)
     return { sessionId, sessionReady }
   } catch (error) {
     const sessionReady = await sessionIsAddressable(sessions, attachment.sessionId)

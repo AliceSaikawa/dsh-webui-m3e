@@ -19,8 +19,19 @@ export function createMockContext(options: MockOptions = {}) {
     __m3eTestChildPromptGate?: Promise<void>
     __m3eTestChildPromptCalls?: number
     __m3eTestChildLoseResponseOnce?: boolean
+    __m3eTestSelectModelGate?: Promise<void>
+    __m3eTestSelectModelSessionId?: string
   }
   const delay = testWindow.__m3eTestModelCatalogDelay
+  if (testWindow.__m3eTestSelectModelGate) {
+    const remote = ctx.remote.session as { selectModel(input: { sessionId: string }): Promise<unknown> }
+    const selectModel = remote.selectModel.bind(remote)
+    ctx.mock.patch('remote.session.selectModel', async (input: { sessionId: string }) => {
+      testWindow.__m3eTestSelectModelSessionId = input.sessionId
+      await testWindow.__m3eTestSelectModelGate
+      return selectModel(input)
+    })
+  }
   const gate = testWindow.__m3eTestModelCatalogGate
   if (gate || (typeof delay === 'number' && delay > 0 && delay <= 200)) {
     const session = ctx.remote.session as { modelCatalog(): Promise<unknown> }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AgentContext, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
 import type { CommandDescriptor, ModelSelection, PlanProjection } from '../web/src/features/composer/api.ts'
-import { deliverDraft, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
+import { deliverDraft, pendingDelivery, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
 import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/features/composer/drafts.ts'
 import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import type { PreparedImage } from '../web/src/features/composer/types.ts'
@@ -529,4 +529,145 @@ test('an explicit Host rejection and a preparation failure remain distinct from 
   assert.ok((await deliverDraft(options)).error)
   assert.equal(readDraft(`session:${preparation.id}`).deliveryOutcome, undefined)
   assert.equal(preparation.prompts.length, 0)
+})
+
+test('new and created session composers share preparation, delivery and cleanup on success or rejection', async () => {
+  for (const outcome of ['success', 'test/send', 'gateway/internal']) {
+    const reject = outcome !== 'success'
+    const h = harness(`created-alias-${outcome}`)
+    const gate = deferred<void>()
+    h.put({ text: '作成済み画面でも一度だけ送る', model: { provider: 'local', model: 'small' } })
+    h.waitModel(gate.promise)
+    if (reject) h.setPromptFailure(outcome)
+    const first = deliverDraft(h.options)
+    let joined: Promise<unknown> | undefined
+    try {
+      await Promise.resolve()
+      assert.equal(pendingDelivery(`session:${h.id}`), first)
+      assert.equal(readDraft(`session:${h.id}`).text, '作成済み画面でも一度だけ送る')
+      joined = deliverDraft(h.existing('steer'))
+      assert.equal(joined, first)
+      gate.resolve()
+      const result = await first
+      assert.equal(Boolean(result.error), reject)
+      assert.equal(h.calls.filter(call => call.startsWith('model:')).length, 1)
+      assert.equal(h.prompts.length, 1)
+      assert.equal(h.prompts[0]?.mode, 'queue')
+      assert.equal(pendingDelivery(h.key), undefined)
+      assert.equal(pendingDelivery(`session:${h.id}`), undefined)
+      assert.equal(readDraft(`session:${h.id}`).text, reject ? '作成済み画面でも一度だけ送る' : '')
+      assert.equal(readDraft(`session:${h.id}`).deliveryOutcome, outcome === 'gateway/internal' ? 'unknown' : undefined)
+    } finally { gate.resolve(); await Promise.allSettled([first, ...(joined ? [joined] : [])]) }
+  }
+})
+
+test('read-only or removed changes during model preparation block subsequent permission and plan operations', async () => {
+  for (const removed of [false, true]) {
+    const h = harness(`stale-preparation-${removed}`)
+    h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+    const gate = deferred<void>()
+    h.waitModel(gate.promise)
+    writeDraft(`session:${h.id}`, { text: '後続の変更は送らない', images: [], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true })
+    const first = deliverDraft(h.existing())
+    if (removed) h.setRemoved(true)
+    else h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
+    gate.resolve()
+    assert.ok((await first).error)
+    assert.deepEqual(h.calls.filter(call => call.startsWith('command:')), [])
+    assert.equal(h.prompts.length, 0)
+    assert.equal(readDraft(`session:${h.id}`).text, '後続の変更は送らない')
+  }
+})
+
+test('a capability change while permission is awaiting blocks later plan changes', async () => {
+  const h = harness('stale-after-permission')
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+  const gate = deferred<void>()
+  h.waitCommand(gate.promise)
+  writeDraft(`session:${h.id}`, { text: '計画は切り替えない', images: [], permission: 'limited', plan: true })
+  const flight = deliverDraft(h.existing())
+  assert.ok(h.calls.includes('command:/permission limited'))
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
+  gate.resolve()
+  assert.ok((await flight).error)
+  assert.deepEqual(h.calls.filter(call => call.startsWith('command:')), ['command:/permission limited'])
+  assert.equal(h.prompts.length, 0)
+})
+
+test('disappeared commands use the latest ordinary or child echo policy after their await', async () => {
+  for (const becomesChild of [true, false]) {
+    const h = harness(`latest-echo-${becomesChild}`)
+    if (!becomesChild) h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+    h.matchCommand(false)
+    const gate = deferred<void>()
+    h.waitCommand(gate.promise)
+    writeDraft(`session:${h.id}`, { text: '/plan off', images: [] })
+    const flight = deliverDraft(h.existing())
+    await Promise.resolve()
+    assert.ok(h.calls.includes('command:/plan off'))
+    h.setSubagent(becomesChild ? { address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } } : null)
+    gate.resolve()
+    assert.deepEqual(await flight, {})
+    assert.equal(h.submissions.length, becomesChild ? 0 : 1)
+    assert.equal(h.prompts.length, 1)
+    assert.equal(h.prompts[0]?.requestId, becomesChild ? undefined : 'request-1')
+  }
+})
+
+test('a retained new origin joins an existing session flight without sending or deleting its distinct draft', async () => {
+  for (const outcome of ['success', 'test/send', 'gateway/internal']) {
+    const h = harness(`retained-join-${outcome}`)
+    const attachment = { workspaceId: h.key.slice(4), sessionId: h.id }
+    h.put({ text: '元画面に残る別の未送信文章', workspaceAttachment: attachment })
+    writeDraft(`session:${h.id}`, { text: '会話画面から先に送る文章', images: [], model: { provider: 'local', model: 'small' }, workspaceAttachment: attachment })
+    const gate = deferred<void>()
+    h.waitModel(gate.promise)
+    if (outcome !== 'success') h.setPromptFailure(outcome)
+    const first = deliverDraft(h.existing())
+    let joined: Promise<unknown> | undefined
+    try {
+      joined = deliverDraft(h.options)
+      assert.equal(joined, first)
+      assert.equal(pendingDelivery(h.key), first)
+      assert.equal(pendingDelivery(`session:${h.id}`), first)
+      gate.resolve()
+      const result = await first
+      assert.equal(Boolean(result.error), outcome !== 'success')
+      assert.equal(h.calls.filter(call => call.startsWith('model:')).length, 1)
+      assert.equal(h.prompts.length, 1)
+      assert.equal(readDraft(h.key).text, '元画面に残る別の未送信文章')
+      assert.equal(pendingDelivery(h.key), undefined)
+      assert.equal(pendingDelivery(`session:${h.id}`), undefined)
+      assert.equal(readDraft(`session:${h.id}`).deliveryOutcome, outcome === 'gateway/internal' ? 'unknown' : undefined)
+    } finally { gate.resolve(); await Promise.allSettled([first, ...(joined ? [joined] : [])]) }
+  }
+})
+
+test('a valid retained creation registers both keys synchronously and an invalid attachment cannot join another conversation', async () => {
+  const h = harness('synchronous-retained')
+  const gate = deferred<void>()
+  h.put({ text: '保持したIDへ一度だけ送る', model: { provider: 'local', model: 'small' }, workspaceAttachment: { workspaceId: h.key.slice(4), sessionId: h.id } })
+  h.waitModel(gate.promise)
+  const first = deliverDraft(h.options)
+  try {
+    assert.equal(pendingDelivery(h.key), first)
+    assert.equal(pendingDelivery(`session:${h.id}`), first)
+    assert.equal(deliverDraft(h.existing()), first)
+    gate.resolve()
+    assert.deepEqual(await first, { createdId: h.id })
+    assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 0)
+    assert.equal(h.prompts.length, 1)
+  } finally { gate.resolve(); await first }
+  const invalid = harness('invalid-retained-join')
+  const hold = deferred<void>()
+  invalid.waitModel(hold.promise)
+  writeDraft(`session:${invalid.id}`, { text: '保留する会話の本文', images: [], model: { provider: 'local', model: 'small' } })
+  invalid.put({ text: '誤った復旧情報の下書き', workspaceAttachment: { workspaceId: 'wrong-workspace', sessionId: invalid.id } })
+  const existing = deliverDraft(invalid.existing())
+  try {
+    assert.equal(pendingDelivery(invalid.key), undefined)
+    assert.ok((await deliverDraft(invalid.options)).error)
+    assert.equal(pendingDelivery(`session:${invalid.id}`), existing)
+    assert.equal(invalid.prompts.length, 0)
+  } finally { hold.resolve(); await existing }
 })

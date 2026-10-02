@@ -18,15 +18,40 @@ export interface DeliveryResult { createdId?: string; sessionReady?: boolean; er
 
 // A remounted composer joins the in-flight send instead of creating another session.
 const flights = new Map<string, Promise<DeliveryResult>>()
-export function pendingDelivery(draftKey: string): Promise<DeliveryResult> | undefined { return flights.get(draftKey) }
+const flightKeys = new Map<Promise<DeliveryResult>, Set<string>>()
+function shareKey(key: string, flight: Promise<DeliveryResult>): void {
+  const existing = flights.get(key)
+  if (existing && existing !== flight) throw new Error('この会話の送信が完了してから、もう一度お試しください。')
+  flights.set(key, flight)
+  const keys = flightKeys.get(flight) ?? new Set<string>()
+  keys.add(key)
+  flightKeys.set(flight, keys)
+}
+export function pendingDelivery(draftKey: string): Promise<DeliveryResult> | undefined {
+  let active = flights.get(draftKey)
+  if (!active && draftKey.startsWith('new:')) {
+    const retained = readDraft(draftKey).workspaceAttachment
+    const valid = retained && workspaceAttachmentFrom({ code: 'session/workspace-attach-failed', details: retained }, draftKey.slice(4))
+    if (valid) active = flights.get(`session:${valid.sessionId}`)
+    if (active) shareKey(draftKey, active)
+  }
+  return active
+}
 
 export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> {
-  const active = flights.get(options.draftKey)
+  const active = pendingDelivery(options.draftKey)
   if (active) return active
-  const flight = runDelivery(options).finally(() => {
-    if (flights.get(options.draftKey) === flight) flights.delete(options.draftKey)
+  const keys = new Set([options.draftKey])
+  const flight = runDelivery(options, key => {
+    keys.add(key)
+    const original = flights.get(options.draftKey)
+    if (original) shareKey(key, original)
+  }).finally(() => {
+    for (const key of flightKeys.get(flight) ?? keys) if (flights.get(key) === flight) flights.delete(key)
+    flightKeys.delete(flight)
   })
-  flights.set(options.draftKey, flight)
+  // Retained creation IDs can register synchronously before runDelivery awaits.
+  for (const key of keys) shareKey(key, flight)
   return flight
 }
 
@@ -38,7 +63,7 @@ function ensureWritable(face: SessionFace, sessions: DeliveryOptions['sessions']
   return access
 }
 
-async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOptions): Promise<DeliveryResult> {
+async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOptions, shareFlight: (key: string) => void): Promise<DeliveryResult> {
   if ((readDraft(draftKey).preparingImages ?? 0) > 0) {
     return { error: new Error('画像を準備しています。準備が終わってから送信してください。') }
   }
@@ -61,31 +86,42 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
         : await sessions.create({ workspaceId: target.workspaceId })
       sessionId = createdId
     } else sessionId = target.sessionId
-    if (createdId) writeDraft(`session:${createdId}`, sending)
+    if (createdId) {
+      shareFlight(`session:${createdId}`)
+      writeDraft(`session:${createdId}`, sending)
+    }
     const scope = sessions.scope(sessionId)
     const destination = scope ? sessions.sessionOf(scope) : undefined
     if (!destination) throw new Error('会話を準備できませんでした。会話を開き直してから送信してください。')
     ensureWritable(destination, sessions)
 
-    if (sending.model) await api.selectModel(sessionId, sending.model)
-    if (sending.permission) requireMatched(await destination.command(`/permission ${sending.permission}`))
+    if (sending.model) {
+      await api.selectModel(sessionId, sending.model)
+      ensureWritable(destination, sessions)
+    }
+    if (sending.permission) {
+      requireMatched(await destination.command(`/permission ${sending.permission}`))
+      ensureWritable(destination, sessions)
+    }
     if (sending.plan !== undefined) {
       const plan = destination.projections.faceOf('plan').getSnapshot() as PlanProjection | undefined
       const active = typeof plan?.active === 'boolean' ? (plan.pending ? !plan.active : plan.active) : undefined
       // /plan is a toggle. A failed first prompt must not toggle an already-applied choice off on retry.
-      if (active !== sending.plan) requireMatched(await destination.command(sending.plan ? '/plan' : '/plan off'))
+      if (active !== sending.plan) {
+        requireMatched(await destination.command(sending.plan ? '/plan' : '/plan off'))
+        ensureWritable(destination, sessions)
+      }
     }
     const available = sending.text.startsWith('/') ? await api.listCommands(sessionId) : []
-    const access = ensureWritable(destination, sessions)
+    ensureWritable(destination, sessions)
     await submitMessage(destination, sending.text, sending.images, mode, available, {
       // The installed child SDK replaces the registered id on the wire, so a
       // local echo cannot retire against its durable event. Keep child display
       // authoritative while retaining optimistic echoes for normal sessions.
-      optimisticEcho: !access.isSubagent,
-      beforePrompt: () => { ensureWritable(destination, sessions) },
+      beforePrompt: () => ({ optimisticEcho: !ensureWritable(destination, sessions).isSubagent }),
     })
-    clearDeliveredDraft(draftKey)
-    if (createdId) clearDeliveredDraft(`session:${createdId}`)
+    clearDeliveredDraft(draftKey, sending)
+    if (createdId) clearDeliveredDraft(`session:${createdId}`, sending)
     return createdId ? { createdId } : {}
   } catch (error) {
     const attachmentFailure = target.kind === 'new' ? workspaceAttachmentFrom(error, target.workspaceId) : undefined
@@ -114,10 +150,10 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
   }
 }
 
-function clearDeliveredDraft(draftKey: string): void {
+function clearDeliveredDraft(draftKey: string, sent: ReturnType<typeof readDraft>): void {
   const attachment = readDraft(draftKey).workspaceAttachment
   clearDraft(draftKey)
   // Sending a prompt does not repair Workspace registration or dismiss its separate recovery action.
   if (attachment) writeDraft(draftKey, { text: '', images: [], workspaceAttachment: attachment })
-  if (attachment && draftKey.startsWith('session:')) clearWorkspaceOrigin(attachment)
+  if (attachment && draftKey.startsWith('session:')) clearWorkspaceOrigin(attachment, sent)
 }

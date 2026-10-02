@@ -7,7 +7,7 @@ import { promptOutcomeIsUnknown, UncertainPromptError } from './delivery-status.
 
 export interface SubmissionOptions {
   optimisticEcho?: boolean
-  beforePrompt?(): void
+  beforePrompt?(): void | { optimisticEcho?: boolean }
 }
 
 export async function submitMessage(face: ISession, text: string, images: readonly PreparedImage[], mode: 'queue' | 'steer', commands: readonly CommandDescriptor[], options: SubmissionOptions = {}): Promise<void> {
@@ -20,8 +20,9 @@ export async function submitMessage(face: ISession, text: string, images: readon
   }
   // A disappeared command may have awaited the Host before falling back to
   // text. Recheck the destination after that await, before any echo or prompt.
-  options.beforePrompt?.()
-  const submission = options.optimisticEcho === false ? undefined : face.beginSubmission({ mode, text, attachments: images.map(image => image.attachment) })
+  const current = options.beforePrompt?.()
+  const optimisticEcho = current?.optimisticEcho ?? options.optimisticEcho
+  const submission = optimisticEcho === false ? undefined : face.beginSubmission({ mode, text, attachments: images.map(image => image.attachment) })
   try {
     const content: PromptContentPart[] = images.map(image => image.prompt)
     if (text) content.push({ type: 'text', text })

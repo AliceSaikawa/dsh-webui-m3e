@@ -173,3 +173,23 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 | 全体統合：証拠と記録予算 | 最終ソースの通し試験と、保存済み成果物を維持する | 追加の再送状態修正が最初のE2E中にViteへ反映されたため、その85成功は最終証拠にしない。終了前に次を起動した1回はport使用中で停止し、終了確認後に固定ソースで再実行 | 最終85件成功、失敗・スキップ・flaky 0件。新画像4枚だけ保全し、既存動画は追加生成しない。観測最大415,191,040バイト、上限500MB以内。Library保存不可・file IDs空を維持 |
 
 最終の証拠は `records/uncertain-unit-final.log`、`uncertain-typecheck-final.log`、`uncertain-build-final.log`、`uncertain-final-e2e.log` とJSON。実SDK契約は `sdk-gateway-outcome-contract.json` に評価範囲とSHAを記録した。今回解消したのは誤った失敗断定と状態喪失であり、手動再送の重複受理防止は引き続きSDK/Host契約を確認する必要がある。公開・認証変更・実DSH操作・禁止されたuploadの経路変更は行っていない。
+
+
+### 2026-10-02：六つの独立レビューによる送信・保持・操作の統合確認
+
+今回は六つの内部AIエージェントが別々に読み取り専用レビューを実施した。人間の専門家六人の認証評価ではない。各担当は既存修正の集積を確認し、合成probeまたは静的根拠を返した。実DSH、外部エージェント、個人データ、SDK変更は使わず、修正は隔離worktreeに限定した。
+
+| 担当・専門領域 | 判断基準と懸念 | 根拠・重大度・修正 | 再レビュー・試験 |
+| --- | --- | --- | --- |
+| review_requirements：要求・UI設計 | 準備待ちに入力不可へ変わった会話で後続設定を実行せず、下書きを保持する | **P2：準備中の可否再検査漏れ**。モデル待ち後にone-shot/removedとなるとpermission/planが実行され、最後のpromptだけ拒否された。各準備await直後にも共有判定を入れた。基準mainにもある経路 | 合成単体試験で後続設定・promptが0件。逆順flightの最終probeでも同一Promise、呼び出し各1件、別編集保持を確認。重要な残留なし |
+| review_integration：TypeScript・SDK統合 | SDKを変えず、非同期操作後に最新のecho方針を使う | **条件付きP2：古いecho判定**。通常→子へ切替中に既知コマンドが消えると、最新可否は通るが待機前の通常echoを使う。prompt直前の共有判定から最新echo方針も返す。Hostでの発生頻度は未確認 | 通常↔子の合成試験でecho0/1を確認。公開API・依存変更なし。型検査・本番build成功。最終レビューで重要な残留なし |
+| review_privacy：品質・保持・安全 | 保存の一部が失敗しても本文を書ける範囲で保持し、別会話を消さない | **P2：追加markerによる本文保存停止**。結果marker追加だけQuotaExceededとなり、既存本文の短い更新まで同じtry内で止まる。本文を先に保存し、各保存を独立化。これはaf0a5b1で追加したmarkerの回帰 | 修正前単体・375/390pxで古い本文へ戻る再現、修正後は編集本文・別会話を保持。画像・認証情報を新規永続化しない。marker自体が拒否される場合の永続化は保証できない。最終重要残留なし |
+| review_verification：非同期・反証 | 新規キーと作成済み会話キーのどちらから入っても同じ処理を待つ | **P2：同一会話のflight別名欠落**。作成ID公開後の新規→既存画面でbusyが失われる。最初の修正後も保持IDの既存→新規で別flightを上書きする逆順をprobeで発見。検証済みIDへ合流し、別名所有集合で終了時解除 | 成功・明確拒否・結果不明の両方向で同一Promise、モデル/prompt各1件、別名解除。異なる未送信本文はローカルshadow整理から除外。受理推測・HostのRPC重複排除には使わない。最終重要残留なし |
+| review_accessibility：利用・保守・キーボード | 再送ボタン消去後に入力へ戻り、別会話のfocusを奪わない | **P3：キーボード再送後のfocus喪失**。Enterで再送成功するとbodyへ落ちる。キーボード起点だけ記憶し、同じmounted入力でbodyがactiveのときに戻す。基準mainの再送にもある経路 | 修正前375/390pxで失敗、修正後の入力復帰と再送中の別会話focus保持を確認。送信待ちのlive statusは実AT未検証の改善候補として残す。適合性保証なし |
+| review_overall：全体統合 | 既存00〜10との整合、後参加別名解除、未送信内容の保全 | 逆順flightを独立probeで再現し、最後の修正を再評価。shadowの本文・画像identity・選択値照合は確認済み処理後のローカル整理に限定 | 最終probeでprompt1回、両別名解除、異なる未送信本文保持。六担当とも重要な残留指摘なし。全体の最終検証は下記 |
+
+最終単体734件、固定ソースの画面95件が全件成功（失敗・skip・flaky 0件）。型検査でM3eButtonの広いEvent型からclickのdetailを読む箇所を見つけ、実行時コードを変えないMouseEvent型assertを追加した。型検査・buildを再実行し、最終ソースの375/390px画面10件も再成功。既存500KB超のbuild chunk警告は残る。全95件の実行中は製品ソースを変更していない。
+
+`records/consolidation-final-e2e.log` とJSON、`consolidation-unit.log`、`consolidation-typecheck-final.log`、`consolidation-build-final.log`、`consolidation-final-focused-e2e.log`へ証拠を保存。修正前の単体5失敗・画面6失敗、逆順probeの失敗、型検査の一時失敗も保全した。今回の通し画面試験は500MB枠と期限動画の余裕を維持するためtraceを無効化したが、実画面のmilestone PNGを保存した。
+
+修正前後各6枚を追加して実画像は計151枚。過去の動画・各manifestを保持し、期限向けの90秒concat入力と手順を準備する。撮影のない時間帯やコーディング画面は補わず、新動画の再エンコードは期限の全体統合へ残す。Libraryのprepare_uploads利用不可、確認済みfile IDs空、開始したhelperの別経路切替禁止は継続。手動再送のHost重複受理防止、実DSH・iPhone/Safari/PWA、実ATは未確認。公開・push・merge・deployは行っていない。
