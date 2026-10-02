@@ -4,7 +4,12 @@ import { RemoteCallError } from './remote-result.ts'
 type NavigationSessions = Pick<ISessions, 'list' | 'open' | 'openSubagent' | 'subagentAddress' | 'refreshSubagents'>
 const catalogRefreshes = new WeakMap<NavigationSessions, Map<string, Promise<void>>>()
 
-function catalogAddress(list: SessionListState, parentSessionId: string, childSessionId: string): SubagentAddress | undefined {
+/**
+ * Read a child's address from the parent's subagent catalog, the only place
+ * the controller accepts it from. The entry shape is DSH's catalog row
+ * (`kind: 'child'`, `mode`), parsed here once for every caller.
+ */
+export function subagentCatalogAddress(list: SessionListState, parentSessionId: string, childSessionId: string): SubagentAddress | undefined {
   const catalog = list.subagentsByParent[parentSessionId]
   if (catalog?.state !== 'ready' || !Array.isArray(catalog.entries)) return undefined
   const entry: unknown = catalog.entries.find((value: unknown) => typeof value === 'object' && value !== null && 'id' in value && value.id === childSessionId)
@@ -47,7 +52,7 @@ export async function openConversationSession(
   }
   const parentSessionId = row?.parentId ?? retained?.parentSessionId
   if (!parentSessionId) throw new Error('親の会話が見つかりません。')
-  let address = catalogAddress(list, parentSessionId, sessionId)
+  let address = subagentCatalogAddress(list, parentSessionId, sessionId)
   if (!address) {
     try { await refreshCatalog(sessions, parentSessionId) }
     catch (error) { if (!isActive()) return false; throw error }
@@ -58,7 +63,7 @@ export async function openConversationSession(
     if (latest.byId[sessionId]?.parentId !== undefined && latest.byId[sessionId]?.parentId !== parentSessionId) {
       throw new Error('親の会話の情報が変わりました。もう一度お試しください。')
     }
-    address = catalogAddress(latest, parentSessionId, sessionId)
+    address = subagentCatalogAddress(latest, parentSessionId, sessionId)
   }
   if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
   if (!isActive()) return false

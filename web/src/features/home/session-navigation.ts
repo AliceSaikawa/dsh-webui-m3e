@@ -1,18 +1,13 @@
 import type { ISessions, SessionListState, SessionSummary, SubagentAddress } from '../../dsh/services.ts'
 import { RemoteCallError } from '../../dsh/remote-result.ts'
+import { subagentCatalogAddress } from '../../dsh/session-navigation.ts'
 
 export function canEditHomeSession(row: SessionSummary | undefined): boolean {
   return !!row && row.origin !== 'subagent'
 }
 
 function catalogAddress(list: SessionListState, row: SessionSummary): SubagentAddress | undefined {
-  if (!row.parentId) return undefined
-  const catalog = list.subagentsByParent[row.parentId]
-  if (catalog?.state !== 'ready' || !Array.isArray(catalog.entries)) return undefined
-  const entry: unknown = catalog.entries.find((value: unknown) => typeof value === 'object' && value !== null && 'id' in value && value.id === row.id)
-  if (typeof entry !== 'object' || entry === null || !('kind' in entry) || entry.kind !== 'child' || !('mode' in entry)
-    || (entry.mode !== 'one-shot' && entry.mode !== 'continuable')) return undefined
-  return { parentSessionId: row.parentId, childSessionId: row.id, mode: entry.mode }
+  return row.parentId ? subagentCatalogAddress(list, row.parentId, row.id) : undefined
 }
 
 /** Selecting the address before routing preserves the read-only child context. */

@@ -10,6 +10,7 @@ import * as cordis from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as clientStore from '@deepseek-ai/dsh-client-store'
 import { type BootGraph, narrowBootGraph } from './boot-graph.ts'
+import { missingContractMembers } from './contract.ts'
 
 interface ModuleSystem {
   manifest: { plugins: { id: string }[] }
@@ -37,7 +38,7 @@ export const TRANSPORT_PLUGINS = [
 /**
  * Shared libraries the stock shell provides to plugin bundles as externals.
  * Only the ones the transport plugins require are listed; versions must match
- * the Host's DSH release.
+ * the Host's DSH release (pinned in src/shared/dsh-compat.ts).
  */
 const STATIC_MODULES: Record<string, unknown> = {
   '@deepseek-ai/cordis': cordis,
@@ -68,6 +69,8 @@ export async function bootDsh(): Promise<cordis.Context> {
     .filter((entry) => entry.fiber === undefined || entry.fiber.state !== ACTIVE)
     .map((entry) => entry.options.name)
   if (inactive.length > 0) throw new Error(`webui-m3e: plugins did not activate: ${inactive.join(', ')}`)
+  const missing = missingContractMembers(ctx)
+  if (missing.length > 0) throw new Error(`webui-m3e: the DSH client lacks ${missing.join(', ')}`)
   return ctx
 }
 

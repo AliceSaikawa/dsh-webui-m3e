@@ -3,39 +3,33 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 
+/**
+ * Real-DSH integration: a real DSH Host (see ./dsh-host.ts) with the scripted
+ * fake model. Not part of `pnpm test`; it installs DSH from npm on first run.
+ * Results are about the Host and transport only: the model is always fake.
+ */
 export default defineConfig({
   testDir: '.',
   testMatch: '**/*.spec.ts',
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: 30_000,
-  expect: { timeout: 7_000 },
-  // Preserve earlier failure evidence instead of clearing it on the next run.
-  outputDir: `${root}tmp/e2e-results/${Date.now()}`,
-  reporter: [['list'], ['json', { outputFile: `${root}tmp/e2e-report.json` }]],
+  // The first test also installs DSH, builds, and packs the plugin.
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
+  outputDir: `${root}tmp/dsh-integration/results/${Date.now()}`,
+  reporter: [['list'], ['json', { outputFile: `${root}tmp/dsh-integration/report.json` }]],
   use: {
     browserName: 'chromium',
-    baseURL: 'http://localhost:5191',
     viewport: { width: 390, height: 844 },
     locale: 'ja-JP',
     timezoneId: 'Asia/Tokyo',
     colorScheme: 'light',
     reducedMotion: 'reduce',
-    actionTimeout: 10_000,
+    actionTimeout: 15_000,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     // For hosts whose installed browser build differs from this Playwright release.
     ...(process.env.M3E_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.M3E_CHROMIUM_PATH } } : {}),
-  },
-  webServer: {
-    command: 'pnpm exec vite --host 127.0.0.1 --port 5191 --strictPort',
-    cwd: root,
-    // 5190 is occupied by an existing IPv4 listener in this workspace's host.
-    // Pin IPv4 and a separate port so another local server cannot be reused.
-    port: 5191,
-    reuseExistingServer: false,
-    timeout: 30_000,
-    stdout: 'pipe',
   },
 })

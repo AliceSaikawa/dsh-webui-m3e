@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useDsh } from '../../dsh/services.ts'
-import { createProviderStore, type ProviderRemote } from './providers.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { createProviderStore, PROVIDER_EVENTS, type ProviderRemote } from './providers.ts'
 import { providerSummary } from './schema.ts'
 
 export function useProviderSummary(): string {
@@ -13,14 +14,12 @@ export function useProviderSummary(): string {
     const changed = () => store.connectionChanged(connection.state.getSnapshot() === 'connected')
     const offConnection = connection.state.subscribe(changed)
     changed()
-    const on = remote.$on as ((event: string, listener: () => void) => unknown) | undefined
-    const stops = typeof on === 'function'
-      ? ['credentials/reference-updated', 'llm/adapters-updated', 'settings/document-updated'].map(event => on.call(remote, event, read)) : []
+    const stops = PROVIDER_EVENTS.map(event => onRemoteEvent(remote, event, read))
     read()
     return () => {
       active = false
       offConnection()
-      stops.forEach(stop => { if (typeof stop === 'function') stop() })
+      stops.forEach(stop => stop())
       store.connectionChanged(false)
     }
   }, [remote, connection, store])

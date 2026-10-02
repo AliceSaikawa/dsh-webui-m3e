@@ -1,5 +1,6 @@
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
 
 /** Browser wire shapes verified against the installed DSH client plugins. */
 export interface CommandDescriptor {
@@ -35,7 +36,6 @@ interface ComposerRemote {
     selectModel(input: ModelSelection & { sessionId: string }): Promise<RemoteResult<{ selected: ModelSelection }>>
   }
   readonly settings?: { describe(): Promise<RemoteResult<{ readonly namespaces: readonly SettingsNamespace[] }>> }
-  $on?(event: 'commands/change', listener: () => void): unknown
 }
 
 export interface SettingsNamespace { readonly ns: string; readonly schema: unknown; readonly value: unknown }
@@ -96,8 +96,8 @@ export function composerApi(remote: DshRemote) {
     },
     onCommandsChange(listener: () => void): () => void {
       let active = true
-      const dispose = wire.$on?.('commands/change', () => { if (active) listener() })
-      return () => { active = false; if (typeof dispose === 'function') dispose() }
+      const dispose = onRemoteEvent(remote, 'commands/change', () => { if (active) listener() })
+      return () => { active = false; dispose() }
     },
   }
 }

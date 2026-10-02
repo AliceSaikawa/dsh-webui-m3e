@@ -1,8 +1,8 @@
 import type { DshRemote } from '../../dsh/services.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import type { GoalActivation, GoalActivationRef, GoalRef, GoalsRemote } from './operations.ts'
 
 export interface GoalActivationChanged { readonly sessionId: string; readonly goal?: GoalActivationRef }
-type SubscribeActivation = (event: 'goal/activation-changed', listener: (event: GoalActivationChanged) => void) => (() => void) | void
 
 export function goalActivationFor(ref: GoalRef | undefined, live: GoalActivationRef | undefined): GoalActivation | undefined {
   return ref && live?.id === ref.id && live.revision === ref.revision ? live.activation : undefined
@@ -18,8 +18,7 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
   publish: (value: GoalActivationRef | undefined) => void, failed: () => void) {
   let disposed = false
   let generation = 0
-  const on = typeof remote.$on === 'function' ? remote.$on as SubscribeActivation : undefined
-  const off = on?.call(remote, 'goal/activation-changed', event => {
+  const off = onRemoteEvent(remote, 'goal/activation-changed', event => {
     if (disposed || event.sessionId !== sessionId) return
     generation++
     publish(event.goal)
@@ -39,7 +38,7 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
       if (disposed) return
       disposed = true
       generation++
-      if (typeof off === 'function') off()
+      off()
     },
   }
 }

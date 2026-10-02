@@ -6,7 +6,8 @@ import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openDialog, openSheet, showSnackbar } from '../../app/overlay/index.ts'
 import { useDsh } from '../../dsh/services.ts'
-import { createKeyDraft, createProviderStore, type ProviderRemote, type ProviderRow, type ProviderStore } from './providers.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { createKeyDraft, createProviderStore, PROVIDER_EVENTS, type ProviderRemote, type ProviderRow, type ProviderStore } from './providers.ts'
 
 const statusLabels = {
   registered: 'API キー：登録済み', missing: 'API キー：未登録',
@@ -85,10 +86,9 @@ export function ProvidersPanel() {
     const changed = () => store.connectionChanged(connection.state.getSnapshot() === 'connected')
     const offConnection = connection.state.subscribe(changed)
     changed()
-    const on = remote.$on as ((event: string, listener: () => void) => unknown) | undefined
-    const stops = typeof on === 'function' ? ['credentials/reference-updated', 'llm/adapters-updated', 'settings/document-updated'].map(event => on.call(remote, event, read)) : []
+    const stops = PROVIDER_EVENTS.map(event => onRemoteEvent(remote, event, read))
     read()
-    return () => { active = false; offConnection(); stops.forEach(stop => { if (typeof stop === 'function') stop() }); store.connectionChanged(false) }
+    return () => { active = false; offConnection(); stops.forEach(stop => stop()); store.connectionChanged(false) }
   }, [remote, connection, store])
   return <section className="settings-section" aria-labelledby="settings-providers">
     <h2 id="settings-providers">提供元と登録状況</h2>
