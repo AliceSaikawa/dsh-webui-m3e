@@ -4,6 +4,7 @@ import type { AgentContext, BeginSubmissionInput, PromptContentPart, SessionFace
 import type { CommandDescriptor, ModelSelection, PlanProjection } from '../web/src/features/composer/api.ts'
 import { deliverDraft, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
 import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/features/composer/drafts.ts'
+import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import type { PreparedImage } from '../web/src/features/composer/types.ts'
 
 const image: PreparedImage = {
@@ -29,6 +30,7 @@ function harness(label: string) {
   let createFailure: unknown
   let createWait: Promise<void> | undefined
   let modelWait: Promise<void> | undefined
+  let commandWait: Promise<void> | undefined
   let commandMatches = true
   let scopeAvailable = true
   let subagent: unknown = null
@@ -42,6 +44,7 @@ function harness(label: string) {
     getSnapshot: () => ({ sessionId: id, subagent, removed }),
     async command(line: string) {
       calls.push(`command:${line}`)
+      if (commandWait) await commandWait
       if (commandMatches && line === '/plan') plan = { active: !plan.active, pending: false }
       if (commandMatches && line === '/plan off') plan = { active: false, pending: false }
       return { ok: true, value: { matched: commandMatches } }
@@ -87,6 +90,7 @@ function harness(label: string) {
     failCreate(error: unknown) { createFailure = error },
     waitCreate(value: Promise<void>) { createWait = value },
     waitModel(value: Promise<void>) { modelWait = value },
+    waitCommand(value: Promise<void>) { commandWait = value },
     matchCommand(value: boolean) { commandMatches = value },
     setScopeAvailable(value: boolean) { scopeAvailable = value },
     setSubagent(value: unknown) { subagent = value },
@@ -294,7 +298,8 @@ test('verified continuable children accept queue and steer using their existing 
     h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
     writeDraft(`session:${h.id}`, { text: '続けて確認してください', images: [] })
     assert.deepEqual(await deliverDraft(h.existing(mode)), {})
-    assert.deepEqual(h.calls, [`scope:${h.id}`, 'begin', 'prompt'])
+    assert.deepEqual(h.calls, [`scope:${h.id}`, 'prompt'])
+    assert.equal(h.submissions.length, 0)
     assert.equal(h.prompts.length, 1)
     assert.equal(h.prompts[0]?.mode, mode)
     assert.equal(readDraft(`session:${h.id}`).text, '')
@@ -336,6 +341,60 @@ test('a child becoming read-only or changing parent during preparation cannot se
     assert.equal(h.prompts.length, 0)
     assert.equal(readDraft(`session:${h.id}`).text, '準備中に状態が変わる')
   }
+})
+
+test('a command disappearing while a child becomes read-only cannot fall through to a prompt', async () => {
+  const h = harness('child-command-became-readonly')
+  h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+  h.matchCommand(false)
+  const gate = deferred<void>()
+  h.waitCommand(gate.promise)
+  writeDraft(`session:${h.id}`, { text: '/plan off', images: [] })
+  const flight = deliverDraft(h.existing())
+  await Promise.resolve()
+  assert.ok(h.calls.includes('command:/plan off'))
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
+  gate.resolve()
+  assert.ok((await flight).error)
+  assert.equal(h.prompts.length, 0)
+  assert.equal(h.submissions.length, 0)
+  assert.equal(readDraft(`session:${h.id}`).text, '/plan off')
+})
+
+test('a remounted child composer joins its first send mode without duplicating preparation or submission', async () => {
+  const h = harness('child-remount')
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+  const gate = deferred<void>()
+  h.waitModel(gate.promise)
+  writeDraft(`session:${h.id}`, { text: '子へ一度だけ送る', images: [], model: { provider: 'local', model: 'small' } })
+  const first = deliverDraft(h.existing('steer'))
+  const joined = deliverDraft(h.existing('queue'))
+  assert.equal(first, joined)
+  gate.resolve()
+  assert.deepEqual(await first, {})
+  assert.equal(h.calls.filter(call => call.startsWith('model:')).length, 1)
+  assert.equal(h.prompts.length, 1)
+  assert.equal(h.prompts[0]?.mode, 'steer')
+})
+
+test('a child backend rejection preserves its draft and delivery mode for one retry', async () => {
+  const h = harness('child-admission-denied')
+  h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+  writeDraft(`session:${h.id}`, { text: '拒否された子の追加依頼', images: [image] })
+  h.failPrompt()
+  const failure = (await deliverDraft(h.existing('steer'))).error
+  assert.ok(failure instanceof RemoteCallError)
+  assert.equal(failure.rpcError, h.failure)
+  assert.equal(readDraft(`session:${h.id}`).text, '拒否された子の追加依頼')
+  assert.deepEqual(readDraft(`session:${h.id}`).images, [image])
+  assert.equal(readDraft(`session:${h.id}`).retryMode, 'steer')
+  h.failPrompt(false)
+  assert.deepEqual(await deliverDraft(h.existing(readDraft(`session:${h.id}`).retryMode)), {})
+  assert.equal(h.prompts.length, 2)
+  assert.equal(h.prompts[1]?.mode, 'steer')
+  assert.deepEqual(h.prompts[1]?.content, [image.prompt, { type: 'text', text: '拒否された子の追加依頼' }])
+  assert.equal(readDraft(`session:${h.id}`).text, '')
 })
 
 test('a pending plan change is treated as the next effective state and is not toggled again', async () => {

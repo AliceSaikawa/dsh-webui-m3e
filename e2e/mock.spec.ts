@@ -510,9 +510,12 @@ test('00c 詳細への直接アクセスから戻る・左端スワイプ', asyn
   await button(page, '戻る').click()
   await expect(page).toHaveURL(/#\/$/)
   await page.getByRole('button', { name: 'README の見直し', exact: true }).click()
+  await expect(page.locator('.edge-swipe-zone')).toBeVisible()
   await page.mouse.move(2, 200)
   await page.mouse.down()
-  await page.mouse.move(180, 210, { steps: 10 })
+  // Ten traced CDP moves can exceed the gesture's 1200ms window on a busy host.
+  // This test exercises one quick swipe, with the same start and end points.
+  await page.mouse.move(180, 210)
   await page.mouse.up()
   await expect(page).toHaveURL(/#\/$/)
 })

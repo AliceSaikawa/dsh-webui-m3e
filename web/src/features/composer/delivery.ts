@@ -29,10 +29,12 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
   return flight
 }
 
-function ensureWritable(face: SessionFace, sessions: DeliveryOptions['sessions']): void {
+function ensureWritable(face: SessionFace, sessions: DeliveryOptions['sessions']) {
   const snapshot = face.getSnapshot()
-  if (!sessionAccess(sessions.list.getSnapshot().byId[face.sessionId], snapshot).canCompose) throw new Error('サブエージェントの会話は読むだけです。')
+  const access = sessionAccess(sessions.list.getSnapshot().byId[face.sessionId], snapshot)
+  if (!access.canCompose) throw new Error('サブエージェントの会話は読むだけです。')
   if (snapshot.removed) throw new Error('この会話は削除されています。')
+  return access
 }
 
 async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOptions): Promise<DeliveryResult> {
@@ -71,8 +73,14 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
       if (active !== sending.plan) requireMatched(await destination.command(sending.plan ? '/plan' : '/plan off'))
     }
     const available = sending.text.startsWith('/') ? await api.listCommands(sessionId) : []
-    ensureWritable(destination, sessions)
-    await submitMessage(destination, sending.text, sending.images, mode, available)
+    const access = ensureWritable(destination, sessions)
+    await submitMessage(destination, sending.text, sending.images, mode, available, {
+      // The installed child SDK replaces the registered id on the wire, so a
+      // local echo cannot retire against its durable event. Keep child display
+      // authoritative while retaining optimistic echoes for normal sessions.
+      optimisticEcho: !access.isSubagent,
+      beforePrompt: () => { ensureWritable(destination, sessions) },
+    })
     clearDeliveredDraft(draftKey)
     if (createdId) clearDeliveredDraft(`session:${createdId}`)
     return createdId ? { createdId } : {}
