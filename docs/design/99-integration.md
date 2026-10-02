@@ -221,3 +221,29 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 90秒の最初のconcat動画は解像度切替で2025frameとなり、PTSに最大0.667秒の隙間を検出したため最終版から除外して保全。元PNGを既存ffmpegで一枚ずつ390x844へ揃えてpipeで渡し、画像一式を複製せずに最終動画 `records/m3e-mock-timelapse-robustness-verified.mp4` を生成。90秒・H264・24fps・2160frame・1,719,151バイト、最大PTS差0.041667秒、全decodeと抽出6画像の目視確認に成功。159源画像のSHAを確認してから一度ずつstreamした。実際の経過時間を再現する動画ではなく、偽fixtureには合成の失敗表示も含む。
 
 記録の詳細は `records/robustness-observations.json`、`robustness-manifest.json`、`robustness-video-verified-audit.json`、六担当のreview記録とレポート。既存成果物は保持。現task使用約319.5MB、観測最大415,191,040バイト、上限500MB以内。追加install・外部API・実DSH・認証変更・公開・Library retryはなし。Library prepare_uploads不可/file IDs空と、実Host/実機/AT確認の未完了は継続。08:51:46 UTCまでの残り時間と最終1時間は親タスクの監査へ渡し、将来の撮影やencodeを実施済みと扱わない。
+### 2026-10-02：iPhone向けの会話切り替え
+
+`hikarioyama/Smart-DSH` の実装を `63d6d9ca3d4a5bda7a8d39c3ecafca2a76772eac` に固定して比較した。mobile railはDSH 0.1.2 rc1の版依存selectorを使う。m3eには既にモバイル幅・safe area・visual viewport対応があるため、会話画面から一覧へ直接届く導線だけをm3eの既存overlayと選択APIで実装した。参照コンポーネントのpackageにMIT表記を確認したが、コード・CSS・selectorはコピーしていない。push通知・Tailscale設定・HMR共有・実DSH起動は今回の対象外。
+
+ヘッダーの44px以上の切替ボタンからシートを開き、既存catalogを名前で検索する。現在の会話、同じワークスペース、その他の順に表示し、子は親の所属を継承する。描画は50行までだが、検索は一覧全体が対象で上限外の会話にも届く。行ごとの新しいscope・feed・検索RPCは作らない。全体の検索・分類は線形走査であり、任意サイズの性能保証ではない。一覧の開閉時は現在の会話DOM・読書位置・下書きを保持する。A→B→Aのスクロール復元は既存route再マウント仕様のまま。
+
+選択は `openHomeSession` に共通化済みの子アドレス経路を使う。待機後にもID・origin・親・archive・blankと最新catalog modeを確認し、削除・変更・閉鎖後の応答では移動しない。空ID・URL符号化不能IDは除外する。one-shotは読むだけ、continuableは既存Composerを使い、unknown/errorでは選択しない。切替自体は下書きの複写・消去や送信を行わない。
+
+六つの独立した内部AI担当が読み取りレビューと修正後の再レビューを実施した。人間の専門家や実機適合性の評価ではない。
+
+| 担当・専門領域 | 基準・懸念、所見と証拠 | 修正・試験・再評価 |
+| --- | --- | --- |
+| review_requirements：要求・UI設計 | iPhoneで1操作の一覧入口、上限外検索、読書位置の保証範囲。既存route keyは別会話往復でDOMを再生成する | 開閉時に限定して保持を説明。375/390pxで下書き・読書位置保持、同workspace順を確認。重要残留なし |
+| review_integration：ビルド・非同期統合 | P2：native Escape/閉鎖開始からlogical closedまでcatalog応答が選択しうる。installed M3Eのイベント順で競合窓を確認 | top sheetのcancel/closingでactive=false。通常motionのclosingイベント内でgateを解放してrefresh1/select0/元route保持を確認。共有OverlayHostは変更しない。重要残留なし |
+| review_privacy：品質・安全 | P3境界：空/孤立surrogate IDから無効routeまたは子選択後の符号化例外になりうる | 一覧と選択再確認の両方で符号化可能な非空IDのみ許可。有効な日本語/slashは維持。純粋試験成功。重要残留なし |
+| review_verification：分析・反証 | latest blankの掲載条件との違い、待機後のmode変更、unknown/errorの反証 | latest blank拒否。待機後one-shot/unknown/error、remove/archive/parent/origin/blank変更で選択抑止と元下書き保持を確認。重要残留なし |
+| review_accessibility：利用・保守 | P3：keyboardで別会話を選ぶと復帰先triggerがunmountしBODYへ落ちる。same closeもnative記憶前のroute inertで復帰しない。実測触域40px | closed内focus、effectのtoggle listenerは実画面で失敗し保全。既存hideSheet完了Promiseと1RAF後にbody/対象ID/overlay不在を再確認し一度だけ復帰。別会話への後続操作のfocusを奪わない。min44追加。通常motionでも成功、重要残留なし |
+| review_overall：全体統合 | 既存送信/draft/子modeとの整合、行別リソース増加と大規模性能の断定を避ける | 既存送信モジュールはこの段階では変更しない。新18画面と全119画面、738単体/type/build成功。実DSH・Safari・実ATの限界を維持。重要残留なし |
+
+初回14画面は9成功/5失敗。4件は試験のselector/fixture名の誤り、1件は別childへの正しいroute選択を旧選択と一緒に数えた計測誤りだった。続く2回の各14件は11成功/3失敗、native teardown前のfocusとqueued toggle前のeffect解除を実証した。scroll試験は画像/フォントのdecode後に測定するよう補強。4回目は12成功/2失敗でfocusは解消し、残る実測40pxをmin44へ修正した。各失敗log/JSON/画像を保全する。初回JSONは完了後にコピーしていないため保存済みとは扱わない。
+
+最終18画面すべて成功。さらに製品/testソースを固定した全119画面が4.2分で成功、失敗・skip・flaky 0、各browser-errorsは空。型検査・単体738件・build成功。既存500KB超chunk警告は残る。新依存・lock変更なし。純粋候補試験は1,000件、画面は合成500件を追加しDOM50件/最後の検索を確認するが、heap/無制限運用/実Hostの冪等性を測るものではない。
+
+実画面例は `docs/images/conversation-picker.png`（390px）と `conversation-picker-search.png`（375px）。偽fixtureだけの実PNGであり、モック内の過去の「pnpm test失敗」表示は今回の試験結果ではない。詳細証拠はtask内 `records/mobile-picker-*`。
+
+ユーザーがwork branch push/draft PRを許可したため `feat/mobile-conversation-switcher` を準備する。remote mainの `571edab` はREADME警告だけの追加だった。元main checkoutを変更せず、work branchへ取得済みorigin/mainを通常mergeして既存警告と共通祖先を保つ。main push/merge・force push・deploy・通知購読・認証/ネットワーク設定変更は行わない。実DSH、iPhone/Safari/PWA、実AT、Libraryのprepare_uploads未提供は未完了のまま。
