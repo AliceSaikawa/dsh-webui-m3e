@@ -96,7 +96,13 @@ export function apply(ctx: Context): void {
       if (target === 'index') {
         if (!ctx.connection.authorizeIndex(req, res)) return
         const body = await renderIndex()
-        res.writeHead(200, { 'content-type': HTML_MIME, 'cache-control': 'no-store' })
+        res.writeHead(200, {
+          'content-type': HTML_MIME,
+          'cache-control': 'no-store',
+          // Approval controls must not be embedded, even by a same-site origin.
+          'content-security-policy': "frame-ancestors 'none'",
+          'x-frame-options': 'DENY',
+        })
         res.end(body)
         return
       }

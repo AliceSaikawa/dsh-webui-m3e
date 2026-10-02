@@ -8,7 +8,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import { apply, injectUiChoice, resolveTarget, stripApplicationPreloads } from '../src/host/index.ts'
 import { uiChoiceScript } from '../src/shared/ui-choice.ts'
 
-const INDEX_PATHS = ['/m3e', '/m3e/', '/m3e/index.html', '/m3e//index.html', '/m3e/assets/%2e%2e%2findex.html']
+const INDEX_PATHS = [
+  '/m3e', '/m3e/', '/m3e/index.html', '/m3e//index.html',
+  '/m3e/assets/%2e%2e%2findex.html', '/m3e/%69ndex.html',
+  '/m3e/./index.html?ui=m3e', '/m3e/?mock&scenario=approval',
+  '/m3e/index.html/', '/m3e/%2findex.html',
+]
 
 function createHostHarness(t: TestContext, authorized: boolean) {
   const html = '<head><link rel="preload" as="script" href="/plugins/stock.js"></head><body>M3E</body>'
@@ -47,9 +52,9 @@ function createHostHarness(t: TestContext, authorized: boolean) {
 
   return {
     authorize, reads, render, registrations, tap,
-    async request(url: string) {
+    async request(url: string, method = 'GET') {
       const result = { status: 0, headers: {} as Record<string, string>, body: undefined as unknown }
-      const req = { method: 'GET', url } as IncomingMessage
+      const req = { method, url } as IncomingMessage
       const res = {
         writeHead(status: number, headers: Record<string, string> = {}) {
           result.status = status
@@ -74,31 +79,33 @@ test('normalized index paths use the entry page route', () => {
   }
 })
 
-test('every index spelling requires authorization before reading or rendering HTML', async (t) => {
+test('GET and HEAD index spellings require authorization before reading or rendering HTML', async (t) => {
   const host = createHostHarness(t, false)
-  for (const path of INDEX_PATHS) {
-    const response = await host.request(path)
+  for (const method of ['GET', 'HEAD']) for (const path of INDEX_PATHS) {
+    const response = await host.request(path, method)
     assert.equal(response.status, 401, path)
     assert.equal(response.headers['cache-control'], 'no-store', path)
     assert.equal(response.body, 'ログインしてください', path)
   }
-  assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length)
+  assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length * 2)
   assert.equal(host.reads.mock.callCount(), 0)
   assert.equal(host.render.mock.callCount(), 0)
 })
 
-test('every authorized index spelling is rendered with no-store', async (t) => {
+test('GET and HEAD authorized index spellings prevent framing and keep no-store rendering', async (t) => {
   const host = createHostHarness(t, true)
-  for (const path of INDEX_PATHS) {
-    const response = await host.request(path)
+  for (const method of ['GET', 'HEAD']) for (const path of INDEX_PATHS) {
+    const response = await host.request(path, method)
     assert.equal(response.status, 200, path)
     assert.equal(response.headers['content-type'], 'text/html; charset=utf-8', path)
     assert.equal(response.headers['cache-control'], 'no-store', path)
+    assert.equal(response.headers['content-security-policy'], "frame-ancestors 'none'", path)
+    assert.equal(response.headers['x-frame-options'], 'DENY', path)
     assert.equal(response.body, '<head><script>boot()</script></head><body>M3E</body>', path)
   }
-  assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length)
-  assert.equal(host.render.mock.callCount(), INDEX_PATHS.length)
-  assert.equal(host.reads.mock.callCount(), INDEX_PATHS.length)
+  assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length * 2)
+  assert.equal(host.render.mock.callCount(), INDEX_PATHS.length * 2)
+  assert.equal(host.reads.mock.callCount(), INDEX_PATHS.length * 2)
   for (const call of host.reads.mock.calls) {
     assert.match(String(call.arguments[0]), /[/\\]dist[/\\]index\.html$/)
     assert.equal(call.arguments[1], 'utf8')
