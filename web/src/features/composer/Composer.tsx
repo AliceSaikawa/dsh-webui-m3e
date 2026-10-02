@@ -180,7 +180,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     if (result.error !== undefined) {
       const key = result.createdId ? `session:${result.createdId}` : draftKey
       const retained = readDraft(key)
-      writeDraft(key, { ...retained, error: errorText(result.error, retained.error) })
+      writeDraft(key, { ...retained, error: retained.deliveryOutcome === 'unknown' ? retained.error : errorText(result.error, retained.error) })
     }
     locked.current = false
     if (!mounted.current) return
@@ -248,7 +248,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
       <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
     </div>}
-    {sendError && <div className="composer-error" role="alert"><strong>送れませんでした</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={() => { void send() }}>もう一度送る</M3eButton></div>}
+    {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? '送信結果が不明です' : '送れませんでした'}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={() => { void send() }}>もう一度送る</M3eButton></div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}

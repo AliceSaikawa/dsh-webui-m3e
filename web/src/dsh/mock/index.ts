@@ -18,6 +18,7 @@ export function createMockContext(options: MockOptions = {}) {
     __m3eTestChildRequestIdMismatch?: boolean
     __m3eTestChildPromptGate?: Promise<void>
     __m3eTestChildPromptCalls?: number
+    __m3eTestChildLoseResponseOnce?: boolean
   }
   const delay = testWindow.__m3eTestModelCatalogDelay
   const gate = testWindow.__m3eTestModelCatalogGate
@@ -32,7 +33,7 @@ export function createMockContext(options: MockOptions = {}) {
   }
   // The installed SDK allocates a separate wire id for child prompts. This
   // explicit test option models that behavior without changing ordinary mock.
-  if (testWindow.__m3eTestChildRequestIdMismatch || testWindow.__m3eTestChildPromptGate) {
+  if (testWindow.__m3eTestChildRequestIdMismatch || testWindow.__m3eTestChildPromptGate || testWindow.__m3eTestChildLoseResponseOnce) {
     const sessionOf = ctx.sessions.sessionOf.bind(ctx.sessions)
     const wrapped = new WeakSet<object>()
     let wire = 0
@@ -44,7 +45,12 @@ export function createMockContext(options: MockOptions = {}) {
         face.prompt = async (content, mode, signal, requestId) => {
           testWindow.__m3eTestChildPromptCalls = (testWindow.__m3eTestChildPromptCalls ?? 0) + 1
           if (testWindow.__m3eTestChildPromptGate) await testWindow.__m3eTestChildPromptGate
-          return prompt(content, mode, signal, testWindow.__m3eTestChildRequestIdMismatch ? `mock-child-wire-${++wire}` : requestId)
+          const result = await prompt(content, mode, signal, testWindow.__m3eTestChildRequestIdMismatch ? `mock-child-wire-${++wire}` : requestId)
+          if (result.ok && testWindow.__m3eTestChildLoseResponseOnce) {
+            testWindow.__m3eTestChildLoseResponseOnce = false
+            return { ok: false, error: { code: 'gateway/internal', message: 'synthetic carrier lost the accepted response', details: {} } }
+          }
+          return result
         }
       }
       return face

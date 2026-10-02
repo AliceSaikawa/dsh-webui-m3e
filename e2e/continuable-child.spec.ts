@@ -108,3 +108,39 @@ test('09 子の送信待ちで会話を切り替えても、二重送信せず�
   expect(await page.evaluate(() => (window as Window & { __m3eTestChildPromptCalls?: number }).__m3eTestChildPromptCalls)).toBe(1)
   await shot(page, '09-child-switch-return')
 })
+
+test('09 子の受理後に応答を失っても、結果不明を示して自動再送しない', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.addInitScript(() => {
+    const state = window as Window & { __m3eTestChildRequestIdMismatch?: boolean; __m3eTestChildLoseResponseOnce?: boolean }
+    state.__m3eTestChildRequestIdMismatch = true
+    state.__m3eTestChildLoseResponseOnce = true
+  })
+  await visit(page, '/s/session-tools-review')
+  await button(page, '実行を停止').click()
+  const text = '応答だけ失われた子への依頼'
+  const input = page.getByLabel('メッセージ入力欄', { exact: true })
+  await input.fill(text)
+  await button(page, '送信').click()
+  await expect(page.getByLabel('自分のメッセージ', { exact: true }).filter({ hasText: text })).toHaveCount(1)
+  await expect(input).toHaveValue(text)
+  await shot(page, '09-child-uncertain-response')
+  await expect(page.getByRole('alert')).toContainText('送信結果を確認できませんでした')
+  await expect(page.getByRole('alert')).toContainText('重複')
+  expect(await page.evaluate(() => (window as Window & { __m3eTestChildPromptCalls?: number }).__m3eTestChildPromptCalls)).toBe(1)
+  await page.evaluate(() => { window.location.hash = '/s/readme-review' })
+  await page.getByLabel('メッセージ入力欄', { exact: true }).fill('別の下書き')
+  await page.evaluate(() => { window.location.hash = '/s/session-tools-review' })
+  await expect(input).toHaveValue(text)
+  await expect(page.getByRole('alert')).toContainText('送信結果を確認できませんでした')
+  await page.reload()
+  await expect(input).toHaveValue(text)
+  await expect(page.getByRole('alert')).toContainText('送信結果を確認できませんでした')
+  await shot(page, '09-child-uncertain-reloaded')
+  // Reload reruns addInitScript; the carrier loss belongs to the first send only.
+  await page.evaluate(() => { (window as Window & { __m3eTestChildLoseResponseOnce?: boolean }).__m3eTestChildLoseResponseOnce = false })
+  await page.getByRole('alert').getByRole('button', { name: 'もう一度送る', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await shot(page, '09-child-uncertain-explicit-retry')
+})

@@ -3,6 +3,7 @@ import { sessionAccess } from '../../dsh/session-access.ts'
 import { requireMatched, type composerApi, type PlanProjection } from './api.ts'
 import { clearDraft, readDraft, writeDraft } from './drafts.ts'
 import { submitMessage } from './submission.ts'
+import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-status.ts'
 import { clearWorkspaceOrigin, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -41,7 +42,9 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
   if ((readDraft(draftKey).preparingImages ?? 0) > 0) {
     return { error: new Error('画像を準備しています。準備が終わってから送信してください。') }
   }
-  let sending = { ...readDraft(draftKey), retryMode: mode, error: undefined as string | undefined }
+  const currentDraft = readDraft(draftKey)
+  // A failed retry cannot establish what happened to the earlier request.
+  let sending = { ...currentDraft, retryMode: mode, error: currentDraft.deliveryOutcome === 'unknown' ? uncertainDeliveryMessage : undefined as string | undefined }
   let createdId: string | undefined
   let sessionReady = true
   try {
@@ -99,7 +102,9 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
       : target.kind === 'new' && !createdId
       ? 'セッションを作れませんでした。接続とワークスペースを確認してください。'
       : 'メッセージを送れませんでした。接続を確認して、もう一度お試しください。'
-    const failed = { ...sending, error: message }
+    const unknown = error instanceof UncertainPromptError || sending.deliveryOutcome === 'unknown'
+    const failed = { ...sending, error: unknown ? uncertainDeliveryMessage : message,
+      deliveryOutcome: unknown ? 'unknown' as const : undefined }
     writeDraft(createdId ? `session:${createdId}` : draftKey, failed)
     if (createdId && !sessionReady) writeDraft(draftKey, failed)
     return { createdId, ...(createdId && sending.workspaceAttachment ? { sessionReady } : {}), error }

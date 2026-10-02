@@ -3,6 +3,7 @@ import type { PreparedImage } from './types.ts'
 import type { CommandDescriptor } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { isKnownCommand } from './helpers.ts'
+import { promptOutcomeIsUnknown, UncertainPromptError } from './delivery-status.ts'
 
 export interface SubmissionOptions {
   optimisticEcho?: boolean
@@ -27,6 +28,7 @@ export async function submitMessage(face: ISession, text: string, images: readon
     unwrapRemoteResult(await face.prompt(content, mode, undefined, submission?.requestId))
   } catch (error) {
     submission?.abandon()
+    if (promptOutcomeIsUnknown(error)) throw new UncertainPromptError(error)
     throw error
   }
 }

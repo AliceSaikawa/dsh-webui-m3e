@@ -27,6 +27,7 @@ function harness(label: string) {
   const submissions: BeginSubmissionInput[] = []
   const failure = { code: 'test/send', message: 'failed', details: {} }
   let promptFails = false
+  let promptFailure = failure
   let createFailure: unknown
   let createWait: Promise<void> | undefined
   let modelWait: Promise<void> | undefined
@@ -57,7 +58,7 @@ function harness(label: string) {
     async prompt(content: PromptContentPart[], mode: 'queue' | 'steer', _signal?: AbortSignal, requestId?: string) {
       calls.push('prompt')
       prompts.push({ content, mode, requestId })
-      return promptFails ? { ok: false, error: failure } : { ok: true, value: { accepted: true } }
+      return promptFails ? { ok: false, error: promptFailure } : { ok: true, value: { accepted: true } }
     },
   } as unknown as SessionFace
   const scope = {} as AgentContext
@@ -87,6 +88,7 @@ function harness(label: string) {
       return { ...options, target: { kind: 'session', sessionId: id }, draftKey: `session:${id}`, mode }
     },
     failPrompt(value = true) { promptFails = value },
+    setPromptFailure(code: string) { promptFailure = { code, message: 'synthetic diagnostic', details: {} }; promptFails = true },
     failCreate(error: unknown) { createFailure = error },
     waitCreate(value: Promise<void>) { createWait = value },
     waitModel(value: Promise<void>) { modelWait = value },
@@ -479,4 +481,52 @@ test('unknown failures and missing published IDs remain creation failures withou
     assert.equal(readDraft(h.key).workspaceAttachment, undefined)
     assert.equal(h.calls.some(call => call.startsWith('scope:')), false)
   }
+})
+
+test('an uncertain prompt response retains the draft without claiming rejection or automatically retrying', async () => {
+  for (const code of ['gateway/internal', 'gateway/cancelled']) {
+    const h = harness(`uncertain-${code}`)
+    h.setPromptFailure(code)
+    writeDraft(`session:${h.id}`, { text: '応答を失った依頼', images: [image] })
+    const result = await deliverDraft(h.existing('steer'))
+    assert.ok(result.error)
+    const retained = readDraft(`session:${h.id}`)
+    assert.equal(retained.deliveryOutcome, 'unknown')
+    assert.match(retained.error ?? '', /送信結果を確認できません/)
+    assert.equal(retained.text, '応答を失った依頼')
+    assert.deepEqual(retained.images, [image])
+    assert.equal(retained.retryMode, 'steer')
+    assert.equal(h.prompts.length, 1)
+    const failedPreparation = h.existing('steer')
+    failedPreparation.api = { ...failedPreparation.api, selectModel: async () => { throw new Error('synthetic retry preparation loss') } }
+    writeDraft(`session:${h.id}`, { ...retained, model: { provider: 'retry-provider', model: 'retry-model' } })
+    assert.ok((await deliverDraft(failedPreparation)).error)
+    assert.equal(readDraft(`session:${h.id}`).deliveryOutcome, 'unknown')
+    assert.equal(h.prompts.length, 1)
+    h.setPromptFailure('subagent/parent-unavailable')
+    assert.ok((await deliverDraft(h.existing('steer'))).error)
+    assert.equal(readDraft(`session:${h.id}`).deliveryOutcome, 'unknown')
+    assert.match(readDraft(`session:${h.id}`).error ?? '', /送信結果を確認できません/)
+    assert.equal(h.prompts.length, 2)
+    h.failPrompt(false)
+    assert.deepEqual(await deliverDraft(h.existing('steer')), {})
+    assert.equal(h.prompts.length, 3)
+    assert.equal(readDraft(`session:${h.id}`).deliveryOutcome, undefined)
+  }
+})
+
+test('an explicit Host rejection and a preparation failure remain distinct from an uncertain prompt response', async () => {
+  const rejected = harness('explicit-rejection')
+  rejected.setPromptFailure('subagent/parent-unavailable')
+  writeDraft(`session:${rejected.id}`, { text: '明確に拒否される依頼', images: [] })
+  assert.ok((await deliverDraft(rejected.existing())).error)
+  assert.equal(readDraft(`session:${rejected.id}`).deliveryOutcome, undefined)
+  assert.equal(rejected.prompts.length, 1)
+  const preparation = harness('failed-preparation')
+  writeDraft(`session:${preparation.id}`, { text: '/plan', images: [] })
+  const options = preparation.existing()
+  options.api = { ...options.api, listCommands: async () => { throw new Error('synthetic preparation loss') } }
+  assert.ok((await deliverDraft(options)).error)
+  assert.equal(readDraft(`session:${preparation.id}`).deliveryOutcome, undefined)
+  assert.equal(preparation.prompts.length, 0)
 })
