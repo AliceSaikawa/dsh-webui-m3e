@@ -10,6 +10,8 @@ import { navigate } from '../../app/router.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
+import { sessionAccess } from '../../dsh/session-access.ts'
+import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
@@ -33,6 +35,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const api = useMemo(() => composerApi(services.remote), [services.remote])
   const sessionId = target.kind === 'session' ? target.sessionId : ''
   const { face, snapshot, projection } = useSession(sessionId)
+  const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissions = projection<PermissionProjection>('permissions')
   const { connected } = useConnection()
@@ -238,7 +241,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, '停止できませんでした。もう一度お試しください。')) }
   }
 
-  if (snapshot.subagent !== null) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
+  if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
     {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
       <p>会話は作成済みです。登録の再試行では新しい会話を作りません。メッセージは送信ボタンから送れます。</p>

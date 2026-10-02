@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { AgentContext, BeginSubmissionInput, PromptContentPart, SessionFace } from '../web/src/dsh/services.ts'
+import type { AgentContext, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
 import type { CommandDescriptor, ModelSelection, PlanProjection } from '../web/src/features/composer/api.ts'
 import { deliverDraft, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
 import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/features/composer/drafts.ts'
@@ -32,13 +32,14 @@ function harness(label: string) {
   let commandMatches = true
   let scopeAvailable = true
   let subagent: unknown = null
+  let summary: SessionSummary | undefined
   let removed = false
   let plan: PlanProjection = { active: false, pending: false }
   const commands: CommandDescriptor[] = [{ name: 'plan', description: '計画を切り替える' }]
   const face = {
     sessionId: id,
     projections: { faceOf: () => ({ getSnapshot: () => plan, subscribe: () => () => {} }) },
-    getSnapshot: () => ({ subagent, removed }),
+    getSnapshot: () => ({ sessionId: id, subagent, removed }),
     async command(line: string) {
       calls.push(`command:${line}`)
       if (commandMatches && line === '/plan') plan = { active: !plan.active, pending: false }
@@ -58,6 +59,7 @@ function harness(label: string) {
   } as unknown as SessionFace
   const scope = {} as AgentContext
   const sessions: DeliveryOptions['sessions'] = {
+    list: { getSnapshot: () => ({ ids: [], byId: summary ? { [id]: summary } : {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }), subscribe: () => () => {} },
     async create(input) {
       calls.push(`create:${input?.workspaceId}`)
       if (createWait) await createWait
@@ -88,6 +90,7 @@ function harness(label: string) {
     matchCommand(value: boolean) { commandMatches = value },
     setScopeAvailable(value: boolean) { scopeAvailable = value },
     setSubagent(value: unknown) { subagent = value },
+    setSummary(value: SessionSummary) { summary = value },
     setRemoved(value: boolean) { removed = value },
     setPlan(value: PlanProjection) { plan = value },
   }
@@ -282,6 +285,57 @@ test('read-only and removed sessions reject sending, including a change during p
   gate.resolve()
   assert.ok((await flight).error)
   assert.equal(h.prompts.length, 0)
+})
+
+test('verified continuable children accept queue and steer using their existing session', async () => {
+  for (const mode of ['queue', 'steer'] as const) {
+    const h = harness(`child-${mode}`)
+    h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
+    h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+    writeDraft(`session:${h.id}`, { text: '続けて確認してください', images: [] })
+    assert.deepEqual(await deliverDraft(h.existing(mode)), {})
+    assert.deepEqual(h.calls, [`scope:${h.id}`, 'begin', 'prompt'])
+    assert.equal(h.prompts.length, 1)
+    assert.equal(h.prompts[0]?.mode, mode)
+    assert.equal(readDraft(`session:${h.id}`).text, '')
+  }
+})
+
+test('one-shot, unverified, and mismatched child addresses preserve the draft without preparation or sending', async () => {
+  for (const kind of ['one-shot', 'unknown-mode', 'wrong-parent', 'wrong-child', 'no-address', 'no-metadata'] as const) {
+    const h = harness(`child-${kind}`)
+    h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: false, blank: false, updatedAt: 0 })
+    if (kind !== 'no-metadata') h.setSubagent(kind === 'no-address' ? {} : { address: {
+      parentSessionId: kind === 'wrong-parent' ? 'other' : 'parent',
+      childSessionId: kind === 'wrong-child' ? 'other' : h.id,
+      mode: kind === 'one-shot' ? 'one-shot' : kind === 'unknown-mode' ? 'unknown' : 'continuable',
+    } })
+    writeDraft(`session:${h.id}`, { text: '失わない下書き', images: [], model: { provider: 'local', model: 'small' } })
+    assert.ok((await deliverDraft(h.existing())).error)
+    assert.deepEqual(h.calls, [`scope:${h.id}`])
+    assert.equal(h.prompts.length, 0)
+    assert.equal(readDraft(`session:${h.id}`).text, '失わない下書き')
+  }
+})
+
+test('a child becoming read-only or changing parent during preparation cannot send', async () => {
+  for (const kind of ['mode', 'parent'] as const) {
+    const h = harness(`child-change-${kind}`)
+    const row: SessionSummary = { id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 }
+    h.setSummary(row)
+    h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
+    const gate = deferred<void>()
+    h.waitModel(gate.promise)
+    writeDraft(`session:${h.id}`, { text: '準備中に状態が変わる', images: [], model: { provider: 'local', model: 'small' } })
+    const flight = deliverDraft(h.existing())
+    if (kind === 'mode') h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
+    else h.setSummary({ ...row, parentId: 'other' })
+    gate.resolve()
+    assert.ok((await flight).error)
+    assert.equal(h.submissions.length, 0)
+    assert.equal(h.prompts.length, 0)
+    assert.equal(readDraft(`session:${h.id}`).text, '準備中に状態が変わる')
+  }
 })
 
 test('a pending plan change is treated as the next effective state and is not toggled again', async () => {

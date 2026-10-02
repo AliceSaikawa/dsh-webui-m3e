@@ -455,7 +455,8 @@ test('09a 会話メニューから統計・ファイル・ジョブ・子の会�
   await menu(page, 'サブエージェント')
   await shot(page, '09-subagents')
   await action(page, '承認シートの見直し').click()
-  await expect(page.getByText('サブエージェントの会話は読むだけです')).toBeVisible()
+  await expect(page.getByLabel('メッセージ入力欄', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '承認シートの見直し', exact: true })).toBeVisible()
   await shot(page, '09-child-conversation')
 })
 

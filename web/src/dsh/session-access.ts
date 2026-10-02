@@ -13,7 +13,7 @@ export function sessionAccess(
   snapshot: Pick<SessionSnapshot, 'sessionId' | 'subagent'> | undefined,
 ): SessionAccess {
   const address = snapshot?.subagent?.address
-  const isSubagent = summary?.origin === 'subagent' || address !== undefined
+  const isSubagent = summary?.origin === 'subagent' || snapshot?.subagent != null
   if (!isSubagent) return { isSubagent: false, mode: undefined, canCompose: true, readOnly: false }
   const matching = address !== undefined && address.childSessionId === snapshot?.sessionId
     && (summary === undefined || summary.id === address.childSessionId)

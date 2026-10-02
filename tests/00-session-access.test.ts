@@ -19,6 +19,12 @@ test('origin が子ならアドレス取得前でも読むだけにする', () =
   }
 })
 
+test('子の状態があるのにアドレスが欠けた snapshot は一覧なしでも読むだけにする', () => {
+  const state = { sessionId: 'child', subagent: {} } as Pick<SessionSnapshot, 'sessionId' | 'subagent'>
+  assert.equal(sessionAccess(undefined, state).canCompose, false)
+  assert.equal(sessionAccess(undefined, state).isSubagent, true)
+})
+
 test('親子 ID が一致する continuable の子だけ入力できる', () => {
   assert.deepEqual(sessionAccess(summary, snapshot(address)), { isSubagent: true, mode: 'continuable', canCompose: true, readOnly: false })
   assert.deepEqual(sessionAccess(summary, snapshot({ ...address, mode: 'one-shot' })), { isSubagent: true, mode: 'one-shot', canCompose: false, readOnly: true })
