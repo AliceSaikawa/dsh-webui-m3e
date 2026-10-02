@@ -256,3 +256,14 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - ビルド済み Host の `apply()` を fixture 認証・fixture `renderIndex` に接続した実 HTTP 試験で、修正前後 20 組の index 応答を比較した。本文・起動スクリプトは一致し、HEAD の本文は空、修正後だけ両ヘッダーが付く。未認証 2 件、非対応 method 3 件、静的資産・Worker・manifest 3 件の対照も成功した。これは実 DSH の認証・通信を検証したものではない。
 - 独立した境界調査と候補差分の回避経路・回帰レビューでは、現行 index へ到達する具体的な未対処経路や回帰は見つからなかった。
 - Chromium による iframe 確認は、ブラウザー起動時の `socket() failed: Operation not permitted` で停止した。ブラウザー試験本体・画面 E2E・録画は未実行で、別経路による回避はしていない。新しい画像・動画は 0 bytes。実 DSH、プロキシ、Safari/iPhone/PWA 実機、実際の承認操作は未検証。ドラフト PR にはこの制限を明記する。
+
+### 2026-10-03：DSH との互換性の境界と実 DSH の統合試験
+
+- 起点は main `95ea9a0`（0.0.7）。作業ブランチは `chore/dsh-compat`。ハーネスは Claude Code（クラウドのコンテナ）。詳しい結果は [docs/dsh-compatibility.md](../dsh-compatibility.md) にまとめた。
+- 実物の DSH を、本番から切り離した `DSH_HOME` と `HOME`（`tmp/dsh-integration/` の下）で `127.0.0.1` だけに起動した。LLM は `e2e-dsh/fake-llm.ts` の偽物で、`DEEPSEEK_BASE_URL` で向けた。外のネットワーク、利用者の DSH、本番の Arch の DSH には触れていない。
+- DSH 0.1.5-rc.3 で、接続、ワークスペースの追加、最初の送信でのセッション作成、読み込み直し、逐次表示、停止、承認（許可と拒否）、質問、順番待ち、割り込み、画像の添付、会話の切り替え、Host の再起動からの再接続、iframe の拒否を、実物の Host とブラウザで確かめた（`e2e-dsh/real-dsh.spec.ts`）。Issue #13 の PR で未実行だった「ブラウザが実際に埋め込みを拒否すること」も、ここで確かめた。
+- 0.1.5-rc.2 も通過した。0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2 は起動で止まる。npm の `latest` は 0.2.0-rc.2。止まる理由は 4 層（相対 URL、`document.baseURI` 基準の通信、`sessions.open` などの削除、共有ライブラリの版）あり、0.1.7-rc.2 で 1 層ずつ外して確かめた。外すための試しの変更は元に戻し、コミットしていない。
+- 仕様との差：Host を止めても接続の状態が `connecting` のまま続き、`docs/ui-spec.md` の「失敗したらバナーに切り替える」が起きない（90 秒観察）。画面の決まりを先に決める必要があるため直していない。試験は `test.fail` で、差が残っていることを確かめる形にした。
+- 偽データの e2e が、この環境のフル版 Chromium では favicon の 404 を console.error として拾い、試験の中身に関係なく落ちることが分かった。headless shell では 119 件すべて通過した。試験の条件は緩めず、`M3E_CHROMIUM_PATH` でブラウザを選べるようにした。
+- コードの変更：`src/shared/dsh-compat.ts`（版の決まり）、`web/src/dsh/contract.ts`（起動時の controller の確認）、`web/src/main.tsx`（起動に失敗したときの案内と「今の画面に戻す」）、`web/src/dsh/remote-events.ts`（`$on` の購読を 1 か所に）、`subagentCatalogAddress`（子の会話のカタログ行の読み取りを 1 か所に）。画面の見た目と、正常に動いているときの動きは変えていない。
+- `package.json` とロックファイルは変更していない。新しい DSH への対応は依存の更新を含むので、別の作業として残した。

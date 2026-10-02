@@ -36,6 +36,7 @@
 1. **M3E 部品集の選定（手順 3）**：`@m3e/web` + `@m3e/react` に決まりました（2026-09-25、ユーザー了承）。根拠は下の「部品集の実機比較」にあります。
    - 画面は 2026-09-25 に確定したので、保留は解けました。部品集は `docs/design/00-foundation.md` の段階 1 で入れます。
 2. **本番 DSH の版の確認**：Arch への ssh は Claude Code の自動モードで拒否されるので、ユーザーに `ssh archlinux 'dsh --version'` の実行を頼んでください。同梱している `@deepseek-ai/cordis`（4.0.2）と `@deepseek-ai/dsh-client-store`（0.1.5-rc.3）は、本番と版を合わせる必要があります。2026-09-26 に、npm の最新版 DSH 0.1.5-rc.3 に合わせました。
+   - 2026-10-03 追記：npm の `latest` は 0.2.0-rc.2 になり、M3E は 0.1.6-alpha.2 以降では起動できません。対応する版は `src/shared/dsh-compat.ts`、確かめた結果と直す手順は [dsh-compatibility.md](dsh-compatibility.md) にあります。実物の DSH（偽の LLM）での統合試験は `pnpm exec playwright test -c e2e-dsh/playwright.config.ts` で流せます。
 3. **一覧画面の実装**：`docs/design/01-home.md` に移しました。
 4. **PWA の設定（手順 4）**：`docs/design/10-pwa.md` に移しました。Service Worker の対象は `/m3e/` の下だけにし、画面本体はキャッシュしません。キャッシュすると、今の画面に戻せなくなるためです。
 

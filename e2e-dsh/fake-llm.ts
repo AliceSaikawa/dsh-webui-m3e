@@ -24,6 +24,8 @@ export interface FakeLlm {
 export const MARK = {
   /** A reply streamed slowly enough for a test to observe partial text and stop it. */
   slow: '[[slow]]',
+  /** A reply that streams for about three seconds, long enough to queue or steer behind it. */
+  medium: '[[medium]]',
   /** A bash call that asks for wider sandbox permission, which DSH turns into an approval request. */
   approval: '[[approval]]',
   /** An ask_user_question call. */
@@ -92,6 +94,10 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
         if (last?.role === 'tool') { await words(['ツールの結果を受け取りました。'], 20); finish('stop'); return }
         if (prompt.includes(MARK.slow)) {
           await words(Array.from({ length: 200 }, (_, index) => `第${index + 1}節。`), 150)
+          finish('stop'); return
+        }
+        if (prompt.includes(MARK.medium)) {
+          await words(Array.from({ length: 20 }, (_, index) => `段落${index + 1}。`), 150)
           finish('stop'); return
         }
         if (prompt.includes(MARK.approval)) {

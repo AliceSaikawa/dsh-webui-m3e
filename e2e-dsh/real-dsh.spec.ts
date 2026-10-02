@@ -24,6 +24,7 @@ async function newSession(page: Page, text: string) {
 }
 
 const sessions: { greeting?: string; slow?: string } = {}
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
 test(`DSH ${dshVersion}: 接続して一覧を出し、index は埋め込みを拒否する`, async ({ page, integration }) => {
   const { host } = integration
@@ -39,6 +40,22 @@ test(`DSH ${dshVersion}: 接続して一覧を出し、index は埋め込みを�
   await expect(page.getByText('起動に失敗しました', { exact: false })).toHaveCount(0)
   await expect(page.getByText('DSH との接続が切れました')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'ワークスペースがありません' })).toBeVisible()
+})
+
+test(`DSH ${dshVersion}: 同じ Host のページからでも iframe には表示されない`, async ({ page, integration }) => {
+  const { host } = integration
+  // The browser reports the refused frame as a console error; that is the point.
+  test.info().annotations.push({ type: 'expected-console-errors', description: 'frame-ancestors による拒否' })
+  const refusals: string[] = []
+  page.on('console', message => { if (message.type() === 'error' && /frame-ancestors|X-Frame-Options|Refused to (display|frame)/i.test(message.text())) refusals.push(message.text()) })
+  await login(page, host)
+  // A same-origin embedding page: only this one URL is answered by the test, the frame itself is the real Host.
+  await page.route(`${host.origin}/m3e-embedding-probe`, route => route.fulfill({ contentType: 'text/html', body: `<iframe id="probe" src="${host.origin}/m3e/" width="390" height="600"></iframe>` }))
+  await page.goto(`${host.origin}/m3e-embedding-probe`)
+  await expect.poll(() => refusals.length).toBeGreaterThan(0)
+  const frame = page.frames().find(candidate => candidate !== page.mainFrame())
+  expect(frame).toBeDefined()
+  await expect(frame!.locator('h1')).toHaveCount(0)
 })
 
 test(`DSH ${dshVersion}: フォルダを選んでワークスペースを追加する`, async ({ page, integration }) => {
@@ -141,6 +158,55 @@ test(`DSH ${dshVersion}: 会話の切り替えシートで検索して別のセ�
   await expect(page.getByText('統合試験のあいさつ', { exact: true })).toBeVisible()
   await expect(page.getByText(`${MARK.slow} 停止の確認`, { exact: true })).toHaveCount(0)
   await expect(page.locator('h1').first()).toHaveText('会話：統合試験のあいさつ')
+})
+
+test(`DSH ${dshVersion}: 実行中の送信は順番待ちに入り、終わったあとにモデルへ届く`, async ({ page, integration }) => {
+  const { host, llm } = integration
+  await openM3e(page, host)
+  await newSession(page, `${MARK.medium} 順番待ちの確認`)
+  await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
+  await page.getByLabel('メッセージ入力欄').fill('順番待ちの追記')
+  await button(page, '順番待ち').click()
+  await expect(page.getByText('順番待ち 1 件')).toBeVisible()
+  await expect(page.getByText('段落20。', { exact: false })).toBeVisible()
+  await expect(page.getByText('こんにちは。偽のモデルです。')).toBeVisible()
+  await expect(page.getByText('順番待ち 1 件')).toHaveCount(0)
+  const queued = llm.requests.filter(request => request.tools?.length && textOf(request.messages.filter(message => message.role === 'user').at(-1)?.content).includes('順番待ちの追記'))
+  expect(queued.length).toBeGreaterThan(0)
+  // The queued message reached the model only after the first reply finished.
+  expect(JSON.stringify(queued[0]!.messages)).toContain('段落20。')
+})
+
+test(`DSH ${dshVersion}: 実行中に割り込みで送ると同じ会話のモデルへ届く`, async ({ page, integration }) => {
+  const { host, llm } = integration
+  await openM3e(page, host)
+  const before = llm.requests.length
+  await newSession(page, `${MARK.medium} 割り込みの確認`)
+  await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
+  await page.getByLabel('メッセージ入力欄').fill('割り込みの追記')
+  await button(page, '送り方を選ぶ').click()
+  await page.getByText('割り込み', { exact: true }).click()
+  await expect.poll(() => llm.requests.slice(before).some(request => request.tools?.length
+    && request.messages.some(message => message.role === 'user' && textOf(message.content).includes('割り込みの追記'))), { timeout: 30_000 }).toBe(true)
+  await expect(page.getByRole('article', { name: '自分のメッセージ' }).filter({ hasText: '割り込みの追記' })).toHaveCount(1)
+  await expect(button(page, '実行を停止')).toHaveCount(0, { timeout: 30_000 })
+})
+
+test(`DSH ${dshVersion}: 画像を添付して送るとモデルへ画像が届く`, async ({ page, integration }) => {
+  const { host, llm } = integration
+  await openM3e(page, host)
+  const before = llm.requests.length
+  await button(page, '新しいセッション').click()
+  await page.locator('input[type="file"]').setInputFiles({ name: '統合試験.png', mimeType: 'image/png', buffer: Buffer.from(PNG_1PX, 'base64') })
+  await expect(page.locator('.composer-images img')).toBeVisible()
+  await page.getByLabel('メッセージ入力欄').fill('画像の確認')
+  await button(page, '送信').click()
+  await expect(page.getByText('こんにちは。偽のモデルです。')).toBeVisible()
+  const sent = llm.requests.slice(before).find(request => request.tools?.length
+    && request.messages.some(message => message.role === 'user' && textOf(message.content).includes('画像の確認')))
+  expect(sent).toBeDefined()
+  const user = sent!.messages.filter(message => message.role === 'user' && Array.isArray(message.content))
+  expect(JSON.stringify(user)).toMatch(/"type":"image_url"/)
 })
 
 test.describe('接続の断絶', () => {

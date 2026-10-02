@@ -28,7 +28,8 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness 0.1.5-rc.3 (startup and connection have been verified with this version)
+- DeepSeek Harness 0.1.5-rc.3 (startup, sending, stopping, approvals, questions, reconnecting and more are verified against a real DSH with a fake LLM)
+  - It does not start on 0.1.6-alpha.2, 0.1.7-rc.2, or 0.2.0-rc.2 (the npm `latest`). See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese).
 - Node.js 22 or later and pnpm for building
 
 ## Installation
@@ -69,7 +70,7 @@ If either interface fails to load, open `http://<host>/?ui=classic` to return to
 
 - The UI text is Japanese only.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
-- During development, the UI is checked with mock data instead of a live DSH instance. See [docs/development.md](docs/development.md) for the development workflow and architecture.
+- UI tests mostly use mock data. The connection to DSH is checked against a real DSH, isolated from production, with a fake LLM. Checks with a real LLM and on iPhone are limited. See [docs/development.md](docs/development.md) for the development workflow and architecture.
 
 ## License
 

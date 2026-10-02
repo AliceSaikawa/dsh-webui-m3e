@@ -59,6 +59,8 @@ export interface DshHost {
 export async function startDsh(llmUrl: string): Promise<DshHost> {
   const install = dshInstall()
   const actual = JSON.parse(readFileSync(join(install, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8')).version as string
+  // Keep only this run's DSH_HOME; earlier runs are evidence in the report, not state.
+  if (existsSync(work)) for (const name of readdirSync(work)) if (name.startsWith('run-')) rmSync(join(work, name), { recursive: true, force: true })
   const runDir = join(work, `run-${Date.now()}`)
   const home = join(runDir, 'home')
   const dshHome = join(runDir, 'dsh-home')
