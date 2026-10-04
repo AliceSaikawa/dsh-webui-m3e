@@ -22,10 +22,11 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     assert.deepEqual(journal.records, readmeRecords)
     assert.equal(journal.stream, null)
     const failed = journal.records.find((event) => event.type === 'tool/result' && JSON.stringify(event.data).includes('EXIT_1'))!
-    const data = failed.data as { message: { role: string; content: { type: string; isError: boolean }[] } }
-    assert.equal(data.message.role, 'user')
-    assert.equal(data.message.content[0]!.type, 'tool-result')
-    assert.equal(data.message.content[0]!.isError, true)
+    const data = failed.data as { message: { role: string; toolCallId: string; source: { kind: string; callId: string }; content: { type: string }[]; isError: boolean } }
+    assert.equal(data.message.role, 'tool')
+    assert.deepEqual(data.message.source, { kind: 'tool', callId: data.message.toolCallId })
+    assert.equal(data.message.content[0]!.type, 'text')
+    assert.equal(data.message.isError, true)
     const running = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
     assert.equal(running.session.getSnapshot().running, true)
     assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 3)

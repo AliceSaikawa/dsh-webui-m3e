@@ -5,8 +5,7 @@ import type {
 import { streamBlocksOf, type AssistantStream, type StreamBlock } from '../../dsh/session-journal.ts'
 
 /** Unknown content is kept as a label, without attempting to render its payload. */
-export type ChatContentBlock = Exclude<ContentBlock, { type: 'tool-result' }>
-  | { type: 'tool-result'; toolCallId: string; content: ChatContentBlock[]; isError?: boolean }
+export type ChatContentBlock = Exclude<ContentBlock, { type: `plugin:${string}` | 'tool-addition' | 'tool-removal' }>
   | { type: 'unsupported'; originalType: string }
 
 interface RowBase {
@@ -101,7 +100,7 @@ function imageAttachment(value: unknown): ImageAttachmentRef | undefined {
   }
 }
 
-/** Narrow wire JSON locally; the shared service contracts stay untouched. */
+/** Narrow V4 wire JSON, preserving unknown kinds only as labels. */
 function contentOf(value: unknown): ChatContentBlock[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((value): ChatContentBlock[] => {
@@ -120,11 +119,6 @@ function contentOf(value: unknown): ChatContentBlock[] {
     if (block.type === 'file') {
       const attachment = fileAttachment(block.attachment)
       return attachment === undefined ? [] : [{ type: 'file', attachment }]
-    }
-    if (block.type === 'tool-result') {
-      // The envelope is flattened below when correlating a result with its call.
-      // Nested envelopes are retained so the detail view can render their kinds.
-      return [{ type: 'tool-result', toolCallId: stringOf(block.toolCallId) ?? '', content: contentOf(block.content), ...(block.isError === true ? { isError: true } : {}) }]
     }
     return [{ type: 'unsupported', originalType: block.type }]
   })
@@ -146,8 +140,15 @@ function contextProvenance(source: ObjectValue): Pick<ContextRow, 'role' | 'labe
   const joined = (names: string[]) => names.length > 0 ? names.join(', ') : kind
   if (kind === 'session-reference') return { role: 'recall', label: joined(distinctStrings(source.references, 'label')) }
   if (kind === 'agent-instructions') return { role: 'inject', label: joined(distinctStrings(source.changes, 'path')) }
-  if (kind === 'plugin') return { role: 'inject', label: stringOf(source.plugin) || kind }
+  if (kind?.startsWith('plugin:')) return { role: 'inject', label: kind.slice('plugin:'.length) || kind }
   if (kind === 'skill-invocation') return { role: 'inject', label: stringOf(source.name) || kind }
+  // Preserve the producer names shown before the wire vocabulary changed.
+  // ptc-mode has two historical producers, so it uses the stock UI fallback.
+  const producerNames: Record<string, string> = {
+    'compact-checkpoint': 'compact', 'compact-basic': 'dsh-compaction-basic',
+    'runtime-context': '@deepseek-ai/dsh-system-prompt', 'system-prompt': '@deepseek-ai/dsh-system-prompt',
+  }
+  if (kind && Object.hasOwn(producerNames, kind)) return { role: 'inject', label: producerNames[kind]! }
   return { role: 'inject', label: kind }
 }
 
@@ -170,16 +171,12 @@ interface ResultInfo {
 function resultsOf(event: SessionWireEvent): { callId: string; result: ResultInfo }[] {
   const data = objectOf(event.data)
   if (data === undefined) return []
-  const message = objectOf(data.message) ?? data
+  const message = objectOf(data.message)
+  if (message?.role !== 'tool') return []
   const content = contentOf(message.content)
-  const results = content.filter((block): block is Extract<ChatContentBlock, { type: 'tool-result' }> => block.type === 'tool-result')
   const failure = data.error !== undefined && data.error !== null && data.error !== false
-  if (results.length > 0) {
-    return results.map(block => ({ callId: block.toolCallId, result: { event, content: block.content, isError: failure || data.isError === true || message.isError === true || block.isError === true, ...(failure ? { error: data.error } : {}) } }))
-  }
-  const source = objectOf(message.source)
-  const callId = stringOf(data.callId) ?? stringOf(message.toolCallId) ?? stringOf(source?.callId)
-  return callId === undefined ? [] : [{ callId, result: { event, content, isError: failure || data.isError === true || message.isError === true, ...(failure ? { error: data.error } : {}) } }]
+  const callId = stringOf(message.toolCallId)
+  return !callId ? [] : [{ callId, result: { event, content, isError: failure || message.isError === true, ...(failure ? { error: data.error } : {}) } }]
 }
 
 /** Only explicit per-block boundaries establish the full reasoning interval. */
@@ -274,7 +271,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
   for (const event of events) {
     if (event.type !== 'assistant/message') continue
     const data = objectOf(event.data)
-    const message = objectOf(data?.message) ?? data
+    const message = objectOf(data?.message)
     for (const block of contentOf(message?.content)) if (block.type === 'tool-call') assistantCallIds.add(block.id)
   }
   const toolRow = (callId: string, name: string, args: string, base: RowBase): ToolRow => {
@@ -296,14 +293,14 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       const content = contentOf(data.content)
       // DSH logs injected context (instruction files, skills, recalls) as user
       // messages whose source is not the user; only the user's own input is a bubble.
-      const source = objectOf(data.source)
-      if (source !== undefined && source.kind !== 'user') {
+      const source = objectOf(data.source) ?? {}
+      if (source.kind !== 'user') {
         rows.push({ ...base, kind: 'context', ...contextProvenance(source), content, text: textOf(content) })
       } else {
         rows.push({ ...base, kind: 'user', content, text: textOf(content) })
       }
     } else if (event.type === 'assistant/message') {
-      const message = objectOf(data.message) ?? data
+      const message = objectOf(data.message) ?? {}
       const content = Array.isArray(message.content) ? message.content : []
       const durations = reasoningDurations(data.stream, content)
       content.forEach((value, index) => {
@@ -329,8 +326,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       }
     } else if (event.type === 'system/message') {
       const message = objectOf(data.message)
-      const content = contentOf(message?.content ?? data.content)
-      const text = stringOf(data.message) ?? stringOf(message?.text) ?? stringOf(data.text) ?? textOf(content)
+      const text = textOf(contentOf(message?.content))
       if (text) rows.push({ ...base, kind: 'system', text })
     } else if (event.type === 'command/done') {
       const name = stringOf(data.name)

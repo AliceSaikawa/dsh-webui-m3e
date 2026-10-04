@@ -3,6 +3,8 @@ import type { AssistantStream } from '../../dsh/session-journal.ts'
 
 type Data = Record<string, unknown>
 export type TraceKind = 'user' | 'assistant' | 'tool' | 'subtool' | 'compaction'
+/** View-only grouping for a V4 tool message in reconstructed model input. */
+export type TraceInputBlock = ContentBlock | { type: 'tool-output'; toolCallId: string; content: ContentBlock[]; isError?: boolean }
 export interface TraceTermination {
   kind: 'error' | 'aborted' | 'interrupted' | 'blocked' | 'max-tokens'
   message: string
@@ -22,7 +24,7 @@ export interface TraceRow {
   toolName?: string
   content: ContentBlock[]
   /** Resolved only when details read it; list rendering must not access it. */
-  readonly input: ContentBlock[]
+  readonly input: TraceInputBlock[]
   arguments?: string
   callId?: string
   parentCallId?: string
@@ -98,12 +100,12 @@ export function prettyJson(value: unknown): string {
   }
   return JSON.stringify(value, null, 2) ?? ''
 }
-export function contentText(content: readonly ContentBlock[]): string {
+export function contentText(content: readonly TraceInputBlock[]): string {
   return content.map(block => {
     switch (block.type) {
       case 'text': case 'reasoning': return block.text
       case 'tool-call': return `${block.name} ${block.arguments}`
-      case 'tool-result': return contentText(block.content)
+      case 'tool-output': return contentText(block.content)
       case 'image': case 'file': return block.attachment.name ?? '添付'
       default: return ''
     }
@@ -206,16 +208,21 @@ function rowOf(event: SessionWireEvent, kind: TraceKind, turn: TraceTurn, title:
 }
 
 /** One requested input per immutable journal window, shared across live updates. */
-const detailInputs = new WeakMap<readonly SessionWireEvent[], { end: number; content: ContentBlock[] }>()
-function readInput(records: readonly SessionWireEvent[], endExclusive: number): ContentBlock[] {
+const detailInputs = new WeakMap<readonly SessionWireEvent[], { end: number; content: TraceInputBlock[] }>()
+function readInput(records: readonly SessionWireEvent[], endExclusive: number): TraceInputBlock[] {
   const cached = detailInputs.get(records)
   if (cached?.end === endExclusive) return cached.content
-  const context: { seq: number; content: ContentBlock[] }[] = []
+  const context: { seq: number; content: TraceInputBlock[] }[] = []
   for (let index = 0; index < endExclusive; index++) {
     const event = records[index]!
     if (!['user/message', 'assistant/message', 'tool/result'].includes(event.type)) continue
     const data = object(event.data)
-    const content = blocks(event.type === 'user/message' ? data.content : object(data.message).content)
+    const message = object(data.message)
+    const content: TraceInputBlock[] = event.type === 'tool/result'
+      ? message.role === 'tool' && string(message.toolCallId)
+        ? [{ type: 'tool-output', toolCallId: message.toolCallId as string, content: blocks(message.content), ...(message.isError === true ? { isError: true } : {}) }]
+        : []
+      : blocks(event.type === 'user/message' ? data.content : message.content)
     const op = object(event.surfaceOp)
     const entry = { seq: event.seq, content }
     if (op.op === 'replace' && number(op.startSeq) !== undefined && number(op.endSeq) !== undefined) {
@@ -341,7 +348,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     if (event.type === 'user/message') {
       const content = blocks(data.content)
       const source = object(data.source)
-      if (source.kind === 'plugin' && source.plugin === 'compact' && string(source.compactionId)) {
+      if (source.kind === 'compact-checkpoint' && string(source.compactionId)) {
         // The checkpoint is the input replacement, not a second user row.
         continue
       }
@@ -385,21 +392,20 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       turn.rows.push(row)
     } else if (event.type === 'tool/result') {
       const message = object(data.message)
-      const results = blocks(message.content).filter(block => block.type === 'tool-result')
-      for (const result of results) {
-        const callId = string(object(message.source).callId) ?? result.toolCallId
-        let row = tools.get(`${turn.id}:${callId}`)
-        if (!row) {
-          row = { ...rowOf(event, 'tool', turn, `ツール：${string(data.name) ?? '名前不明'}`), id: `tool:${event.seq}:${result.toolCallId}`, callId: result.toolCallId }
-          turn.rows.push(row)
-        }
-        fillToolName(row, string(data.name))
-        row.content = result.content
-        row.completedAt = event.time
-        row.running = false
-        row.error = failure(data.error)
-        row.failed = result.isError === true || row.error !== undefined
+      const callId = string(message.toolCallId)
+      if (message.role !== 'tool' || !callId) continue
+      let row = tools.get(`${turn.id}:${callId}`)
+      if (!row) {
+        row = { ...rowOf(event, 'tool', turn, `ツール：${string(data.name) ?? '名前不明'}`), id: `tool:${event.seq}:${callId}`, callId }
+        tools.set(`${turn.id}:${callId}`, row)
+        turn.rows.push(row)
       }
+      fillToolName(row, string(data.name))
+      row.content = blocks(message.content)
+      row.completedAt = event.time
+      row.running = false
+      row.error = failure(data.error)
+      row.failed = message.isError === true || row.error !== undefined
     } else if (event.type === 'tool/ptc-dispatch') {
       const callId = string(data.subCallId)
       if (!callId) continue

@@ -7,11 +7,12 @@ import { recordDurationText, recordInputSupporting, recordOutputText, recordResu
 import { formatDuration as chatFormatDuration } from '../web/src/features/chat/model.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
+import { mockRecord } from '../web/src/dsh/mock/record.ts'
 import { extendMock } from '../web/src/features/trace/mock.ts'
 import { TRACE_EXAMPLE_SESSION_ID, TRACE_FAILURE_SESSION_ID, traceExampleRecords, traceFailureRecords } from '../web/src/features/trace/trace-fixtures.ts'
 
 function record(seq: number, type: string, time: number, data: SessionWireEvent['data'] = {}): SessionWireEvent {
-  return { seq, type, time, data }
+  return mockRecord(seq, type, time, data)
 }
 function text(value: string) { return { type: 'text', text: value } }
 function message(seq: number, time: number, turn: number, step: number, value: string) {
@@ -31,11 +32,11 @@ test('turn boundaries preserve row order and separate reused tool identifiers', 
     record(3, 'step/start', 1020, { turn: 1, step: 1 }),
     message(4, 1200, 1, 1, '確認します'),
     record(5, 'tool/call', 1220, { turn: 1, callId: 'same-id', name: 'read_file', arguments: '{"path":"README.md"}' }),
-    record(6, 'tool/result', 1500, { turn: 1, message: { content: [{ type: 'tool-result', toolCallId: 'same-id', content: [text('最初の結果')] }] } }),
+    record(6, 'tool/result', 1500, { turn: 1, message: { role: 'tool', toolCallId: 'same-id', content: [text('最初の結果')] } }),
     record(7, 'turn/end', 1600, { turn: 1 }),
     record(8, 'turn/start', 2000, { turn: 2 }),
     record(9, 'tool/call', 2100, { turn: 2, callId: 'same-id', name: 'read_file', arguments: '{}' }),
-    record(10, 'tool/result', 2300, { turn: 2, message: { content: [{ type: 'tool-result', toolCallId: 'same-id', content: [text('次の結果')] }] } }),
+    record(10, 'tool/result', 2300, { turn: 2, message: { role: 'tool', toolCallId: 'same-id', content: [text('次の結果')] } }),
     record(11, 'turn/end', 2400, { turn: 2 }),
   ]
   const turns = buildTrace(records)
@@ -61,8 +62,8 @@ test('parallel tools pair by call ID when results arrive in the opposite order',
     record(1, 'turn/start', 100, { turn: 1 }),
     record(2, 'tool/call', 110, { turn: 1, callId: 'a', name: 'read_file', arguments: '{}' }),
     record(3, 'tool/call', 120, { turn: 1, callId: 'b', name: 'search', arguments: '{}' }),
-    record(4, 'tool/result', 140, { turn: 1, message: { content: [{ type: 'tool-result', toolCallId: 'b', content: [text('見つかりました')] }] } }),
-    record(5, 'tool/result', 190, { turn: 1, error: { message: 'ファイルがありません' }, message: { content: [{ type: 'tool-result', toolCallId: 'a', content: [], isError: true }] } }),
+    record(4, 'tool/result', 140, { turn: 1, message: { role: 'tool', toolCallId: 'b', content: [text('見つかりました')] } }),
+    record(5, 'tool/result', 190, { turn: 1, error: { message: 'ファイルがありません' }, message: { role: 'tool', toolCallId: 'a', content: [], isError: true } }),
     record(6, 'turn/end', 200, { turn: 1 }),
   ])
   assert.ok(turn)
@@ -80,7 +81,7 @@ test('parallel tools pair by call ID when results arrive in the opposite order',
 
 test('truncated history retains orphan results without inventing a start time', () => {
   const [turn] = buildTrace([
-    record(20, 'tool/result', 2000, { turn: 4, message: { content: [{ type: 'tool-result', toolCallId: 'missing-start', content: [text('復元された結果')] }] } }),
+    record(20, 'tool/result', 2000, { turn: 4, message: { role: 'tool', toolCallId: 'missing-start', content: [text('復元された結果')] } }),
     message(21, 2200, 4, 3, '完了しました'),
     record(22, 'turn/end', 2400, { turn: 4 }),
   ])
@@ -172,7 +173,7 @@ test('nested subtools follow parent links and retain independent durations', () 
     record(4, 'tool/ptc-dispatch-start', 130, { turn: 1, rootCallId: 'root', parentCallId: 'child', subCallId: 'nested', name: 'read_file', arguments: {} }),
     record(5, 'tool/ptc-dispatch', 160, { turn: 1, rootCallId: 'root', parentCallId: 'child', subCallId: 'nested', content: [text('内側の結果')] }),
     record(6, 'tool/ptc-dispatch', 180, { turn: 1, rootCallId: 'root', parentCallId: 'root', subCallId: 'child', content: [], error: { message: '処理できませんでした' } }),
-    record(7, 'tool/result', 200, { turn: 1, message: { content: [{ type: 'tool-result', toolCallId: 'root', content: [] }] } }),
+    record(7, 'tool/result', 200, { turn: 1, message: { role: 'tool', toolCallId: 'root', content: [] } }),
     record(8, 'turn/end', 210, { turn: 1 }),
   ])
   assert.ok(turn)
@@ -192,7 +193,7 @@ test('compaction events form one row and the compact checkpoint replaces context
     record(3, 'compaction/start', 120, { turn: 1, compactionId: 'compact-1' }),
     record(4, 'compaction/summary', 160, { turn: 1, compactionId: 'compact-1', summary: [text('短い要約')] }),
     record(5, 'compaction/end', 180, { turn: 1, compactionId: 'compact-1' }),
-    { ...record(6, 'user/message', 190, { turn: 1, source: { kind: 'plugin', plugin: 'compact', compactionId: 'compact-1' }, content: [text('短い要約')] }), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 } },
+    { ...record(6, 'user/message', 190, { turn: 1, source: { kind: 'compact-checkpoint', compactionId: 'compact-1' }, content: [text('短い要約')] }), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 } },
     record(7, 'step/start', 200, { turn: 1, step: 1 }),
     message(8, 240, 1, 1, '要約の後の回答'),
     record(9, 'turn/end', 260, { turn: 1 }),
@@ -351,7 +352,7 @@ test('a checkpoint replaces only its declared history range in subsequent input'
     record(2, 'user/message', 110, { turn: 1, content: [text('古い質問')] }),
     message(3, 130, 1, 1, '古い返答'),
     record(4, 'user/message', 140, { turn: 1, content: [text('残す新しい質問')] }),
-    { ...record(5, 'user/message', 150, { turn: 1, source: { kind: 'plugin', plugin: 'compact', compactionId: 'c' }, content: [text('古い部分の要約')] }), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 } },
+    { ...record(5, 'user/message', 150, { turn: 1, source: { kind: 'compact-checkpoint', compactionId: 'c' }, content: [text('古い部分の要約')] }), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 3 } },
     record(6, 'step/start', 160, { turn: 1, step: 2 }),
     message(7, 200, 1, 2, '次の返答'),
   ])
@@ -410,7 +411,7 @@ test('tool result source IDs and errors are honored independently of the display
   const [turn] = buildTrace([
     record(1, 'turn/start', 100, { turn: 1 }),
     record(2, 'tool/call', 120, { turn: 1, callId: 'source-id', name: 'bash', arguments: '{invalid' }),
-    record(3, 'tool/result', 150, { turn: 1, error: { code: 'FAILED' }, message: { source: { kind: 'tool', callId: 'source-id' }, content: [{ type: 'tool-result', toolCallId: 'different-id', content: [text('結果')] }] } }),
+    record(3, 'tool/result', 150, { turn: 1, error: { code: 'FAILED' }, message: { role: 'tool', source: { kind: 'tool', callId: 'source-id' }, toolCallId: 'source-id', content: [text('結果')], isError: true } }),
     record(4, 'turn/end', 160, { turn: 1 }),
   ])
   assert.ok(turn)
@@ -445,7 +446,7 @@ test('step start keeps a stable live row while later user messages precede the r
   assert.deepEqual(waiting.input, [])
   const entered = [...beginning,
     record(3, 'user/message', 120, { content: [text('今回の質問')] }),
-    record(4, 'user/message', 130, { source: { kind: 'plugin', plugin: 'context' }, content: [text('追加の資料')] }),
+    record(4, 'user/message', 130, { source: { kind: 'plugin:context' }, content: [text('追加の資料')] }),
   ]
   const pending = buildTrace(entered, null, true)[0]
   assert.ok(pending)
@@ -465,14 +466,14 @@ test('a later step captures entered input after prior tool results without chang
   const [turn] = buildTrace([
     record(1, 'turn/start', 100, { turn: 1 }), record(2, 'step/start', 110, { turn: 1, step: 1 }),
     record(3, 'user/message', 120, { content: [text('元の質問')] }), message(4, 140, 1, 1, '調べます'),
-    record(5, 'tool/result', 160, { turn: 1, step: 1, message: { source: { callId: 'read' }, content: [{ type: 'tool-result', toolCallId: 'read', content: [text('資料の内容')] }] } }),
+    record(5, 'tool/result', 160, { turn: 1, step: 1, message: { role: 'tool', source: { kind: 'tool', callId: 'read' }, toolCallId: 'read', content: [text('資料の内容')] } }),
     record(6, 'step/end', 170, { turn: 1, step: 1 }), record(7, 'step/start', 180, { turn: 1, step: 2 }),
     record(8, 'user/message', 190, { content: [text('この資料も確認して')] }), message(9, 220, 1, 2, '確認しました'),
   ])
   assert.ok(turn)
   const responses = turn.rows.filter(row => row.kind === 'assistant')
   assert.deepEqual(responses[0]?.input, [text('元の質問')])
-  assert.deepEqual(responses[1]?.input, [text('元の質問'), text('調べます'), { type: 'tool-result', toolCallId: 'read', content: [text('資料の内容')] }, text('この資料も確認して')])
+  assert.deepEqual(responses[1]?.input, [text('元の質問'), text('調べます'), { type: 'tool-output', toolCallId: 'read', content: [text('資料の内容')] }, text('この資料も確認して')])
   assert.deepEqual(turn.rows.map(row => row.kind), ['user', 'assistant', 'tool', 'user', 'assistant'])
 })
 
@@ -668,7 +669,7 @@ test('lazy input is resolved at each original request boundary even when inspect
     record(3, 'user/message', 120, { content: [text('古い質問')] }), message(4, 140, 1, 1, '古い回答'),
     record(5, 'compaction/start', 150, { turn: 1, compactionId: 'c' }),
     record(6, 'compaction/summary', 160, { turn: 1, compactionId: 'c', summary: [text('置き換えた要約')] }),
-    { ...record(7, 'user/message', 170, { source: { kind: 'plugin', plugin: 'compact', compactionId: 'c' }, content: [text('置き換えた要約')] }), surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 } },
+    { ...record(7, 'user/message', 170, { source: { kind: 'compact-checkpoint', compactionId: 'c' }, content: [text('置き換えた要約')] }), surfaceOp: { op: 'replace', startSeq: 3, endSeq: 4 } },
     record(8, 'compaction/end', 180, { turn: 1, compactionId: 'c' }), record(9, 'step/start', 190, { turn: 1, step: 2 }),
     record(10, 'user/message', 200, { content: [text('新しい質問')] }), message(11, 220, 1, 2, '新しい回答'),
   ])
@@ -731,7 +732,7 @@ test('a tool name that first arrives with the result names the row and its icon'
   const [turn] = buildTrace([
     record(1, 'turn/start', 100, { turn: 1 }),
     record(2, 'tool/call', 110, { turn: 1, callId: 'late' }),
-    record(3, 'tool/result', 150, { turn: 1, name: 'read_file', message: { content: [{ type: 'tool-result', toolCallId: 'late', content: [text('本文')] }] } }),
+    record(3, 'tool/result', 150, { turn: 1, name: 'read_file', message: { role: 'tool', toolCallId: 'late', content: [text('本文')] } }),
   ])
   const row = turn?.rows[0]
   assert.ok(row)

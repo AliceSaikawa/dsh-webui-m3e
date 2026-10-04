@@ -141,7 +141,7 @@ test('照合 添付の参照は宣言済みフィールドに限定し入れ子�
   const image = { type: 'image', attachment: { attachmentId: 'image' } }
   const event = (type: string, data: unknown) => [{ type, seq: 0, time: 0, data: data as never }]
   assert.equal(referencesImage(event('tool/result', { message: { content: [image] } }), 'image'), true)
-  assert.equal(referencesImage(event('tool/result', { message: { content: [{ type: 'tool-result', content: [image] }] } }), 'image'), false)
+  assert.equal(referencesImage(event('tool/result', { message: { role: 'tool', toolCallId: 'opaque', content: [{ type: 'plugin:opaque', content: [image] }] } }), 'image'), false)
   assert.equal(referencesImage(event('unknown/event', { content: [image] }), 'image'), false)
   assert.equal(referencesImage(event('agent/inbox/spliced', { inserted: [{ content: [image] }] }), 'image'), true)
   assert.equal(referencesImage(event('assistant/attempt', { stream: [{ type: 'chunk', chunk: { type: 'block-end', block: image } }] }), 'image'), true)

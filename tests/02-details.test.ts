@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { clipToolResult, toolErrorMessage } from '../web/src/features/chat/tool-result.ts'
+import { clipToolResult, toolErrorMessage } from '../web/src/features/chat/tool-output.ts'
 import type { ChatContentBlock } from '../web/src/features/chat/model.ts'
 
-test('ツール結果は入れ子を含めた合計200行で切り、元の結果を変えない', () => {
+test('ツール結果は全ブロックの合計200行で切り、元の結果を変えない', () => {
   const blocks: ChatContentBlock[] = [
     { type: 'text', text: Array.from({ length: 199 }, (_, i) => `前半${i}`).join('\n') },
-    { type: 'tool-result', toolCallId: 'nested', content: [{ type: 'text', text: '200行目\n201行目' }] },
+    { type: 'text', text: '200行目\n201行目' },
     { type: 'text', text: '202行目' },
     { type: 'unsupported', originalType: '音声' },
   ]
   const previous = structuredClone(blocks)
   const clipped = clipToolResult(blocks)
   assert.equal(clipped.truncated, true)
-  assert.deepEqual(clipped.blocks[1], { type: 'tool-result', toolCallId: 'nested', content: [{ type: 'text', text: '200行目' }] })
+  assert.deepEqual(clipped.blocks[1], { type: 'text', text: '200行目' })
   assert.deepEqual(clipped.blocks[2], { type: 'unsupported', originalType: '音声' })
   assert.equal(clipped.blocks.length, 3)
   assert.deepEqual(blocks, previous)
@@ -48,23 +48,19 @@ test('長い1行も既定の20,000文字で切り、結果を変更しない', (
   assert.deepEqual(clipToolResult([{ type: 'text', text: 'x'.repeat(20_000) }]), { blocks: [{ type: 'text', text: 'x'.repeat(20_000) }], truncated: false })
 })
 
-test('文字数予算は複数ブロックと入れ子の全体で共有する', () => {
+test('文字数予算は複数ブロックの全体で共有する', () => {
   const blocks: ChatContentBlock[] = [
     { type: 'text', text: '前半' },
-    { type: 'tool-result', toolCallId: 'a', content: [
-      { type: 'text', text: '中盤' },
-      { type: 'tool-result', toolCallId: 'b', content: [{ type: 'text', text: '後半の長い文' }] },
-    ] },
+    { type: 'text', text: '中盤' },
+    { type: 'text', text: '後半の長い文' },
     { type: 'text', text: '予算を超えた本文' },
   ]
   const previous = structuredClone(blocks)
   assert.deepEqual(clipToolResult(blocks, 200, 6), {
     blocks: [
       { type: 'text', text: '前半' },
-      { type: 'tool-result', toolCallId: 'a', content: [
-        { type: 'text', text: '中盤' },
-        { type: 'tool-result', toolCallId: 'b', content: [{ type: 'text', text: '後半' }] },
-      ] },
+      { type: 'text', text: '中盤' },
+      { type: 'text', text: '後半' },
     ], truncated: true,
   })
   assert.deepEqual(blocks, previous)

@@ -30,7 +30,7 @@ function events(rows: readonly [number, string, Record<string, unknown>][]): Ses
     if (type === 'turn/end') data = { ...input, reason: { kind: input.reason } }
     if (type === 'tool/result') {
       const message = input.message as { toolCallId: string; content: unknown[]; isError?: boolean }
-      data = { ...input, message: { id, role: 'user', source: { kind: 'tool', callId: message.toolCallId }, content: [{ type: 'tool-result', toolCallId: message.toolCallId, content: message.content, isError: message.isError ?? false }] } }
+      data = { ...input, message: { ...message, id, role: 'tool', source: { kind: 'tool', callId: message.toolCallId } } }
     }
     const surface = ['user/message', 'assistant/message', 'tool/result'].includes(type)
     return { type, seq, time: origin + offset, data: JSON.parse(JSON.stringify(data)) as JsonValue, ...(surface ? { surfaceOp: 'append' } : {}) }

@@ -1,12 +1,11 @@
 import type { ChatContentBlock } from './model.ts'
 
-/** Both budgets span the whole result tree; character counts use Unicode points. */
+/** Both budgets span all result blocks; character counts use Unicode points. */
 export function clipToolResult(blocks: readonly ChatContentBlock[], lineLimit = 200, characterLimit = 20_000): { blocks: ChatContentBlock[]; truncated: boolean } {
   let remainingLines = Number.isFinite(lineLimit) ? Math.max(0, Math.floor(lineLimit)) : 200
   let remainingCharacters = Number.isFinite(characterLimit) ? Math.max(0, Math.floor(characterLimit)) : 20_000
   let truncated = false
   const visit = (items: readonly ChatContentBlock[]): ChatContentBlock[] => items.flatMap((block): ChatContentBlock[] => {
-    if (block.type === 'tool-result') return [{ ...block, content: visit(block.content) }]
     if (block.type !== 'text') return [block]
     if (remainingLines === 0 || (remainingCharacters === 0 && block.text.length > 0)) {
       truncated = true

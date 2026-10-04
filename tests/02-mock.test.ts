@@ -5,7 +5,7 @@ import { readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import { extendMock } from '../web/src/features/chat/mock.ts'
 import { buildChatRows } from '../web/src/features/chat/model.ts'
-import { clipToolResult } from '../web/src/features/chat/tool-result.ts'
+import { clipToolResult } from '../web/src/features/chat/tool-output.ts'
 
 test('長い会話を2回読み込み、元の共有履歴と表示済みの末尾を保つ', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
@@ -27,7 +27,7 @@ test('長い会話を2回読み込み、元の共有履歴と表示済みの末�
   } finally { ctx.dispose() }
 })
 
-test('追加の偽履歴はシステム、注入された指示、ファイル、入れ子と長いツール結果を含む', () => {
+test('追加の偽履歴はシステム、注入された指示、ファイル、複数ブロックと長いツール結果を含む', () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const rows = buildChatRows(foldSessionWindow(ctx.sessions.retain('chat-samples', { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)

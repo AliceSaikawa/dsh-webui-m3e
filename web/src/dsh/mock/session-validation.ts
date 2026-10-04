@@ -3,7 +3,7 @@ import type { SessionWireEvent } from '../services.ts'
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
 // Host session.attachment reads declared fields only. In particular, unknown
-// payloads and nested legacy tool-result blocks are not authorization evidence.
+// payloads and nested plugin blocks are not authorization evidence.
 export function referencesImage(events: readonly SessionWireEvent[], attachmentId: string): boolean {
   const contains = (content: unknown) => Array.isArray(content) && content.some(value => {
     const block = object(value)

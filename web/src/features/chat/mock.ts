@@ -1,9 +1,10 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
+import { mockRecord } from '../../dsh/mock/record.ts'
 import type { JsonValue, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
 
 const origin = Date.parse('2026-09-25T10:00:00+09:00')
 const summary = (id: string, displayTitle: string): SessionSummary => ({ retainedBy: {}, id, displayTitle, cwd: '/mock/chat', running: false, blank: false, updatedAt: origin })
-const event = (seq: number, type: string, data: JsonValue): SessionWireEvent => ({ seq, type, time: origin + seq * 1000, data })
+const event = (seq: number, type: string, data: JsonValue): SessionWireEvent => mockRecord(seq, type, origin + seq * 1000, data)
 
 export function extendMock(kit: MockKit): void {
   // 300 records: the default 100-record window has exactly two older pages.
@@ -21,18 +22,18 @@ export function extendMock(kit: MockKit): void {
   kit.addSession(summary('chat-samples', '添付と長い結果'), [
     event(0, 'turn/start', { turn: 1 }),
     event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'あなたはコーディングを手伝う AI です。\n\n添付とツール結果の表示を確認できます。' }] } }),
-    event(2, 'user/message', { id: 'chat-samples-instructions', role: 'user', source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>\nThe following workspace instructions may be relevant to your work.\n\nInstructions from: ~/.dsh/AGENTS.md\n\n# 個人共通の作業方針\n\n- 説明は日本語で、結論から書く。\n</system-reminder>' }] }),
-    event(3, 'user/message', { role: 'user', // The same image used by the legacy nested result below has a declared
+    event(2, 'user/message', { id: 'chat-samples-instructions', role: 'user', source: { kind: 'agent-instructions', form: 'instructions', changes: [{ path: '~/.dsh/AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>\nThe following workspace instructions may be relevant to your work.\n\nInstructions from: ~/.dsh/AGENTS.md\n\n# 個人共通の作業方針\n\n- 説明は日本語で、結論から書く。\n</system-reminder>' }] }),
+    event(3, 'user/message', { role: 'user', // The same image used by the result below has a declared
     // first-party reference, as required by 0.2.0 session.attachment authorization.
     content: [{ type: 'text', text: '結果を確認して' }, { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '入力画像.png' } }, { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } }] }),
     event(4, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }] } }),
     event(5, 'tool/call', { callId: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }),
-    event(6, 'tool/result', { message: { role: 'user', source: { kind: 'tool', callId: 'chat-long-result' }, content: [{ type: 'tool-result', toolCallId: 'chat-long-result', content: [
+    event(6, 'tool/result', { message: { id: 'chat-long-output', role: 'tool', source: { kind: 'tool', callId: 'chat-long-result' }, toolCallId: 'chat-long-result', content: [
       { type: 'text', text: Array.from({ length: 210 }, (_, index) => `${index + 1} 行目の確認結果`).join('\n') },
-      { type: 'tool-result', toolCallId: 'chat-nested', content: [{ type: 'text', text: '入れ子の最後の結果です。' }] },
+      { type: 'text', text: '入れ子の最後の結果です。' },
       { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '手順の画像.png' } },
       { type: 'file', attachment: { attachmentId: 'mock-output', name: '結果.txt', bytes: 4096 } },
-    ] }] } }),
+    ] } }),
     event(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
   ])
   const reasoning = '記録の開始と終了から、考えた内容の所要時間を確認しました。'
@@ -45,10 +46,10 @@ export function extendMock(kit: MockKit): void {
     ] }),
     event(15, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'spec-read', name: 'read_file', arguments: '{"path":"README.md"}' }] } }),
     event(16, 'tool/call', { callId: 'spec-read', name: 'read_file' }),
-    event(17, 'tool/result', { callId: 'spec-read', content: [{ type: 'text', text: '# 確認用の原文\n<div>この行も表示します。</div>' }] }),
+    event(17, 'tool/result', { message: { id: 'spec-read-output', role: 'tool', source: { kind: 'tool', callId: 'spec-read' }, toolCallId: 'spec-read', content: [{ type: 'text', text: '# 確認用の原文\n<div>この行も表示します。</div>' }] } }),
     event(18, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'spec-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }] } }),
     event(19, 'tool/call', { callId: 'spec-bash', name: 'bash' }),
-    event(20, 'tool/result', { callId: 'spec-bash', content: [], isError: true, error: { name: '実行エラー', code: 'EXIT_1' } }),
+    event(20, 'tool/result', { message: { id: 'spec-bash-output', role: 'tool', source: { kind: 'tool', callId: 'spec-bash' }, toolCallId: 'spec-bash', content: [], isError: true }, error: { name: '実行エラー', code: 'EXIT_1' } }),
     event(21, 'command/run', { commandId: 'spec-failed', name: 'check' }),
     event(22, 'command/done', { commandId: 'spec-failed', kind: 'error', text: '確認に失敗しました。\n詳細を開くと理由を読めます。' }),
     event(23, 'command/run', { commandId: 'spec-success', name: 'status' }),
@@ -79,7 +80,7 @@ export function extendMock(kit: MockKit): void {
     active.addSession(summary(sessionId, '追加された文脈の確認'), [
       event(0, 'turn/start', { turn: 1 }),
       event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'システムの検証用原文\n<b>そのまま読む</b>' }] } }),
-      event(2, 'user/message', { role: 'user', source: { kind: 'plugin', plugin: '検証用プラグイン' }, content: [
+      event(2, 'user/message', { role: 'user', source: { kind: 'plugin:検証用プラグイン' }, content: [
         { type: 'text', text: '<system-reminder>\n# 追加された検証用原文\n<b>そのまま読む</b>\n</system-reminder>' },
         { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '文脈の画像.png' } },
         { type: 'file', attachment: { attachmentId: 'context-file', name: '文脈の資料.txt', bytes: 2048 } },

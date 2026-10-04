@@ -5,7 +5,7 @@ import { useSession } from '../../dsh/session.ts'
 import type { SessionFace } from '../../dsh/services.ts'
 import { AttachmentImage } from './Attachments.tsx'
 import { buildChatRows, formatDuration, formatToolArguments, type ChatContentBlock, type ChatRow } from './model.ts'
-import { clipToolResult, toolErrorMessage } from './tool-result.ts'
+import { clipToolResult, toolErrorMessage } from './tool-output.ts'
 
 type ToolRow = Extract<ChatRow, { kind: 'tool' }>
 
@@ -17,7 +17,6 @@ const ResultBlocks = memo(function ResultBlockList({ blocks, face, close }: { bl
   return <>{blocks.map((block, index) => {
     if (block.type === 'text') return <ResultText key={index} text={block.text} />
     if (block.type === 'image') return <AttachmentImage key={index} attachment={block.attachment} face={face} beforeExpand={close} />
-    if (block.type === 'tool-result') return <div key={index} className="chat-nested-result"><ResultBlocks blocks={block.content} face={face} close={close} /></div>
     const label = block.type === 'unsupported' ? block.originalType : ({ reasoning: '考えた内容', file: 'ファイル', 'tool-call': 'ツール呼び出し' } as const)[block.type]
     return <p className="muted" key={index}>種類：{label}</p>
   })}</>
