@@ -588,14 +588,14 @@ test('続けて選んだサブエージェントのモデルは直列化して�
     await h.store.reload()
     const routeA = { provider: 'deepseek', model: 'deepseek-v4' }
     const routeB = { provider: 'ollama', model: 'local' }
-    const add = (target: typeof routeA) => h.store.editModelSettings('subagent-model-selection', row => [
+    const add = (target: typeof routeA) => h.store.editModelSettings('subagent-model-selection-settings', row => [
       { op: 'set', path: ['allowedModels'], value: [
         ...subagentSelection(row.value).allowedModels.map(item => ({ provider: item.provider, model: item.model })), target,
       ] },
     ])
     assert.deepEqual(await Promise.all([add(routeA), add(routeB)]), [true, true])
-    assert.deepEqual(subagentSelection(current(h.store, 'subagent-model-selection').value).allowedModels, [routeA, routeB])
-    assert.equal(h.calls.filter(call => call.ns === 'subagent-model-selection' && call.kind === 'mutate').length, 2)
+    assert.deepEqual(subagentSelection(current(h.store, 'subagent-model-selection-settings').value).allowedModels, [routeA, routeB])
+    assert.equal(h.calls.filter(call => call.ns === 'subagent-model-selection-settings' && call.kind === 'mutate').length, 2)
   } finally { h.ctx.dispose() }
 })
 
@@ -603,7 +603,7 @@ test('許可モデルが空なら有効化を拒否し、無効中の選択後�
   const h = harness()
   try {
     await h.store.reload()
-    const name = 'subagent-model-selection'
+    const name = 'subagent-model-selection-settings'
     const route = { provider: 'deepseek', model: 'deepseek-v4' }
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['enabled'], value: true },

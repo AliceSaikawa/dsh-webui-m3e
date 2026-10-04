@@ -1038,7 +1038,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   for (const workspace of sharedWorkspaces) kit.addWorkspace(workspace)
   for (const session of sharedSessions) kit.addSession(session.summary, session.records)
   for (const session of sharedSessions) {
-    kit.setProjection(session.summary.id, 'permissions', { options: [{ value: 'workspace-write', name: 'ワークスペース書込' }], currentValue: 'workspace-write' })
+    kit.setProjection(session.summary.id, 'permissions', { currentValue: 'workspace-write' })
     kit.setProjection(session.summary.id, 'plan', { active: false, pending: false })
   }
   kit.setProjection(MOCK_IDS.sessions.approval, 'tokenUsage', { uncachedInputTokens: 11668, outputTokens: 812, cacheReadTokens: 0, cacheWriteTokens: 0 })

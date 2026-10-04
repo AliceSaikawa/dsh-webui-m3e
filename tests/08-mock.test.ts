@@ -26,16 +26,16 @@ test('設定の偽データは全ページと全種類、反映時期、除外�
     assert.equal(description.namespaces.length, 15)
     const grouped = groupNamespaces(description.namespaces)
     assert.deepEqual(Object.fromEntries(Object.entries(grouped).map(([page, items]) => [page, items.length])), {
-      models: 2, permission: 1, agent: 2, providers: 4, tools: 3, other: 1,
+      models: 2, permission: 1, agent: 2, providers: 2, tools: 3, other: 1,
     })
-    assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live', 'restart']))
-    for (const item of description.namespaces.filter(row => !['agent-default-model', 'subagent-model-selection'].includes(row.ns))) {
+    assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live']))
+    for (const item of description.namespaces.filter(row => !['agent-default-model', 'subagent-model-selection-settings'].includes(row.ns))) {
       const kinds = new Set(leaves(schemaFields(item)).map(field => field.kind))
       for (const kind of ['switch', 'text', 'number', 'select', 'group', 'readonly']) assert.ok(kinds.has(kind as SettingField['kind']), `${item.ns}: ${kind}`)
     }
     const model = await namespace(remote, 'agent-default-model')
     assert.deepEqual(model.value, { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' })
-    const subagent = await namespace(remote, 'subagent-model-selection')
+    const subagent = await namespace(remote, 'subagent-model-selection-settings')
     assert.deepEqual(subagent.value, { enabled: false, allowedModels: [] })
     const protectedRow = await namespace(remote, 'llm-deepseek')
     const masked = leaves(schemaFields(protectedRow)).find(field => field.kind === 'masked')!

@@ -11,17 +11,24 @@ export const IMAGE_READ_BYTES = 256 * 1024
 /** Wire contracts verified against the installed workspace-files API. */
 export interface WorkspaceFileStat { readonly absolutePath: string; readonly version: string; readonly bytes?: number }
 export interface WorkspaceFileText extends WorkspaceFileStat { readonly offset: number; readonly text: string; readonly lines: number; readonly eof: boolean }
-export interface WorkspaceFileBytes extends WorkspaceFileStat { readonly offset: number; readonly data: string; readonly eof: boolean }
+export interface WorkspaceFileBytes extends WorkspaceFileStat { readonly offset: number; readonly data: Uint8Array<ArrayBuffer>; readonly eof: boolean }
+export interface WorkspaceByteReadOptions { readonly range?: { readonly offset?: number; readonly length?: number }; readonly baseFile?: string }
 export interface WorkspaceDirectoryEntry { readonly name: string; readonly type: 'file' | 'directory' | 'other'; readonly size?: number }
 export interface WorkspaceDirectoryListing { readonly path: string; readonly entries: readonly WorkspaceDirectoryEntry[]; readonly truncated: boolean }
 export type WorkspaceFileChange = { readonly absolutePath: string; readonly version: string } | { readonly absolutePath: string; readonly absent: true }
 export type WorkspaceFileWatchFrame = { readonly kind: 'ready' } | { readonly kind: 'change'; readonly change: WorkspaceFileChange }
+export interface WorkspaceFileWatch extends AsyncIterable<WorkspaceFileWatchFrame> {
+  send(item: never): void
+  end(): void
+  dispose(): void
+}
 export interface WorkspaceFilesRemote {
   list(sessionId: string, path: string, signal?: AbortSignal): Promise<RemoteResult<WorkspaceDirectoryListing>>
   read(sessionId: string, path: string, range: { offset?: number; limit?: number }, signal?: AbortSignal): Promise<RemoteResult<WorkspaceFileText>>
-  readBytes(sessionId: string, path: string, range: { offset?: number; length?: number }, signal?: AbortSignal): Promise<RemoteResult<WorkspaceFileBytes>>
+  readBytes(sessionId: string, path: string, options: WorkspaceByteReadOptions, signal?: AbortSignal): Promise<RemoteResult<WorkspaceFileBytes>>
   stat(sessionId: string, path: string, signal?: AbortSignal): Promise<RemoteResult<WorkspaceFileStat>>
-  changes(sessionId: string, signal?: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+  /** Structural shape of DSH's RemoteStreamHandle<WorkspaceFileWatchFrame, never>. */
+  changes(sessionId: string, path: string, signal?: AbortSignal): WorkspaceFileWatch
 }
 
 export function workspaceFilesOf(remote: DshRemote): WorkspaceFilesRemote | undefined {
@@ -130,15 +137,14 @@ export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: str
   while (!signal.aborted) {
     const length = Math.min(IMAGE_READ_BYTES, MAX_IMAGE_BYTES - offset)
     if (length === 0) throw new ImageFileTooLarge()
-    const page = unwrapRemoteResult(await remote.readBytes(sessionId, path, { offset, length }, signal))
+    const page = unwrapRemoteResult(await remote.readBytes(sessionId, path, { range: { offset, length } }, signal))
     checkFileReadAbort(signal)
     if (page.version !== stat.version || page.absolutePath !== stat.absolutePath) throw new FileVersionChanged()
     if (page.bytes !== undefined && page.bytes > MAX_IMAGE_BYTES) throw new ImageFileTooLarge()
-    // Reject an oversized response before decoding or retaining another buffer.
-    if (page.data.length > Math.ceil(length / 3) * 4) throw new ImageFileTooLarge()
-    const bytes = Uint8Array.from(atob(page.data), character => character.charCodeAt(0))
+    const bytes = page.data
+    if (!(bytes instanceof Uint8Array)) throw new Error('画像のデータを確認できませんでした。')
+    if (bytes.length > length) throw new ImageFileTooLarge()
     if (bytes.length > MAX_IMAGE_BYTES - offset) throw new ImageFileTooLarge()
-    if (bytes.length > length) throw new Error('読み込み範囲を確認できませんでした。')
     if (page.offset !== offset || (!page.eof && bytes.length === 0)) throw new Error('読み込み位置を確認できませんでした。')
     parts.push(bytes)
     offset += bytes.length

@@ -69,13 +69,13 @@ test('仕様の偽ファイルを 5000 行と 1000 行に分けて読むと全�
 
 test('偽の画像はバイト範囲で読め、バイナリの名前とサイズを取得できる', async () => {
   const { remote } = createWorkspaceFilesMock()
-  const first = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { offset: 0, length: 10 }))
+  const first = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { range: { offset: 0, length: 10 } }))
   assert.equal(first.offset, 0)
   assert.equal(first.eof, false)
-  const last = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { offset: 10 }))
+  const last = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { range: { offset: 10 } }))
   assert.equal(last.offset, 10)
   assert.equal(last.eof, true)
-  assert.equal(Buffer.concat([Buffer.from(first.data, 'base64'), Buffer.from(last.data, 'base64')]).toString('base64'), imageBase64)
+  assert.equal(Buffer.concat([Buffer.from(first.data), Buffer.from(last.data)]).toString('base64'), imageBase64)
   const image = await readImageFile(remote, sessionId, 'preview.png', new AbortController().signal)
   assert.equal(Buffer.from(image.data).toString('base64'), imageBase64)
   const binary = unwrapRemoteResult(await remote.stat(sessionId, 'sample.bin'))
@@ -86,7 +86,7 @@ test('偽の画像はバイト範囲で読め、バイナリの名前とサイ�
 test('ファイル変更を通知し、読み直した内容と一覧のサイズ・バージョンへ反映する', async () => {
   const fixture = createWorkspaceFilesMock()
   const abort = new AbortController()
-  const iterator = fixture.remote.changes(sessionId, abort.signal)[Symbol.asyncIterator]()
+  const iterator = fixture.remote.changes(sessionId, '.', abort.signal)[Symbol.asyncIterator]()
   const old = unwrapRemoteResult(await fixture.remote.stat(sessionId, 'README.md'))
   assert.deepEqual(await iterator.next(), { done: false, value: { kind: 'ready' } })
   const next = iterator.next()
@@ -115,14 +115,14 @@ test('ファイル変更を通知し、読み直した内容と一覧のサイ�
 
 test('ファイル変更の購読を return または事前の中断で終了すると購読を残さない', async () => {
   const fixture = createWorkspaceFilesMock()
-  const iterator = fixture.remote.changes(sessionId)[Symbol.asyncIterator]()
+  const iterator = fixture.remote.changes(sessionId, '.')[Symbol.asyncIterator]()
   await iterator.next()
   assert.equal(fixture.subscriberCount, 1)
   await iterator.return?.()
   assert.equal(fixture.subscriberCount, 0)
   const abort = new AbortController()
   abort.abort()
-  const cancelled = fixture.remote.changes(sessionId, abort.signal)[Symbol.asyncIterator]()
+  const cancelled = fixture.remote.changes(sessionId, '.', abort.signal)[Symbol.asyncIterator]()
   assert.deepEqual(await cancelled.next(), { done: true, value: undefined })
   assert.equal(fixture.subscriberCount, 0)
 })

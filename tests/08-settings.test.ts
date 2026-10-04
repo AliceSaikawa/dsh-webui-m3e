@@ -7,7 +7,7 @@ import {
 
 function namespace(overrides: Partial<SettingsNamespace> = {}): SettingsNamespace {
   return {
-    ns: 'agent-loop', revision: 7, schema: { uid: 1, refs: { 1: { type: 'object', dict: {} } } },
+    ns: 'agent-loop', autoGenerate: true, revision: 7, schema: { uid: 1, refs: { 1: { type: 'object', dict: {} } } },
     value: {}, base: {}, user: {}, applies: 'live', ...overrides,
   }
 }
@@ -286,16 +286,16 @@ test('上書き層が省略された応答を扱い、まとまり全体が伏�
 
 test('名前空間を 5 ページとその他に分け、従来の画面用設定を除外する', () => {
   const ids = [
-    'agent-default-model', 'subagent-model-selection', 'permission', 'agent-presets', 'agent-loop',
-    'llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future', 'web-search-deepseek', 'shell', 'locale',
+    'agent-default-model', 'subagent-model-selection-settings', 'permission', 'agent-preset-registry', 'agent-loop',
+    'llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future', 'web-search-deepseek', 'bash-sandbox', 'locale',
     'new-plugin', 'llm', 'ui', 'ui-theme', 'ui-onboarding', 'ui-future',
   ]
   const rows = ids.map(ns => namespace({ ns }))
   const groups = groupNamespaces(rows)
   assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([page, values]) => [page, values.map(row => row.ns)])), {
-    models: ['agent-default-model', 'subagent-model-selection'], permission: ['permission'],
-    agent: ['agent-presets', 'agent-loop'], providers: ['llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future'],
-    tools: ['web-search-deepseek', 'shell', 'locale'], other: ['new-plugin', 'llm', 'ui'],
+    models: ['agent-default-model', 'subagent-model-selection-settings'], permission: ['permission'],
+    agent: ['agent-preset-registry', 'agent-loop'], providers: ['llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future'],
+    tools: ['web-search-deepseek', 'bash-sandbox', 'locale'], other: ['new-plugin', 'llm', 'ui'],
   })
   assert.equal(groups.models[0], rows[0])
   assert.deepEqual(rows.map(row => row.ns), ids)
