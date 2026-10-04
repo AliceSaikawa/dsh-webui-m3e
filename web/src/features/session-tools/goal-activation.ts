@@ -44,10 +44,12 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
         failed()
         // A persisted snapshot precedes background Agent preparation. That
         // preparation need not emit an activation edge (disarmed -> disarmed).
-        // There is no deadline for Agent preparation. Stop polling on a known
-        // preparation failure; reconnect, lifecycle recovery or manual refresh
-        // can start another read. Polling schedules its next read after the reply.
-        if (result.error.code === 'gateway/lookup-not-found' && !lifecycle?.session.getSnapshot().lastAgentError) {
+        // lastAgentError survives reconnect and successful Agent preparation;
+        // it is not evidence that this read's preparation has failed. A new
+        // failure observed by changed() invalidates the read and cancels polling.
+        // Reconnect or manual refresh can therefore start a new wait even while
+        // that historical diagnostic remains. Preparation has no deadline.
+        if (result.error.code === 'gateway/lookup-not-found') {
           retry = setTimeout(() => { void refresh() }, 250)
         }
         return

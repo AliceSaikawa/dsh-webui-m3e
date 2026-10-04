@@ -75,13 +75,48 @@ test('B2 切断中は待機を止め、再接続で新しい状態を取得す�
   assert.equal(f.live()?.activation, 'disarmed')
 })
 
-test('B2 画面終了でタイマーと全購読を解放し、終了後は読み直さない', async t => {
+test('B2 過去の準備エラーを残して再接続しても、通知のない遅い成功で復帰する', async t => {
   const f = fixture(t)
   await f.watcher.refresh()
+  f.session.set({ ...f.session.getSnapshot(), lastAgentError: '以前の準備に失敗しました' })
+  f.connection.set('disconnected')
+  await f.tick(3000)
+  assert.equal(f.reads(), 1)
+  f.connection.set('connected')
+  await drain()
+  assert.equal(f.reads(), 2)
+  // Real reconnect/Agent addition leaves lastAgentError and running unchanged.
+  // Preparation can succeed after three seconds without an activation event.
+  for (let elapsed = 250; elapsed <= 3000; elapsed += 250) {
+    if (elapsed === 3000) f.ready()
+    await f.tick(250)
+  }
+  assert.equal(f.session.getSnapshot().lastAgentError, '以前の準備に失敗しました')
+  assert.deepEqual(f.live(), { id: 'goal', revision: 1, activation: 'disarmed' })
+})
+
+test('B2 画面終了でタイマーと全購読を解放し、終了後は読み直さない', async t => {
+  const f = fixture(t)
+  const scheduled = new Set<ReturnType<typeof setTimeout>>()
+  const schedule = globalThis.setTimeout, cancel = globalThis.clearTimeout
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, delay?: number) => {
+    const timer = schedule(() => { scheduled.delete(timer); callback() }, delay)
+    scheduled.add(timer)
+    return timer
+  })
+  t.mock.method(globalThis, 'clearTimeout', (timer: ReturnType<typeof setTimeout>) => {
+    scheduled.delete(timer)
+    cancel(timer)
+  })
+  await f.watcher.refresh()
+  assert.equal(scheduled.size, 1)
   assert.equal(f.connection.count(), 1)
   assert.equal(f.session.count(), 1)
   assert.equal(f.events.size, 1)
   f.watcher.dispose()
+  // Inspect the pending reservation before advancing time: the disposed RPC
+  // guard alone would hide an uncancelled timeout after it fires.
+  assert.equal(scheduled.size, 0)
   assert.equal(f.connection.count(), 0)
   assert.equal(f.session.count(), 0)
   assert.equal(f.events.size, 0)

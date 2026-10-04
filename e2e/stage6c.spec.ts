@@ -53,11 +53,14 @@ test('S6C B2 保存済み投影の後でAgentが準備されるまで操作を�
   await expect(page.locator('.st-goal-status')).toContainText('完了')
 })
 
-test('S6C M7 権限設定の通知で開いた入力欄の古いカタログを破棄する', async ({ page }) => {
+test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な設定で候補と操作が復帰する', async ({ page }) => {
   await expose(page)
   await visit(page, '/s/readme-review')
   const chip = page.locator('.composer-permission-label')
   await expect(chip).toHaveText('ワークスペース書込')
+  await button(page, 'ワークスペース書込').click()
+  const fullAccess = page.getByRole('button', { name: /^フル アクセス/ })
+  await expect(fullAccess).toBeEnabled()
   const result = await page.evaluate(async () => {
     const ctx = (window as any).__stage6c
     const description = await ctx.remote.settings.describe()
@@ -67,6 +70,24 @@ test('S6C M7 権限設定の通知で開いた入力欄の古いカタログを�
   })
   expect(result.ok).toBe(true)
   await expect(chip).toHaveText('権限')
+  await expect(page.getByText('権限の候補を取得できませんでした。')).toBeVisible()
+  await expect(fullAccess).toHaveCount(0)
+  // Keep this same composer and sheet mounted: remounting would perform an
+  // initial read even if the settings notification no longer reloaded them.
+  const restored = await page.evaluate(async () => {
+    const ctx = (window as any).__stage6c
+    const description = await ctx.remote.settings.describe()
+    if (!description.ok) return description
+    const row = description.value.namespaces.find((row: any) => row.ns === 'permission')
+    return ctx.remote.settings.update('permission', { defaultPreset: 'workspace-write' }, row.revision)
+  })
+  expect(restored.ok).toBe(true)
+  await expect(chip).toHaveText('ワークスペース書込')
+  await expect(page.getByText('権限の候補を取得できませんでした。')).toHaveCount(0)
+  await expect(fullAccess).toBeEnabled()
+  await fullAccess.click()
+  await expect(page.getByRole('heading', { name: '権限の選び直し' })).toHaveCount(0)
+  await expect(chip).toHaveText('フル アクセス')
 })
 
 test('S6C B2 会話の準備失敗で待機を止め、状態の回復から操作を再開する', async ({ page }) => {
@@ -86,4 +107,31 @@ test('S6C B2 会話の準備失敗で待機を止め、状態の回復から操�
   })
   await expect(button(page, '再開')).toBeEnabled()
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
+})
+
+test('S6C B2 過去の準備エラーを残した再接続でも、遅い成功で完了の操作が復帰する', async ({ page }) => {
+  await page.clock.install()
+  await expose(page)
+  await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
+  await page.evaluate(() => (window as any).__stage6c.mock.setSessionState('approval-sheet', { lastAgentError: '以前の準備に失敗しました' }))
+  await page.evaluate(() => (window as any).__stage6c.mock.setConnectionState('disconnected'))
+  await page.clock.runFor(3000)
+  await expect(button(page, '完了にする')).toBeDisabled()
+  const reads = await page.evaluate(() => (window as any).__goalReads)
+  await page.evaluate(() => (window as any).__stage6c.mock.setConnectionState('connected'))
+  await expect.poll(() => page.evaluate(() => (window as any).__goalReads)).toBeGreaterThan(reads)
+  await page.clock.runFor(3000)
+  await expect(button(page, '完了にする')).toBeDisabled()
+  // Agent availability alone leaves the old error, revision, running state and
+  // disarmed activation unchanged; it emits no activation event to rescue us.
+  await page.evaluate(() => (window as any).__stage6c.mock.setAgentAvailable('approval-sheet', true))
+  await page.clock.runFor(250)
+  expect(await page.evaluate(() => (window as any).__stage6c.sessions.binding('approval-sheet').session.getSnapshot().lastAgentError))
+    .toBe('以前の準備に失敗しました')
+  await expect(button(page, '再開')).toBeEnabled()
+  await expect(button(page, '完了にする')).toBeEnabled()
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
+  await button(page, '完了にする').click()
+  await expect(page.locator('.st-goal-status')).toContainText('完了')
 })
