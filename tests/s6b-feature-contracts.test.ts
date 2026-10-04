@@ -50,7 +50,7 @@ test('S6B ゴールはactivationの変化だけを通知し、revisionとclear�
   const stop = onRemoteEvent(ctx.remote, 'goal/activation-changed', event => events.push(event))
   try {
     // Initial fixture publication may be waiting for its first listener.
-    await Promise.resolve(); events.length = 0
+    await new Promise(resolve => setImmediate(resolve)); events.length = 0
     const remote = ctx.remote.goals as GoalsRemote
     const initial = await remote.get('approval-sheet')
     assert.ok(initial.ok && initial.value)

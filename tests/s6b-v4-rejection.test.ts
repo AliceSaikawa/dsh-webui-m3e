@@ -5,7 +5,7 @@ import { validateFixtureV4 } from './helpers/s6b-v4.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
 
 const cases = invalidFixtureCases()
-assert.equal(cases.length, 30)
+assert.equal(cases.length, 33)
 for (const { id, records, reason } of cases) test(`S6B native V4拒否: ${id}`, () => {
   assert.throws(() => validateFixtureV4(records, true), reason)
 })

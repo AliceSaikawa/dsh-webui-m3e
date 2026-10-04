@@ -2,7 +2,7 @@
 
 対象は DSH **0.2.0-rc.2**。`dsh-session/lib/index.js` の検査をファイル順に読み、commands / compaction の invariant 全文、`dsh-session-format-v3-to-v4/README.md` の Native V4 admission と、その実装の native admission / relationships を照合した。
 
-`s6b-v4.ts` は正常 fixture の全履歴用。一般の Session リーダーではない。対象外の記録を無視せず `fixtureTypes` で拒否する。既存の `s6b-fixtures.test.ts` の ID・件数・連番・実行境界・ツール宣言・コマンド・retry・checkpoint 検査も残す。`e2e-dsh/fixture-contract.spec.ts` は、インストール済み実物の row admission、V4 restorer、Session、commands/compaction invariant も直接実行し、194履歴の受理と30不正入力の拒否を照合する。companion には、Session が追加する end-seed でなく元の履歴を渡す。
+`s6b-v4.ts` は正常 fixture の全履歴用。一般の Session リーダーではない。対象外の記録を無視せず `fixtureTypes` で拒否する。既存の `s6b-fixtures.test.ts` の ID・件数・連番・実行境界・ツール宣言・コマンド・retry・checkpoint 検査も残す。`e2e-dsh/fixture-contract.spec.ts` は、インストール済み実物の row admission、V4 restorer、Session、commands/compaction invariant も直接実行し、194履歴の受理と33不正入力の拒否を照合する。companion には、Session が追加する end-seed でなく元の履歴を渡す。
 
 ソースの位置は、この版の各パッケージの `lib/` 内。表の S は `dsh-session/index.js`、V は `dsh-session-format-v3-to-v4/index.js`、C は `dsh-commands/invariant.js`、K は `dsh-compaction/invariant.js`。
 
@@ -33,6 +33,8 @@
 | 23 | K 34–48、V 728–739: summary/prune の range は現在 surface の完全な連続範囲、先頭 system を含まない | `span`。X10、X24。prune は transaction 不要 |
 | 24 | K 81–105、109–161: turn:null はターン間、番号付きは現在の turn。開始の重複不可、summary は1回、end の ID/command/turn が一致、成功なら summary 必須、turn 境界をまたがない | compact lifecycle 分岐。N4–N6、X09、X23。合成 end-seed を足して欠落 end を免除しない |
 | 25 | K 142–143: shadowedTokenCount は非負 safe integer | `count` と既存 checkpoint 試験。X11 |
+| 26 | V 370–387: TOOL_NOT_STARTED と forked-tool-result- の組は callId・正規整数 suffix・seq/refs・error.name・単一 text 本文を検査 | role=tool 分岐。開始済み tool に混入しても検査。X25 の invalid / 01 / safe integer 超過を portable と native 両方で拒否 |
+| 27 | dsh-api-session-controller/types/model-selection-projection.js 22–54: model/selection は pending、request/header は lastUsed と一致した pending だけを消費 | 動的 fixture の model/header/assistant と設定 RPC の接続試験。portable は provider/model と任意 effort の形も検査 |
 
 ## 写さない領域と理由
 
@@ -44,14 +46,16 @@
 | inherited cut / 最後の inherited marker / orphan compaction の seed 失効（S 1340–1354、K 69–79、V 982–1007） | 今回の完全履歴はすべて非継承。session/end-seed 自体を guard で拒否。存在しない marker を自動挿入しない |
 | delivery-accepted の世代・所有 Session・throughSeq（V 1009–1043） | 外部ログ配信の履歴を使わない。guard で拒否 |
 | image/offload の plugin projection（S 438–439） | 画像は直接 attachment の fixture。offload event は guard で拒否 |
-| fork / interrupted の TOOL_NOT_STARTED の厳密な synthetic ID・本文・引用（V 370–396、825–835） | この種類の結果を fixture は生成しない。全結果に通常の開始を要求。forked **空ターンの表示**はこの結果形式とは別 |
+| fork / interrupted の「開始前でも結果を許す」例外（V 825–835） | 完全履歴 fixture では通常の開始を要求する。予約 ID の検査自体は省略せず、上表26で検査する。controller の fork 専用 fixture は既存 S6A12 が開始前と開始済みを区別して検査 |
 | 未知 ignorable event の opaque 保持 | 正常 fixture の種類は既知に限定。新たなものは guard で拒否。未知 user/developer producer と未知 content は native 同様に受理 |
 | provider stream の全 schema、任意 tool JSON schema、ユーザー/ツール本文の全 generated schema | Session 自体も完全検査しない（S 1308–1310、README Native fields）。stream array と明示された退役/専用タグ検査だけを写す |
 | V0–V3 migration、codec の物理 framing、回復モード | V4 wire fixture なので変換・物理保存・破損回復を行わない |
 
 ## 722692c との表示比較
 
-`s6b-display.test.ts` は旧コミットの web/src の fixture と selector を `git show` で読み取った値を `fixtures/s6b-display-722692c.json` に固定した。Date.now は 2026-09-25 09:00 JST。8 シナリオから全53会話を対象にする。一覧、chat 行、trace 見出し/行、モデル/考える深さの初期値を比較。非表示の seq/ID/絶対 event 時刻、trace 詳細の input は対象外。所要時間・本文・エラー・行順・深さ・usage は比較する。
+`s6b-display.test.ts` は旧コミットの web/src の fixture と selector を `git show` で読み取った値を `fixtures/s6b-display-722692c.json` に固定した。Date.now は 2026-09-25 09:00 JST。8 シナリオから全53会話を対象にする。一覧、chat 行、trace 見出し/行、モデル/考える深さの初期値を比較。実際の retain.ready と journal を使い、生成中の stream の turn/step/content も比較する。同じ ID の再登場も一致を確認してから重複を省く。非表示の seq/ID/絶対 event 時刻、trace 詳細の input は対象外。所要時間・本文・エラー・行順・深さ・usage は比較する。
+
+再生成はリポジトリ直下で `node tests/helpers/s6b-regenerate-display.ts`。元は必ず `722692c`、日付ラベル用の比較時刻は 2026-10-01 UTC。現在の本体や fixture を期待に流用せず、checkout も行わない。
 
 次だけを明示的に旧期待へ加える。広い除外や実際の値を期待に流用する処理はない。
 

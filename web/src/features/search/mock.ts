@@ -1,6 +1,6 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { ISessions, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
-import { mockMessageText, validMockSearchQuery } from '../../dsh/mock/search.ts'
+import { mockSearchMatch, validMockSearchQuery } from '../../dsh/mock/search.ts'
 import { sessionRowIds } from '../../dsh/session-rows.ts'
 import { findMatchRanges, normalizeQuery, selectRecentSessions } from './search-utils.ts'
 
@@ -50,11 +50,10 @@ export function extendMock(kit: MockKit): void {
     const list = this.list.getSnapshot()
     const rows = selectRecentSessions(sessionRowIds(list).flatMap(id => list.byId[id]?.cwd !== undefined ? [list.byId[id]!] : []), Object.keys(list.byId).length)
     const items = query ? rows.flatMap(row => {
-      const body = mockMessageText([...kit.getRecords(row.id)].sort((a, b) => a.seq - b.seq))
-      const snippet = excerptOf(body, query)
-      return snippet === undefined ? [] : [{ sessionId: row.id, snippet }]
-    }) : []
-    return { ok: true, value: { items: items.slice(0, this.searchResultLimit), hasMore: items.length > this.searchResultLimit } }
+      const match = mockSearchMatch(kit.getRecords(row.id), query)
+      return match ? [{ sessionId: row.id, updatedAt: row.updatedAt, ...match }] : []
+    }).sort((a, b) => b.score - a.score || b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId)) : []
+    return { ok: true, value: { items: items.slice(0, this.searchResultLimit).map(({ sessionId, snippet }) => ({ sessionId, snippet })), hasMore: items.length > this.searchResultLimit } }
   })
   kit.scenario('search-error', () => { fail = true })
   kit.scenario('search-more', () => {

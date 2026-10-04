@@ -44,5 +44,11 @@ export function invalidFixtureCases() {
     const duplicate = structuredClone(first); duplicate.seq = first.seq + 1; duplicate.data.id += '-again'
     es.splice(duplicate.seq, 0, duplicate); es.forEach((e, seq) => { e.seq = seq })
   }, /current surface endpoints/)
+  for (const suffix of ['invalid', '01', '9007199254740992']) add(`X25 fork result reserved suffix ${suffix}`, 'chat-samples', es => {
+    const e = find(es, 'tool/result')
+    e.data.message.id = `forked-tool-result-${e.data.message.toolCallId}-${suffix}`
+    e.data.message.isError = true
+    e.data.error = { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' }
+  }, /not-started fork result identity/)
   return cases
 }

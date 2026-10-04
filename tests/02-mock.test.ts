@@ -107,7 +107,8 @@ test('長い会話の偽生成は履歴を4回追加しても過去の返事と�
     assert.equal(journal().records.length, 300)
     await binding.session.loadOlder()
     await binding.session.loadOlder()
-    assert.equal(journal().records.length, 453)
+    assert.equal(journal().records.length, 454)
+    assert.equal(journal().records.at(-1)?.type, 'request/header')
     await new Promise<void>(resolve => {
       const stop = binding.eventSource.subscribe(() => {
         if (journal().stream?.content.some(block => block.type === 'text' && block.text)) { stop(); resolve() }

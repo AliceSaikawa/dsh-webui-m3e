@@ -199,6 +199,7 @@
         "durationMs": 14000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -293,6 +294,11 @@
           }
         ],
         "text": "テストも追加して"
+      },
+      {
+        "kind": "assistant",
+        "text": "",
+        "streaming": true
       }
     ],
     "trace": [
@@ -411,7 +417,12 @@
           {
             "kind": "assistant",
             "title": "アシスタント",
-            "content": [],
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
             "depth": 0,
             "retries": 0,
             "running": true,
@@ -420,6 +431,16 @@
         ]
       }
     ],
+    "live": {
+      "turn": 3,
+      "step": 1,
+      "content": [
+        {
+          "type": "text",
+          "text": ""
+        }
+      ]
+    },
     "picker": {
       "value": "4:mock偽のモデル",
       "label": "",
@@ -4342,6 +4363,7 @@
         "durationMs": 3000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -4568,6 +4590,7 @@
         "durationMs": 7000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -4745,6 +4768,7 @@
         "durationMs": 25000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -4840,6 +4864,7 @@
         "durationMs": 1000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -4924,6 +4949,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5019,6 +5045,7 @@
         "durationMs": 1000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5114,6 +5141,7 @@
         "durationMs": 1000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5209,6 +5237,7 @@
         "durationMs": 1000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5283,6 +5312,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5357,6 +5387,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5431,6 +5462,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5505,6 +5537,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5579,6 +5612,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5653,6 +5687,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5746,6 +5781,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -5840,6 +5876,7 @@
         "durationMs": 2000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -7431,6 +7468,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -7714,6 +7752,7 @@
         "durationMs": 320
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -7879,6 +7918,7 @@
         "durationMs": 5000
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -7953,6 +7993,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -7993,6 +8034,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -9166,6 +9208,11 @@
           }
         ],
         "text": "長い会話の続きも確認して"
+      },
+      {
+        "kind": "assistant",
+        "text": "",
+        "streaming": true
       }
     ],
     "trace": [
@@ -11967,7 +12014,12 @@
           {
             "kind": "assistant",
             "title": "アシスタント",
-            "content": [],
+            "content": [
+              {
+                "type": "text",
+                "text": ""
+              }
+            ],
             "depth": 0,
             "retries": 0,
             "running": true,
@@ -11976,6 +12028,16 @@
         ]
       }
     ],
+    "live": {
+      "turn": 76,
+      "step": 1,
+      "content": [
+        {
+          "type": "text",
+          "text": ""
+        }
+      ]
+    },
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12016,6 +12078,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12056,6 +12119,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12096,6 +12160,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12136,6 +12201,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12176,6 +12242,7 @@
     },
     "chat": [],
     "trace": [],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12250,6 +12317,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12324,6 +12392,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12398,6 +12467,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12472,6 +12542,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12546,6 +12617,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12620,6 +12692,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12694,6 +12767,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12768,6 +12842,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12842,6 +12917,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12916,6 +12992,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -12990,6 +13067,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13064,6 +13142,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13138,6 +13217,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13212,6 +13292,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13286,6 +13367,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13360,6 +13442,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13434,6 +13517,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13508,6 +13592,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13582,6 +13667,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13656,6 +13742,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13730,6 +13817,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13804,6 +13892,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13878,6 +13967,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",
@@ -13952,6 +14042,7 @@
         ]
       }
     ],
+    "live": null,
     "picker": {
       "value": "8:deepseekdeepseek-v4",
       "label": "DeepSeek / DeepSeek V4",

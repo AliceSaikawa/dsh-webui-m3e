@@ -29,7 +29,7 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     assert.equal(data.message.isError, true)
     const running = (await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready)
     assert.equal(running.session.getSnapshot().running, true)
-    assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 3)
+    assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 2)
     const errors = t.mock.method(console, 'error', () => {})
     assert.doesNotThrow(() => ctx.mock.addSession(ctx.sessions.list.getSnapshot().byId[binding.sessionId]!, []))
     assert.equal(errors.mock.callCount(), 1)

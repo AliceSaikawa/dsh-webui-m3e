@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { captureDisplay } from './helpers/s6b-display.ts'
 
-// Captured from `git show 722692c:web/src/...` (fixtures AND selectors), using
-// captureDisplay and the fixed clock documented there. These are old values,
-// not a snapshot blessed from the implementation being tested.
+// Regenerate from repository root: node tests/helpers/s6b-regenerate-display.ts
+// It loads fixtures AND selectors using git show 722692c:<path>, freezes Date.now
+// at 2026-09-25T09:00:00+09:00, and fixes the date label clock at 2026-10-01 UTC.
+// It never blesses the implementation under test as its own expected value.
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/s6b-display-722692c.json', import.meta.url), 'utf8'))
 
 function nativeExpected() {
@@ -14,6 +15,7 @@ function nativeExpected() {
   // invalid fixture with a native V4 history; none changes production rendering.
   // See s6b-v4-rules.md for the corresponding native requirements.
   const approval = expected['approval-sheet'].trace
+  expected['approval-sheet'].live.turn = 2
   approval[0].number = 1; approval[0].heading = 'ターン 1 ・ 合計 18.4 秒 ・ 12,480 トークン'
   approval[1].number = 2; approval[1].heading = 'ターン 2 ・ 実行中'
   approval[0].rows[1].content.push({ type: 'tool-call', name: 'read_file', arguments: '{"path":"web/src/features/interactions/InteractionSheet.tsx"}' })
@@ -39,11 +41,11 @@ function nativeExpected() {
   return expected
 }
 
-test('S6B 全fixture会話の一覧・chat・trace・モデル/深さ初期値を722692cと比較する', () => {
-  const actual = captureDisplay(), expected = nativeExpected()
+test('S6B 全fixture会話の一覧・chat・trace・生成中・モデル/深さ初期値を722692cと比較する', async () => {
+  const actual = await captureDisplay(), expected = nativeExpected()
   assert.equal(Object.keys(expected).length, 53)
   assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort(), 'fixture coverage must not shrink')
-  for (const id of Object.keys(expected)) for (const field of ['home', 'chat', 'trace', 'picker']) {
+  for (const id of Object.keys(expected)) for (const field of ['home', 'chat', 'trace', 'live', 'picker']) {
     assert.deepEqual(actual[id][field], expected[id][field], `${id}: ${field}`)
   }
 })

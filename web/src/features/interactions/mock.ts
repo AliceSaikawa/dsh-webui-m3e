@@ -1,8 +1,8 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import { MOCK_IDS } from '../../dsh/mock/fixtures.ts'
 import type { AskUserQuestionItem } from '../../dsh/interactions.ts'
-import type { AskUserQuestionAnswer, AskUserQuestionRequestEvent, UserQuestionProjection } from '../../dsh/interactions-store.ts'
-import type { SessionWireEvent } from '../../dsh/services.ts'
+import type { AskUserQuestionRequestEvent, UserQuestionProjection } from '../../dsh/interactions-store.ts'
+import type { InboxState, SessionWireEvent } from '../../dsh/services.ts'
 
 const initialDelay = 100
 const approvalDelay = 3_000
@@ -112,29 +112,38 @@ export function extendMock(kit: MockKit): void {
       agent: databaseSessionId, questions: structuredClone(databaseQuestions),
     }, { afterMs: initialDelay }), '質問')
   })
-  // No timer/claim implementation here: the controller owns that business
-  // stream. This fixture represents its already persisted continued state.
+  // Read-only receiving-side probe; the shared controller owns every RPC.
+  ;(globalThis as typeof globalThis & { __m3eObserveQuestions?: (read: () => unknown) => void })
+    .__m3eObserveQuestions?.(() => structuredClone(kit.getProjection(databaseSessionId, 'userQuestions')))
+  ;(globalThis as typeof globalThis & { __m3eObserveQuestionRecords?: (read: () => unknown) => void })
+    .__m3eObserveQuestionRecords?.(() => structuredClone(kit.getRecords(databaseSessionId)))
+  ;(globalThis as typeof globalThis & { __m3eObserveQuestionQueue?: (read: () => unknown) => void })
+    .__m3eObserveQuestionQueue?.(() => structuredClone(kit.getProjection<InboxState>(databaseSessionId, 'inbox')))
+  const timed = (keepRunning: boolean) => {
+    // Delivery is delayed until the feature's handlers have been installed.
+    void kit.emit('mock/question-ready', undefined, { afterMs: initialDelay }).then(() => {
+      const append = (type: string, data: unknown) => kit.appendEvent(databaseSessionId, type, data)
+      const callId = '05-timed-question', args = JSON.stringify({ questions: databaseQuestions })
+      append('turn/start', { turn: 1 }); append('step/start', { turn: 1, step: 1 })
+      append('assistant/message', { turn: 1, step: 1, stream: [], message: { id: '05-ask', role: 'assistant', source: { kind: 'model', provider: 'deepseek', model: 'deepseek-v4' }, content: [{ type: 'tool-call', id: callId, name: 'ask_user_question', arguments: args }] } })
+      append('tool/call', { turn: 1, step: 1, callId, name: 'ask_user_question', arguments: args })
+      kit.setSessionState(databaseSessionId, { running: true })
+      void reportReply(kit.emitTimedQuestion(databaseSessionId, {
+        callId, questions: structuredClone(databaseQuestions), timeoutMs: 2_000,
+      }).then(result => {
+        append('tool/result', { turn: 1, step: 1, message: { id: '05-answer', role: 'tool', toolCallId: callId, source: { kind: 'tool', callId }, content: [{ type: 'text', text: JSON.stringify(result) }] } })
+        append('step/end', { turn: 1, step: 1 })
+        if (keepRunning) append('step/start', { turn: 1, step: 2 })
+        else { append('turn/end', { turn: 1, reason: { kind: 'completed' } }); kit.setSessionState(databaseSessionId, { running: false }) }
+        return result
+      }), '質問')
+    })
+  }
+  kit.scenario('question-timed', () => timed(false))
+  kit.scenario('question-timed-queue', () => timed(true))
+  // Persisted continued state after reopening a conversation.
   kit.scenario('question-continued', () => {
     kit.setProjection(databaseSessionId, 'userQuestions', structuredClone(continuedQuestionProjection))
-    // Read-only probe of the receiving side, installed only by the browser test.
-    ;(globalThis as typeof globalThis & { __m3eObserveQuestions?: (read: () => unknown) => void })
-      .__m3eObserveQuestions?.(() => structuredClone(kit.getProjection(databaseSessionId, 'userQuestions')))
-    kit.addRemote('userQuestions', {
-      async answer(sessionId: string, callId: string, answer: AskUserQuestionAnswer) {
-        if (sessionId !== databaseSessionId) return { ok: false, error: { code: 'session/not-found', message: '会話が見つかりません。', details: { sessionId } } }
-        const current = kit.getProjection<UserQuestionProjection>(sessionId, 'userQuestions')!
-        const question = current.active.find(row => row.callId === callId && row.state === 'continued')
-        if (!question) return { ok: true, value: false }
-        if (new Set(answer.answers.map(row => row.id)).size !== question.questions.length || answer.answers.length !== question.questions.length
-          || !question.questions.every(row => answer.answers.some(item => item.id === row.id))) {
-          return { ok: false, error: { code: 'gateway/internal', message: '質問ごとに回答してください。', details: {} } }
-        }
-        // Immediate admission in this display fixture; queued reply suppression
-        // and the durable reply event belong to the controller's full fixture.
-        kit.setProjection(sessionId, 'userQuestions', { active: [], settled: [{ callId, answers: answer.answers }] })
-        return { ok: true, value: true }
-      },
-    })
   })
   kit.scenario('plan', () => {
     void reportReply(kit.emit('user-questions/request', {

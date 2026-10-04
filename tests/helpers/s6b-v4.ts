@@ -7,7 +7,7 @@ const roles: Record<string, string> = { 'user/message': 'user', 'system/message'
 // event kind requires adding its native contract here (see s6b-v4-rules.md).
 export const fixtureTypes = new Set([...Object.keys(roles), 'turn/start', 'turn/end', 'step/start', 'step/end',
   'assistant/attempt', 'tool/call', 'tool/ptc-dispatch-start', 'tool/ptc-dispatch', 'request/header', 'request/context',
-  'llm/retry', 'llm/retry-started', 'command/run', 'command/done', 'compaction/start', 'compaction/summary', 'compaction/end', 'compaction/prune'])
+  'llm/retry', 'llm/retry-started', 'command/run', 'command/done', 'model/selection', 'compaction/start', 'compaction/summary', 'compaction/end', 'compaction/prune'])
 const object = (v: any): v is Data => v !== null && typeof v === 'object' && !Array.isArray(v)
 const nonempty = (v: any) => assert.ok(typeof v === 'string' && v.length > 0, 'nonempty string')
 const count = (v: any) => assert.ok(Number.isSafeInteger(v) && v >= 0 && !Object.is(v, -0), 'nonnegative safe integer')
@@ -113,6 +113,19 @@ export function validateFixtureV4(records: readonly SessionWireEvent[], running 
         assert.equal(message.source.kind, 'tool'); nonempty(message.source.callId); assert.equal(message.toolCallId, message.source.callId)
         if (message.isError !== undefined) assert.equal(typeof message.isError, 'boolean')
         if (d.error !== undefined) assert.equal(message.isError, true, 'error requires isError true')
+        // The reserved fork identity is validated by native row admission even
+        // when the referenced tool has already started in an ordinary history.
+        if (d.error?.code === 'TOOL_NOT_STARTED' && message.id.startsWith('forked-tool-result-')) {
+          const prefix = `forked-tool-result-${message.source.callId}-`
+          const suffix = message.id.slice(prefix.length), sequence = Number(suffix)
+          const operation: unknown = event.surfaceOp
+          const replacement = object(operation) && operation.op === 'replace'
+          assert.ok(message.id.startsWith(prefix) && /^(0|[1-9]\d*)$/.test(suffix) && Number.isSafeInteger(sequence), 'invalid V4 not-started fork result identity')
+          assert.equal(d.error.name, 'ToolNotStartedError'); assert.equal(message.isError, true)
+          if (replacement) { earlier(sequence, seq); assert.deepEqual(event.sourceEventSeqs, [sequence]) }
+          else { assert.equal(sequence, seq); assert.equal(event.surfaceOp, 'append'); assert.equal(event.sourceEventSeqs, undefined) }
+          assert.equal(message.content.length, 1); assert.equal(message.content[0]?.type, 'text'); assert.equal(typeof message.content[0]?.text, 'string')
+        }
       }
       if (role === 'developer') {
         positive(d.turn); positive(d.step)
@@ -215,7 +228,8 @@ export function validateFixtureV4(records: readonly SessionWireEvent[], running 
         assert.ok(prior); assert.equal(d.turn, prior.turn); assert.equal(d.step, prior.step)
         const key = JSON.stringify([d.retryId, d.retry]); assert.ok(!starts.has(key)); starts.add(key); break
       }
-      case 'command/run': nonempty(d.commandId); assert.ok(!commands.has(d.commandId)); commands.add(d.commandId); pendingCommands.add(d.commandId); break
+      case 'model/selection': pair(d); if (d.reasoningEffort !== undefined) nonempty(d.reasoningEffort); break
+      case 'command/run': nonempty(d.commandId); assert.ok(object(d.source)); nonempty(d.source.kind); assert.ok(!commands.has(d.commandId)); commands.add(d.commandId); pendingCommands.add(d.commandId); break
       case 'command/done':
         nonempty(d.commandId); assert.ok(commands.has(d.commandId)); assert.ok(pendingCommands.delete(d.commandId))
         if (d.sourceEventSeq !== undefined) { earlier(d.sourceEventSeq, seq); assert.equal(d.kind, 'success'); assert.ok(!records[d.sourceEventSeq]!.type.startsWith('command/')) }

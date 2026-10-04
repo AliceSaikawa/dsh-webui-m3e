@@ -35,7 +35,9 @@ function setup(options: { empty?: boolean; openingError?: boolean; remainingMs?:
     },
     async answer() { return { ok: true, value: true } },
   }
-  ctx.mock.addRemote('userQuestions', remote)
+  // Deliberate transport stub for store race tests; the namespace now belongs
+  // to the controller, so do not attempt a duplicate feature registration.
+  ctx.mock.patch('remote.userQuestions', remote)
   const stop = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
   return { ctx, store, remote, finish, stop, signal: () => claimSignal, attached: () => attached, disposed: () => disposed,
     async request(signal?: AbortSignal) { return ctx.mock.emit('user-questions/request', { agent: id, questions, wait: { callId: 'call', timed: true }, signal }) },
@@ -233,9 +235,10 @@ test('S6B 質問fixtureはtimedの識別子とcontinued投影を共有し全問�
   try {
     const pending = store.getSnapshot()[0] as PendingQuestion
     assert.equal(pending.callId, request.wait.callId)
-    await assert.rejects(pending.answer({ answers: [] }), /質問ごと/)
+    await assert.rejects(pending.answer({ answers: [] }), /BAD_ANSWER/)
     const answers = { answers: request.questions.map(item => ({ id: item.id, selected: [item.options![0]!.label] })) }
     await pending.answer(answers)
+    await new Promise(resolve => setTimeout(resolve, 0))
     assert.deepEqual(store.getSnapshot(), [])
     assert.deepEqual(ctx.mock.getProjection('05-db-choice', 'userQuestions'), { active: [], settled: [{ callId: request.wait.callId, ...answers }] })
   } finally { stop(); ctx.dispose() }

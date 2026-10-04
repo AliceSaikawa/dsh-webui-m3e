@@ -32,6 +32,6 @@ test('全fixtureと不正値を実DSHのV4 admission・Session・commands・comp
   expect(fixtures).toHaveLength(194)
   for (const { id, records } of fixtures) expect(() => validate(id, records), id).not.toThrow()
   const invalid = invalidFixtureCases()
-  expect(invalid).toHaveLength(30)
+  expect(invalid).toHaveLength(33)
   for (const { id, records } of invalid) expect(() => validate(id, records), id).toThrow()
 })
