@@ -32,11 +32,11 @@ function outputStream(content: readonly ContentBlock[], start: number, end: numb
 export function createTraceExampleRecords(): SessionWireEvent[] {
   const records: SessionWireEvent[] = []
   let clock = origin
-  const append = (type: string, data: unknown, advance = 0, surface?: Pick<SessionWireEvent, 'surfaceOp' | 'sourceEventSeqs'>): SessionWireEvent => {
+  const append = (type: string, data: unknown, advance = 0, surface?: Pick<SessionWireEvent, 'surfaceOp' | 'sourceEventSeqs'>, timeOffset = 0): SessionWireEvent => {
     clock += advance
     const isSurface = ['user/message', 'assistant/message', 'tool/result'].includes(type)
     const event: SessionWireEvent = {
-      type, seq: records.length, time: clock,
+      type, seq: records.length, time: clock + timeOffset,
       data: JSON.parse(JSON.stringify(data)) as JsonValue,
       ...(isSurface ? { surfaceOp: 'append' } : {}),
       ...surface,
@@ -96,7 +96,8 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
       ],
     }, 300)
     append('llm/retry', { retryId: 'trace-retry', provider: 'mock', policyKey: 'network', turn: 2, step: 1, retry: attempt, maxRetries: 3, mode: 'normal', delayMs: 100, failure }, 100)
-    append('llm/retry-started', { retryId: 'trace-retry', turn: 2, step: 1, retry: attempt }, 100)
+    // The next attempt already includes this wait in its original timestamps.
+    append('llm/retry-started', { retryId: 'trace-retry', turn: 2, step: 1, retry: attempt }, 0, undefined, 100)
   }
   const rootCallId = 'trace-root'
   const rootArgs = JSON.stringify({ code: '確認対象のファイルを順番に調べる' })

@@ -1,51 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
-import * as chat from '../web/src/features/chat/mock.ts'
-import * as composer from '../web/src/features/composer/mock.ts'
-import * as home from '../web/src/features/home/mock.ts'
-import * as inbox from '../web/src/features/inbox/mock.ts'
-import * as interactions from '../web/src/features/interactions/mock.ts'
-import * as search from '../web/src/features/search/mock.ts'
-import * as sessionTools from '../web/src/features/session-tools/mock.ts'
-import * as trace from '../web/src/features/trace/mock.ts'
 import { traceExampleRecords, traceRetryCancelledRecords } from '../web/src/features/trace/trace-fixtures.ts'
+import { histories } from './helpers/s6b-histories.ts'
+import { validateFixtureV4 } from './helpers/s6b-v4.ts'
 import { buildChatRows } from '../web/src/features/chat/model.ts'
 import { selectTrace, turnHeading } from '../web/src/features/trace/model.ts'
 import { approvalRecords } from '../web/src/dsh/mock/fixtures.ts'
 
-// Inspect whole Host histories, not the 100-record Client window. The deliberately
-// broken parser inputs in older unit tests are not normal fixture histories.
-function histories() {
-  const rows: { id: string; running: boolean; records: readonly SessionWireEvent[] }[] = []
-  for (const scenario of [undefined, 'chat-injected-context', 'chat-error', 'open-error', 'chat-long-streaming', 'inbox', 'search-more', 'question-continued']) {
-    const ctx = createMockContext({ scenario, extensions: [chat, composer, home, inbox, interactions, search, sessionTools, trace] })
-    try {
-      const baseIds = ['readme-review', 'approval-sheet', 'chat-long', 'chat-samples', 'chat-spec-check',
-        'home-mobile-layout', 'home-workspace-question', 'home-review-child', 'home-list-menu', 'home-harness-tests',
-        '05-db-choice', '05-auth-redesign', 'search-permissions', 'search-mobile', 'search-history', 'search-colors',
-        'session-tools-review', 'session-tools-tests', 'trace-example', 'trace-failure-example']
-      const extra = scenario === 'inbox' ? ['inbox-approval', 'inbox-question', 'inbox-plan', 'inbox-completed', 'inbox-other-completed']
-        : scenario === 'search-more' ? Array.from({ length: 24 }, (_, i) => `search-example-${i + 1}`)
-        : scenario === 'open-error' ? ['chat-open-error']
-        : scenario?.startsWith('chat-') ? [scenario] : []
-      assert.deepEqual(Object.keys(ctx.sessions.list.getSnapshot().byId).sort(), [...baseIds, ...extra].sort(), `${scenario ?? 'default'}: fixture initialization must not lose sessions`)
-      for (const summary of Object.values(ctx.sessions.list.getSnapshot().byId)) rows.push({
-        id: `${scenario ?? 'default'}/${summary.id}`, running: summary.running, records: ctx.mock.getRecords(summary.id),
-      })
-    } finally { ctx.dispose() }
-  }
-  rows.push({ id: 'cancelled-retry', running: false, records: traceRetryCancelledRecords })
-  assert.equal(rows.length, 194)
-  assert.deepEqual(rows.filter(row => row.records.length === 0).map(row => row.id), [
-    'open-error/chat-open-error', 'inbox/inbox-approval', 'inbox/inbox-question', 'inbox/inbox-plan', 'inbox/inbox-completed', 'inbox/inbox-other-completed',
-  ])
-  return rows
-}
 
 type Data = Record<string, any>
 const dataOf = (event: SessionWireEvent) => event.data as Data
+
+test('S6B 全194履歴がnative V4の本文・header・surface・実行・要約の規則を満たす', () => {
+  for (const { id, records, running } of histories()) {
+    try { validateFixtureV4(records, running) } catch (cause) { throw new Error(id, { cause }) }
+  }
+})
 
 test('S6B 全履歴fixtureのseqは0から密で単調、必須の時刻も整数', () => {
   for (const { id, records } of histories()) for (const [seq, event] of records.entries()) {
@@ -193,12 +164,22 @@ test('S6B 全履歴fixtureのチャット表示行キーは一意', () => {
   }
 })
 
-test('S6B approvalの有効な先行空turnは表示を増やさず、従来の見出し2・3を保つ', () => {
+test('S6B approvalは人工的な空turnを作らず、二つの実際のturnだけを持つ', () => {
   assert.equal(dataOf(approvalRecords[0]!).turn, 1)
   assert.deepEqual(selectTrace(approvalRecords, null, true).map(turnHeading), [
-    'ターン 2 ・ 合計 18.4 秒 ・ 12,480 トークン', 'ターン 3 ・ 実行中',
+    'ターン 1 ・ 合計 18.4 秒 ・ 12,480 トークン', 'ターン 2 ・ 実行中',
   ])
-  const failed = approvalRecords.slice(0, 2).map(row => row.type === 'turn/end'
-    ? { ...row, data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } } } : row)
-  assert.equal(selectTrace(failed)[0]?.termination?.kind, 'aborted', 'an empty interrupted turn remains visible')
+  assert.ok(selectTrace(approvalRecords).every(turn => turn.rows.length > 0))
+})
+
+for (const kind of ['completed', 'forked', 'aborted'] as const) test(`S6B 空の${kind} turnにも見出しが出る`, () => {
+  const records: SessionWireEvent[] = [
+    { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+    { type: 'turn/end', seq: 1, time: 1000, data: { turn: 1, reason: { kind, ...(kind === 'aborted' ? { reason: { kind: 'user' } } : {}) } } },
+  ]
+  const turns = selectTrace(records)
+  assert.equal(turns.length, 1)
+  assert.deepEqual(turns[0]!.rows, [])
+  assert.match(turnHeading(turns[0]!), /^ターン 1 ・ 合計 1 秒/)
+  if (kind === 'aborted') assert.equal(turns[0]!.termination?.kind, 'aborted')
 })

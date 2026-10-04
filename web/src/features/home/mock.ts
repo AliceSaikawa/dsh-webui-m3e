@@ -42,7 +42,12 @@ function removeAllSessions(kit: MockKit): void {
 }
 
 export function extendMock(kit: MockKit): void {
-  for (const row of rows) kit.addSession(row, recordsFor(row))
+  for (const row of rows) {
+    const lastUsed = row.projectionValues?.modelSelection as { lastUsed: unknown } | undefined
+    kit.addSession(lastUsed ? { ...row, projectionValues: { ...row.projectionValues,
+      modelSelection: { ...lastUsed, next: structuredClone(mockModelCatalog.default) },
+    } } : row, recordsFor(row))
+  }
   const workspaceSessions: readonly [string, readonly string[]][] = [
     [MOCK_IDS.workspaces.m3e, [HOME_MOCK_IDS.completed, HOME_MOCK_IDS.waiting, HOME_MOCK_IDS.child, HOME_MOCK_IDS.idle]],
     [MOCK_IDS.workspaces.harness, [HOME_MOCK_IDS.harness]],

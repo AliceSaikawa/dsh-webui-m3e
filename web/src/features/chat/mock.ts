@@ -12,15 +12,16 @@ export function extendMock(kit: MockKit): void {
   // 75 complete V4 turns, including each step's boundaries (450 records).
   const records: SessionWireEvent[] = []
   for (let turn = 1; turn <= 75; turn++) {
-    const seq = records.length
-    records.push(
+    // Preserve the original four-record turn's clock; boundaries take no time.
+    const seq = (turn - 1) * 4
+    records.push(...[
       event(seq, 'turn/start', { turn }),
       event(seq + 1, 'user/message', { id: `long-user-${turn}`, role: 'user', content: [{ type: 'text', text: `${turn} 回目の確認をお願いします。` }] }),
       event(seq + 2, 'step/start', { turn, step: 1 }),
-      event(seq + 3, 'assistant/message', { turn, step: 1, stream: [], message: { id: `long-assistant-${turn}`, role: 'assistant', content: [{ type: 'text', text: `### ${turn} 回目の確認\n\n会話の表示と古い履歴の読み込みを確認しました。\n\n- メッセージの順序を保ちます。\n- 読んでいる位置を保ちます。` }] } }),
-      event(seq + 4, 'step/end', { turn, step: 1 }),
-      event(seq + 5, 'turn/end', { turn, reason: { kind: 'completed' } }),
-    )
+      event(seq + 2, 'assistant/message', { turn, step: 1, stream: [], message: { id: `long-assistant-${turn}`, role: 'assistant', content: [{ type: 'text', text: `### ${turn} 回目の確認\n\n会話の表示と古い履歴の読み込みを確認しました。\n\n- メッセージの順序を保ちます。\n- 読んでいる位置を保ちます。` }] } }),
+      event(seq + 3, 'step/end', { turn, step: 1 }),
+      event(seq + 3, 'turn/end', { turn, reason: { kind: 'completed' } }),
+    ].map((row, index) => ({ ...row, seq: records.length + index })))
   }
   kit.addSession(summary('chat-long', '長い会話'), records)
   kit.addSession(summary('chat-samples', '添付と長い結果'), history([
@@ -74,11 +75,11 @@ export function extendMock(kit: MockKit): void {
   })
   kit.scenario('chat-long-streaming', active => {
     const sessionId = 'chat-long-streaming'
-    active.addSession({ ...summary(sessionId, '長い会話（生成中）'), running: true }, [...records,
-      event(records.length, 'turn/start', { turn: 76 }),
-      event(records.length + 1, 'user/message', { role: 'user', content: [{ type: 'text', text: '長い会話の続きも確認して' }] }),
-      event(records.length + 2, 'step/start', { turn: 76, step: 1 }),
-    ])
+    active.addSession({ ...summary(sessionId, '長い会話（生成中）'), running: true }, history([...records,
+      event(300, 'turn/start', { turn: 76 }),
+      event(301, 'user/message', { role: 'user', content: [{ type: 'text', text: '長い会話の続きも確認して' }] }),
+      event(302, 'step/start', { turn: 76, step: 1 }),
+    ]))
     active.updateWorkspace('ws-chat-check', workspace => ({ sessionIds: [...workspace.sessionIds, sessionId] }))
     void active.streamAssistant(sessionId, Array.from({ length: 10 }, (_, index) => `### 続きの確認 ${index + 1}\n\n長い履歴を表示したまま返事を生成しています。トレースへ移り、戻ったときも表示前の追いかけ方を引き継ぎます。\n\n`).join(''), { chunkMs: 35 })
   })

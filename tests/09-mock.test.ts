@@ -142,7 +142,8 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
     const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
     const pressure = face.projections.faceOf('contextPressure').getSnapshot() as ContextPressure
     assert.equal(contextPercent(pressure), 62)
-    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 3)
+    // The native fixture has two actual turns, without an artificial predecessor.
+    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 2)
     ctx.jobs.watchRows(sessionId)
     await Promise.resolve()
     const list = ctx.sessions.list.getSnapshot()

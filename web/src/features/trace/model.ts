@@ -249,10 +249,7 @@ const traceSelections = new WeakMap<readonly SessionWireEvent[], { stream: Assis
 export function selectTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false): TraceTurn[] {
   const cached = traceSelections.get(records)
   if (cached?.stream === stream && cached.running === running) return cached.turns
-  // Completed turns without a message or step have no visible content. Keep
-  // unfinished/failed turns so their execution state is still explained.
   const turns = buildTrace(records, stream, running)
-    .filter(turn => turn.rows.length > 0 || turn.completedAt === undefined || turn.termination !== undefined)
   traceSelections.set(records, { stream, running, turns })
   return turns
 }
