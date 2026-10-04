@@ -8,17 +8,17 @@
  * step, and docs/dsh-compatibility.md lists every other boundary to re-check.
  */
 
-/** The DSH release whose Host and client plugins were verified with this plugin. */
-export const SUPPORTED_DSH_VERSION = '0.1.5-rc.3'
+/** The target DSH release; the 0.2.0-rc.2 boot and session migration is still pending. */
+export const SUPPORTED_DSH_VERSION = '0.2.0-rc.2'
 
 /**
  * Shared libraries bundled into the M3E page and the exact versions the
  * supported release ships. A mismatch can load, then fail inside a plugin.
  */
 export const PINNED_DSH_LIBRARIES = {
-  '@deepseek-ai/cordis': '4.0.2',
-  '@deepseek-ai/cordis-plugin-loader': '1.0.3',
-  '@deepseek-ai/dsh-client-store': '0.1.5-rc.3',
+  '@deepseek-ai/cordis': '4.0.4',
+  '@deepseek-ai/cordis-plugin-loader': '1.0.5',
+  '@deepseek-ai/dsh-client-store': '0.2.0-rc.2',
 } as const
 
 /** How a failed boot is explained; see describeBootFailure. */

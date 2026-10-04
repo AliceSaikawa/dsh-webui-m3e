@@ -30,9 +30,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.host.json --noEmit"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/cordis-plugin-loader": "1.0.3",
-    "@deepseek-ai/dsh-client-store": "0.1.5-rc.3",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
+    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
     "@m3e/react": "2.8.2",
     "@m3e/web": "2.8.2",
     "@material/material-color-utilities": "0.4.0",
