@@ -40,14 +40,14 @@ export type PromptContentPart =
   | { readonly type: 'image'; readonly mediaType: ImageAttachmentRef['mediaType']; readonly data: string; readonly name?: string }
   | { readonly type: 'file'; readonly receiptId: string }
 export type QueueAction =
-  | { readonly kind: 'edit'; readonly content: readonly ContentBlock[] }
+  | { readonly kind: 'edit'; readonly content: readonly { type: 'text'; text: string }[] }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
 
 export interface SubagentAddress {
   readonly parentSessionId: string
   readonly childSessionId: string
-  readonly mode: 'one-shot' | 'continuable'
+  readonly mode: 'one-shot' | 'continuable' | 'unknown'
 }
 export interface SessionSummary {
   id: string
@@ -57,7 +57,7 @@ export interface SessionSummary {
   parentId?: string
   origin?: 'subagent'
   running: boolean
-  completed?: boolean
+  readonly retainedBy: Readonly<Partial<Record<string, number>>>
   blank: boolean
   updatedAt: number
   projectionValues?: Readonly<Record<string, unknown>>
@@ -68,24 +68,34 @@ export interface SessionJob {
   readonly label: string
   readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
   readonly detail?: string
+  readonly owner?: string
+  readonly outputLimitBytes?: number
+  readonly progress?: string
+  readonly output: { readonly total: number; readonly earliest: number; readonly spillPaths?: readonly string[] }
   readonly startedAt: number
   readonly finishedAt?: number
 }
-/** Domain-specific catalog rows are narrowed by the session-tools feature. */
-export interface SubagentCatalogSnapshot {
-  readonly parentAvailable?: boolean
-  readonly state: 'loading' | 'ready' | 'error'
+export interface SubagentCatalogEntry { readonly id: string; readonly createdAt: number; readonly mode: SubagentAddress['mode']; readonly label?: string }
+export interface SessionProjectionSnapshot {
+  readonly values: Readonly<Record<string, unknown>> & { readonly subagentCatalog?: readonly SubagentCatalogEntry[] }
+  readonly state: 'idle' | 'loading' | 'ready' | 'error'
   readonly error: RemoteFailure | null
-  readonly [key: string]: unknown
 }
 export interface SessionListState {
   ids: string[]
   byId: Record<string, SessionSummary>
-  current: string | undefined
   phase: 'pending' | 'ready'
-  subagentsByParent: Readonly<Record<string, SubagentCatalogSnapshot>>
-  jobsBySession: Readonly<Record<string, readonly SessionJob[]>>
-  currentAddress: SubagentAddress | undefined
+  projectionsBySession: Readonly<Record<string, SessionProjectionSnapshot>>
+}
+export interface JobsSnapshot {
+  readonly rows: Readonly<Record<string, readonly SessionJob[]>>
+  readonly observed: Readonly<Record<string, { readonly jobId: string; readonly text: string; readonly gapBefore: boolean; readonly streaming: boolean; readonly error?: string }>>
+}
+export interface IJobs {
+  readonly state: ObservableSnapshot<JobsSnapshot>
+  watchRows(sessionId: string): () => void
+  observe(sessionId: string | undefined, id: string): () => void
+  kill(sessionId: string, id: string): Promise<RemoteResult<{ outcome: 'requested' | 'already-finished' }>>
 }
 export interface WorkspaceView {
   readonly workspaceId: string
@@ -108,7 +118,11 @@ export interface IWorkspaces {
   rename(workspaceId: string, title: string): Promise<WorkspaceView>
   delete(workspaceId: string): Promise<void>
   insertBefore(workspaceId: string, beforeWorkspaceId?: string): Promise<void>
-  archiveSession(sessionId: string): Promise<void>
+  initializeDefault(signal?: AbortSignal): Promise<WorkspaceView | undefined>
+  archiveSession(sessionId: string, options?: { readonly stopActivity?: boolean }): Promise<void>
+  unarchiveSession(sessionId: string): Promise<void>
+  pinSession(sessionId: string): Promise<void>
+  unpinSession(sessionId: string): Promise<void>
   insertSessionBefore(workspaceId: string, sessionId: string, beforeSessionId?: string): Promise<WorkspaceView>
 }
 export interface QueuedMessage {
@@ -142,7 +156,6 @@ export interface BeginSubmissionInput {
 export interface SubmissionHandle { readonly requestId: string; abandon(): void }
 export interface SessionSnapshot {
   readonly sessionId: string
-  readonly queue: readonly QueuedMessage[]
   readonly pendingSubmissions: readonly PendingSubmission[]
   readonly running: boolean
   readonly subagent: { readonly address: SubagentAddress; readonly parentAvailable?: boolean } | null
@@ -234,19 +247,30 @@ export interface SessionBinding {
   readonly eventSource: ObservableSnapshot<SessionEventWindow>
   readonly ctx: AgentContext
 }
+export type SessionTarget = string | SubagentAddress
+export interface SessionRetainOptions { readonly source: string; readonly signal?: AbortSignal }
+export interface SessionRetainInfo { readonly referenceCount: number; readonly retainedBy: Readonly<Partial<Record<string, number>>> }
+export interface SessionReference {
+  readonly sessionId: string
+  readonly binding: SessionBinding
+  readonly ready: Promise<SessionBinding>
+  release(): void
+  [Symbol.dispose](): void
+}
+export interface InboxMessage { readonly id: string; readonly role: 'user'; readonly content: readonly ContentBlock[]; readonly source: { readonly kind: string; readonly rpcId?: string } }
+export interface InboxState { readonly 'next-turn': readonly InboxMessage[]; readonly 'next-step': readonly InboxMessage[] }
 export interface ISessions {
   readonly list: ObservableSnapshot<SessionListState>
   readonly searchResultLimit: number
   create(opts?: { workspaceId?: string; cwd?: string; sessionId?: string }): Promise<string>
-  open(id: string): void
-  openSubagent(address: SubagentAddress): void
+  retain(target: SessionTarget, options: SessionRetainOptions): SessionReference
+  using<T>(target: SessionTarget, options: SessionRetainOptions, operation: (reference: SessionReference) => T | Promise<T>): Promise<T>
+  retainInfo(id: string): ObservableSnapshot<SessionRetainInfo>
   subagentAddress(id: string): SubagentAddress | undefined
-  setSubagentCatalogOpen(parentSessionId: string, open: boolean): void
-  refreshSubagents(parentSessionId: string): Promise<void>
-  clear(): void
+  refreshProjections(sessionId: string): Promise<void>
   refresh(): Promise<void>
   search(query: string, signal: AbortSignal): Promise<RemoteResult<{ items: { sessionId: string; snippet: string }[]; hasMore: boolean }>>
-  fork(opts: { sessionId: string; atSeq?: number; increaseTitle?: boolean }): Promise<string>
+  fork(opts: { sessionId: string; atSeq?: number; increaseTitle?: boolean; onCreated?: (childId: string) => void }): Promise<string>
   scope(id: string): AgentContext | undefined
   scopeOf(ctx: unknown): string | undefined
   sessionOf(ctx: unknown): SessionFace | undefined
@@ -256,6 +280,7 @@ export interface ISessions {
 export interface DshRemote { readonly [namespace: string]: unknown }
 export interface DshContext {
   readonly connection: Connection
+  readonly jobs: IJobs
   readonly sessions: ISessions
   readonly workspaces: IWorkspaces
   readonly remote: DshRemote
@@ -267,7 +292,7 @@ const ServicesContext = createContext<DshServices | null>(null)
 /** The Workspace controller is ctx.workspaces; remote.workspace is the raw RPC. */
 export function servicesOf(ctx: unknown): DshServices {
   const root = ctx as DshContext
-  return { ctx: root, connection: root.connection, sessions: root.sessions, workspaces: root.workspaces, remote: root.remote }
+  return { ctx: root, connection: root.connection, jobs: root.jobs, sessions: root.sessions, workspaces: root.workspaces, remote: root.remote }
 }
 
 export function DshProvider({ ctx, children }: { ctx: unknown; children: ReactNode }) {

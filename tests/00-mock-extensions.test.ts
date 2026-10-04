@@ -21,7 +21,7 @@ test('拡張の例外を mock.ts の出所とともに表示し、後続拡張�
     assert.equal(errors.mock.calls[0]!.arguments[1], failure)
     assert.deepEqual(ctx.remote.beforeFailure, { available: true })
     assert.deepEqual(ctx.remote.afterFailure, { available: true })
-    assert.equal(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.getSnapshot().lastAgentError, '後続シナリオを実行しました。')
+    assert.equal(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.getSnapshot().lastAgentError, '後続シナリオを実行しました。')
   } finally { ctx.dispose() }
 })
 

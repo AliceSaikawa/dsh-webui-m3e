@@ -26,10 +26,9 @@ export function sessionActions(dsh: DshServices, row: SessionSummary, archive: (
     <M3eButton onClick={() => {
       close()
       prompt('題名を変える', row.displayTitle, async title => {
-        const scope = dsh.sessions.scope(row.id)
-        const face = scope && dsh.sessions.sessionOf(scope)
-        if (!face) throw new Error('会話が見つかりません。')
-        unwrapRemoteResult(await face.rename(title))
+        await dsh.sessions.using(row.id, { source: 'm3e.rename' }, async reference => {
+          unwrapRemoteResult(await reference.binding.session.rename(title))
+        })
       })
     }}><Icon name="edit" />題名を変える</M3eButton>
     <M3eButton onClick={() => { close(); archive() }}><Icon name="inventory_2" />アーカイブ</M3eButton>

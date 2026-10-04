@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { onRemoteEvent } from '../web/src/dsh/remote-events.ts'
 import { subagentCatalogAddress } from '../web/src/dsh/session-navigation.ts'
-import type { DshRemote, SessionListState } from '../web/src/dsh/services.ts'
+import type { DshRemote, SessionListState, SubagentCatalogEntry } from '../web/src/dsh/services.ts'
 import { missingContractMembers } from '../web/src/dsh/contract.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 
@@ -32,18 +32,18 @@ test('onRemoteEvent tolerates a Host without $on or without a disposer', () => {
 
 function listWith(entries: unknown[], state: 'ready' | 'loading' = 'ready'): SessionListState {
   return {
-    ids: [], byId: {}, current: undefined, phase: 'ready', jobsBySession: {}, currentAddress: undefined,
-    subagentsByParent: { parent: { state, error: null, entries } },
+    ids: [], byId: {}, phase: 'ready',
+    projectionsBySession: { parent: { state, error: null, values: { subagentCatalog: entries as SubagentCatalogEntry[] } } },
   }
 }
 
 test('subagentCatalogAddress reads only ready catalog rows for a child with a known mode', () => {
-  assert.deepEqual(subagentCatalogAddress(listWith([{ id: 'child', kind: 'child', mode: 'continuable' }]), 'parent', 'child'),
+  assert.deepEqual(subagentCatalogAddress(listWith([{ id: 'child', mode: 'continuable' }]), 'parent', 'child'),
     { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
-  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', kind: 'child', mode: 'continuable' }], 'loading'), 'parent', 'child'), undefined)
-  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', kind: 'diagnostic' }]), 'parent', 'child'), undefined)
-  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', kind: 'child', mode: 'forever' }]), 'parent', 'child'), undefined)
-  assert.equal(subagentCatalogAddress(listWith([{ id: 'other', kind: 'child', mode: 'one-shot' }]), 'parent', 'child'), undefined)
+  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', mode: 'continuable' }], 'loading'), 'parent', 'child'), undefined)
+  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', mode: 'unknown' }]), 'parent', 'child'), undefined)
+  assert.equal(subagentCatalogAddress(listWith([{ id: 'child', mode: 'forever' }]), 'parent', 'child'), undefined)
+  assert.equal(subagentCatalogAddress(listWith([{ id: 'other', mode: 'one-shot' }]), 'parent', 'child'), undefined)
   assert.equal(subagentCatalogAddress(listWith([]), 'missing-parent', 'child'), undefined)
 })
 
@@ -53,7 +53,7 @@ test('the mock context offers every controller member the boot contract requires
 
 test('missingContractMembers names removed methods and non-observable lists', () => {
   const ctx = createMockContext() as unknown as Record<string, Record<string, unknown>>
-  const sessions = { ...ctx.sessions, open: undefined, list: {} }
-  assert.deepEqual(missingContractMembers({ ...ctx, sessions }), ['sessions.list', 'sessions.open'])
-  assert.deepEqual(missingContractMembers({}), ['connection', 'sessions', 'workspaces', 'remote'])
+  const sessions = { ...ctx.sessions, retain: undefined, list: {} }
+  assert.deepEqual(missingContractMembers({ ...ctx, sessions }), ['sessions.list', 'sessions.retain'])
+  assert.deepEqual(missingContractMembers({}), ['connection', 'sessions', 'workspaces', 'jobs', 'remote'])
 })

@@ -8,7 +8,8 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { openSheet } from '../../app/overlay/index.ts'
 import { navigate } from '../../app/router.ts'
 import { useConnection } from '../../app/shell/index.ts'
-import { useDsh } from '../../dsh/services.ts'
+import { useDsh, type InboxState } from '../../dsh/services.ts'
+import { queueFromInbox } from '../../dsh/inbox.ts'
 import { useSession } from '../../dsh/session.ts'
 import { sessionAccess } from '../../dsh/session-access.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
@@ -37,7 +38,9 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const { face, snapshot, projection } = useSession(sessionId)
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
-  const permissions = projection<PermissionProjection>('permissions')
+  const permissionValue = projection<PermissionProjection>('permissions')
+  // 0.2.0 projects the selection only; its separate catalog RPC is migrated in stage 5.
+  const permissions = Array.isArray(permissionValue?.options) ? permissionValue : undefined
   const { connected } = useConnection()
   const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
   const snapshotOfDraft = useCallback(() => readDraft(draftKey), [draftKey])
@@ -71,7 +74,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const hint = isKnownCommand(draft.text, commands) ? commands.find(command => draft.text.startsWith(`/${command.name} `))?.input?.hint : undefined
   const permission = target.kind === 'new' ? defaults && { ...defaults, currentValue: draft.permission ?? defaults.currentValue } : permissions
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
-  const queue = visibleQueue(snapshot.queue)
+  const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
   const canSend = connected && !busy && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
   const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')

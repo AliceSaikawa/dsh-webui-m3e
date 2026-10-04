@@ -1,3 +1,4 @@
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
@@ -129,8 +130,8 @@ test('ファイル変更の購読を return または事前の中断で終了す
 test('会話の補助画面の偽物を追加しても共有の履歴を書き換えない', () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(sessionId)!.eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
+    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
     assert.ok(workspaceFilesOf(ctx.remote))
   } finally { ctx.dispose() }
 })
@@ -138,14 +139,15 @@ test('会話の補助画面の偽物を追加しても共有の履歴を書き�
 test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描く状態を作る', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const face = ctx.sessions.binding(sessionId)!.session
+    const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
     const pressure = face.projections.faceOf('contextPressure').getSnapshot() as ContextPressure
     assert.equal(contextPercent(pressure), 62)
-    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.binding(sessionId)!.eventSource.getSnapshot()).records), 3)
+    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 3)
+    ctx.jobs.watchRows(sessionId)
     const list = ctx.sessions.list.getSnapshot()
-    assert.equal(list.jobsBySession[sessionId]?.length, 3)
-    assert.equal(runningJobCount(list.jobsBySession[sessionId]), 1)
-    const catalog = list.subagentsByParent[sessionId]
+    assert.equal(ctx.jobs.state.getSnapshot().rows[sessionId]?.length, 3)
+    assert.equal(runningJobCount(ctx.jobs.state.getSnapshot().rows[sessionId]), 1)
+    const catalog = list.projectionsBySession[sessionId]
     const children = catalogEntries(catalog)
     assert.equal(children.length, 2)
     assert.equal(hasChildren(sessionId, catalog, list.byId), true)
@@ -155,21 +157,19 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
       assert.equal(child.kind, 'child')
       if (child.kind !== 'child') throw new Error('子の会話がありません。')
       const address = childAddress(sessionId, child)
-      assert.deepEqual(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, { address, parentAvailable: true })
-      ctx.sessions.openSubagent(address)
-      assert.equal(ctx.sessions.list.getSnapshot().current, child.id)
-      assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
-      assert.deepEqual(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      await conversationSelection(ctx.sessions).select(address)
+      assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, child.id)
+      assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
+      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
       assert.equal(list.byId[child.id]?.origin, 'subagent')
-      assert.ok(foldSessionWindow(ctx.sessions.binding(child.id)!.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      assert.ok(foldSessionWindow(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
     let notified = 0
-    const stop = ctx.sessions.list.subscribe(() => { notified++ })
-    ctx.mock.updateList(state => {
-      state.jobsBySession = { ...state.jobsBySession, [sessionId]: state.jobsBySession[sessionId]!.map(job => job.id === SESSION_TOOLS_MOCK_IDS.jobs.running ? { ...job, status: 'completed', finishedAt: Date.now() } : job) }
-    })
+    const stop = ctx.jobs.state.subscribe(() => { notified++ })
+    ctx.mock.setJobs(sessionId, ctx.jobs.state.getSnapshot().rows[sessionId]!.map(job => job.id === SESSION_TOOLS_MOCK_IDS.jobs.running ? { ...job, status: 'completed', finishedAt: Date.now() } : job))
     assert.equal(notified, 1)
-    assert.equal(runningJobCount(ctx.sessions.list.getSnapshot().jobsBySession[sessionId]), 0)
+    assert.equal(runningJobCount(ctx.jobs.state.getSnapshot().rows[sessionId]), 0)
     stop()
   } finally { ctx.dispose() }
 })
@@ -178,30 +178,30 @@ test('未取得の子シナリオはアドレスを先に設定せず、親の�
   const ctx = createMockContext({ scenario: 'subagents-unloaded', extensions: [{ extendMock }] })
   try {
     const initial = ctx.sessions.list.getSnapshot()
-    assert.equal(Object.hasOwn(initial.subagentsByParent, sessionId), false)
+    assert.equal(Object.hasOwn(initial.projectionsBySession, sessionId), false)
     for (const childId of Object.values(SESSION_TOOLS_MOCK_IDS.children)) {
       assert.equal(initial.byId[childId]?.origin, 'subagent')
       assert.equal(initial.byId[childId]?.parentId, sessionId)
-      assert.equal(ctx.sessions.binding(childId)!.session.getSnapshot().subagent, null)
+      assert.equal(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, null)
       assert.equal(ctx.sessions.subagentAddress(childId), undefined)
-      assert.ok(foldSessionWindow(ctx.sessions.binding(childId)!.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      assert.ok(foldSessionWindow(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
-    assert.equal(hasChildren(sessionId, initial.subagentsByParent[sessionId], initial.byId), true)
+    assert.equal(hasChildren(sessionId, initial.projectionsBySession[sessionId], initial.byId), true)
 
-    await ctx.sessions.refreshSubagents(MOCK_IDS.sessions.readme)
-    assert.equal(Object.hasOwn(ctx.sessions.list.getSnapshot().subagentsByParent, sessionId), false)
-    await ctx.sessions.refreshSubagents(sessionId)
-    const catalog = ctx.sessions.list.getSnapshot().subagentsByParent[sessionId]
+    await ctx.sessions.refreshProjections(MOCK_IDS.sessions.readme)
+    assert.equal(Object.hasOwn(ctx.sessions.list.getSnapshot().projectionsBySession, sessionId), false)
+    await ctx.sessions.refreshProjections(sessionId)
+    const catalog = ctx.sessions.list.getSnapshot().projectionsBySession[sessionId]
     assert.equal(catalog?.state, 'ready')
     const children = catalogEntries(catalog)
     assert.equal(children.length, 2)
     for (const child of children) {
       if (child.kind !== 'child') throw new Error('子の会話がありません。')
-      assert.equal(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, null)
+      assert.equal(ctx.sessions.binding(child.id)?.session.getSnapshot().subagent, null)
       const address = childAddress(sessionId, child)
-      ctx.sessions.openSubagent(address)
-      assert.deepEqual(ctx.sessions.binding(child.id)!.session.getSnapshot().subagent, { address, parentAvailable: true })
-      assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+      await conversationSelection(ctx.sessions).select(address)
+      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
     }
     assert.deepEqual(children.map(child => child.kind === 'child' ? child.mode : undefined), ['continuable', 'one-shot'])
   } finally { ctx.dispose() }
@@ -212,7 +212,7 @@ test('ゴールの停止・再開・完了・消去は revision を進め、proj
   try {
     const remote = goalsRemoteOf(ctx.remote.goals)
     assert.ok(remote)
-    const projection = ctx.sessions.binding(sessionId)!.session.projections.faceOf('goal')
+    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
     let notifications = 0
     const stop = projection.subscribe(() => { notifications++ })
     const original = unwrapRemoteResult(await remote.get(sessionId))!
@@ -244,7 +244,7 @@ test('古い GoalRef は状態を変えず拒否し、再読み込みだけで�
     const remote = goalsRemoteOf(ctx.remote.goals)!
     const original = unwrapRemoteResult(await remote.get(sessionId))!
     const paused = unwrapRemoteResult(await remote.pause(sessionId, original))
-    const projection = ctx.sessions.binding(sessionId)!.session.projections.faceOf('goal')
+    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
     let changes = 0
     const stop = projection.subscribe(() => { changes++ })
     const stale = await remote.complete(sessionId, original)
@@ -273,7 +273,7 @@ test('行き詰まりのシナリオは理由を表示し、再開で解除し�
     const result = unwrapRemoteResult(await remote.resume(sessionId, goal))
     assert.equal(result.phase, 'active')
     assert.equal(result.blockedReason, undefined)
-    assert.equal((ctx.sessions.binding(sessionId)!.session.projections.faceOf('goal').getSnapshot() as GoalProjection).goal.phase, 'active')
+    assert.equal((ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal').getSnapshot() as GoalProjection).goal.phase, 'active')
     assert.equal(unwrapRemoteResult(await remote.get(MOCK_IDS.sessions.readme)), undefined)
   } finally { ctx.dispose() }
 })

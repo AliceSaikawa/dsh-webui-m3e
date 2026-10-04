@@ -2,7 +2,7 @@ import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { JsonValue, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
 
 const origin = Date.parse('2026-09-25T10:00:00+09:00')
-const summary = (id: string, displayTitle: string): SessionSummary => ({ id, displayTitle, cwd: '/mock/chat', running: false, blank: false, updatedAt: origin })
+const summary = (id: string, displayTitle: string): SessionSummary => ({ retainedBy: {}, id, displayTitle, cwd: '/mock/chat', running: false, blank: false, updatedAt: origin })
 const event = (seq: number, type: string, data: JsonValue): SessionWireEvent => ({ seq, type, time: origin + seq * 1000, data })
 
 export function extendMock(kit: MockKit): void {

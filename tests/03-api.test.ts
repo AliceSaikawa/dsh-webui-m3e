@@ -96,7 +96,7 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     assert.deepEqual(await api.modelCatalog(), mockModelCatalog)
     assert.equal((await api.defaultPermissions())?.currentValue, 'workspace-write')
     for (const sessionId of Object.values(MOCK_IDS.sessions)) {
-      const face = ctx.sessions.binding(sessionId)!.session
+      const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
       assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), { currentValue: 'workspace-write', options: [{ value: 'workspace-write', name: 'ワークスペース書込' }] })
       assert.deepEqual(face.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
       assert.deepEqual(face.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: null })
@@ -104,7 +104,7 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     // Catalog reads never materialize an empty Session.
     assert.equal(ctx.sessions.list.getSnapshot().ids.length, 2)
     const created = await ctx.sessions.create({ workspaceId: MOCK_IDS.workspaces.m3e })
-    const face = ctx.sessions.binding(created)!.session
+    const face = ctx.sessions.retain(created, { source: 'm3e.test' }).binding.session
     assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), mockPermissions)
     requireMatched(await face.command('/permission danger-full-access'))
     assert.equal((face.projections.faceOf('permissions').getSnapshot() as { currentValue: string }).currentValue, 'danger-full-access')
@@ -163,7 +163,7 @@ test('偽の commands/change の購読を解除でき、別機能の projection 
     await ctx.mock.emit('commands/change', undefined)
     assert.equal(changed, 1)
     ctx.mock.addSession({ id: 'extra-fixture', displayTitle: '追加の会話', running: false, blank: false, updatedAt: 0, projectionValues: { plan: { active: true, pending: true } } }, [])
-    assert.deepEqual(ctx.sessions.binding('extra-fixture')!.session.projections.faceOf('plan').getSnapshot(), { active: true, pending: true })
+    assert.deepEqual(ctx.sessions.retain('extra-fixture', { source: 'm3e.test' }).binding.session.projections.faceOf('plan').getSnapshot(), { active: true, pending: true })
     ctx.mock.removeSession('extra-fixture')
     await assert.rejects(composerApi(ctx.remote).selectModel('extra-fixture', mockModelCatalog.default), /会話が見つかりません/)
   } finally { ctx.dispose() }
@@ -185,16 +185,16 @@ test('先行拡張の会話にも補助機能を提供し、明示された proj
   ] })
   try {
     const api = composerApi(ctx.remote)
-    const empty = ctx.sessions.binding('earlier-empty')!.session
+    const empty = ctx.sessions.retain('earlier-empty', { source: 'm3e.test' }).binding.session
     assert.deepEqual(empty.projections.faceOf('permissions').getSnapshot(), mockPermissions)
     assert.deepEqual(empty.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
     assert.deepEqual(empty.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: null })
-    const projected = ctx.sessions.binding('earlier-projected')!.session
+    const projected = ctx.sessions.retain('earlier-projected', { source: 'm3e.test' }).binding.session
     assert.deepEqual(projected.projections.faceOf('permissions').getSnapshot(), permissions)
     assert.deepEqual(projected.projections.faceOf('plan').getSnapshot(), plan)
     assert.deepEqual(projected.projections.faceOf('modelSelection').getSnapshot(), modelSelection)
     assert.deepEqual(projected.projections.faceOf('fixtureOnly').getSnapshot(), { value: 1 })
-    assert.deepEqual(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.projections.faceOf('permissions').getSnapshot(), permissions)
+    assert.deepEqual(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.projections.faceOf('permissions').getSnapshot(), permissions)
     assert.deepEqual(ctx.sessions.list.getSnapshot().byId['earlier-empty']?.projectionValues?.permissions, mockPermissions)
     for (const sessionId of ['earlier-empty', 'earlier-projected']) {
       assert.equal((await api.listCommands(sessionId)).some(command => command.name === 'plan'), true)
@@ -226,7 +226,7 @@ test('先行・後続の会話の削除を反映し、同じ ID の再追加に�
       ctx.mock.addSession({ id: sessionId, displayTitle: '追加し直した会話', running: false, blank: false, updatedAt: 0 }, [])
       const selection = { provider: 'ollama', model: 'local' }
       assert.deepEqual(await api.selectModel(sessionId, selection), selection)
-      assert.deepEqual(ctx.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: selection })
+      assert.deepEqual(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: selection })
     }
   } finally { ctx.dispose() }
 })
@@ -240,7 +240,7 @@ test('モデル変更は他機能が後から更新した共有 projection の�
   try {
     const sessionId = MOCK_IDS.sessions.readme
     const api = composerApi(ctx.remote)
-    const projection = ctx.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection')
+    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('modelSelection')
     const selection = { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'low' }
     await api.selectModel(sessionId, selection)
     assert.deepEqual(projection.getSnapshot(), { lastUsed: used, next: selection })

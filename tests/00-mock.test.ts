@@ -1,3 +1,5 @@
+import { queueFromInbox } from '../web/src/dsh/inbox.ts'
+import type { InboxState } from '../web/src/dsh/services.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
@@ -12,7 +14,7 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     assert.equal(Object.hasOwn(ctx.remote, 'workspace'), false)
     assert.deepEqual(ctx.workspaces.list.getSnapshot().items.map((item) => item.title), ['dsh-webui-m3e', 'deepseek-harness', 'notes'])
     assert.equal(ctx.sessions.list.getSnapshot().ids.length, 2)
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     assert.equal(ctx.sessions.sessionOf(ctx.sessions.scope(binding.sessionId)), binding.session)
     assert.equal(ctx.sessions.scopeOf(binding.ctx), binding.sessionId)
     assert.equal(binding.session.getSnapshot().running, false)
@@ -24,7 +26,7 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     assert.equal(data.message.role, 'user')
     assert.equal(data.message.content[0]!.type, 'tool-result')
     assert.equal(data.message.content[0]!.isError, true)
-    const running = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
+    const running = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
     assert.equal(running.session.getSnapshot().running, true)
     assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 3)
     const errors = t.mock.method(console, 'error', () => {})
@@ -39,7 +41,7 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
 test('送信前の echo は prompt による観測時に 1 回だけ退役し、履歴が重複しない', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     const retirements: PendingSubmissionRetirement[] = []
     const submission = binding.session.beginSubmission({ mode: 'queue', text: '確認しました', attachments: [], onRetire: (value) => retirements.push(value) })
     assert.equal(binding.session.getSnapshot().pendingSubmissions[0]?.placement, 'transcript')
@@ -63,20 +65,20 @@ test('送信前の echo は prompt による観測時に 1 回だけ退役し、
 test('実行中の送信は queue に入り、編集・削除・割り込みできる', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
     const initialCount = foldSessionWindow(binding.eventSource.getSnapshot()).records.length
     await binding.session.prompt([{ type: 'text', text: '待機するメッセージ' }], 'queue')
-    const queued = binding.session.getSnapshot().queue[0]!
+    const queued = queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined)[0]!
     assert.equal(queued.placement, 'queued')
     assert.equal(foldSessionWindow(binding.eventSource.getSnapshot()).records.length, initialCount)
     await binding.session.updateQueue(queued.id, { kind: 'edit', content: [{ type: 'text', text: '編集したメッセージ' }] })
-    assert.equal(binding.session.getSnapshot().queue[0]?.text, '編集したメッセージ')
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined)[0]?.text, '編集したメッセージ')
     await binding.session.updateQueue(queued.id, { kind: 'steer' })
-    assert.equal(binding.session.getSnapshot().queue.length, 0)
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined).length, 0)
     assert.ok(foldSessionWindow(binding.eventSource.getSnapshot()).records.some((event) => event.type === 'user/message' && JSON.stringify(event.data).includes('編集したメッセージ')))
     await binding.session.prompt([{ type: 'text', text: '削除するメッセージ' }], 'queue')
-    await binding.session.updateQueue(binding.session.getSnapshot().queue[0]!.id, { kind: 'remove' })
-    assert.equal(binding.session.getSnapshot().queue.length, 0)
+    await binding.session.updateQueue(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined)[0]!.id, { kind: 'remove' })
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined).length, 0)
     await binding.session.cancel()
   } finally { ctx.dispose() }
 })
@@ -84,13 +86,13 @@ test('実行中の送信は queue に入り、編集・削除・割り込みで�
 test('キャンセルは待機列を保持し、その後に先頭のメッセージを開始する', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
     await binding.session.prompt([{ type: 'text', text: '次の仕事' }], 'queue')
     await binding.session.cancel()
     assert.equal(binding.session.getSnapshot().running, false)
-    assert.equal(binding.session.getSnapshot().queue.length, 1)
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined).length, 1)
     await new Promise((resolve) => setTimeout(resolve, 5))
-    assert.equal(binding.session.getSnapshot().queue.length, 0)
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined).length, 0)
     assert.equal(binding.session.getSnapshot().running, true)
     assert.ok(foldSessionWindow(binding.eventSource.getSnapshot()).records.some((event) => JSON.stringify(event.data).includes('次の仕事')))
   } finally { ctx.dispose() }
@@ -99,7 +101,7 @@ test('キャンセルは待機列を保持し、その後に先頭のメッセ�
 test('ストリームの再接続 baseline を置き換えても応答が重複せず確定する', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     const text = '再接続後も一度だけ表示します。'
     const done = ctx.mock.streamAssistant(binding.sessionId, text, { chunkMs: 30 })
     await new Promise((resolve) => setTimeout(resolve, 40))
@@ -119,7 +121,7 @@ test('ストリームの再接続 baseline を置き換えても応答が重複�
 test('ページングは既存履歴に古い記録を継ぎ足し、loadThrough で必要な位置まで読む', async () => {
   const ctx = createMockContext({ pageSize: 4 })
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     assert.equal(binding.session.getSnapshot().hasMore, true)
     await binding.session.loadOlder()
     assert.equal(binding.eventSource.getSnapshot().change.kind, 'prepend')
@@ -133,7 +135,7 @@ test('ページングは既存履歴に古い記録を継ぎ足し、loadThrough
 test('projection は安定した observable を持ち、rename と command は一覧・履歴へ反映する', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.readme)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     const projection = binding.session.projections.faceOf('goal')
     assert.equal(projection, binding.session.projections.faceOf('goal'))
     let notifications = 0
@@ -154,7 +156,7 @@ test('切断・接続中・独自シナリオを選び、切断時の送信エ�
   const ctx = createMockContext({ scenario: 'disconnected' })
   try {
     assert.equal(ctx.connection.state.getSnapshot(), 'disconnected')
-    const session = ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session
+    const session = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session
     const retirement: PendingSubmissionRetirement[] = []
     const pending = session.beginSubmission({ mode: 'queue', text: '送信', attachments: [], onRetire: (value) => retirement.push(value) })
     const result = await session.prompt([{ type: 'text', text: '送信' }], 'queue', undefined, pending.requestId)
@@ -165,8 +167,9 @@ test('切断・接続中・独自シナリオを選び、切断時の送信エ�
   const reconnecting = createMockContext({ scenario: 'reconnecting' })
   assert.equal(reconnecting.connection.state.getSnapshot(), 'connecting')
   reconnecting.dispose()
-  const custom = createMockContext({ scenario: 'custom', extensions: [{ extendMock(kit) { kit.scenario('custom', () => kit.updateList((state) => { state.jobsBySession = { sample: [] } })) } }] })
-  assert.deepEqual(custom.sessions.list.getSnapshot().jobsBySession, { sample: [] })
+  const custom = createMockContext({ scenario: 'custom', extensions: [{ extendMock(kit) { kit.scenario('custom', () => kit.setJobs('sample', [])) } }] })
+  custom.jobs.watchRows('sample')
+  assert.deepEqual(custom.jobs.state.getSnapshot().rows, {})
   custom.dispose()
 })
 
@@ -197,14 +200,14 @@ test('セッション追加・分岐・ワークスペース操作は共通の�
     const sessionId = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
     assert.equal(ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspace.workspaceId)?.sessionIds[0], sessionId)
     const fork = await ctx.sessions.fork({ sessionId: MOCK_IDS.sessions.readme, atSeq: 5 })
-    const events = foldSessionWindow(ctx.sessions.binding(fork)!.eventSource.getSnapshot()).records
+    const events = foldSessionWindow(ctx.sessions.retain(fork, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records
     assert.equal(events.length, 6)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
     await ctx.workspaces.archiveSession(fork)
     assert.ok(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(fork))
     await ctx.workspaces.insertSessionBefore(workspace.workspaceId, fork, sessionId)
     assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(fork), false)
-    const attachment = await ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.readAttachment('mock-readme-image')
+    const attachment = await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.readAttachment('mock-readme-image')
     assert.equal(attachment.ok, true)
     if (attachment.ok) assert.ok(attachment.value.data.length > 0)
   } finally { ctx.dispose() }
@@ -214,7 +217,7 @@ test('全偽履歴のメッセージは JSON として保存できる', () => {
   const ctx = createMockContext()
   try {
     const records: SessionWireEvent[] = []
-    for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow(ctx.sessions.binding(sessionId)!.eventSource.getSnapshot()).records)
+    for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
     assert.deepEqual(JSON.parse(JSON.stringify(records)), records)
   } finally { ctx.dispose() }
 })
@@ -222,7 +225,7 @@ test('全偽履歴のメッセージは JSON として保存できる', () => {
 test('機能のシナリオから会話のエラー状態を通知し、一覧の実行状態も合わせる', () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.binding(MOCK_IDS.sessions.approval)!
+    const binding = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
     const failure = { code: 'mock/open-failed', message: '会話を読み込めません。', details: {} }
     const promptError = { op: 'send' as const, error: { code: 'mock/send-failed', message: '送信できません。', details: {} } }
     let changes = 0
@@ -249,12 +252,10 @@ test('removeSession は選択・一覧・ワークスペース・scope と送信
   const ctx = createMockContext()
   try {
     const sessionId = MOCK_IDS.sessions.readme
-    const binding = ctx.sessions.binding(sessionId)!
-    ctx.sessions.open(sessionId)
+    const binding = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding
     await ctx.workspaces.archiveSession(sessionId)
     ctx.mock.updateList((state) => {
-      state.jobsBySession = { [sessionId]: [] }
-      state.subagentsByParent = { [sessionId]: { state: 'ready', error: null } }
+      state.projectionsBySession = { [sessionId]: { state: 'ready', error: null, values: {} } }
     })
     const retirements: PendingSubmissionRetirement[] = []
     const echo = binding.session.beginSubmission({ mode: 'queue', text: '送信前の入力', attachments: [], onRetire: (value) => retirements.push(value) })
@@ -264,15 +265,14 @@ test('removeSession は選択・一覧・ワークスペース・scope と送信
     const list = ctx.sessions.list.getSnapshot()
     assert.equal(list.ids.includes(sessionId), false)
     assert.equal(list.byId[sessionId], undefined)
-    assert.equal(list.jobsBySession[sessionId], undefined)
-    assert.equal(list.subagentsByParent[sessionId], undefined)
-    assert.equal(list.current, undefined)
+    assert.equal(ctx.jobs.state.getSnapshot().rows[sessionId], undefined)
+    assert.equal(list.projectionsBySession[sessionId], undefined)
     assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(sessionId), false)
     assert.ok(ctx.workspaces.list.getSnapshot().items.every((item) => !item.sessionIds.includes(sessionId)))
-    assert.equal(ctx.sessions.scope(sessionId), undefined)
-    assert.equal(ctx.sessions.scopeOf(binding.ctx), undefined)
-    assert.equal(ctx.sessions.sessionOf(binding.ctx), undefined)
-    assert.equal(ctx.sessions.binding(sessionId), undefined)
+    assert.equal(ctx.sessions.scope(sessionId), binding.ctx)
+    assert.equal(ctx.sessions.scopeOf(binding.ctx), sessionId)
+    assert.equal(ctx.sessions.sessionOf(binding.ctx), binding.session)
+    assert.equal(ctx.sessions.binding(sessionId), binding)
     assert.equal(binding.session.getSnapshot().removed, true)
     assert.equal(binding.session.getSnapshot().pendingSubmissions.length, 0)
     assert.deepEqual(retirements, [{ reason: 'failed' }])
@@ -286,7 +286,8 @@ test('削除した会話のストリーム・遅延イベント・ページン�
   const ctx = createMockContext({ pageSize: 4 })
   try {
     const sessionId = MOCK_IDS.sessions.readme
-    const binding = ctx.sessions.binding(sessionId)!
+    const reference = ctx.sessions.retain(sessionId, { source: 'm3e.test' })
+    const binding = reference.binding
     const summary = { ...ctx.sessions.list.getSnapshot().byId[sessionId]!, running: false, blank: true }
     const on = ctx.remote.$on as (event: string, handler: () => unknown) => () => void
     let events = 0
@@ -295,12 +296,13 @@ test('削除した会話のストリーム・遅延イベント・ページン�
     const emitted = ctx.mock.emit('approval/request', { agent: sessionId }, { afterMs: 10_000 })
     const loading = binding.session.loadOlder()
     ctx.mock.removeSession(sessionId)
+    reference.release()
     ctx.mock.addSession(summary, [])
     await Promise.all([streaming, emitted, loading])
     assert.equal(events, 0)
     assert.deepEqual(binding.eventSource.getSnapshot().entries, [])
     assert.equal(binding.session.getSnapshot().loadingOlder, false)
-    const replacement = ctx.sessions.binding(sessionId)!
+    const replacement = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding
     assert.notEqual(replacement, binding)
     assert.equal(replacement.session.getSnapshot().running, false)
     assert.deepEqual(foldSessionWindow(replacement.eventSource.getSnapshot()), { records: [], stream: null })
@@ -311,43 +313,36 @@ test('停止後の待機列タイマーは削除した会話を復活させな�
   const ctx = createMockContext()
   try {
     const sessionId = MOCK_IDS.sessions.approval
-    const binding = ctx.sessions.binding(sessionId)!
+    const binding = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding
     await binding.session.prompt([{ type: 'text', text: '削除前の待機列' }], 'queue')
     await binding.session.cancel()
     ctx.mock.removeSession(sessionId)
     await new Promise((resolve) => setTimeout(resolve, 5))
-    assert.equal(ctx.sessions.binding(sessionId), undefined)
+    assert.equal(ctx.sessions.binding(sessionId), binding)
     assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId], undefined)
-    assert.equal(binding.session.getSnapshot().queue.length, 0)
+    assert.equal(queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined).length, 0)
     assert.equal(binding.session.getSnapshot().running, false)
     assert.equal(binding.session.getSnapshot().removed, true)
   } finally { ctx.dispose() }
 })
 
-test('サブエージェントの親または選択中の子を削除すると選択アドレスも解除する', () => {
+test('親の削除は子の利用可否へ反映し、子の削除は保持中の世代へ通知する', async () => {
   const ctx = createMockContext()
   try {
     const parentSessionId = MOCK_IDS.sessions.readme
     ctx.mock.addSession({ id: 'child', parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: true, updatedAt: 0 }, [])
-    ctx.mock.updateList((state) => {
-      state.subagentsByParent = { [parentSessionId]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: 'child', mode: 'one-shot', activity: 'inactive', hasChildren: false }] } }
-    })
-    ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child', mode: 'one-shot' })
-    assert.equal(ctx.sessions.list.getSnapshot().currentAddress?.childSessionId, 'child')
+    ctx.mock.setProjection(parentSessionId, 'subagentCatalog', [{ id: 'child', mode: 'one-shot', createdAt: 0 }])
+    const reference = ctx.sessions.retain({ parentSessionId, childSessionId: 'child', mode: 'one-shot' }, { source: 'm3e.test' })
+    const binding = await reference.ready
     ctx.mock.removeSession(parentSessionId)
-    assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    assert.equal(ctx.sessions.binding('child')!.session.getSnapshot().subagent?.parentAvailable, false)
-    assert.throws(() => ctx.sessions.openSubagent({ parentSessionId, childSessionId: 'child', mode: 'one-shot' }))
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    ctx.mock.addSession({ id: 'second-child', parentId: MOCK_IDS.sessions.approval, origin: 'subagent', displayTitle: '別の子の会話', running: false, blank: true, updatedAt: 0 }, [])
-    ctx.mock.updateList((state) => {
-      state.subagentsByParent = { [MOCK_IDS.sessions.approval]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: 'second-child', mode: 'continuable', label: '別の子の会話', activity: 'inactive', hasChildren: false }] } }
-    })
-    ctx.sessions.openSubagent({ parentSessionId: MOCK_IDS.sessions.approval, childSessionId: 'second-child', mode: 'continuable' })
-    ctx.mock.removeSession('second-child')
-    assert.equal(ctx.sessions.list.getSnapshot().currentAddress, undefined)
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+    assert.equal(binding.session.getSnapshot().subagent?.parentAvailable, false)
+    ctx.mock.removeSession('child')
+    assert.equal(binding.session.getSnapshot().removed, true)
+    assert.equal(ctx.sessions.binding('child'), binding)
+    reference.release()
+    assert.equal(ctx.sessions.binding('child'), undefined)
+    assert.equal(ctx.sessions.scope('child'), undefined)
+    assert.equal(ctx.sessions.subagentAddress('child'), undefined)
   } finally { ctx.dispose() }
 })
 

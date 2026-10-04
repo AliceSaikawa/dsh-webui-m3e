@@ -1,6 +1,5 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { ISessions, JsonValue, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
-import { sharedSessions } from '../../dsh/mock/fixtures.ts'
 import { findMatchRanges, normalizeQuery, selectRecentSessions } from './search-utils.ts'
 
 const origin = Date.parse('2026-09-25T09:00:00+09:00')
@@ -38,11 +37,9 @@ function waitForSearch(signal: AbortSignal): Promise<void> {
 }
 
 export function extendMock(kit: MockKit): void {
-  const initialRecords = new Map(sharedSessions.map(row => [row.summary.id, row.records]))
   function add(id: string, title: string, text: string, offset: number) {
-    const summary: SessionSummary = { id, title, displayTitle: title, cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: origin - offset }
+    const summary: SessionSummary = { retainedBy: {}, id, title, displayTitle: title, cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: origin - offset }
     const records: SessionWireEvent[] = [{ type: 'user/message', seq: 0, time: summary.updatedAt, data: { id: `${id}-message`, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text }] }, surfaceOp: 'append' }]
-    initialRecords.set(id, records)
     kit.addSession(summary, records)
   }
   fixtures.forEach(([id, title, text], index) => add(id, title, text, (index + 1) * 60_000))
@@ -57,11 +54,7 @@ export function extendMock(kit: MockKit): void {
     const list = this.list.getSnapshot()
     const rows = selectRecentSessions(list.ids.flatMap(id => list.byId[id] ? [list.byId[id]!] : []), list.ids.length)
     const items = query ? rows.flatMap(row => {
-      const records = new Map((initialRecords.get(row.id) ?? []).map(event => [event.seq, event]))
-      for (const entry of this.binding(row.id)?.eventSource.getSnapshot().entries ?? []) {
-        if (entry.type === 'event') records.set(entry.event.seq, entry.event)
-      }
-      const body = [...records.values()].sort((a, b) => a.seq - b.seq).map(event => textOf(event.data)).filter(Boolean).join('\n')
+      const body = [...kit.getRecords(row.id)].sort((a, b) => a.seq - b.seq).map(event => textOf(event.data)).filter(Boolean).join('\n')
       const snippet = excerptOf(body, query) ?? excerptOf(row.displayTitle, query)
       return snippet === undefined ? [] : [{ sessionId: row.id, snippet }]
     }) : []

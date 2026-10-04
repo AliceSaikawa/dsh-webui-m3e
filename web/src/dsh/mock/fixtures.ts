@@ -77,6 +77,6 @@ export const approvalRecords: readonly SessionWireEvent[] = events([
 ])
 
 export const sharedSessions: readonly { summary: SessionSummary; records: readonly SessionWireEvent[] }[] = [
-  { summary: { id: MOCK_IDS.sessions.readme, title: 'README の見直し', displayTitle: 'README の見直し', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: origin + 15010 }, records: readmeRecords },
-  { summary: { id: MOCK_IDS.sessions.approval, title: '承認シートの実装', displayTitle: '承認シートの実装', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: origin + 20000 }, records: approvalRecords },
+  { summary: { retainedBy: {}, id: MOCK_IDS.sessions.readme, title: 'README の見直し', displayTitle: 'README の見直し', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: origin + 15010 }, records: readmeRecords },
+  { summary: { retainedBy: {}, id: MOCK_IDS.sessions.approval, title: '承認シートの実装', displayTitle: '承認シートの実装', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: origin + 20000 }, records: approvalRecords },
 ]

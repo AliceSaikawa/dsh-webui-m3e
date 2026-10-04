@@ -1,3 +1,4 @@
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync } from 'node:fs'
 import test from 'node:test'
@@ -106,8 +107,8 @@ test('サブエージェントの子は、親のカタログに mode 付きで�
     const missing = list.ids.flatMap(id => {
       const summary = list.byId[id]
       if (summary?.origin !== 'subagent' || !summary.parentId) return []
-      const entries = list.subagentsByParent[summary.parentId]?.entries
-      const listed = Array.isArray(entries) && entries.some((entry: { kind?: string; id?: string; mode?: string }) => entry.kind === 'child' && entry.id === id && (entry.mode === 'one-shot' || entry.mode === 'continuable'))
+      const entries = list.projectionsBySession[summary.parentId]?.values.subagentCatalog
+      const listed = Array.isArray(entries) && entries.some((entry: { kind?: string; id?: string; mode?: string }) => entry.id === id && (entry.mode === 'one-shot' || entry.mode === 'continuable'))
       return listed ? [] : [id]
     })
     assert.deepEqual(missing, [])
@@ -141,7 +142,7 @@ test('scenario=inbox の完了は全機能の 3 件を含み、うち 2 件が i
   const { ctx } = build('inbox')
   try {
     const list = ctx.sessions.list.getSnapshot()
-    const completed = list.ids.filter(id => list.byId[id]?.completed === true)
+    const completed = list.ids.filter(id => completionStatus(ctx).getSnapshot().byId[id]?.completionUnread === true)
     assert.deepEqual(new Set(completed), new Set([
       SESSION_TOOLS_MOCK_IDS.children.tests,
       INBOX_MOCK_IDS.completed, INBOX_MOCK_IDS.otherCompleted,

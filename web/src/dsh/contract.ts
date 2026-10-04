@@ -4,9 +4,7 @@
  * after boot, so a release that renamed or removed one fails with a version
  * message instead of a later, misleading error inside one screen.
  *
- * Observed: DSH 0.1.6-alpha.2 and later replaced `sessions.open`,
- * `openSubagent`, and `clear` with reference-counted `retain`; without this
- * check, opening a new session there only said the session was not found.
+ * DSH 0.2.0 uses explicit Session references; navigation belongs to M3E.
  *
  * Add a member here whenever services.ts gains one that the UI calls.
  */
@@ -14,9 +12,10 @@ export const REQUIRED_CONTRACT = {
   connection: { observables: ['state'], methods: ['reconnect'] },
   sessions: {
     observables: ['list'],
-    methods: ['create', 'open', 'openSubagent', 'subagentAddress', 'setSubagentCatalogOpen', 'refreshSubagents', 'clear', 'refresh', 'search', 'fork', 'scope', 'scopeOf', 'sessionOf', 'binding'],
+    methods: ['create', 'retain', 'using', 'retainInfo', 'subagentAddress', 'refreshProjections', 'refresh', 'search', 'fork', 'scope', 'scopeOf', 'sessionOf', 'binding'],
   },
   workspaces: { observables: ['list'], methods: ['create', 'rename', 'delete', 'insertBefore', 'archiveSession', 'insertSessionBefore'] },
+  jobs: { observables: ['state'], methods: ['watchRows'] },
   remote: { observables: [], methods: ['$on'] },
 } as const satisfies Record<string, { observables: readonly string[]; methods: readonly string[] }>
 

@@ -1,6 +1,7 @@
 import type { ISessions, SessionListState, SessionSummary, SubagentAddress } from '../../dsh/services.ts'
 import { RemoteCallError } from '../../dsh/remote-result.ts'
 import { subagentCatalogAddress } from '../../dsh/session-navigation.ts'
+import { conversationSelection } from '../../dsh/conversation-selection.ts'
 
 function catalogAddress(list: SessionListState, row: SessionSummary): SubagentAddress | undefined {
   return row.parentId ? subagentCatalogAddress(list, row.parentId, row.id) : undefined
@@ -8,7 +9,7 @@ function catalogAddress(list: SessionListState, row: SessionSummary): SubagentAd
 
 /** Follow home/session-navigation's selection order until foundation exposes a shared entry. */
 export async function openInboxSession(
-  sessions: Pick<ISessions, 'list' | 'refreshSubagents' | 'openSubagent'>,
+  sessions: ISessions,
   sessionId: string,
   navigate: (path: string) => void,
   isActive: () => boolean = () => true,
@@ -21,10 +22,10 @@ export async function openInboxSession(
     let address = catalogAddress(sessions.list.getSnapshot(), row)
     if (!address) {
       // The controller validates the parent's catalog, not just a remembered address.
-      await sessions.refreshSubagents(row.parentId)
+      await sessions.refreshProjections(row.parentId)
       if (!isActive()) return
       const list = sessions.list.getSnapshot()
-      const failure = list.subagentsByParent[row.parentId]?.error
+      const failure = list.projectionsBySession[row.parentId]?.error
       if (failure) throw new RemoteCallError(failure)
       const current = list.byId[sessionId]
       if (!current || current.origin !== 'subagent' || current.parentId !== row.parentId) {
@@ -34,7 +35,7 @@ export async function openInboxSession(
     }
     if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
     if (!isActive()) return
-    sessions.openSubagent(address)
+    if (!await conversationSelection(sessions).select(address)) return
   }
   if (isActive()) navigate(`/s/${encodeURIComponent(sessionId)}`)
 }

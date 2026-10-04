@@ -1,4 +1,4 @@
-import type { ISessions, SessionFace } from '../../dsh/services.ts'
+import type { ISessions, SessionFace, SessionReference } from '../../dsh/services.ts'
 import { sessionAccess } from '../../dsh/session-access.ts'
 import { requireMatched, type composerApi, type PlanProjection } from './api.ts'
 import { clearDraft, readDraft, writeDraft } from './drafts.ts'
@@ -10,7 +10,7 @@ export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'n
 export interface DeliveryOptions {
   target: DeliveryTarget
   draftKey: string
-  sessions: Pick<ISessions, 'create' | 'scope' | 'sessionOf' | 'refresh' | 'list'>
+  sessions: Pick<ISessions, 'create' | 'retain' | 'subagentAddress' | 'refresh' | 'list'>
   api: Pick<ReturnType<typeof composerApi>, 'selectModel' | 'listCommands'>
   mode: 'queue' | 'steer'
 }
@@ -72,6 +72,7 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
   let sending = { ...currentDraft, retryMode: mode, error: currentDraft.deliveryOutcome === 'unknown' ? uncertainDeliveryMessage : undefined as string | undefined }
   let createdId: string | undefined
   let sessionReady = true
+  let reference: SessionReference | undefined
   try {
     if (!sending.text.trim() && !sending.images.length) throw new Error('メッセージか画像を追加してください。')
     writeDraft(draftKey, sending)
@@ -90,9 +91,9 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
       shareFlight(`session:${createdId}`)
       writeDraft(`session:${createdId}`, sending)
     }
-    const scope = sessions.scope(sessionId)
-    const destination = scope ? sessions.sessionOf(scope) : undefined
-    if (!destination) throw new Error('会話を準備できませんでした。会話を開き直してから送信してください。')
+    reference = sessions.retain(sessions.subagentAddress(sessionId) ?? sessionId, { source: 'm3e.delivery' })
+    const destination = (await reference.ready).session
+    if (destination.getSnapshot().openState === 'error') throw new Error('会話を準備できませんでした。会話を開き直してから送信してください。')
     ensureWritable(destination, sessions)
 
     if (sending.model) {
@@ -145,6 +146,7 @@ async function runDelivery({ target, draftKey, sessions, api, mode }: DeliveryOp
     if (createdId && !sessionReady) writeDraft(draftKey, failed)
     return { createdId, ...(createdId && sending.workspaceAttachment ? { sessionReady } : {}), error }
   } finally {
+    reference?.release()
     // Once creation succeeded, retries belong to that session even if preparation or sending failed.
     if (createdId && sessionReady) clearDraft(draftKey)
   }

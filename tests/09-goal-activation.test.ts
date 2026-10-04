@@ -35,7 +35,7 @@ test('active/disarmed は初回 get で停止中・再開となり、一度の�
   let live: GoalActivationRef | undefined
   const watcher = watchGoalActivation(ctx.remote, goals, sessionId, value => { live = value }, () => assert.fail('取得に失敗'))
   try {
-    const projection = ctx.sessions.binding(sessionId)!.session.projections.faceOf('goal').getSnapshot() as GoalProjection
+    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal').getSnapshot() as GoalProjection
     assert.equal('activation' in projection, false)
     assert.equal('activation' in projection.goal, false)
     assert.equal(projection.goal.phase, 'active')

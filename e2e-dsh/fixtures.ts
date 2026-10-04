@@ -23,6 +23,12 @@ export const test = base.extend<{ browserErrors: string[]; pageErrors: string[] 
     const errors: string[] = []
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     await use(errors)
+    // Evidence of the transport closure, including the job controller, from
+    // requests the browser actually made (no additional Host requests).
+    const plugins = await page.evaluate(() => performance.getEntriesByType('resource')
+      .map(entry => new URL(entry.name)).filter(url => url.pathname === '/plugins/')
+      .map(url => url.search)).catch(() => [])
+    await info.attach('m3e-plugin-requests', { body: JSON.stringify(plugins, null, 2), contentType: 'application/json' })
     await info.attach('browser-errors', { body: JSON.stringify({ console: errors, page: pageErrors }, null, 2), contentType: 'application/json' })
     expect(pageErrors, '捕まえられていない例外がない').toEqual([])
     if (!info.annotations.some(note => note.type === 'expected-console-errors')) expect(errors, 'console.error がない').toEqual([])

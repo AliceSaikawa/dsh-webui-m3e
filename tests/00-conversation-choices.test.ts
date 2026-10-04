@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { SessionSummary, WorkspaceView } from '../web/src/dsh/services.ts'
 import { conversationChoices, conversationChoiceAvailable, CONVERSATION_CHOICE_LIMIT } from '../web/src/features/conversation/conversation-choices.ts'
 
-const row = (id: string, patch: Partial<SessionSummary> = {}): SessionSummary => ({ id, displayTitle: id, running: false, blank: false, updatedAt: 0, ...patch })
+const row = (id: string, patch: Partial<SessionSummary> = {}): SessionSummary => ({ retainedBy: {}, id, displayTitle: id, running: false, blank: false, updatedAt: 0, ...patch })
 const workspace = (id: string, ids: string[]): WorkspaceView => ({ workspaceId: id, title: id, path: `/mock/${id}`, sessionIds: ids, createdAt: '2026-10-02', updatedAt: '2026-10-02' })
 function catalog(rows: SessionSummary[]) { return { ids: rows.map(item => item.id), byId: Object.fromEntries(rows.map(item => [item.id, item])) } }
 

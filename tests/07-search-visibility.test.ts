@@ -11,19 +11,19 @@ import {
   selectVisibleRecentSessions,
 } from '../web/src/features/search/search-visibility.ts'
 
-type SearchSessionList = Pick<SessionListState, 'ids' | 'byId' | 'current' | 'phase'>
+type SearchSessionList = Pick<SessionListState, 'ids' | 'byId' | 'phase'>
 
 function session(id: string, updatedAt: number, patch: Partial<SessionSummary> = {}): SessionSummary {
-  return { id, displayTitle: id, running: false, blank: false, updatedAt, ...patch }
+  return { retainedBy: {}, id, displayTitle: id, running: false, blank: false, updatedAt, ...patch }
 }
 
-function sessionList(rows: readonly SessionSummary[], patch: Partial<SearchSessionList> = {}): SearchSessionList {
+function sessionList(rows: readonly SessionSummary[], patch: Partial<SearchSessionList> & { current?: string } = {}): SearchSessionList {
+  const { current, ...state } = patch
   return {
     ids: rows.map(row => row.id),
-    byId: Object.fromEntries(rows.map(row => [row.id, row])),
-    current: undefined,
+    byId: Object.fromEntries(rows.map(row => [row.id, current === row.id ? { ...row, retainedBy: { 'm3e.mainView': 1 } } : row])),
     phase: 'ready',
-    ...patch,
+    ...state,
   }
 }
 
@@ -84,7 +84,7 @@ test('archive changes immediately hide cached results while preserving the searc
 
 test('recent rows include only the selected blank and exclude subagents and archived sessions', () => {
   const ordinary = session('通常', 1)
-  const selectedBlank = session('選択中の空', 5, { blank: true })
+  const selectedBlank = session('選択中の空', 5, { blank: true, retainedBy: { 'm3e.mainView': 1 } })
   const list = sessionList([
     ordinary,
     session('子', 6, { origin: 'subagent' }),
@@ -93,7 +93,7 @@ test('recent rows include only the selected blank and exclude subagents and arch
     selectedBlank,
   ], { current: selectedBlank.id })
   assert.deepEqual(selectVisibleRecentSessions(list, { archivedSessionIds: ['保管済み'] }), [selectedBlank, ordinary])
-  assert.deepEqual(selectVisibleRecentSessions({ ...list, current: undefined }, { archivedSessionIds: ['保管済み'] }), [ordinary])
+  assert.deepEqual(selectVisibleRecentSessions({ ...list, byId: { ...list.byId, [selectedBlank.id]: { ...selectedBlank, retainedBy: {} } } }, { archivedSessionIds: ['保管済み'] }), [ordinary])
 })
 
 test('recent rows require existing metadata even while the list is pending', () => {
@@ -146,7 +146,7 @@ test('changing the subagent flag reevaluates cached search items without changin
 test('showing subagents never restores archived, missing or query-excluded blank rows', () => {
   const parent = session('親', 1)
   const child = session('子', 2, { origin: 'subagent', parentId: parent.id })
-  const selectedBlank = session('選択中の空の子', 3, { origin: 'subagent', blank: true })
+  const selectedBlank = session('選択中の空の子', 3, { retainedBy: { 'm3e.mainView': 1 }, origin: 'subagent', blank: true })
   const list = sessionList([
     parent, child, selectedBlank,
     session('未選択の空の子', 4, { origin: 'subagent', blank: true }),

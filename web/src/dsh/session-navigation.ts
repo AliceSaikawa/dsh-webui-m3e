@@ -1,72 +1,55 @@
-import type { ISessions, SessionListState, SubagentAddress } from './services.ts'
+import type { ISessions, SessionListState, SessionTarget, SubagentAddress } from './services.ts'
 import { RemoteCallError } from './remote-result.ts'
+import { conversationSelection } from './conversation-selection.ts'
 
-type NavigationSessions = Pick<ISessions, 'list' | 'open' | 'openSubagent' | 'subagentAddress' | 'refreshSubagents'>
-const catalogRefreshes = new WeakMap<NavigationSessions, Map<string, Promise<void>>>()
+const refreshes = new WeakMap<ISessions['list'], Map<string, Promise<void>>>()
+function refresh(sessions: Pick<ISessions, 'list' | 'refreshProjections'>, id: string): Promise<void> {
+  let pending = refreshes.get(sessions.list)
+  if (!pending) { pending = new Map(); refreshes.set(sessions.list, pending) }
+  const existing = pending.get(id)
+  if (existing) return existing
+  const request = sessions.refreshProjections(id).finally(() => pending.delete(id))
+  pending.set(id, request)
+  return request
+}
 
-/**
- * Read a child's address from the parent's subagent catalog, the only place
- * the controller accepts it from. The entry shape is DSH's catalog row
- * (`kind: 'child'`, `mode`), parsed here once for every caller.
- */
 export function subagentCatalogAddress(list: SessionListState, parentSessionId: string, childSessionId: string): SubagentAddress | undefined {
-  const catalog = list.subagentsByParent[parentSessionId]
-  if (catalog?.state !== 'ready' || !Array.isArray(catalog.entries)) return undefined
-  const entry: unknown = catalog.entries.find((value: unknown) => typeof value === 'object' && value !== null && 'id' in value && value.id === childSessionId)
-  if (typeof entry !== 'object' || entry === null || !('kind' in entry) || entry.kind !== 'child' || !('mode' in entry)
-    || (entry.mode !== 'one-shot' && entry.mode !== 'continuable')) return undefined
+  const projection = list.projectionsBySession[parentSessionId]
+  if (!projection || projection.state === 'error' || projection.state === 'loading') return undefined
+  const entry = projection.values.subagentCatalog?.find(value => value.id === childSessionId)
+  if (entry?.mode !== 'one-shot' && entry?.mode !== 'continuable') return undefined
   return { parentSessionId, childSessionId, mode: entry.mode }
 }
 
-function refreshCatalog(sessions: NavigationSessions, parentSessionId: string): Promise<void> {
-  let refreshes = catalogRefreshes.get(sessions)
-  if (!refreshes) { refreshes = new Map(); catalogRefreshes.set(sessions, refreshes) }
-  const existing = refreshes.get(parentSessionId)
-  if (existing) return existing
-  const pending = sessions.refreshSubagents(parentSessionId).finally(() => { refreshes.delete(parentSessionId) })
-  refreshes.set(parentSessionId, pending)
-  return pending
-}
-
-function isSelected(list: SessionListState, address: SubagentAddress): boolean {
-  return list.current === address.childSessionId
-    && list.currentAddress?.childSessionId === address.childSessionId
-    && list.currentAddress.parentSessionId === address.parentSessionId
-    && list.currentAddress.mode === address.mode
-}
-
-/** Resolve a child's catalog before selecting it. False means the caller left. */
-export async function openConversationSession(
-  sessions: NavigationSessions,
-  sessionId: string,
-  isActive: () => boolean = () => true,
-): Promise<boolean> {
-  if (!isActive()) return false
+/** Resolve without owning anything. A closed picker never reaches retain. */
+export async function resolveConversationTarget(sessions: Pick<ISessions, 'list' | 'subagentAddress' | 'refreshProjections'>, sessionId: string, isActive: () => boolean = () => true): Promise<SessionTarget | undefined> {
+  if (!isActive()) return undefined
   const list = sessions.list.getSnapshot()
   const row = list.byId[sessionId]
   const retained = sessions.subagentAddress(sessionId)
   if (row?.origin !== 'subagent' && retained === undefined) {
     if (!row) throw new Error('会話が見つかりません。')
-    if (list.current !== sessionId) sessions.open(sessionId)
-    return true
+    return sessionId
   }
   const parentSessionId = row?.parentId ?? retained?.parentSessionId
   if (!parentSessionId) throw new Error('親の会話が見つかりません。')
   let address = subagentCatalogAddress(list, parentSessionId, sessionId)
   if (!address) {
-    try { await refreshCatalog(sessions, parentSessionId) }
-    catch (error) { if (!isActive()) return false; throw error }
-    if (!isActive()) return false
+    try { await refresh(sessions, parentSessionId) } catch (error) { if (!isActive()) return undefined; throw error }
+    if (!isActive()) return undefined
     const latest = sessions.list.getSnapshot()
-    const failure = latest.subagentsByParent[parentSessionId]?.error
+    const failure = latest.projectionsBySession[parentSessionId]?.error
     if (failure) throw new RemoteCallError(failure)
-    if (latest.byId[sessionId]?.parentId !== undefined && latest.byId[sessionId]?.parentId !== parentSessionId) {
-      throw new Error('親の会話の情報が変わりました。もう一度お試しください。')
-    }
+    const current = latest.byId[sessionId]
+    if (row && (!current || current.origin !== row.origin || current.parentId !== row.parentId)) throw new Error('子の会話の情報が変わりました。もう一度お試しください。')
     address = subagentCatalogAddress(latest, parentSessionId, sessionId)
   }
   if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
-  if (!isActive()) return false
-  if (!isSelected(sessions.list.getSnapshot(), address)) sessions.openSubagent(address)
-  return true
+  return isActive() ? address : undefined
+}
+
+export async function openConversationSession(sessions: ISessions, sessionId: string, isActive: () => boolean = () => true): Promise<boolean> {
+  const target = await resolveConversationTarget(sessions, sessionId, isActive)
+  if (target === undefined || !isActive()) return false
+  return conversationSelection(sessions).select(target)
 }

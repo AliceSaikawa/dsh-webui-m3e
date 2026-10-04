@@ -186,8 +186,13 @@ for (const width of [375, 390]) {
     await page.evaluate(() => {
       const state = window as any, ctx = state.__robustnessContext
       state.__robustnessPrompts = []
-      for (const sessionId of ['readme-review', 'session-tools-review']) {
-        const face = ctx.sessions.sessionOf(ctx.sessions.scope(sessionId)), original = face.prompt.bind(face)
+      const retain = ctx.sessions.retain.bind(ctx.sessions), patched = new WeakSet()
+      ctx.sessions.retain = (...args: any[]) => {
+        const reference = retain(...args), sessionId = reference.sessionId
+        const face = reference.binding.session
+        if (!['readme-review', 'session-tools-review'].includes(sessionId) || patched.has(face)) return reference
+        patched.add(face)
+        const original = face.prompt.bind(face)
         face.prompt = async (...args: any[]) => {
           // Cases 0/2 hold the known synthetic response after acceptance;
           // case 1 holds before acceptance to test explicit disconnected refusal.
@@ -196,6 +201,7 @@ for (const width of [375, 390]) {
           await new Promise(resolve => { state.__robustnessPrompts.push({ sessionId, release: resolve, released: false, phase: beforeAcceptance ? 'before-acceptance' : 'accepted-response-held' }) })
           return beforeAcceptance ? original(...args) : result
         }
+        return reference
       }
     })
     const input = page.getByLabel('メッセージ入力欄', { exact: true })
@@ -244,7 +250,7 @@ for (const width of [375, 390]) {
       }
       await page.evaluate(async () => {
         const ctx = (window as any).__robustnessContext
-        for (const id of ['readme-review', 'session-tools-review']) await ctx.sessions.sessionOf(ctx.sessions.scope(id)).cancel()
+        for (const id of ['readme-review', 'session-tools-review']) await ctx.sessions.using(id, { source: 'm3e.testStop' }, (reference: any) => reference.binding.session.cancel())
       })
       await navigate(page, '')
       const current = await settled(page)

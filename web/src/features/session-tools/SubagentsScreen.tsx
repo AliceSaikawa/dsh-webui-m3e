@@ -8,24 +8,24 @@ import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { catalogEntries, catalogRows, childAddress, type Child } from './presentation.ts'
+import { conversationSelection } from '../../dsh/conversation-selection.ts'
 
 export function SubagentsScreen({ sessionId }: { sessionId: string }) {
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
-  const catalog = list.subagentsByParent[sessionId]
-  const entries = catalogEntries(catalog)
+  const catalog = list.projectionsBySession[sessionId]
+  const entries = catalogEntries(catalog, list.byId)
   const { children, diagnosticCount } = catalogRows(entries)
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     let active = true
     setError('')
-    sessions.setSubagentCatalogOpen(sessionId, true)
-    void sessions.refreshSubagents(sessionId).catch(error => { if (active) setError(remoteErrorMessage(error, 'サブエージェントを読み込めませんでした。')) })
-    return () => { active = false; sessions.setSubagentCatalogOpen(sessionId, false) }
+    void sessions.refreshProjections(sessionId).catch(error => { if (active) setError(remoteErrorMessage(error, 'サブエージェントを読み込めませんでした。')) })
+    return () => { active = false }
   }, [sessions, sessionId, retry])
-  function open(child: Child) {
-    try { sessions.openSubagent(childAddress(sessionId, child)); navigate(`/s/${encodeURIComponent(child.id)}`) }
+  async function open(child: Child) {
+    try { if (await conversationSelection(sessions).select(childAddress(sessionId, child))) navigate(`/s/${encodeURIComponent(child.id)}`) }
     catch (error) { setError(remoteErrorMessage(error, '子の会話を開けませんでした。読み直してお試しください。')) }
   }
   return <PageScaffold title="サブエージェント"><div className="st-content">

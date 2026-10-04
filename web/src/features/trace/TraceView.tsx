@@ -101,13 +101,16 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     // Read the restored position without writing it, then resume from there.
     if (initialized.current) follow.current = isTraceAtBottom(node.scrollTop, node.scrollHeight, node.clientHeight)
     updateScroll('activation')
+    const initialSize = { height: node.scrollHeight, viewport: node.clientHeight }
     let firstNotification = true
     let disposed = false
     const observer = new ResizeObserver(() => {
       if (disposed || !current.current.active) return
-      // observe() reports the initial size even when nothing changed. That
-      // notification must not undo a restored position on tab reactivation.
-      updateScroll(firstNotification ? 'activation' : 'resize')
+      // The first callback may include custom-element upgrades after retain.
+      // Ignore it only when size really stayed unchanged; otherwise follow the
+      // new end, preserving the existing user-scroll and search policy.
+      const unchanged = node.scrollHeight === initialSize.height && node.clientHeight === initialSize.viewport
+      updateScroll(firstNotification && unchanged ? 'activation' : 'resize')
       firstNotification = false
     })
     observer.observe(node)

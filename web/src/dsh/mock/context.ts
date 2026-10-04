@@ -3,9 +3,12 @@ import type {
   IWorkspaces, ISessions, JsonValue, PendingSubmissionRetirement, RemoteResult,
   SessionBinding, SessionEventChange, SessionEventLikeEntry, SessionEventWindow,
   SessionFace, SessionListState, SessionSnapshot, SessionSummary, SessionWireEvent,
-  StreamChunk, WorkspaceSnapshot, WorkspaceView,
+  StreamChunk, WorkspaceSnapshot, WorkspaceView, SessionReference, SessionRetainInfo,
+  SessionTarget, JobsSnapshot, SessionJob, InboxState, ObservableSnapshot,
 } from '../services.ts'
 import { observable, type MutableSnapshot } from './observable.ts'
+import { completionStatus } from '../completion-status.ts'
+import { conversationSelection } from '../conversation-selection.ts'
 import { imageAttachment, imageBase64, MOCK_IDS, sharedSessions, sharedWorkspaces } from './fixtures.ts'
 
 type EventHandler = (this: AgentContext, payload: unknown, next: () => Promise<unknown>) => unknown
@@ -13,7 +16,9 @@ export interface MockKit {
   addWorkspace(workspace: WorkspaceView): void
   /** Update an existing workspace in place; unknown ids throw and identity stays fixed. */
   updateWorkspace(workspaceId: string, update: Partial<Omit<WorkspaceView, 'workspaceId'>> | ((current: WorkspaceView) => Partial<Omit<WorkspaceView, 'workspaceId'>>)): void
-  addSession(summary: SessionSummary, records: readonly SessionWireEvent[]): void
+  addSession(summary: Omit<SessionSummary, 'retainedBy'> & Partial<Pick<SessionSummary, 'retainedBy'>>, records: readonly SessionWireEvent[]): void
+  getRecords(sessionId: string): readonly SessionWireEvent[]
+  setJobs(sessionId: string, rows: readonly SessionJob[]): void
   addRemote(namespace: string, impl: unknown): void
   /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
   emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
@@ -60,7 +65,6 @@ interface SessionModel {
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string, details: Readonly<Record<string, unknown>> = {}): RemoteResult<never> => ({ ok: false, error: { code, message, details } })
 const accepted = () => success({ accepted: true as const })
-const textOf = (content: readonly ContentBlock[]) => content.filter((block) => block.type === 'text').map((block) => block.text).join('\n')
 const json = (value: unknown): JsonValue => JSON.parse(JSON.stringify(value)) as JsonValue
 
 /** Pure in-memory controller, independently testable without Vite or a Host. */
@@ -82,8 +86,51 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const selectedScenario = options.scenario
   const pageSize = Math.max(1, options.pageSize ?? 100)
   const connectionState = observable<'connected' | 'disconnected' | 'connecting'>('connected')
-  const list = observable<SessionListState>({ ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+  const list = observable<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null })
+  const jobState = observable<JobsSnapshot>({ rows: {}, observed: {} })
+  const hostJobs = new Map<string, readonly SessionJob[]>()
+  const jobWatches = new Map<string, number>()
+  const unresolvedAddresses = new Set<string>()
+  const retainObservers = new Map<string, MutableSnapshot<SessionRetainInfo>>()
+  const generations = new Map<string, { binding: SessionBinding; sources: Record<string, number>; live: boolean; cleanups: Set<() => void> }>()
+
+  function publishRetention(sessionId: string) {
+    const retainedBy = { ...generations.get(sessionId)?.sources }
+    const info = { retainedBy, referenceCount: Object.values(retainedBy).reduce((sum, n) => sum + n, 0) }
+    retainObservers.get(sessionId)?.set(info)
+    const model = models.get(sessionId)
+    if (model) updateSummary(model, { retainedBy })
+  }
+  function generation(sessionId: string) {
+    const existing = generations.get(sessionId)
+    if (existing) return existing
+    const model = getModel(sessionId)
+    const record = { binding: undefined as unknown as SessionBinding, sources: {} as Record<string, number>, live: true, cleanups: new Set<() => void>() }
+    const guard = () => { if (!record.live) throw new Error('Session generation is disposed') }
+    const watch = <T>(source: ObservableSnapshot<T>): ObservableSnapshot<T> => ({
+      getSnapshot: source.getSnapshot,
+      subscribe(listener) {
+        guard()
+        const unsubscribe = source.subscribe(listener)
+        const release = () => { unsubscribe(); record.cleanups.delete(release) }
+        record.cleanups.add(release)
+        return release
+      },
+    })
+    const overrides = new Map<PropertyKey, unknown>()
+    const projectionFaces = new Map<string, ObservableSnapshot<unknown>>()
+    const source = model.binding.session
+    const face = new Proxy(source, { get(target, key) {
+      if (key === 'subscribe') return watch(source).subscribe
+      if (key === 'projections') return { faceOf: (name: string) => { guard(); let face = projectionFaces.get(name); if (!face) { face = watch(source.projections.faceOf(name)); projectionFaces.set(name, face) }; return face } }
+      const value = overrides.has(key) ? overrides.get(key) : Reflect.get(target, key)
+      return typeof value === 'function' && key !== 'getSnapshot' ? (...args: unknown[]) => { guard(); return value.apply(target, args) } : value
+    }, set(_target, key, value) { guard(); overrides.set(key, value); return true } })
+    record.binding = { sessionId, session: face, ctx: { remote, sessionId, agent: sessionId }, eventSource: watch(model.events) }
+    generations.set(sessionId, record)
+    return record
+  }
 
   const isActive = (model: SessionModel) => !disposed && models.get(model.summary.id) === model
   const delay = (ms: number, owner?: SessionModel) => new Promise<void>((resolve) => {
@@ -101,16 +148,19 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   async function deliverEvent(event: string, payload: unknown, sessionId: string | undefined, owner: SessionModel | undefined): Promise<unknown> {
     if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
-    const scope = owner?.binding.ctx ?? { remote }
+    const reference = owner ? sessions.retain(owner.summary.id, { source: 'm3e.mockGateway' }) : undefined
+    const scope = reference?.binding.ctx ?? { remote }
     const selected = [...(handlers.get(event) ?? [])]
+    try {
     if (event !== 'approval/request' && event !== 'user-questions/request') {
-      return Promise.all(selected.map((handler) => handler.call(scope, payload, async () => undefined)))
+      return await Promise.all(selected.map((handler) => handler.call(scope, payload, async () => undefined)))
     }
     const invoke = async (index: number): Promise<unknown> => {
       const handler = selected[index]
       return handler ? handler.call(scope, payload, () => invoke(index + 1)) : undefined
     }
-    return invoke(0)
+    return await invoke(0)
+    } finally { reference?.release() }
   }
   const getModel = (sessionId: string): SessionModel => {
     const model = models.get(sessionId)
@@ -146,7 +196,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   function running(model: SessionModel, value: boolean) {
     if (!isActive(model)) return
     model.snapshot.update((state) => ({ ...state, running: value, blank: false }))
-    updateSummary(model, { running: value, blank: false, updatedAt: Date.now(), ...(value ? { completed: false } : {}) })
+    updateSummary(model, { running: value, blank: false, updatedAt: Date.now() })
   }
   function turnOf(model: SessionModel): number {
     const start = [...model.records].reverse().find((event) => event.type === 'turn/start')
@@ -177,10 +227,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   function advanceQueue(model: SessionModel) {
     if (!isActive(model)) return
-    const first = model.snapshot.getSnapshot().queue[0]
+    const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
+    const first = inbox?.['next-turn'][0]
     if (!first) return
-    model.snapshot.update((state) => ({ ...state, queue: state.queue.slice(1) }))
-    beginTurn(model, first.content, first.rpcId)
+    kit.setProjection(model.summary.id, 'inbox', { ...inbox, 'next-turn': inbox!['next-turn'].slice(1) })
+    beginTurn(model, first.content, first.source.rpcId)
     if (!isActive(model)) return
     void kit.streamAssistant(model.summary.id, '順番待ちのメッセージを受け取りました。', { chunkMs: 30 })
   }
@@ -192,6 +243,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
 
   const workspaces: IWorkspaces = {
     list: workspaceList,
+    async initializeDefault() { return undefined },
+    async unarchiveSession(sessionId) { workspaceList.update(state => ({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })) },
+    async pinSession() {},
+    async unpinSession() {},
     async create({ path }) {
       const previous = workspaceList.getSnapshot().items.find((item) => item.path === path)
       if (previous) return previous
@@ -218,7 +273,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return { ...state, items }
       })
     },
-    async archiveSession(sessionId) {
+    async archiveSession(sessionId, options) {
+      const model = getModel(sessionId)
+      if ((model.snapshot.getSnapshot().running || hostJobs.get(sessionId)?.some(row => row.status === 'running' || row.status === 'stopping')) && !options?.stopActivity) {
+        throw { rpcError: { code: 'workspace/session-active', message: 'Session has running activity', details: { sessionId } } }
+      }
+      if (options?.stopActivity) running(model, false)
       workspaceList.update((state) => ({ ...state, archivedSessionIds: [...new Set([...state.archivedSessionIds, sessionId])] }))
     },
     async insertSessionBefore(workspaceId, sessionId, beforeSessionId) {
@@ -244,31 +304,88 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       if (workspace) await workspaces.insertSessionBefore(workspace.workspaceId, sessionId)
       return sessionId
     },
-    open(sessionId) {
-      const model = models.get(sessionId)
-      if (!model) return
-      model.snapshot.update((state) => state.openState === 'error' ? state : { ...state, openState: 'open' })
-      model.summary = { ...model.summary, completed: false }
-      list.update((state) => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, current: sessionId, currentAddress: model.snapshot.getSnapshot().subagent?.address }))
-    },
-    openSubagent(address) {
-      const catalog = list.getSnapshot().subagentsByParent[address.parentSessionId]
-      const entries = catalog?.entries
-      const entry: unknown = Array.isArray(entries) ? entries.find((candidate: unknown) =>
-        typeof candidate === 'object' && candidate !== null && 'id' in candidate && candidate.id === address.childSessionId) : undefined
-      if (typeof entry !== 'object' || entry === null || !('kind' in entry) || entry.kind !== 'child'
-        || !('mode' in entry) || (entry.mode !== 'one-shot' && entry.mode !== 'continuable') || entry.mode !== address.mode) {
-        throw new Error('サブエージェントのカタログとアドレスが一致しません。')
+    retain(target: SessionTarget, { source, signal }) {
+      signal?.throwIfAborted()
+      if (disposed) throw new Error('Session Controller is disposed')
+      const sessionId = typeof target === 'string' ? target : target.childSessionId
+      const address = typeof target === 'string' ? sessions.subagentAddress(target) : target
+      if (typeof target === 'string' && !generations.has(sessionId) && !list.getSnapshot().byId[sessionId] && !address) throw new Error(`sessions.retain: unknown session ${sessionId}`)
+      // A durable address is admitted locally; missing children fail at open, as on the Host.
+      if (!models.has(sessionId)) {
+        unresolvedAddresses.add(sessionId)
+        kit.addSession({ id: sessionId, displayTitle: sessionId, running: false, blank: true, updatedAt: 0, origin: 'subagent', parentId: address?.parentSessionId }, [])
+        kit.setSessionState(sessionId, { openState: 'error', openError: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } })
       }
-      const model = getModel(address.childSessionId)
-      const selectedAddress = { ...address }
-      model.snapshot.update((state) => ({ ...state, subagent: { address: selectedAddress, parentAvailable: catalog?.parentAvailable } }))
-      sessions.open(address.childSessionId)
+      const model = getModel(sessionId)
+      if (address) model.snapshot.update(state => ({ ...state, subagent: { address, parentAvailable: models.has(address.parentSessionId) } }))
+      const record = generation(sessionId)
+      record.sources[source] = (record.sources[source] ?? 0) + 1
+      let released = false
+      let rejectReady: (error: unknown) => void = () => {}
+      const ready = new Promise<SessionBinding>((resolve, reject) => {
+        rejectReady = reject
+        queueMicrotask(() => { if (!released && record.live) { record.cleanups.delete(cancelReady); resolve(record.binding) } })
+      })
+      const cancelReady = () => rejectReady(new Error('Session generation is disposed'))
+      record.cleanups.add(cancelReady)
+      void ready.catch(() => {})
+      const release = () => {
+        if (released) return
+        released = true
+        signal?.removeEventListener('abort', release)
+        record.cleanups.delete(cancelReady)
+        record.cleanups.delete(release)
+        rejectReady(signal?.reason ?? new Error('Session reference released'))
+        if (!record.live) return
+        const count = (record.sources[source] ?? 1) - 1
+        if (count) record.sources[source] = count
+        else delete record.sources[source]
+        if (!Object.keys(record.sources).length) {
+          record.live = false
+          generations.delete(sessionId)
+          for (const cleanup of record.cleanups) cleanup()
+          for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
+          if (unresolvedAddresses.delete(sessionId)) kit.removeSession(sessionId)
+        }
+        publishRetention(sessionId)
+      }
+      record.cleanups.add(release)
+      signal?.addEventListener('abort', release, { once: true })
+      const reference: SessionReference = { sessionId, ready, release, [Symbol.dispose]: release,
+        get binding() { if (released || !record.live) throw new Error('Session reference released'); return record.binding } }
+      publishRetention(sessionId)
+      return reference
     },
-    subagentAddress(sessionId) { return models.get(sessionId)?.snapshot.getSnapshot().subagent?.address },
-    setSubagentCatalogOpen() { /* The in-memory catalog has no subscription cost. */ },
-    async refreshSubagents() { list.update((state) => ({ ...state })) },
-    clear() { list.update((state) => ({ ...state, current: undefined, currentAddress: undefined })) },
+    async using(target, options, operation) {
+      const reference = sessions.retain(target, options)
+      try { await reference.ready; return await operation(reference) } finally { reference.release() }
+    },
+    retainInfo(sessionId) {
+      let observer = retainObservers.get(sessionId)
+      if (!observer) {
+        const retainedBy = { ...generations.get(sessionId)?.sources }
+        observer = observable<SessionRetainInfo>({ referenceCount: Object.values(retainedBy).reduce((sum, n) => sum + n, 0), retainedBy })
+        retainObservers.set(sessionId, observer)
+      }
+      return observer
+    },
+    subagentAddress(sessionId) {
+      const retained = generations.get(sessionId)?.binding.session.getSnapshot().subagent?.address
+      if (retained) return retained
+      for (const [parentSessionId, projection] of Object.entries(list.getSnapshot().projectionsBySession)) {
+        const entry = projection.values.subagentCatalog?.find(row => row.id === sessionId)
+        if (entry) return { parentSessionId, childSessionId: sessionId, mode: entry.mode }
+      }
+      return undefined
+    },
+    async refreshProjections(sessionId) {
+      const previous = list.getSnapshot().projectionsBySession[sessionId]
+      if (previous?.state === 'ready') return
+      const model = models.get(sessionId)
+      list.update(state => ({ ...state, projectionsBySession: { ...state.projectionsBySession, [sessionId]: model
+        ? { values: Object.fromEntries([...model.projections].map(([key, value]) => [key, value.getSnapshot()])), state: 'ready', error: null }
+        : { values: {}, state: 'error', error: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } } } }))
+    },
     async refresh() { list.update((state) => ({ ...state, phase: 'ready' })) },
     async search(query, signal) {
       if (signal.aborted) return failure('rpc/aborted', '検索を取り消しました。')
@@ -288,12 +405,13 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       kit.addSession({ ...source.summary, id: sessionId, title, displayTitle: title, running: false, updatedAt: Date.now() }, source.records.filter((event) => input.atSeq === undefined || event.seq <= input.atSeq))
       const workspace = workspaceList.getSnapshot().items.find((item) => item.sessionIds.includes(input.sessionId))
       if (workspace) await workspaces.insertSessionBefore(workspace.workspaceId, sessionId)
+      input.onCreated?.(sessionId)
       return sessionId
     },
-    scope: (sessionId) => models.get(sessionId)?.binding.ctx,
-    scopeOf(scope) { for (const [sessionId, model] of models) if (model.binding.ctx === scope) return sessionId; return undefined },
-    sessionOf(scope) { const sessionId = sessions.scopeOf(scope); return sessionId ? models.get(sessionId)?.binding.session : undefined },
-    binding: (sessionId) => models.get(sessionId)?.binding,
+    scope: (sessionId) => generations.get(sessionId)?.binding.ctx,
+    scopeOf(scope) { for (const [sessionId, record] of generations) if (record.binding.ctx === scope) return sessionId; return undefined },
+    sessionOf(scope) { const sessionId = sessions.scopeOf(scope); return sessionId ? generations.get(sessionId)?.binding.session : undefined },
+    binding: (sessionId) => generations.get(sessionId)?.binding,
   }
 
   remote.$on = (event: string, handler: EventHandler) => {
@@ -318,14 +436,39 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           if (disposed) return
           for (const model of models.values()) replaceWindow(model)
           workspaceList.update((state) => ({ ...state }))
-          list.update((state) => ({ ...state }))
+          list.update((state) => ({ ...state, projectionsBySession: Object.fromEntries(Object.entries(state.projectionsBySession).map(([id, projection]) => [id, { ...projection, state: 'idle', error: null }])) }))
           connectionState.set('connected')
         })
       },
     },
     sessions, workspaces, remote,
+    jobs: {
+      state: jobState,
+      watchRows(sessionId) {
+        jobWatches.set(sessionId, (jobWatches.get(sessionId) ?? 0) + 1)
+        jobState.update(state => { const rows = { ...state.rows }; const jobs = hostJobs.get(sessionId); if (jobs?.length) rows[sessionId] = jobs; else delete rows[sessionId]; return { ...state, rows } })
+        let released = false
+        return () => {
+          if (released) return
+          released = true
+          const count = (jobWatches.get(sessionId) ?? 1) - 1
+          if (count) jobWatches.set(sessionId, count)
+          else { jobWatches.delete(sessionId); jobState.update(state => { const rows = { ...state.rows }; delete rows[sessionId]; return { ...state, rows } }) }
+        }
+      },
+      observe() { return () => {} },
+      async kill(sessionId, jobId) {
+        const row = hostJobs.get(sessionId)?.find(job => job.id === jobId)
+        if (!row) return failure('job/not-found', 'ジョブが見つかりません。')
+        if (row.status !== 'running' && row.status !== 'stopping') return success({ outcome: 'already-finished' as const })
+        kit.setJobs(sessionId, (hostJobs.get(sessionId) ?? []).map(row => row.id === jobId ? { ...row, status: 'killed', finishedAt: Date.now() } : row))
+        return success({ outcome: 'requested' as const })
+      },
+    },
     get mock() { return kit },
     dispose() {
+      conversationSelection(sessions).dispose()
+      completionStatus(ctx).dispose()
       disposed = true
       settingsReader = undefined
       for (const pending of startupEvents) pending.cancel()
@@ -333,6 +476,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       for (const [timer, pending] of timers) { clearTimeout(timer); pending.resolve() }
       timers.clear()
       handlers.clear()
+      for (const [sessionId, record] of generations) {
+        record.live = false
+        for (const cleanup of record.cleanups) cleanup()
+        generations.delete(sessionId)
+        publishRetention(sessionId)
+      }
       for (const model of models.values()) {
         model.attempt = undefined
         for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
@@ -341,6 +490,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
 
   const kit: MockKit = {
+    getRecords(sessionId) { return structuredClone(getModel(sessionId).records) },
+    setJobs(sessionId, rows) {
+      hostJobs.set(sessionId, structuredClone(rows))
+      if (jobWatches.has(sessionId)) jobState.update(state => { const next = { ...state.rows }; if (rows.length) next[sessionId] = hostJobs.get(sessionId)!; else delete next[sessionId]; return { ...state, rows: next } })
+    },
     addWorkspace(workspace) {
       if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) {
         console.error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
@@ -367,7 +521,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const records = structuredClone([...inputRecords]).sort((a, b) => a.seq - b.seq)
       const start = Math.max(0, records.length - pageSize)
       const entries: SessionEventLikeEntry[] = records.slice(start).map((event) => ({ type: 'event', event }))
-      const snapshot = observable<SessionSnapshot>({ sessionId: summary.id, queue: [], pendingSubmissions: [], running: summary.running, subagent: null, removed: false, openState: 'open', openError: null, hasMore: start > 0, loadingOlder: false, promptError: null, blank: summary.blank, lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false })
+      const snapshot = observable<SessionSnapshot>({ sessionId: summary.id, pendingSubmissions: [], running: summary.running, subagent: null, removed: false, openState: 'open', openError: null, hasMore: start > 0, loadingOlder: false, promptError: null, blank: summary.blank, lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false })
       const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
       const projections = new Map<string, MutableSnapshot<unknown>>()
       const scope: AgentContext = { remote, sessionId: summary.id, agent: summary.id }
@@ -412,9 +566,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
             return result
           }
           if (snapshot.getSnapshot().running && mode === 'queue') {
-            const itemId = id('queue')
-            const text = textOf(content)
-            snapshot.update((state) => ({ ...state, queue: [...state.queue, { id: itemId, messageId: id('message'), placement: 'queued', ...(requestId ? { rpcId: requestId } : {}), content, preview: text, text }] }))
+            kit.updateProjection<InboxState>(summary.id, 'inbox', inbox => ({ 'next-step': inbox?.['next-step'] ?? [], 'next-turn': [...(inbox?.['next-turn'] ?? []), { id: id('message'), role: 'user', source: { kind: 'user', ...(requestId ? { rpcId: requestId } : {}) }, content }] }))
           } else {
             if (snapshot.getSnapshot().running) { settleAttempt(model); append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } }) }
             beginTurn(model, content, requestId)
@@ -425,15 +577,16 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         },
         async updateQueue(itemId, action) {
           if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          const item = snapshot.getSnapshot().queue.find((row) => row.id === itemId)
+          const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
+          const item = inbox?.['next-turn'].find(row => row.id === itemId)
           if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
-          if (action.kind === 'edit') snapshot.update((state) => ({ ...state, queue: state.queue.map((row) => row.id === itemId ? { ...row, content: action.content, text: textOf(action.content), preview: textOf(action.content) } : row) }))
+          if (action.kind === 'edit') kit.setProjection(summary.id, 'inbox', { ...inbox, 'next-turn': inbox!['next-turn'].map(row => row.id === itemId ? { ...row, content: action.content } : row) })
           else {
-            snapshot.update((state) => ({ ...state, queue: state.queue.filter((row) => row.id !== itemId) }))
+            kit.setProjection(summary.id, 'inbox', { ...inbox, 'next-turn': inbox!['next-turn'].filter(row => row.id !== itemId) })
             if (action.kind === 'steer') {
               settleAttempt(model)
               append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
-              beginTurn(model, item.content, item.rpcId)
+              beginTurn(model, item.content, item.source.rpcId)
               if (isActive(model)) void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
             }
           }
@@ -484,7 +637,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('attachment/not-found', '画像が見つかりません。')
         },
       }
-      const model: SessionModel = { summary: structuredClone(summary), records, start, snapshot, events: eventSource, projections, submissions: new Map(), binding: { sessionId: summary.id, session: face, eventSource, ctx: scope } }
+      const model: SessionModel = { summary: structuredClone({ ...summary, retainedBy: {} }), records, start, snapshot, events: eventSource, projections, submissions: new Map(), binding: { sessionId: summary.id, session: face, eventSource, ctx: scope } }
       models.set(summary.id, model)
       for (const [key, value] of Object.entries(model.summary.projectionValues ?? {})) project(model, key).set(value)
       list.update((state) => ({ ...state, ids: [...state.ids, summary.id], byId: { ...state.byId, [summary.id]: model.summary } }))
@@ -533,14 +686,17 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       append(model, 'step/end', { turn: attempt.turn, step: attempt.step })
       append(model, 'turn/end', { turn: attempt.turn, reason: { kind: 'completed' } })
       running(model, false)
-      updateSummary(model, { completed: list.getSnapshot().current !== sessionId })
       advanceQueue(model)
     },
     setProjection(sessionId, key, value) {
       const model = getModel(sessionId)
       const next = structuredClone(value)
       project(model, key).set(next)
-      updateSummary(model, { projectionValues: { ...model.summary.projectionValues, [key]: next } })
+      model.summary = { ...model.summary, projectionValues: { ...model.summary.projectionValues, [key]: next } }
+      list.update(state => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, projectionsBySession: { ...state.projectionsBySession, [sessionId]: {
+        ...(state.projectionsBySession[sessionId] ?? { state: 'idle', error: null }),
+        values: { ...state.projectionsBySession[sessionId]?.values, [key]: next },
+      } } }))
     },
     getProjection<T>(sessionId: string, key: string): T | undefined {
       return structuredClone(getModel(sessionId).projections.get(key)?.getSnapshot()) as T | undefined
@@ -571,6 +727,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const model = models.get(sessionId)
       if (!model) return
       // Invalidate the instance before waking async work or invoking retirement callbacks.
+      project(model, 'inbox').set({ 'next-turn': [], 'next-step': [] })
       models.delete(sessionId)
       model.attempt = undefined
       cancelTimers(model)
@@ -581,7 +738,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       }
       model.start = 0
       model.snapshot.update((state) => ({
-        ...state, removed: true, running: false, queue: [], loadingOlder: false,
+        ...state, removed: true, running: false, loadingOlder: false,
         awaitingFirstTurn: false, hasMore: false, openState: 'error',
         openError: { code: 'session/not-found', message: '会話が見つかりません。', details: {} },
       }))
@@ -593,19 +750,15 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       }))
       list.update((state) => {
         const byId = { ...state.byId }
-        const jobsBySession = { ...state.jobsBySession }
-        const subagentsByParent = { ...state.subagentsByParent }
+        const projectionsBySession = { ...state.projectionsBySession }
         delete byId[sessionId]
-        delete jobsBySession[sessionId]
-        delete subagentsByParent[sessionId]
-        if (model.summary.parentId) delete subagentsByParent[model.summary.parentId]
-        const selectedAddressRemoved = state.currentAddress?.parentSessionId === sessionId || state.currentAddress?.childSessionId === sessionId
+        delete projectionsBySession[sessionId]
+        if (model.summary.parentId) delete projectionsBySession[model.summary.parentId]
         return {
-          ...state, ids: state.ids.filter((id) => id !== sessionId), byId, jobsBySession, subagentsByParent,
-          current: state.current === sessionId || selectedAddressRemoved ? undefined : state.current,
-          currentAddress: selectedAddressRemoved ? undefined : state.currentAddress,
+          ...state, ids: state.ids.filter((id) => id !== sessionId), byId, projectionsBySession,
         }
       })
+      kit.setJobs(sessionId, [])
       for (const other of models.values()) {
         if (other.summary.parentId === sessionId) other.snapshot.update((state) => ({ ...state, subagent: state.subagent ? { ...state.subagent, parentAvailable: false } : null }))
       }
@@ -635,6 +788,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     isScenario(...names) { return names.includes(selectedScenario) },
   }
 
+  completionStatus(ctx)
   for (const workspace of sharedWorkspaces) kit.addWorkspace(workspace)
   for (const session of sharedSessions) kit.addSession(session.summary, session.records)
   for (const session of sharedSessions) {

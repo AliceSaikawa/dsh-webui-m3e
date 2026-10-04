@@ -379,8 +379,8 @@ test('TTFT outside the request lifetime remains unmeasured', () => {
 test('the feature mock loads one older page and retains retries, nesting and shared history', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const binding = ctx.sessions.binding(TRACE_EXAMPLE_SESSION_ID)!
-    const shared = foldSessionWindow(ctx.sessions.binding('approval-sheet')!.eventSource.getSnapshot())
+    const binding = ctx.sessions.retain(TRACE_EXAMPLE_SESSION_ID, { source: 'm3e.test' }).binding
+    const shared = foldSessionWindow(ctx.sessions.retain('approval-sheet', { source: 'm3e.test' }).binding.eventSource.getSnapshot())
     assert.equal(binding.session.getSnapshot().hasMore, true)
     const before = foldSessionWindow(binding.eventSource.getSnapshot())
     assert.equal(before.records.length, 100)
@@ -402,7 +402,7 @@ test('the feature mock loads one older page and retains retries, nesting and sha
     assert.equal(turns[1].rows.filter(row => row.kind === 'compaction').length, 1)
     assert.equal(turns[1].rows.filter(row => row.kind === 'tool' && row.failed).length, 1)
     assert.equal(turns[2].rows.find(row => row.kind === 'assistant')!.running, true)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding('approval-sheet')!.eventSource.getSnapshot()), shared)
+    assert.deepEqual(foldSessionWindow(ctx.sessions.retain('approval-sheet', { source: 'm3e.test' }).binding.eventSource.getSnapshot()), shared)
   } finally { ctx.dispose() }
 })
 
@@ -593,7 +593,7 @@ test('the mocks use entered-step input order and retain historical failure cause
   assert.deepEqual(traceExampleRecords.slice(0, 3).map(event => event.type), ['turn/start', 'step/start', 'user/message'])
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const binding = ctx.sessions.binding(TRACE_FAILURE_SESSION_ID)
+    const binding = ctx.sessions.retain(TRACE_FAILURE_SESSION_ID, { source: 'm3e.test' }).binding
     assert.ok(binding)
     const { records } = foldSessionWindow(binding.eventSource.getSnapshot())
     assert.deepEqual(records, traceFailureRecords)

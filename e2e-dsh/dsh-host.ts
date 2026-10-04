@@ -74,6 +74,9 @@ export async function startDsh(llmUrl: string): Promise<DshHost> {
     npm_config_cache: process.env.npm_config_cache ?? join(process.env.HOME ?? root, '.npm'),
     DEEPSEEK_API_KEY: 'fake-key-for-m3e-integration',
     DEEPSEEK_BASE_URL: llmUrl,
+    // Match a remote Host used from a smartphone: select browse even on macOS,
+    // while keeping the integration Host bound only to 127.0.0.1.
+    SSH_CONNECTION: 'm3e-integration',
   }
   const bin = join(install, 'node_modules', '.bin', 'dsh')
   run(bin, ['plugin', '--profile', 'web', 'add', `file:${packPlugin()}`], install, env)

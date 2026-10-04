@@ -1,3 +1,5 @@
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync } from 'node:fs'
 import test from 'node:test'
@@ -67,24 +69,24 @@ test('全機能を登録しても01の質問と未読完了はhomeシナリオ�
     assert.deepEqual(failures, [], 'すべての機能の偽データを登録できること')
     const homeIds = new Set<string>(Object.values(HOME_MOCK_IDS))
     for (const { scenario, ctx, store } of cases) {
-      const rows = buildInboxRows(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now())
+      const rows = buildInboxRows(store.getSnapshot(), completionStatus(ctx).getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now())
       assert.deepEqual(rows.pending.filter((row) => homeIds.has(row.sessionId)).map((row) => row.sessionId), scenario === 'home' ? [HOME_MOCK_IDS.waiting] : [], `${scenario ?? '標準'} の01由来の要求`)
       assert.deepEqual(rows.completed.filter((row) => homeIds.has(row.sessionId)).map((row) => row.sessionId), scenario === 'home' ? [HOME_MOCK_IDS.completed] : [], `${scenario ?? '標準'} の01由来の未読完了`)
     }
     const inbox = cases.find((item) => item.scenario === 'inbox')!
     assert.deepEqual(inbox.store.getSnapshot().map((pending) => pending.sessionId).sort(), [INBOX_MOCK_IDS.approval, INBOX_MOCK_IDS.question, INBOX_MOCK_IDS.plan].sort())
     const inboxCompletedIds = new Set<string>([INBOX_MOCK_IDS.completed, INBOX_MOCK_IDS.otherCompleted])
-    const before = buildInboxRows(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot(), inbox.ctx.workspaces.list.getSnapshot(), Date.now())
+    const before = buildInboxRows(inbox.store.getSnapshot(), completionStatus(inbox.ctx).getSnapshot(), inbox.ctx.workspaces.list.getSnapshot(), Date.now())
     const otherCompletedIds = new Set(before.completed.filter((row) => !inboxCompletedIds.has(row.sessionId)).map((row) => row.sessionId))
     assert.deepEqual(new Set(before.completed.filter((row) => inboxCompletedIds.has(row.sessionId)).map((row) => row.sessionId)), inboxCompletedIds)
-    assert.equal(countInbox(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot(), inbox.ctx.workspaces.list.getSnapshot().archivedSessionIds), 5 + otherCompletedIds.size, '06の5件に、その時点の他機能の完了件数を加える')
+    assert.equal(countInbox(inbox.store.getSnapshot(), completionStatus(inbox.ctx).getSnapshot(), inbox.ctx.workspaces.list.getSnapshot().archivedSessionIds), 5 + otherCompletedIds.size, '06の5件に、その時点の他機能の完了件数を加える')
     t.diagnostic(`inbox の他機能の未読完了: ${otherCompletedIds.size} 件（${[...otherCompletedIds].join(', ') || 'なし'}）`)
     for (const pending of inbox.store.getSnapshot()) {
       if (pending.kind === 'approval') await pending.answer('allowed-once')
       else await pending.answer({ answers: pending.items.map((item) => ({ id: item.id, selected: [] })) })
     }
-    for (const sessionId of inboxCompletedIds) inbox.ctx.sessions.open(sessionId)
-    const remaining = buildInboxRows(inbox.store.getSnapshot(), inbox.ctx.sessions.list.getSnapshot(), inbox.ctx.workspaces.list.getSnapshot(), Date.now())
+    for (const sessionId of inboxCompletedIds) await conversationSelection(inbox.ctx.sessions).select(sessionId)
+    const remaining = buildInboxRows(inbox.store.getSnapshot(), completionStatus(inbox.ctx).getSnapshot(), inbox.ctx.workspaces.list.getSnapshot(), Date.now())
     assert.deepEqual(remaining.pending, [])
     assert.deepEqual(new Set(remaining.completed.map((row) => row.sessionId)), otherCompletedIds)
   } finally {

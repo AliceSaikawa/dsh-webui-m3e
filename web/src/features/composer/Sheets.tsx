@@ -9,7 +9,8 @@ import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import type { QueueAction } from '../../dsh/services.ts'
+import type { InboxState, QueueAction } from '../../dsh/services.ts'
+import { queueFromInbox } from '../../dsh/inbox.ts'
 import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
 import type { ComposerTarget } from './Composer.tsx'
 import { readDraft, subscribeDraft } from './drafts.ts'
@@ -189,8 +190,8 @@ export function PermissionSheet({ permissions, apply, close }: {
 }
 
 export function QueueSheet({ sessionId, close }: { sessionId: string; close(): void }) {
-  const { face, snapshot } = useSession(sessionId)
-  const items = visibleQueue(snapshot.queue)
+  const { face, projection } = useSession(sessionId)
+  const items = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const [selectedId, setSelectedId] = useState<string | undefined>(items.length === 1 ? items[0]?.id : undefined)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)

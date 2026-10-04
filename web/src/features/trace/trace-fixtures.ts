@@ -147,6 +147,7 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
 
 export const traceExampleRecords: readonly SessionWireEvent[] = createTraceExampleRecords()
 export const traceExampleSession: SessionSummary = {
+  retainedBy: {},
   id: TRACE_EXAMPLE_SESSION_ID, title: 'トレースの見本', displayTitle: 'トレースの見本',
   cwd: workspacePath, running: true, blank: false,
   updatedAt: traceExampleRecords.at(-1)!.time,
@@ -195,6 +196,7 @@ export const traceFailureRecords: readonly SessionWireEvent[] = failureRows.map(
   ...(['user/message', 'assistant/message'].includes(type) ? { surfaceOp: 'append' } : {}),
 }))
 export const traceFailureSession: SessionSummary = {
+  retainedBy: {},
   id: TRACE_FAILURE_SESSION_ID, title: '失敗と中断の見本', displayTitle: '失敗と中断の見本',
   cwd: workspacePath, running: false, blank: false, updatedAt: traceFailureRecords.at(-1)!.time,
 }

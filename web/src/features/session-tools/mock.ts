@@ -31,34 +31,33 @@ export function extendMock(kit: MockKit): void {
   kit.setProjection(parent, 'modelSelection', { next: { provider: 'mock', model: '偽のモデル', reasoningEffort: 'high' }, lastUsed: { provider: 'mock', model: '偽のモデル', reasoningEffort: 'high' } })
 
   const children = [
-    { kind: 'child' as const, id: SESSION_TOOLS_MOCK_IDS.children.review, label: '承認シートの見直し', activity: 'running' as const, mode: 'continuable' as const, hasChildren: false },
-    { kind: 'child' as const, id: SESSION_TOOLS_MOCK_IDS.children.tests, label: 'テストの確認', activity: 'inactive' as const, mode: 'one-shot' as const, hasChildren: false },
+    { id: SESSION_TOOLS_MOCK_IDS.children.review, label: '承認シートの見直し', mode: 'continuable' as const, createdAt: now - 30000 },
+    { id: SESSION_TOOLS_MOCK_IDS.children.tests, label: 'テストの確認', mode: 'one-shot' as const, createdAt: now - 30000 },
   ]
   for (const child of children) {
-    const running = child.activity === 'running'
-    kit.addSession({ id: child.id, parentId: parent, origin: 'subagent', title: child.label, displayTitle: child.label, cwd: '/mock/dsh-webui-m3e', running, completed: !running, blank: false, updatedAt: now }, childRecords(child.id, child.label, running, now - 30000))
+    const running = child.id === SESSION_TOOLS_MOCK_IDS.children.review
+    kit.addSession({ id: child.id, parentId: parent, origin: 'subagent', title: child.label, displayTitle: child.label, cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: now }, childRecords(child.id, child.label, running, now - 30000))
+    if (!running) kit.setSessionState(child.id, { running: false })
     const address = { parentSessionId: parent, childSessionId: child.id, mode: child.mode }
     kit.setSessionState(child.id, { subagent: { address, parentAvailable: true } })
   }
-  kit.updateList(state => {
-    state.jobsBySession = { ...state.jobsBySession, [parent]: [
-      { id: SESSION_TOOLS_MOCK_IDS.jobs.running, kind: 'bash', label: '型を確認しています', status: 'running', startedAt: now - 65000 },
-      { id: SESSION_TOOLS_MOCK_IDS.jobs.complete, kind: 'subagent', label: 'テストの確認', status: 'completed', startedAt: now - 130000, finishedAt: now - 80000 },
-      { id: SESSION_TOOLS_MOCK_IDS.jobs.failed, kind: 'bash', label: '承認シートのテスト', status: 'failed', startedAt: now - 200000, finishedAt: now - 185000 },
-    ] }
-    state.subagentsByParent = { ...state.subagentsByParent, [parent]: { entries: children, parentAvailable: true, state: 'ready', error: null } }
-  })
+  kit.setJobs(parent, [
+    { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.running, kind: 'bash', label: '型を確認しています', status: 'running', startedAt: now - 65000 },
+    { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.complete, kind: 'subagent', label: 'テストの確認', status: 'completed', startedAt: now - 130000, finishedAt: now - 80000 },
+    { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.failed, kind: 'bash', label: '承認シートのテスト', status: 'failed', startedAt: now - 200000, finishedAt: now - 185000 },
+  ])
+  kit.setProjection(parent, 'subagentCatalog', children)
   kit.scenario('subagents-unloaded', () => {
     for (const child of children) kit.setSessionState(child.id, { subagent: null })
     kit.updateList(state => {
-      const catalogs = { ...state.subagentsByParent }
+      const catalogs = { ...state.projectionsBySession }
       delete catalogs[parent]
-      state.subagentsByParent = catalogs
+      state.projectionsBySession = catalogs
     })
-    kit.patch('sessions.refreshSubagents', async (parentSessionId: string) => {
+    kit.patch('sessions.refreshProjections', async (parentSessionId: string) => {
       kit.updateList(state => {
         if (parentSessionId === parent) {
-          state.subagentsByParent = { ...state.subagentsByParent, [parent]: { entries: children, parentAvailable: true, state: 'ready', error: null } }
+          state.projectionsBySession = { ...state.projectionsBySession, [parent]: { values: { subagentCatalog: children }, state: 'ready', error: null } }
         }
       })
     })

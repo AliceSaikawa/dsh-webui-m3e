@@ -19,18 +19,18 @@ async function flush(page: Page) { await page.evaluate(() => new Promise(resolve
 async function holdChild(page: Page) {
   await page.evaluate(() => {
     const state = window as any, ctx = state.__pickerContext
-    state.__pickerCatalog = ctx.sessions.list.getSnapshot().subagentsByParent
+    state.__pickerCatalog = ctx.sessions.list.getSnapshot().projectionsBySession
     state.__pickerCalls = { refresh: 0, select: 0 }
-    ctx.mock.updateList((list: any) => { list.subagentsByParent = {} })
-    const original = ctx.sessions.openSubagent.bind(ctx.sessions)
-    ctx.sessions.openSubagent = (...args: any[]) => { state.__pickerCalls.select++; return original(...args) }
-    ctx.sessions.refreshSubagents = () => new Promise(resolve => { state.__pickerCalls.refresh++; state.__pickerRelease = resolve })
+    ctx.mock.updateList((list: any) => { list.projectionsBySession = {} })
+    const original = ctx.sessions.retain.bind(ctx.sessions)
+    ctx.sessions.retain = (...args: any[]) => { if (typeof args[0] !== 'string') state.__pickerCalls.select++; return original(...args) }
+    ctx.sessions.refreshProjections = () => new Promise(resolve => { state.__pickerCalls.refresh++; state.__pickerRelease = resolve })
   })
 }
 async function releaseChild(page: Page) {
   await page.evaluate(() => {
     const state = window as any
-    state.__pickerContext.mock.updateList((list: any) => { list.subagentsByParent = state.__pickerCatalog })
+    state.__pickerContext.mock.updateList((list: any) => { list.projectionsBySession = state.__pickerCatalog })
     state.__pickerRelease()
   })
   await flush(page)
@@ -76,7 +76,7 @@ for (const width of [375, 390]) {
     await row(page, '承認シートの見直し').click(); await closed(page)
     await expect(page).toHaveURL(/#\/s\/session-tools-review$/)
     await expect(input).toBeVisible(); await input.fill(`子だけの下書き ${width}`)
-    expect(await page.evaluate(() => (window as any).__pickerContext.sessions.list.getSnapshot().currentAddress)).toEqual({ parentSessionId: 'approval-sheet', childSessionId: 'session-tools-review', mode: 'continuable' })
+    expect(await page.evaluate(() => (window as any).__pickerContext.sessions.binding('session-tools-review')?.session.getSnapshot().subagent?.address)).toEqual({ parentSessionId: 'approval-sheet', childSessionId: 'session-tools-review', mode: 'continuable' })
     await open(page); await search(page).fill('テストの確認')
     await row(page, 'テストの確認').click(); await closed(page)
     await expect(page).toHaveURL(/#\/s\/session-tools-tests$/)
@@ -124,7 +124,7 @@ for (const mode of ['escape-start', 'close', 'route-away'] as const) {
       // Release inside native closing, before its animation/closed callback.
       await page.evaluate(() => document.querySelector('.conversation-picker')!.closest('m3e-bottom-sheet')!.addEventListener('closing', () => {
         const state = window as any
-        state.__pickerContext.mock.updateList((list: any) => { list.subagentsByParent = state.__pickerCatalog })
+        state.__pickerContext.mock.updateList((list: any) => { list.projectionsBySession = state.__pickerCatalog })
         state.__pickerRelease()
       }, { once: true }))
       await page.keyboard.press('Escape')
@@ -143,7 +143,7 @@ for (const change of ['remove', 'archive', 'parent', 'origin', 'blank'] as const
     await expect.poll(() => page.evaluate(() => (window as any).__pickerCalls.refresh)).toBe(1)
     await page.evaluate(async change => {
       const ctx = (window as any).__pickerContext
-      if (change === 'archive') await ctx.workspaces.archiveSession('session-tools-review')
+      if (change === 'archive') await ctx.workspaces.archiveSession('session-tools-review', { stopActivity: true })
       else ctx.mock.updateList((list: any) => {
         if (change === 'remove') list.ids = list.ids.filter((id: string) => id !== 'session-tools-review')
         else list.byId['session-tools-review'] = { ...list.byId['session-tools-review'], ...(change === 'parent' ? { parentId: 'readme-review' } : change === 'origin' ? { origin: undefined } : { blank: true }) }
@@ -176,8 +176,8 @@ for (const mode of ['one-shot', 'unknown', 'error'] as const) {
     await page.evaluate(mode => {
       const state = window as any, parent = state.__pickerCatalog['approval-sheet']
       state.__pickerCatalog = { 'approval-sheet': mode === 'error'
-        ? { state: 'error', error: { code: 'gateway/internal', message: '合成の取得失敗', details: {} } }
-        : { ...parent, entries: parent.entries.map((entry: any) => entry.id === 'session-tools-review' ? { ...entry, mode } : entry) } }
+        ? { values: {}, state: 'error', error: { code: 'gateway/internal', message: '合成の取得失敗', details: {} } }
+        : { ...parent, values: { ...parent.values, subagentCatalog: parent.values.subagentCatalog.map((entry: any) => entry.id === 'session-tools-review' ? { ...entry, mode } : entry) } } }
     }, mode)
     await releaseChild(page)
     if (mode === 'one-shot') {

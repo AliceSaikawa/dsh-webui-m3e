@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { catalogEntries, catalogRows, childAddress, contextPercent, formatTokens, hasChildren, maxTurn, menuActions, reasoningLabel, runningJobCount } from '../web/src/features/session-tools/presentation.ts'
-import type { SessionJob, SessionSummary, SessionWireEvent, SubagentCatalogSnapshot } from '../web/src/dsh/services.ts'
+import type { SessionJob, SessionSummary, SessionWireEvent, SessionProjectionSnapshot } from '../web/src/dsh/services.ts'
 
 test('コンテキストは pressure を優先し、欠けたときのみ projected に戻る', () => {
   assert.equal(contextPercent({ pressureTokens: 62000, projectedTokens: 70000, contextWindow: 100000 }), 62)
@@ -37,12 +37,12 @@ test('メニューは子とゴールが存在するときだけ7項目になる'
 })
 test('子カタログを絞り込み、会話へ mode を保ったアドレスを渡す', () => {
   const child = { kind: 'child', id: 'child', activity: 'inactive', mode: 'continuable', label: '調査' } as const
-  const catalog: SubagentCatalogSnapshot = { state: 'ready', error: null, entries: [child, { kind: 'diagnostic', id: 'bad' }, { kind: 'child', id: 'malformed' }] }
+  const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: child.id, mode: child.mode, label: child.label, createdAt: 0 }, { id: 'bad', mode: 'unknown', createdAt: 0 }, { id: 'malformed' }] } } as SessionProjectionSnapshot
   assert.equal(catalogEntries(catalog).length, 2)
   assert.equal(hasChildren('parent', catalog, {}), true)
   assert.deepEqual(childAddress('parent', child), { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
-  assert.equal(hasChildren('parent', { state: 'ready', error: null, entries: [{ kind: 'diagnostic', id: 'bad' }] }, {}), false)
-  const summary: SessionSummary = { id: 'child', displayTitle: '子', origin: 'subagent', parentId: 'parent', running: false, blank: false, updatedAt: 0 }
+  assert.equal(hasChildren('parent', { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'bad', mode: 'unknown', createdAt: 0 }] } }, {}), false)
+  const summary: SessionSummary = { id: 'child', displayTitle: '子', origin: 'subagent', parentId: 'parent', retainedBy: {}, running: false, blank: false, updatedAt: 0 }
   assert.equal(hasChildren('parent', undefined, { child: summary }), true)
   assert.equal(hasChildren('another', undefined, { child: summary }), false)
 })

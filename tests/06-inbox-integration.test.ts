@@ -1,3 +1,5 @@
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync } from 'node:fs'
 import test from 'node:test'
@@ -28,8 +30,8 @@ function observe(ctx: MockContext) {
   return {
     ctx,
     store,
-    rows: () => buildInboxRows(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now()),
-    count: () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds),
+    rows: () => buildInboxRows(store.getSnapshot(), completionStatus(ctx).getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now()),
+    count: () => countInbox(store.getSnapshot(), completionStatus(ctx).getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds),
     dispose() { stop(); ctx.dispose() },
   }
 }
@@ -78,13 +80,13 @@ test('全機能の inbox シナリオで06の5件だけを回答・既読にす�
       if (interaction.kind === 'approval') await interaction.answer('allowed-once')
       else await interaction.answer({ answers: interaction.items.map((item) => ({ id: item.id, selected: [item.options![0]!.label] })) })
       assert.equal(integrated.count(), otherCount + --remaining)
-      assert.equal(integrated.ctx.sessions.list.getSnapshot().current, undefined, '対応待ちへの回答では会話を選択しない')
+      assert.equal(conversationSelection(integrated.ctx.sessions).state.getSnapshot().sessionId, undefined, '対応待ちへの回答では会話を選択しない')
       assert.deepEqual(otherRows(integrated), otherRows(baseline))
     }
     for (const row of ownCompleted) {
-      integrated.ctx.sessions.open(row.sessionId)
-      assert.equal(integrated.ctx.sessions.list.getSnapshot().current, row.sessionId)
-      assert.equal(integrated.ctx.sessions.list.getSnapshot().byId[row.sessionId]?.completed, false)
+      await conversationSelection(integrated.ctx.sessions).select(row.sessionId)
+      assert.equal(conversationSelection(integrated.ctx.sessions).state.getSnapshot().sessionId, row.sessionId)
+      assert.equal(completionStatus(integrated.ctx).getSnapshot().byId[row.sessionId]?.completionUnread, false)
       assert.equal(integrated.count(), otherCount + --remaining)
       assert.deepEqual(otherRows(integrated), otherRows(baseline))
     }
