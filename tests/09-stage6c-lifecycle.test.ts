@@ -288,3 +288,40 @@ for (const stop of ['dispose', 'disconnect', 'remove', 'error', 'unavailable'] a
     assert.equal(f.connection.count() + f.session.count() + f.projection.count(), 0)
   }
 })
+
+for (const failure of ['ok:false', '例外'] as const) test(`B2 読取りが${failure}で失敗しても、待ちの1回で最新状態を公開する`, async t => {
+  const f = fixture(t)
+  let resolve!: (value: unknown) => void, reject!: (reason: Error) => void
+  const first = new Promise((done, fail) => { resolve = done; reject = fail })
+  let revision = 1, active = 0, peak = 0
+  const observed: number[] = []
+  f.pending(async () => {
+    observed.push(revision)
+    active++; peak = Math.max(peak, active)
+    try {
+      if (observed.length === 1) return await first
+      return { ok: true, value: { id: 'goal', revision, activation: 'disarmed' } }
+    } finally { active-- }
+  })
+  const reading = f.watcher.refresh()
+  for (let next = 2; next <= 101; next++) {
+    revision = next
+    f.projection.set({ goal: { id: 'goal', revision } })
+  }
+  assert.equal(f.reads(), 1)
+  assert.equal(peak, 1)
+  assert.deepEqual(f.publications, [])
+  if (failure === '例外') reject(new Error('読取りに失敗しました'))
+  else resolve({ ok: false, error: { code: 'gateway/unavailable', message: '読取りに失敗しました', details: {} } })
+  // Do not send another edge or call refresh after failure: the queued edge
+  // alone must start the trailing read.
+  await reading
+  assert.equal(f.reads(), 2, '失敗前にたまった通知の末尾を1回だけ取得する')
+  assert.deepEqual(observed, [1, 101])
+  assert.deepEqual(f.publications, [{ id: 'goal', revision: 101, activation: 'disarmed' }])
+  assert.equal(f.failures(), 0, '新しい通知より古い失敗を公開しない')
+  assert.equal(peak, 1)
+  assert.equal(active, 0)
+  await f.tick(3600000)
+  assert.equal(f.reads(), 2, '末尾の取得が終われば追加の読取りをしない')
+})

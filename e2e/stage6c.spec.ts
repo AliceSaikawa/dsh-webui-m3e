@@ -201,3 +201,26 @@ test('S6C B2 同じゴールの投影更新から実行状態を読み直す', a
   await expect(button(page, '完了にする')).toBeEnabled()
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
 })
+
+test('S6C B2 外部からゴールを一時停止して版が変わっても、同じ画面で再開が有効になる', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/s/approval-sheet/goal')
+  await expect(button(page, '一時停止')).toBeEnabled()
+  const url = page.url()
+  // Another client changes the goal through the RPC. Do not use this screen's
+  // mutate handler, manual refresh, navigation or reload to restore the button.
+  const changed = await page.evaluate(async () => {
+    const api = (window as any).__stage6c.remote.goals
+    const current = await api.get('approval-sheet')
+    if (!current.ok || !current.value) throw new Error('外部操作前のゴールを取得できませんでした')
+    const ref = { id: current.value.id, revision: current.value.revision }
+    return { before: ref, result: await api.pause('approval-sheet', ref) }
+  })
+  expect(changed.result.ok).toBe(true)
+  expect(changed.result.value).toMatchObject({
+    id: changed.before.id, revision: changed.before.revision + 1, phase: 'paused', activation: 'disarmed',
+  })
+  await expect(page.locator('.st-goal-status')).toContainText('一時停止')
+  await expect(button(page, '再開')).toBeEnabled()
+  expect(page.url()).toBe(url)
+})
