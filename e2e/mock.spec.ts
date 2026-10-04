@@ -507,8 +507,17 @@ test('00b 再接続中の進捗表示', async ({ page }) => {
 
 test('00c 詳細への直接アクセスから戻る・左端スワイプ', async ({ page }) => {
   await visit(page, '/s/readme-review')
+  expect(await page.evaluate(() => new URL(document.baseURI).pathname)).toBe('/')
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/s\/readme-review$/)
   await button(page, '戻る').click()
-  await expect(page).toHaveURL(/#\/$/)
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/$/)
+  await page.getByRole('button', { name: 'README の見直し', exact: true }).click()
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/s\/readme-review$/)
+  await page.reload()
+  await expect(page.locator('h1').first()).toHaveText('README の見直し')
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/s\/readme-review$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/$/)
   await page.getByRole('button', { name: 'README の見直し', exact: true }).click()
   await expect(page.locator('.edge-swipe-zone')).toBeVisible()
   await page.mouse.move(2, 200)
@@ -517,7 +526,7 @@ test('00c 詳細への直接アクセスから戻る・左端スワイプ', asyn
   // This test exercises one quick swipe, with the same start and end points.
   await page.mouse.move(180, 210)
   await page.mouse.up()
-  await expect(page).toHaveURL(/#\/$/)
+  await expect(page).toHaveURL(/\/m3e\/\?mock#\/$/)
 })
 
 test('10a 開発mockのPWAメタデータとSW未登録', async ({ page }) => {

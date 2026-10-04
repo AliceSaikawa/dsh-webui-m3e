@@ -11,9 +11,11 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as clientStore from '@deepseek-ai/dsh-client-store'
 import { type BootGraph, narrowBootGraph } from './boot-graph.ts'
 import { missingContractMembers } from './contract.ts'
+import { classifyBootFailure } from '../../../src/shared/dsh-compat.ts'
 
 interface ModuleSystem {
   manifest: { plugins: { id: string }[] }
+  importError(id: string): Error | undefined
 }
 
 interface BootGlobals {
@@ -65,10 +67,7 @@ export async function bootDsh(): Promise<cordis.Context> {
   await Promise.all(modules.manifest.plugins.map((plugin) => loader.create({ name: plugin.id })))
   await loader.await()
 
-  const inactive = [...loader.entries()]
-    .filter((entry) => entry.fiber === undefined || entry.fiber.state !== ACTIVE)
-    .map((entry) => entry.options.name)
-  if (inactive.length > 0) throw new Error(`webui-m3e: plugins did not activate: ${inactive.join(', ')}`)
+  await assertPluginsActive(modules, loader.entries())
   const missing = missingContractMembers(ctx)
   if (missing.length > 0) throw new Error(`webui-m3e: the DSH client lacks ${missing.join(', ')}`)
   return ctx
@@ -77,9 +76,37 @@ export async function bootDsh(): Promise<cordis.Context> {
 /** Fiber state value for an active plugin (cordis FiberState.ACTIVE). */
 const ACTIVE = 2
 
+interface BootPluginEntry {
+  options: { name: string }
+  fiber?: { state: number; await(): Promise<unknown> }
+}
+
+/**
+ * Loader 1.0.5 waits with allSettled and no longer throws import failures.
+ * Recover the actual cause before diagnosing an inactive graph as incompatible:
+ * a failed download or plugin runtime error must retain its retry guidance.
+ */
+export async function assertPluginsActive(modules: Pick<ModuleSystem, 'importError'>, entries: Iterable<BootPluginEntry>): Promise<void> {
+  const inactive = [...entries].filter(entry => entry.fiber?.state !== ACTIVE)
+  const failures: Error[] = []
+  for (const entry of inactive) {
+    const error = modules.importError(entry.options.name)
+    if (error !== undefined) {
+      failures.push(error)
+    } else if (entry.fiber !== undefined) {
+      try { await entry.fiber.await() }
+      catch (error) { failures.push(error instanceof Error ? error : new Error(String(error))) }
+    }
+  }
+  // A simultaneous shape error is not evidence that a transport failure is a
+  // version mismatch. Prefer an unclassified cause if there is one.
+  if (failures.length > 0) throw failures.find(error => classifyBootFailure(error.message) === 'unknown') ?? failures[0]!
+  if (inactive.length > 0) throw new Error(`webui-m3e: plugins did not activate: ${inactive.map(entry => entry.options.name).join(', ')}`)
+}
+
 interface LoaderFace {
   internal: unknown
   create(options: { name: string }): Promise<string>
   await(): Promise<void>
-  entries(): Iterable<{ options: { name: string }; fiber?: { state: number } }>
+  entries(): Iterable<BootPluginEntry>
 }

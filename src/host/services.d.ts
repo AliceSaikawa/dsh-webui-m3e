@@ -1,7 +1,7 @@
 /**
  * The slice of the Host services this plugin touches. DSH's own packages are
  * not dependencies of this repo, so the shapes are restated from
- * dsh-host-webserver and dsh-client-connection (DSH 0.1.5-rc.2).
+ * dsh-host-webserver and dsh-client-connection (DSH 0.2.0-rc.2).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
