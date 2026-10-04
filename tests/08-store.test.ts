@@ -7,7 +7,7 @@ import { createSettingsStore, fieldKey, type SettingsApi } from '../web/src/feat
 import { parseFieldInput, schemaFields, type SettingsDescription, type SettingsNamespace } from '../web/src/features/settings/schema.ts'
 import { modelResetOperations, modelSaveOperations, subagentSelection } from '../web/src/features/settings/model-settings.ts'
 
-const ns = 'agent-loop'
+const ns = 'example-extension'
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -422,7 +422,7 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
     const described = await h.remote.describe()
     assert.equal(described.ok, true)
     if (!described.ok) return
-    const row = described.value.namespaces.find(item => item.ns === 'llm-deepseek')!
+    const row = described.value.namespaces.find(item => item.ns === 'example-extension')!
     const schema = row.schema as { uid: number; refs: Record<string, { dict?: Record<string, number>; type?: string; meta?: Record<string, unknown> }> }
     schema.refs['0']!.dict!.disabledValue = 17
     schema.refs['17'] = { type: 'string', meta: { disabled: true } }
@@ -431,10 +431,10 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
     h.api.describe = async () => success(described.value)
     await h.store.reload()
     for (const path of [['protectedInput'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['nonexistent']]) {
-      assert.equal(await h.store.edit('llm-deepseek', path, '変更'), false, path.join('.'))
-      assert.equal(await h.store.edit('llm-deepseek', path), false, path.join('.'))
+      assert.equal(await h.store.edit('example-extension', path, '変更'), false, path.join('.'))
+      assert.equal(await h.store.edit('example-extension', path), false, path.join('.'))
     }
-    assert.equal(await h.store.edit('llm-deepseek', ['retry'], { interval: 8 }), false)
+    assert.equal(await h.store.edit('example-extension', ['retry'], { interval: 8 }), false)
     assert.equal(await h.store.edit('missing-namespace', ['enabled'], false), false)
     assert.deepEqual(h.calls, [])
   } finally { h.ctx.dispose() }

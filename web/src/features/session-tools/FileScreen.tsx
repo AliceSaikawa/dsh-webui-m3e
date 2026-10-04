@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { Icon } from '../../app/icons/Icon.tsx'
@@ -18,7 +18,8 @@ export function FileScreen({ sessionId }: { sessionId: string }) {
 
 function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
   const { remote, connection } = useDsh()
-  const api = workspaceFilesOf(remote)
+  // Cordis returns a new traced namespace on access; keep effect dependencies stable.
+  const api = useMemo(() => workspaceFilesOf(remote), [remote])
   const connectionState = useSnapshot(connection.state)
   const kind = fileKind(path)
   const [view, setView] = useState<'rendered' | 'source'>('rendered')

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import type { SettingsApi } from '../web/src/features/settings/store.ts'
@@ -6,8 +6,22 @@ import type { ModelCatalog, PermissionCatalog } from '../web/src/features/compos
 import type { RemoteResult, ISessions, DshServices } from '../web/src/dsh/services.ts'
 import type { WorkspaceFilesRemote } from '../web/src/features/session-tools/files.ts'
 import { test, expect, button, openM3e } from './fixtures.ts'
+import { root } from './dsh-host.ts'
+import { autoPresetControl, pagedPng } from './rpc-audit.ts'
+import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
+import { decodeSchema, type SchemaNode } from '../web/src/features/settings/schema.ts'
+
+function publicShape(node: SchemaNode): unknown {
+  return {
+    type: node.type, value: node.value,
+    meta: Object.fromEntries(['required', 'min', 'max', 'step', 'pattern'].filter(key => node.meta?.[key as keyof NonNullable<SchemaNode['meta']>] !== undefined).map(key => [key, node.meta![key as keyof NonNullable<SchemaNode['meta']>]])),
+    dict: node.dict && Object.fromEntries(Object.entries(node.dict).map(([key, child]) => [key, publicShape(child)])),
+    list: node.list?.map(publicShape), inner: node.inner && publicShape(node.inner), sKey: node.sKey && publicShape(node.sKey),
+  }
+}
 
 type Rpc = {
+  $on(event: string, listener: (...args: unknown[]) => unknown): () => void
   settings: SettingsApi
   session: { modelCatalog(): Promise<RemoteResult<ModelCatalog>> }
   permissionPresets: { catalog(): Promise<RemoteResult<PermissionCatalog>> }
@@ -16,6 +30,8 @@ type Rpc = {
 declare global { interface Window {
   __rpcReview: { remote: Rpc; sessions: ISessions; workspaces: DshServices['workspaces'] }
   __rpcWatchReady?: boolean
+  __rpcDelivered: string[]
+  __rpcSubscriptions: { event: string; active: boolean }[]
 } }
 
 /** Capture the real controller's public remote; every call still reaches DSH. */
@@ -34,7 +50,24 @@ async function instrument(page: Page) {
           ...plugin, factory(require) {
             const exported = plugin.factory(require)
             const apply = exported.apply!
-            return { ...exported, apply(ctx: Context) { const result = apply(ctx); window.__rpcReview = ctx.root; return result } }
+            return { ...exported, apply(ctx: Context) {
+              const result = apply(ctx)
+              window.__rpcReview = ctx.root
+              window.__rpcDelivered = []
+              window.__rpcSubscriptions = []
+              const prototype = Object.getPrototypeOf(ctx.root.remote) as Rpc
+              const subscribe = prototype.$on
+              prototype.$on = function(event, listener) {
+                const subscription = { event, active: true }
+                window.__rpcSubscriptions.push(subscription)
+                const off = subscribe.call(this, event, (...args) => {
+                  window.__rpcDelivered.push(event)
+                  return listener(...args)
+                })
+                return () => { subscription.active = false; off() }
+              }
+              return result
+            } }
           },
         })
         Object.defineProperty(value, 'load', { configurable: true, get: () => observe, set: (next: Loader['load']) => { load = next.bind(value) } })
@@ -68,6 +101,20 @@ async function setValue(page: Page, ns: string, path: string[], value?: string |
 
 test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる', async ({ page, integration }) => {
   await setup(page, integration.host)
+  const description = await page.evaluate(async () => {
+    const result = await window.__rpcReview.remote.settings.describe()
+    if (!result.ok) throw new Error(result.error.message)
+    return result.value
+  })
+  writeFileSync(join(root, 'tmp/s5-public-settings.json'), JSON.stringify(description, null, 2))
+  for (const fixture of settingsFixtures().filter(row => row.ns !== 'example-extension')) {
+    const actual = description.namespaces.find(row => row.ns === fixture.ns)!
+    expect(actual, fixture.ns).toBeDefined()
+    expect(publicShape(decodeSchema(fixture.schema)), fixture.ns).toEqual(publicShape(decodeSchema(actual.schema)))
+    expect(fixture.autoGenerate, fixture.ns).toBe(actual.autoGenerate)
+    // These two mock routes deliberately configure its scripted provider directory.
+    if (!['agent-default-model', 'llm-pi-ai'].includes(fixture.ns)) expect(fixture.value, fixture.ns).toEqual(actual.value)
+  }
   for (const title of ['モデル', '権限', 'エージェント', '提供元と API キー', 'Web 検索とシェル']) await expect(action(page, title).first()).toBeVisible()
   await action(page, 'Web 検索とシェル').click()
   const shell = page.locator('.settings-namespace').filter({ has: page.getByRole('heading', { name: 'シェル', exact: true }) })
@@ -84,12 +131,12 @@ test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる
       const result = await api.describe()
       if (!result.ok) throw new Error(result.error.message)
       const row = result.value.namespaces.find(row => row.ns === 'permission')!
-      const response = await api.update('permission', { presets: {} }, row.revision)
-      return response.ok ? { ok: true } : { ok: false, code: response.error.code }
+      return Promise.all([{ presets: {} }, { timeout: 60 }].map(async patch => {
+        const response = await api.update('permission', patch, row.revision)
+        return response.ok ? { ok: true } : { ok: false, code: response.error.code }
+      }))
     })
-    expect(rejected.ok).toBe(false)
-    if (rejected.ok) throw new Error('非 volatile 項目の変更が拒否されませんでした')
-    expect(rejected.code).toBe('settings/rejected')
+    expect(rejected).toEqual([{ ok: false, code: 'settings/rejected' }, { ok: false, code: 'settings/rejected' }])
   } finally { await setValue(page, 'bash-sandbox', ['timeoutMs']) }
 })
 
@@ -111,6 +158,7 @@ test('S5 モデルと提供元は実物の一覧を表示し環境由来のキ�
 })
 
 test('S5 カタログの権限を既定に保存し新規会話へ適用して切り替える', async ({ page, integration }) => {
+  const auto = await autoPresetControl(integration.host)
   await setup(page, integration.host, '/settings/permission')
   const select = page.locator('m3e-select[aria-label="新しい会話の権限"]')
   await expect(select).toHaveJSProperty('disabled', false)
@@ -135,15 +183,36 @@ test('S5 カタログの権限を既定に保存し新規会話へ適用して�
     await expect(page.locator('.composer-permission')).toContainText('workspace-write')
     await page.reload()
     await expect(page.locator('.composer-permission')).toContainText('workspace-write')
-  } finally { await setValue(page, 'permission', ['defaultPreset']) }
+    await page.locator('.composer-permission').click()
+    await expect(button(page, 'auto')).toHaveCount(0)
+    auto.set(true)
+    await expect.poll(auto.acknowledged).toBe('on')
+    await expect(button(page, 'auto')).toBeVisible()
+    auto.set(false)
+    await expect.poll(auto.acknowledged).toBe('off')
+    await expect(button(page, 'auto')).toHaveCount(0)
+  } finally {
+    try { await setValue(page, 'permission', ['defaultPreset']) }
+    finally { auto.restore() }
+  }
 })
 
-test('S5 会話のファイル一覧・テキスト・画像を実ワークスペースから読む', async ({ page, integration }) => {
+test('S5 会話のファイル一覧・テキスト・画像を実ワークスペースから読む', async ({ page, integration }, info) => {
+  const imageReads: unknown[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/workspaceFiles/readBytes') {
+      const args = request.postDataJSON().payload.args
+      if (args.path === 'preview.png') imageReads.push(args.options)
+    }
+  })
   await setup(page, integration.host)
   const { path, workspaceId } = await createWorkspace(page, integration.host, 'rpc-files')
   writeFileSync(join(path, 'rpc.txt'), 'M3E RPC ファイル確認\n2 行目')
-  writeFileSync(join(path, 'preview.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'))
+  const png = pagedPng()
+  expect(png.length).toBeGreaterThan(256 * 1024)
+  writeFileSync(join(path, 'preview.png'), png)
   const sessionId = await page.evaluate(workspaceId => window.__rpcReview.sessions.create({ workspaceId }), workspaceId)
+  await info.attach('remote-identity', { body: String(await page.evaluate(() => window.__rpcReview.remote.workspaceFiles === window.__rpcReview.remote.workspaceFiles)), contentType: 'text/plain' })
   await page.goto(`${integration.host.origin}/m3e/#/s/${sessionId}`)
   await button(page, '会話のメニュー').click()
   await page.locator('m3e-menu-item').filter({ hasText: 'ファイル' }).click()
@@ -154,7 +223,12 @@ test('S5 会話のファイル一覧・テキスト・画像を実ワークス�
   await button(page, '戻る').click()
   await action(page, 'preview.png').click()
   await expect(page.locator('.session-file-image')).toBeVisible()
-  await expect.poll(() => page.locator('.session-file-image').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(1)
+  const displayed = await page.locator('.session-file-image').evaluate(async image => [...new Uint8Array(await (await fetch((image as HTMLImageElement).src)).arrayBuffer())])
+  await info.attach('expected-image', { body: png, contentType: 'image/png' })
+  await info.attach('displayed-image', { body: Buffer.from(displayed), contentType: 'image/png' })
+  expect(Buffer.from(displayed).equals(png)).toBe(true)
+  await expect.poll(() => page.locator('.session-file-image').evaluate(image => [(image as HTMLImageElement).naturalWidth, (image as HTMLImageElement).naturalHeight])).toEqual([384, 256])
+  expect(imageReads).toEqual([{ range: { offset: 0, length: 262144 } }, { range: { offset: 262144, length: 262144 } }])
   const bytes = await page.evaluate(async sessionId => {
     const remote = window.__rpcReview.remote.workspaceFiles
     const result = await remote.readBytes(sessionId, 'rpc.txt', { range: { offset: 0, length: 3 } })
@@ -196,28 +270,61 @@ test('S5 実 DSH の対象パス監視とバイト範囲の検証を確認する
   await expect.poll(() => page.evaluate(() => window.__rpcWatchReady)).toBe(true)
   writeFileSync(join(path, 'watched.txt'), 'after')
   expect(await change).toBe(join(path, 'watched.txt'))
+  await page.evaluate(() => { window.__rpcWatchReady = false })
+  const directory = page.evaluate(async sessionId => {
+    const remote = window.__rpcReview.remote.workspaceFiles
+    const handle = remote.changes(sessionId, '.')
+    try {
+      for await (const frame of handle) {
+        if (frame.kind === 'ready') window.__rpcWatchReady = true
+        else return frame.change
+      }
+      throw new Error('フォルダの変更通知の前に監視が終了しました')
+    } finally { handle.dispose() }
+  }, sessionId)
+  await expect.poll(() => page.evaluate(() => window.__rpcWatchReady)).toBe(true)
+  writeFileSync(join(path, 'new-child.txt'), 'new file')
+  const observed = await directory
+  const stat = statSync(path, { bigint: true })
+  expect(observed).toEqual({ absolutePath: path, version: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` })
 })
 
-test('S5 隔離した DSH の提供元に偽の API キーを登録して削除する', async ({ page, integration }) => {
+test('S5 隔離した DSH の提供元に偽の API キーを登録して削除する', async ({ page, integration }, info) => {
   await setup(page, integration.host, '/settings/providers')
   // Switch only this isolated profile to a fresh reference; the process key remains intact.
   await setValue(page, 'llm-deepseek', ['apiKeyEnv'], 'M3E_INTEGRATION_API_KEY')
+  const writer = await page.context().newPage()
   try {
     const provider = action(page, /DeepSeek/)
     await expect(provider).toContainText('API キー：未登録')
     await expect(provider).toHaveJSProperty('disabled', false)
-    await provider.click()
-    await page.getByLabel('API キー', { exact: true }).fill('fake-key-for-m3e-integration-2')
-    await button(page, '保存').click()
+    // The stock Models client registers this additional invalidation too.
+    // Key writes in this Host emit reference-updated; prove the other active
+    // registration independently, without inventing a record-updated payload.
+    expect(await page.evaluate(() => window.__rpcSubscriptions.filter(row => row.active && row.event.endsWith('/record-updated')).length)).toBe(1)
+    await setup(writer, integration.host, '/settings/providers')
+    await page.evaluate(() => { window.__rpcDelivered = [] })
+    const writerProvider = action(writer, /DeepSeek/)
+    await writerProvider.click()
+    await writer.getByLabel('API キー', { exact: true }).fill('fake-key-for-m3e-integration-2')
+    await button(writer, '保存').click()
+    await expect(writerProvider).toContainText('API キー：登録済み')
+    // The reader stays mounted; its own save/reload path cannot refresh it.
     await expect(provider).toContainText('API キー：登録済み')
-    await page.reload()
-    await expect(provider).toContainText('API キー：登録済み')
-    await provider.click()
-    await expect(page.getByLabel('API キー', { exact: true })).toHaveValue('')
-    await button(page, '登録を消す').click()
-    await button(page, '登録を消す').click()
+    await info.attach('key-save-delivered-events', { body: JSON.stringify(await page.evaluate(() => window.__rpcDelivered)), contentType: 'application/json' })
+    await expect.poll(() => page.evaluate(() => window.__rpcDelivered.filter(event => event.endsWith('/reference-updated')).length)).toBeGreaterThan(0)
+    await page.evaluate(() => { window.__rpcDelivered = [] })
+    await writerProvider.click()
+    await expect(writer.getByLabel('API キー', { exact: true })).toHaveValue('')
+    await button(writer, '登録を消す').click()
+    await button(writer, '登録を消す').click()
+    await expect(writerProvider).toContainText('API キー：未登録')
     await expect(provider).toContainText('API キー：未登録')
+    await expect.poll(() => page.evaluate(() => window.__rpcDelivered.filter(event => event.endsWith('/reference-updated')).length)).toBeGreaterThan(0)
     await page.reload()
     await expect(provider).toContainText('API キー：未登録')
-  } finally { await setValue(page, 'llm-deepseek', ['apiKeyEnv']) }
+  } finally {
+    await writer.close()
+    await setValue(page, 'llm-deepseek', ['apiKeyEnv'])
+  }
 })

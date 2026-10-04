@@ -80,8 +80,9 @@ export function createWorkspaceFilesMock() {
       if (invalid) return invalid
       const path = relativePath(input)
       if (path === undefined) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (directories.has(path)) return failure('workspace-file/not-regular-file', '通常のファイルではありません。')
       const file = files.get(path)
-      if (!file && !directories.has(path)) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (!file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
       return success(metadata(path, file))
     },
     async read(_sessionId, input, options = {}, signal) {
@@ -147,6 +148,8 @@ export function createWorkspaceFilesMock() {
               const target = absolutePath(path)
               const changed = frame.change.absolutePath
               if (changed !== target && !(directories.has(path) && changed.slice(0, changed.lastIndexOf('/')) === target)) return
+              // DSH stats the watched target, even when a child triggered the watch.
+              if (directories.has(path)) frame = { kind: 'change', change: metadata(path) }
             }
             const resolve = waiting.shift()
             if (resolve) resolve({ done: false, value: frame })

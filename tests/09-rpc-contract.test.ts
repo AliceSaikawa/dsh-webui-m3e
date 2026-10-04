@@ -4,12 +4,16 @@ import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock
 import { RemoteCallError, remoteErrorMessage, unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 
 test('0.2 のバイト読み込みは range の入れ子・native bytes・baseFile と全体読込を使う', async () => {
-  const { remote } = createWorkspaceFilesMock()
+  const fixture = createWorkspaceFilesMock()
+  const { remote } = fixture
+  const expected = new TextEncoder().encode('M3E RPC: 日本語と byte ranges')
+  fixture.updateText('README.md', new TextDecoder().decode(expected))
   const complete = unwrapRemoteResult(await remote.readBytes('s', 'README.md', {}))
   assert.ok(complete.data instanceof Uint8Array)
+  assert.deepEqual(complete.data, expected)
   assert.equal(complete.eof, true)
   const window = unwrapRemoteResult(await remote.readBytes('s', '../README.md', { baseFile: 'docs/handoff.md', range: { offset: 1, length: 3 } }))
-  assert.deepEqual(window.data, complete.data.slice(1, 4))
+  assert.deepEqual(window.data, expected.slice(1, 4))
   assert.equal(window.offset, 1)
   assert.equal(window.eof, false)
   for (const options of [{ offset: 0, length: 1 }, { range: { offset: -1 } }, { range: { length: 0 } }, { range: { length: 1.5 } }, { range: { offset: Number.MAX_SAFE_INTEGER, length: 1 } }]) {
@@ -35,7 +39,12 @@ test('監視は生成時に開始し対象の直下だけを通知、dispose で
   fixture.updateText('docs/handoff.md', '対象')
   const next = await iterator.next()
   assert.equal(next.value?.kind, 'change')
-  if (next.value?.kind === 'change') assert.equal(next.value.change.absolutePath, '/mock/dsh-webui-m3e/docs/handoff.md')
+  if (next.value?.kind === 'change') {
+    assert.deepEqual(next.value.change, { absolutePath: '/mock/dsh-webui-m3e/docs', version: 'mock-1' })
+  }
+  const stat = await fixture.remote.stat('s', 'docs')
+  assert.equal(stat.ok, false)
+  if (!stat.ok) assert.equal(stat.error.code, 'workspace-file/not-regular-file')
   const pending = iterator.next()
   watch.dispose()
   assert.deepEqual(await pending, { done: true, value: undefined })

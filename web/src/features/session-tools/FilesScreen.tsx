@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eAssistChip } from '@m3e/react/chips'
 import { M3eIconButton } from '@m3e/react/icon-button'
@@ -19,7 +19,8 @@ export function FilesScreen({ sessionId }: { sessionId: string }) {
 
 function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string }) {
   const { remote, sessions, connection } = useDsh()
-  const api = workspaceFilesOf(remote)
+  // A fresh traced namespace must not restart reads and watches on each render.
+  const api = useMemo(() => workspaceFilesOf(remote), [remote])
   const cwd = useSnapshot(sessions.list).byId[sessionId]?.cwd
   const connectionState = useSnapshot(connection.state)
   const [listing, setListing] = useState<WorkspaceDirectoryListing>()

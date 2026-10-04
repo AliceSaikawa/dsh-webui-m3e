@@ -10,7 +10,8 @@ export interface SchemaNode {
   dict?: Record<string, SchemaNode>
   list?: SchemaNode[]
   inner?: SchemaNode
-  meta?: { description?: string; title?: string; role?: string; min?: number; max?: number; step?: number; required?: boolean; disabled?: boolean }
+  sKey?: SchemaNode
+  meta?: { description?: string; title?: string; role?: string; min?: number; max?: number; step?: number; required?: boolean; disabled?: boolean; pattern?: { source: string; flags: string } }
 }
 export interface SettingsNamespace {
   autoGenerate: boolean
@@ -85,6 +86,7 @@ export function decodeSchema(input: unknown): SchemaNode {
     if (isObject(node.dict)) result.dict = Object.fromEntries(Object.entries(node.dict).filter(([name]) => safeKey(name)).map(([name, child]) => [name, visit(child, seen, depth + 1)]))
     if (Array.isArray(node.list)) result.list = node.list.map(child => visit(child, seen, depth + 1))
     if ('inner' in node) result.inner = visit(node.inner, seen, depth + 1)
+    if ('sKey' in node) result.sKey = visit(node.sKey, seen, depth + 1)
     return result
   }
   return visit(input.uid, new Set(), 0)

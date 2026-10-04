@@ -17,18 +17,18 @@ test('S5 偽の複数引数放送から useSettings へ版を渡し、同じ版�
       ctx.remote.settings.describe = (...args) => { probe.describes++; return describe(...args); };
       return ctx;`) })
   })
-  await visit(page, '/settings/agent')
-  const section = page.locator('.settings-namespace').filter({ has: page.getByRole('heading', { name: 'エージェントの動作', exact: true }) })
-  await expect(section.getByLabel('名前', { exact: true })).toHaveValue('通常の実行')
+  await visit(page, '/settings/other')
+  const section = page.locator('.settings-namespace').filter({ has: page.getByRole('heading', { name: 'example-extension', exact: true }) })
+  await expect(section.getByLabel('名前', { exact: true })).toHaveValue('追加機能')
   const revision = await page.evaluate(async () => {
     const result = await (window.__s5SettingsProbe.ctx.remote.settings as SettingsApi).describe()
     if (!result.ok) throw new Error(result.error.message)
-    return result.value.namespaces.find(row => row.ns === 'agent-loop')!.revision
+    return result.value.namespaces.find(row => row.ns === 'example-extension')!.revision
   })
   const emitAndCount = (version: number) => page.evaluate(async version => {
     const probe = window.__s5SettingsProbe
     const before = probe.describes
-    await probe.ctx.mock.emit('settings/document-updated', 'agent-loop', { additionalArgs: [version] })
+    await probe.ctx.mock.emit('settings/document-updated', 'example-extension', { additionalArgs: [version] })
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     return probe.describes - before
   }, version)

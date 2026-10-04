@@ -416,7 +416,7 @@ test('権限の偽データは03の既定値とプリセット候補に一致す
   try {
     const settings = unwrapRemoteResult(await remote.settings.describe())
     const permission = settings.namespaces.find(item => item.ns === 'permission')!
-    assert.equal(valueAt(permission.value, ['defaultPreset']), 'workspace-write')
+    assert.equal(valueAt(permission.value, ['defaultPreset']), undefined)
     const field = schemaFields(permission, mockPermissionCatalog).find(item => item.path[0] === 'defaultPreset')!
     assert.equal(field.kind, 'select')
     assert.deepEqual(field.options, [

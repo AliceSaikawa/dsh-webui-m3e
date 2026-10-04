@@ -86,7 +86,7 @@ test('偽の画像はバイト範囲で読め、バイナリの名前とサイ�
 test('ファイル変更を通知し、読み直した内容と一覧のサイズ・バージョンへ反映する', async () => {
   const fixture = createWorkspaceFilesMock()
   const abort = new AbortController()
-  const iterator = fixture.remote.changes(sessionId, '.', abort.signal)[Symbol.asyncIterator]()
+  const iterator = fixture.remote.changes(sessionId, 'README.md', abort.signal)[Symbol.asyncIterator]()
   const old = unwrapRemoteResult(await fixture.remote.stat(sessionId, 'README.md'))
   assert.deepEqual(await iterator.next(), { done: false, value: { kind: 'ready' } })
   const next = iterator.next()
