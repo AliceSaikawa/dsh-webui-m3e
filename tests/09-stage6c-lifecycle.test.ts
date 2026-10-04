@@ -14,10 +14,11 @@ async function drain() { for (let i = 0; i < 10; i++) await Promise.resolve() }
 function fixture(t: TestContext) {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const connection = source<ConnectionState>('connected')
-  type State = GoalActivationLifecycle['session'] extends ObservableSnapshot<infer T> ? T : never
+  type State = (GoalActivationLifecycle['session'] extends ObservableSnapshot<infer T> ? T : never) & { lastAgentError: string | null }
   const session = source<State>({ removed: false, openState: 'open', lastAgentError: null, running: false })
-  const events = new Set<(event: unknown) => void>()
-  const remote = { $on(_name: string, fn: (event: unknown) => void) { events.add(fn); return () => { events.delete(fn) } } } as unknown as DshRemote
+  const projection = source<unknown>({ goal: { id: 'goal', revision: 1 } })
+  const events = new Map<string, (...args: unknown[]) => void>()
+  const remote = { $on(name: string, fn: (...args: unknown[]) => void) { events.set(name, fn); return () => { events.delete(name) } } } as unknown as DshRemote
   let reads = 0, failures = 0, ready = false, live: GoalActivationRef | undefined
   let pending: (() => Promise<unknown>) | undefined
   const goals = { async get() {
@@ -26,22 +27,61 @@ function fixture(t: TestContext) {
     return ready ? { ok: true, value: { id: 'goal', revision: 1, activation: 'disarmed' } }
       : { ok: false, error: { code: 'gateway/lookup-not-found', message: '準備前', details: {} } }
   } } as unknown as GoalsRemote
-  const watcher = watchGoalActivation(remote, goals, 'session', value => { live = value }, () => { failures++ }, { connection, session })
+  const watcher = watchGoalActivation(remote, goals, 'session', value => { live = value }, () => { failures++ }, { connection, session, projection })
   t.after(() => watcher.dispose())
-  return { watcher, connection, session, events, reads: () => reads, failures: () => failures, live: () => live,
+  return { watcher, connection, session, projection, events, reads: () => reads, failures: () => failures, live: () => live,
+    emit(name: string, ...args: unknown[]) { events.get(name)?.(...args) },
     ready() { ready = true }, pending(fn: () => Promise<unknown>) { pending = fn },
     async tick(ms: number) { t.mock.timers.tick(ms); await drain() } }
 }
 
-test('B2 準備の失敗で待機を止め、エラーが解消されたら読み直す', async t => {
+test('B2 同じ文言の失敗を再接続後に受けても現在の読取りを無効にして停止する', async t => {
+  const f = fixture(t)
+  await f.watcher.refresh()
+  const message = '準備に失敗しました'
+  f.session.set({ ...f.session.getSnapshot(), lastAgentError: message })
+  f.emit('api-session/error', 'session', message)
+  f.connection.set('disconnected')
+  f.connection.set('connected')
+  await drain()
+  let finish!: (value: unknown) => void
+  f.pending(() => new Promise(resolve => { finish = resolve }))
+  const reading = f.watcher.refresh()
+  const failures = f.failures()
+  f.session.set({ ...f.session.getSnapshot(), lastAgentError: message })
+  f.emit('api-session/error', 'session', message)
+  assert.equal(f.failures(), failures + 1)
+  finish({ ok: true, value: { id: 'stale', revision: 1, activation: 'armed' } })
+  await reading
+  assert.equal(f.live(), undefined)
+  const reads = f.reads()
+  for (let i = 0; i < 40; i++) await f.tick(250)
+  assert.equal(f.reads(), reads)
+})
+
+test('B2 未準備のまま1時間経っても自動再試行せず、手動で読み直せる', async t => {
+  const f = fixture(t)
+  await f.watcher.refresh()
+  for (let i = 0; i < 14400; i++) await f.tick(250)
+  assert.equal(f.reads(), 1)
+  assert.equal(f.live(), undefined)
+  f.ready()
+  await f.watcher.refresh()
+  assert.equal(f.reads(), 2)
+  assert.equal(f.live()?.activation, 'disarmed')
+})
+
+test('B2 準備の失敗で待機を止め、Agentの準備完了通知で読み直す', async t => {
   const f = fixture(t)
   await f.watcher.refresh()
   f.session.set({ ...f.session.getSnapshot(), lastAgentError: '準備に失敗しました' })
+  f.emit('api-session/error', 'session', '準備に失敗しました')
   await f.tick(3000)
   assert.equal(f.reads(), 1)
   assert.equal(f.failures(), 2)
   f.ready()
   f.session.set({ ...f.session.getSnapshot(), lastAgentError: null })
+  f.emit('api-session/added', { sessionId: 'session', agentAvailable: true })
   await drain()
   assert.equal(f.live()?.id, 'goal')
 })
@@ -75,10 +115,11 @@ test('B2 切断中は待機を止め、再接続で新しい状態を取得す�
   assert.equal(f.live()?.activation, 'disarmed')
 })
 
-test('B2 過去の準備エラーを残して再接続しても、通知のない遅い成功で復帰する', async t => {
+test('B2 過去の準備エラーを残して再接続しても、activation不変の遅い成功で復帰する', async t => {
   const f = fixture(t)
   await f.watcher.refresh()
   f.session.set({ ...f.session.getSnapshot(), lastAgentError: '以前の準備に失敗しました' })
+  f.emit('api-session/error', 'session', '以前の準備に失敗しました')
   f.connection.set('disconnected')
   await f.tick(3000)
   assert.equal(f.reads(), 1)
@@ -86,16 +127,19 @@ test('B2 過去の準備エラーを残して再接続しても、通知のな�
   await drain()
   assert.equal(f.reads(), 2)
   // Real reconnect/Agent addition leaves lastAgentError and running unchanged.
-  // Preparation can succeed after three seconds without an activation event.
+  // Preparation emits availability after three seconds, not an activation edge.
   for (let elapsed = 250; elapsed <= 3000; elapsed += 250) {
-    if (elapsed === 3000) f.ready()
+    if (elapsed === 3000) {
+      f.ready()
+      f.emit('api-session/added', { sessionId: 'session', agentAvailable: true })
+    }
     await f.tick(250)
   }
   assert.equal(f.session.getSnapshot().lastAgentError, '以前の準備に失敗しました')
   assert.deepEqual(f.live(), { id: 'goal', revision: 1, activation: 'disarmed' })
 })
 
-test('B2 画面終了でタイマーと全購読を解放し、終了後は読み直さない', async t => {
+test('B2 タイマーを予約せず、画面終了で全購読を解放し終了後は読み直さない', async t => {
   const f = fixture(t)
   const scheduled = new Set<ReturnType<typeof setTimeout>>()
   const schedule = globalThis.setTimeout, cancel = globalThis.clearTimeout
@@ -109,20 +153,68 @@ test('B2 画面終了でタイマーと全購読を解放し、終了後は読�
     cancel(timer)
   })
   await f.watcher.refresh()
-  assert.equal(scheduled.size, 1)
+  assert.equal(scheduled.size, 0)
   assert.equal(f.connection.count(), 1)
   assert.equal(f.session.count(), 1)
-  assert.equal(f.events.size, 1)
+  assert.equal(f.projection.count(), 1)
+  assert.equal(f.events.size, 3)
   f.watcher.dispose()
-  // Inspect the pending reservation before advancing time: the disposed RPC
-  // guard alone would hide an uncancelled timeout after it fires.
+  // No timer may survive or be created by teardown. Inspect before advancing
+  // time, since the disposed RPC guard could otherwise hide a stray timeout.
   assert.equal(scheduled.size, 0)
   assert.equal(f.connection.count(), 0)
   assert.equal(f.session.count(), 0)
+  assert.equal(f.projection.count(), 0)
   assert.equal(f.events.size, 0)
   f.connection.set('disconnected')
   f.connection.set('connected')
   f.session.set({ ...f.session.getSnapshot(), running: true })
+  f.emit('api-session/added', { sessionId: 'session', agentAvailable: true })
+  f.projection.set({ goal: { id: 'goal', revision: 2 } })
   await f.tick(3000)
   assert.equal(f.reads(), 1)
+})
+
+test('B2 100回再接続しても各接続で1回だけ読み、購読を増やさない', async t => {
+  const f = fixture(t)
+  await f.watcher.refresh()
+  for (let i = 1; i <= 100; i++) {
+    f.connection.set('disconnected')
+    await f.tick(1000)
+    assert.equal(f.reads(), i)
+    f.connection.set('connected')
+    await drain()
+    assert.equal(f.reads(), i + 1)
+    assert.equal(f.events.size, 3)
+    assert.equal(f.connection.count(), 1)
+    assert.equal(f.session.count(), 1)
+    assert.equal(f.projection.count(), 1)
+  }
+})
+
+for (const edge of ['projection', 'running'] as const) test(`B2 ${edge}の変化でタイマーを待たず読み直す`, async t => {
+  const f = fixture(t)
+  await f.watcher.refresh()
+  f.ready()
+  if (edge === 'projection') f.projection.set({ goal: { id: 'goal', revision: 1 }, roundsStarted: 1 })
+  else f.session.set({ ...f.session.getSnapshot(), running: true })
+  await drain()
+  assert.equal(f.reads(), 2)
+  assert.equal(f.live()?.id, 'goal')
+})
+
+test('B2 別会話の準備・失敗通知は無視し、Agent破棄では古い応答を捨てる', async t => {
+  const f = fixture(t)
+  let finish!: (value: unknown) => void
+  f.pending(() => new Promise(resolve => { finish = resolve }))
+  const reading = f.watcher.refresh()
+  f.emit('api-session/added', { sessionId: 'another', agentAvailable: true })
+  f.emit('api-session/error', 'another', '準備に失敗しました')
+  assert.equal(f.reads(), 1)
+  assert.equal(f.failures(), 0)
+  f.emit('api-session/added', { sessionId: 'session', agentAvailable: false })
+  assert.equal(f.failures(), 1)
+  finish({ ok: true, value: { id: 'stale', revision: 1, activation: 'armed' } })
+  await reading
+  assert.equal(f.live(), undefined)
 })

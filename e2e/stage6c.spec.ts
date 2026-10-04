@@ -19,6 +19,23 @@ async function expose(page: Page) {
   })
 }
 
+async function announceAgentReady(page: Page) {
+  await page.evaluate(async () => {
+    const kit = (window as any).__stage6c.mock
+    kit.setAgentAvailable('approval-sheet', true)
+    // Host agent/created publishes availability even if activation is unchanged.
+    await kit.emit('api-session/added', { sessionId: 'approval-sheet', agentAvailable: true, running: false, blank: false, updatedAt: Date.now() })
+  })
+}
+
+async function preparationFailed(page: Page, message: string) {
+  await page.evaluate(async message => {
+    const kit = (window as any).__stage6c.mock
+    kit.setSessionState('approval-sheet', { lastAgentError: message })
+    await kit.emit('api-session/error', 'approval-sheet', { additionalArgs: [message] })
+  }, message)
+}
+
 test('S6C B1 整数に近い小数は保存RPCを呼ばず既存の刻みエラーを表示する', async ({ page }) => {
   await expose(page)
   await visit(page, '/settings/agent')
@@ -34,13 +51,13 @@ test('S6C B1 整数に近い小数は保存RPCを呼ばず既存の刻みエラ�
   expect(await page.evaluate(() => (window as any).__writes)).toBe(1)
 })
 
-test('S6C B2 保存済み投影の後でAgentが準備されるまで操作を待ち通知なしで再取得する', async ({ page }) => {
+test('S6C B2 保存済み投影の後でAgentが準備されるまで操作を待ちactivation通知なしで再取得する', async ({ page }) => {
   await expose(page)
   await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
   await expect(button(page, '完了にする')).toBeDisabled()
   await expect(button(page, 'ゴールを消す')).toBeDisabled()
-  await page.evaluate(() => (window as any).__stage6c.mock.setAgentAvailable('approval-sheet', true))
+  await announceAgentReady(page)
   await expect(page.locator('.st-goal-status')).toContainText('停止中')
   await expect(button(page, '再開')).toBeEnabled()
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
@@ -95,16 +112,16 @@ test('S6C B2 会話の準備失敗で待機を止め、状態の回復から操�
   await expose(page)
   await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
-  await page.evaluate(() => (window as any).__stage6c.mock.setSessionState('approval-sheet', { lastAgentError: '準備に失敗しました' }))
+  await preparationFailed(page, '準備に失敗しました')
   const reads = await page.evaluate(() => (window as any).__goalReads)
   await page.clock.runFor(3000)
   expect(await page.evaluate(() => (window as any).__goalReads)).toBe(reads)
   await expect(button(page, '完了にする')).toBeDisabled()
   await page.evaluate(() => {
     const kit = (window as any).__stage6c.mock
-    kit.setAgentAvailable('approval-sheet', true)
     kit.setSessionState('approval-sheet', { lastAgentError: null })
   })
+  await announceAgentReady(page)
   await expect(button(page, '再開')).toBeEnabled()
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
 })
@@ -114,7 +131,7 @@ test('S6C B2 過去の準備エラーを残した再接続でも、遅い成功�
   await expose(page)
   await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
-  await page.evaluate(() => (window as any).__stage6c.mock.setSessionState('approval-sheet', { lastAgentError: '以前の準備に失敗しました' }))
+  await preparationFailed(page, '以前の準備に失敗しました')
   await page.evaluate(() => (window as any).__stage6c.mock.setConnectionState('disconnected'))
   await page.clock.runFor(3000)
   await expect(button(page, '完了にする')).toBeDisabled()
@@ -123,9 +140,8 @@ test('S6C B2 過去の準備エラーを残した再接続でも、遅い成功�
   await expect.poll(() => page.evaluate(() => (window as any).__goalReads)).toBeGreaterThan(reads)
   await page.clock.runFor(3000)
   await expect(button(page, '完了にする')).toBeDisabled()
-  // Agent availability alone leaves the old error, revision, running state and
-  // disarmed activation unchanged; it emits no activation event to rescue us.
-  await page.evaluate(() => (window as any).__stage6c.mock.setAgentAvailable('approval-sheet', true))
+  // Availability leaves the old error, revision, running and activation intact.
+  await announceAgentReady(page)
   await page.clock.runFor(250)
   expect(await page.evaluate(() => (window as any).__stage6c.sessions.binding('approval-sheet').session.getSnapshot().lastAgentError))
     .toBe('以前の準備に失敗しました')
@@ -134,4 +150,54 @@ test('S6C B2 過去の準備エラーを残した再接続でも、遅い成功�
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
   await button(page, '完了にする').click()
   await expect(page.locator('.st-goal-status')).toContainText('完了')
+})
+
+test('S6C B2 準備が進まなければ読取りを続けず、既存の状態を読み直す操作で復帰する', async ({ page }) => {
+  await page.clock.install()
+  await expose(page)
+  await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
+  const reads = await page.evaluate(() => (window as any).__goalReads)
+  await page.clock.runFor(10000)
+  expect(await page.evaluate(() => (window as any).__goalReads)).toBe(reads)
+  // Deliberately omit the availability event to verify manual recovery too.
+  await page.evaluate(() => (window as any).__stage6c.mock.setAgentAvailable('approval-sheet', true))
+  await button(page, '状態を読み直す').click()
+  await expect(button(page, '完了にする')).toBeEnabled()
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
+})
+
+test('S6C B2 準備待ちのゴール画面を離れると通知が来ても読取りを再開しない', async ({ page }) => {
+  await page.clock.install()
+  await expose(page)
+  await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
+  const reads = await page.evaluate(() => (window as any).__goalReads)
+  // Keep the same Session open on chat so a leaked watcher could still read it.
+  await page.evaluate(() => { window.location.hash = '/s/approval-sheet' })
+  await expect(page.getByRole('heading', { name: 'ゴール', exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('メッセージ入力欄')).toBeVisible()
+  await announceAgentReady(page)
+  await page.evaluate(() => {
+    const kit = (window as any).__stage6c.mock
+    kit.setSessionState('approval-sheet', { running: true })
+    kit.setProjection('approval-sheet', 'goal', kit.getProjection('approval-sheet', 'goal'))
+  })
+  await page.clock.runFor(10000)
+  expect(await page.evaluate(() => (window as any).__goalReads)).toBe(reads)
+})
+
+test('S6C B2 同じゴールの投影更新から実行状態を読み直す', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
+  await page.evaluate(() => {
+    const kit = (window as any).__stage6c.mock
+    kit.setAgentAvailable('approval-sheet', true)
+    // Keep id/revision unchanged, so React effect remounting cannot rescue a
+    // missing projection subscription. No availability/activation broadcast.
+    kit.setProjection('approval-sheet', 'goal', kit.getProjection('approval-sheet', 'goal'))
+  })
+  await expect(button(page, '完了にする')).toBeEnabled()
+  await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toHaveCount(0)
 })

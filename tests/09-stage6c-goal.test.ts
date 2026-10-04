@@ -68,7 +68,7 @@ test('M10 m5 activation不変の完了は通知せず投影を更新し時刻を
   } finally { ctx.dispose() }
 })
 
-test('B2 準備に3秒かかっても通知なしで自動復帰する', async t => {
+test('B2 準備に3秒かかってもAgentの通知でactivation不変の成功を読み直す', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   const real = goalsRemoteOf(ctx.remote.goals)!
@@ -86,12 +86,14 @@ test('B2 準備に3秒かかっても通知なしで自動復帰する', async t
     assert.equal(live, undefined)
     assert.equal(failures, 1)
     for (let elapsed = 250; elapsed <= 3000; elapsed += 250) {
-      if (elapsed === 3000) ready = true
       t.mock.timers.tick(250)
-      // Drain the RPC and the subsequent retry scheduling between clock ticks.
       for (let turn = 0; turn < 10; turn++) await Promise.resolve()
     }
+    assert.equal(reads, 1)
+    ready = true
+    await ctx.mock.emit('api-session/added', { sessionId: id, agentAvailable: true })
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve()
     assert.equal((live as GoalActivationRef | undefined)?.id, 'session-tools-goal')
-    assert.equal(reads, 13)
+    assert.equal(reads, 2)
   } finally { watcher.dispose(); ctx.dispose() }
 })

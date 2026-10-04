@@ -20,10 +20,10 @@ function harness(get: GoalsRemote['get']) {
   let listener: ((event: GoalActivationChanged) => void) | undefined
   let subscriptions = 0
   const remote = { $on(event: string, next: (event: GoalActivationChanged) => void) {
-    assert.equal(event, 'goal/activation-changed')
-    listener = next
+    assert.ok(['goal/activation-changed', 'api-session/added', 'api-session/error'].includes(event))
+    if (event === 'goal/activation-changed') listener = next
     subscriptions++
-    return () => { subscriptions--; listener = undefined }
+    return () => { subscriptions--; if (event === 'goal/activation-changed') listener = undefined }
   } }
   const goals: GoalsRemote = { get, pause: async () => ok(view), resume: async () => ok(view), complete: async () => ok(view), clear: async () => ok(view) }
   return { remote, goals, emit(event: GoalActivationChanged) { listener?.(event) }, get subscriptions() { return subscriptions } }

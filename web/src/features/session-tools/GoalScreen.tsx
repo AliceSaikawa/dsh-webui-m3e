@@ -48,15 +48,17 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     setActivationError(false)
     setActivationReady(false)
-    if (!goals || !connected || !goal || !face) return
+    if (!goals || !goal || !face) return
     const watcher = watchGoalActivation(remote, goals, sessionId, value => {
       setLiveActivation(previous => updateGoalActivation(goal, previous, value))
       setActivationError(false)
       setActivationReady(true)
-    }, () => { setActivationError(true); setActivationReady(false) }, { connection: connection.state, session: face })
+    }, () => { setActivationError(true); setActivationReady(false) }, {
+      connection: connection.state, session: face, projection: face.projections.faceOf('goal'),
+    })
     void watcher.refresh()
     return () => watcher.dispose()
-  }, [remote, goals, sessionId, goal?.id, goal?.revision, connected, connection, face, activationRefresh])
+  }, [remote, goals, sessionId, goal?.id, goal?.revision, connection, face, activationRefresh])
 
   async function refresh() {
     if (!goals || lock.current) return
