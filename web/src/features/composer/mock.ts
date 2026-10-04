@@ -3,12 +3,12 @@ import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
 import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
-const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
+const failure = (code: string, message: string, details: Record<string, unknown> = {}): RemoteResult<never> => ({ ok: false, error: { code, message, details } })
 
 export const mockCommands: readonly CommandDescriptor[] = [
-  { name: 'plan', description: '計画モードに切り替えます。off で終了します。', input: { hint: '計画したいこと、または off' } },
-  { name: 'permission', description: 'この会話の権限を切り替えます。', input: { hint: '権限のプリセット名' } },
   { name: 'model', description: 'この会話で使うモデルを選びます。' },
+  { name: 'permission', description: 'この会話の権限を切り替えます。', input: { hint: '権限のプリセット名' } },
+  { name: 'plan', description: '計画モードに切り替えます。off で終了します。', input: { hint: '計画したいこと、または off', attachments: true } },
 ]
 export const mockPermissions: PermissionProjection = {
   currentValue: 'workspace-write',
@@ -34,6 +34,7 @@ const files: readonly FileReference[] = [
 ]
 
 export function extendMock(kit: MockKit): void {
+  let savedDefault = structuredClone(mockModelCatalog.default)
   const known = new Set<string>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {
     known.add(sessionId)
@@ -60,20 +61,30 @@ export function extendMock(kit: MockKit): void {
     removeSession(sessionId)
   }
 
+  // This feature owns model projection values; the controller owns the request
+  // journal. Consuming the selection leaves wire.next equal to lastUsed.
+  const streamAssistant = kit.streamAssistant.bind(kit)
+  kit.streamAssistant = (sessionId, text, options) => {
+    const current = kit.getProjection<ModelSelectionProjection>(sessionId, 'modelSelection')
+    const used = structuredClone(current?.next ?? savedDefault)
+    kit.setProjection(sessionId, 'modelSelection', { lastUsed: used, next: used })
+    return streamAssistant(sessionId, text, options)
+  }
+
   kit.addRemote('commands', {
     async list(sessionId: string) {
-      return known.has(sessionId) ? success(structuredClone(mockCommands)) : failure('session/not-found', '会話が見つかりません。')
+      return known.has(sessionId) ? success(structuredClone(mockCommands)) : failure('session/not-found', '会話が見つかりません。', { sessionId })
     },
   })
   kit.addRemote('fileReferences', {
-    async list(sessionId: string, query: string, signal: AbortSignal) {
-      if (signal.aborted) return failure('rpc/aborted', '候補の検索を取り消しました。')
-      if (!known.has(sessionId)) return failure('session/not-found', '会話が見つかりません。')
+    async list(sessionId: string, query: string, signal?: AbortSignal) {
+      if (signal?.aborted) return failure('gateway/cancelled', '候補の検索を取り消しました。')
+      if (!known.has(sessionId)) return failure('session/not-found', '会話が見つかりません。', { sessionId })
       return success(structuredClone(files.filter((file) => file.path.toLocaleLowerCase().startsWith(query.toLocaleLowerCase()))))
     },
   })
   kit.addRemote('session', {
-    async modelCatalog() { return success(structuredClone(mockModelCatalog)) },
+    async modelCatalog() { return success(structuredClone({ ...mockModelCatalog, default: savedDefault })) },
     async selectModel(input: ModelSelection & { sessionId: string }) {
       const testWindow = globalThis as typeof globalThis & {
         __m3eTestSelectModelDelay?: number
@@ -81,17 +92,21 @@ export function extendMock(kit: MockKit): void {
       }
       const delay = Math.min(2000, Math.max(0, testWindow.__m3eTestSelectModelDelay ?? 0))
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
-      if (testWindow.__m3eTestSelectModelFailure) return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
-      if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。')
+      const unavailable = () => failure('session/model-unavailable', 'このモデルや考える深さは選べません。', { provider: input.provider, model: input.model })
+      if (testWindow.__m3eTestSelectModelFailure) return unavailable()
+      if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。', { sessionId: input.sessionId })
       const model = mockModelCatalog.groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
       if (!model || (input.reasoningEffort !== undefined && !model.reasoning?.efforts.some((effort) => effort.id === input.reasoningEffort))) {
-        return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
+        return unavailable()
       }
-      const value: ModelSelection = { provider: input.provider, model: input.model, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) }
+      const effort = input.reasoningEffort ?? model.reasoning?.defaultEffort
+      const value: ModelSelection = { provider: input.provider, model: input.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
       let current: ModelSelectionProjection | undefined
       kit.updateList(state => { current = state.byId[input.sessionId]?.projectionValues?.modelSelection as ModelSelectionProjection | undefined })
       const projection: ModelSelectionProjection = { lastUsed: current?.lastUsed ?? null, next: value }
       kit.setProjection(input.sessionId, 'modelSelection', projection)
+      // Model installation does not await default persistence in the real Host.
+      void Promise.resolve().then(() => { savedDefault = structuredClone(value) })
       return success({ selected: value })
     },
   })

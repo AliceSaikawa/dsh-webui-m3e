@@ -14,11 +14,11 @@ export const HOME_MOCK_IDS = {
 const start = Date.parse('2026-09-25T09:30:00+09:00')
 
 const rows: readonly Omit<SessionSummary, 'retainedBy'>[] = [
-  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } } } },
-  { id: HOME_MOCK_IDS.waiting, displayTitle: 'ワークスペースの確認', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: start - 60_000, projectionValues: { modelSelection: { lastUsed: { provider: 'local', model: 'Qwen' } } } },
+  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-chat' } } } },
+  { id: HOME_MOCK_IDS.waiting, displayTitle: 'ワークスペースの確認', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: start - 60_000, projectionValues: { modelSelection: { lastUsed: { provider: 'local', model: 'Qwen' }, next: { provider: 'local', model: 'Qwen' } } } },
   { id: HOME_MOCK_IDS.child, displayTitle: '一覧の表示をレビュー', cwd: '/mock/dsh-webui-m3e', parentId: MOCK_IDS.sessions.readme, origin: 'subagent', running: false, blank: false, updatedAt: start - 120_000 },
   { id: HOME_MOCK_IDS.idle, displayTitle: '一覧のメニューを検討', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start - 86_400_000 },
-  { id: HOME_MOCK_IDS.harness, displayTitle: '接続のテストを整理', cwd: '/mock/deepseek-harness', running: false, blank: false, updatedAt: start - 172_800_000, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } } } },
+  { id: HOME_MOCK_IDS.harness, displayTitle: '接続のテストを整理', cwd: '/mock/deepseek-harness', running: false, blank: false, updatedAt: start - 172_800_000, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-reasoner' } } } },
 ]
 
 function recordsFor(row: Omit<SessionSummary, 'retainedBy'>): SessionWireEvent[] {
@@ -58,8 +58,8 @@ export function extendMock(kit: MockKit): void {
   kit.setSessionState(HOME_MOCK_IDS.child, { subagent: {
     address: { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode: 'one-shot' }, parentAvailable,
   } })
-  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
-  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } })
+  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-chat' } })
+  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-reasoner' } })
   kit.addRemote('directoryPicker', createDirectoryMock())
 
   kit.scenario('home', (home) => {

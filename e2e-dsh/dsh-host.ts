@@ -4,7 +4,7 @@
  * and the scripted fake model from ./fake-llm.ts as its only LLM endpoint.
  */
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
@@ -56,7 +56,7 @@ export interface DshHost {
   restart(): Promise<void>
 }
 
-export async function startDsh(llmUrl: string): Promise<DshHost> {
+export async function startDsh(llmUrl: string, options: { timedQuestionSeconds?: number } = {}): Promise<DshHost> {
   const install = dshInstall()
   const actual = JSON.parse(readFileSync(join(install, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8')).version as string
   // Keep only this run's DSH_HOME; earlier runs are evidence in the report, not state.
@@ -80,6 +80,16 @@ export async function startDsh(llmUrl: string): Promise<DshHost> {
   }
   const bin = join(install, 'node_modules', '.bin', 'dsh')
   run(bin, ['plugin', '--profile', 'web', 'add', `file:${packPlugin()}`], install, env)
+  if (options.timedQuestionSeconds !== undefined) {
+    // A separate preset in this run's isolated home. The stock tool Config's
+    // mode/timeout fields are not volatile settings, so configure at boot.
+    writeFileSync(join(dshHome, 'cordis.patch.yml'), JSON.stringify([
+      { insert: [{ id: 'preset-timed-test', name: '@deepseek-ai/dsh-agent-preset', config: {
+        id: 'timed-test', plugins: [{ id: 'tool-ask-user', name: '@deepseek-ai/dsh-tool-ask-user', config: { mode: 'timed', timeout: options.timedQuestionSeconds } }],
+      } }] },
+      { id: 'agent-preset-registry', config: { default: 'timed-test' } },
+    ]))
+  }
 
   let child: ChildProcess | undefined
   let port = 0

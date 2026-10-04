@@ -69,7 +69,7 @@ test('search-error は400ms後に理由付きの失敗を返す', async t => {
     const result = await pending
     assert.equal(result.ok, false)
     if (!result.ok) {
-      assert.equal(result.error.code, 'search/unavailable')
+      assert.equal(result.error.code, 'gateway/internal')
       assert.match(result.error.message, /接続できません/)
     }
   } finally { ctx.dispose() }

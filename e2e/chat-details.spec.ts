@@ -17,13 +17,17 @@ test('02c 画像拡大・長いツール結果の全文表示', async ({ page })
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
-test('02d 古いチャット履歴を2ページ読み込み末尾へ戻る', async ({ page }) => {
+test('02d 古いチャット履歴を4ページ読み込み末尾へ戻る', async ({ page }) => {
   await visit(page, '/s/chat-long')
-  await expect(page.locator('.chat-user')).toHaveCount(25)
+  await expect(page.locator('.chat-user')).toHaveCount(16)
   // Scrolling to the top loads a page automatically. A click after Playwright
   // scrolls the button into view would trigger a second page unintentionally.
   await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = 0 })
+  await expect(page.locator('.chat-user')).toHaveCount(33)
+  await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = 0 })
   await expect(page.locator('.chat-user')).toHaveCount(50)
+  await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = 0 })
+  await expect(page.locator('.chat-user')).toHaveCount(66)
   await page.locator('.chat-scroll').evaluate(node => { node.scrollTop = 0 })
   await expect(page.locator('.chat-user')).toHaveCount(75)
   await expect(button(page, '前のメッセージを読み込む')).toHaveCount(0)

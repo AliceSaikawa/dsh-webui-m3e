@@ -1,6 +1,7 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import { MOCK_IDS } from '../../dsh/mock/fixtures.ts'
 import type { AskUserQuestionItem } from '../../dsh/interactions.ts'
+import type { AskUserQuestionAnswer, AskUserQuestionRequestEvent, UserQuestionProjection } from '../../dsh/interactions-store.ts'
 import type { SessionWireEvent } from '../../dsh/services.ts'
 
 const initialDelay = 100
@@ -35,6 +36,16 @@ const databaseQuestions: AskUserQuestionItem[] = [
     ],
   },
 ]
+
+/** Shared input for the timed transport fixture owned by the controller mock. */
+export function timedQuestionRequest(signal?: AbortSignal): AskUserQuestionRequestEvent {
+  return { agent: databaseSessionId, questions: structuredClone(databaseQuestions), signal,
+    wait: { callId: '05-timed-question', timed: true } }
+}
+
+export const continuedQuestionProjection: UserQuestionProjection = {
+  active: [{ callId: '05-timed-question', questions: databaseQuestions, state: 'continued' }], settled: [],
+}
 
 const planQuestion: AskUserQuestionItem = {
   id: 'auth-plan',
@@ -100,6 +111,27 @@ export function extendMock(kit: MockKit): void {
     void reportReply(kit.emit('user-questions/request', {
       agent: databaseSessionId, questions: structuredClone(databaseQuestions),
     }, { afterMs: initialDelay }), '質問')
+  })
+  // No timer/claim implementation here: the controller owns that business
+  // stream. This fixture represents its already persisted continued state.
+  kit.scenario('question-continued', () => {
+    kit.setProjection(databaseSessionId, 'userQuestions', structuredClone(continuedQuestionProjection))
+    kit.addRemote('userQuestions', {
+      async answer(sessionId: string, callId: string, answer: AskUserQuestionAnswer) {
+        if (sessionId !== databaseSessionId) return { ok: false, error: { code: 'session/not-found', message: '会話が見つかりません。', details: { sessionId } } }
+        const current = kit.getProjection<UserQuestionProjection>(sessionId, 'userQuestions')!
+        const question = current.active.find(row => row.callId === callId && row.state === 'continued')
+        if (!question) return { ok: true, value: false }
+        if (new Set(answer.answers.map(row => row.id)).size !== question.questions.length || answer.answers.length !== question.questions.length
+          || !question.questions.every(row => answer.answers.some(item => item.id === row.id))) {
+          return { ok: false, error: { code: 'gateway/internal', message: '質問ごとに回答してください。', details: {} } }
+        }
+        // Immediate admission in this display fixture; queued reply suppression
+        // and the durable reply event belong to the controller's full fixture.
+        kit.setProjection(sessionId, 'userQuestions', { active: [], settled: [{ callId, answers: answer.answers }] })
+        return { ok: true, value: true }
+      },
+    })
   })
   kit.scenario('plan', () => {
     void reportReply(kit.emit('user-questions/request', {

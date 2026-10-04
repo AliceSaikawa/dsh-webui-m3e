@@ -18,7 +18,8 @@ export function excerptOf(text: string, query: string): string | undefined {
   if (!range) return undefined
   const before = Array.from(text.slice(0, range.start))
   const after = Array.from(text.slice(range.end))
-  return `${before.length > 20 ? '…' : ''}${before.slice(-20).join('')}${text.slice(range.start, range.end)}${after.slice(0, 20).join('')}${after.length > 20 ? '…' : ''}`
+  const excerpt = `${before.length > 20 ? '…' : ''}${before.slice(-20).join('')}${text.slice(range.start, range.end)}${after.slice(0, 20).join('')}${after.length > 20 ? '…' : ''}`
+  return Array.from(excerpt).slice(0, 240).join('')
 }
 
 function waitForSearch(signal: AbortSignal): Promise<void> {
@@ -43,7 +44,7 @@ export function extendMock(kit: MockKit): void {
   kit.patch('sessions.search', async function (this: ISessions, input: string, signal: AbortSignal) {
     await waitForSearch(signal)
     if (signal.aborted) throw new DOMException('検索を取り消しました。', 'AbortError')
-    if (fail) return { ok: false, error: { code: 'search/unavailable', message: '検索サービスに接続できません。', details: {} } }
+    if (fail) return { ok: false, error: { code: 'gateway/internal', message: '検索サービスに接続できません。', details: {} } }
     const query = normalizeQuery(input)
     if (!validMockSearchQuery(query)) return { ok: false, error: { code: 'gateway/bad-request', message: '検索語を確認してください。', details: {} } }
     const list = this.list.getSnapshot()

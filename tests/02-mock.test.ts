@@ -7,7 +7,7 @@ import { extendMock } from '../web/src/features/chat/mock.ts'
 import { buildChatRows } from '../web/src/features/chat/model.ts'
 import { clipToolResult } from '../web/src/features/chat/tool-output.ts'
 
-test('長い会話を2回読み込み、元の共有履歴と表示済みの末尾を保つ', async () => {
+test('長い会話を4回読み込み、元の共有履歴と表示済みの末尾を保つ', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const binding = ctx.sessions.retain('chat-long', { source: 'm3e.test' }).binding
@@ -20,6 +20,12 @@ test('長い会話を2回読み込み、元の共有履歴と表示済みの末�
     assert.equal(binding.session.getSnapshot().hasMore, true)
     await binding.session.loadOlder()
     assert.equal(journal().records.length, 300)
+    assert.equal(binding.session.getSnapshot().hasMore, true)
+    await binding.session.loadOlder()
+    assert.equal(journal().records.length, 400)
+    assert.equal(binding.session.getSnapshot().hasMore, true)
+    await binding.session.loadOlder()
+    assert.equal(journal().records.length, 450)
     assert.equal(binding.session.getSnapshot().hasMore, false)
     assert.deepEqual(journal().records.slice(-100), initial)
     assert.equal(buildChatRows(journal().records).length, 150)
@@ -90,7 +96,7 @@ test('偽の生成が始まり、途中の本文を表示できる', { timeout: 
   } finally { ctx.dispose() }
 })
 
-test('長い会話の偽生成は履歴を2回追加しても過去の返事と重ならず表示できる', { timeout: 1000 }, async () => {
+test('長い会話の偽生成は履歴を4回追加しても過去の返事と重ならず表示できる', { timeout: 1000 }, async () => {
   const ctx = createMockContext({ scenario: 'chat-long-streaming', extensions: [{ extendMock }] })
   try {
     const binding = ctx.sessions.retain('chat-long-streaming', { source: 'm3e.test' }).binding
@@ -99,6 +105,9 @@ test('長い会話の偽生成は履歴を2回追加しても過去の返事と�
     await binding.session.loadOlder()
     await binding.session.loadOlder()
     assert.equal(journal().records.length, 300)
+    await binding.session.loadOlder()
+    await binding.session.loadOlder()
+    assert.equal(journal().records.length, 453)
     await new Promise<void>(resolve => {
       const stop = binding.eventSource.subscribe(() => {
         if (journal().stream?.content.some(block => block.type === 'text' && block.text)) { stop(); resolve() }
@@ -109,7 +118,7 @@ test('長い会話の偽生成は履歴を2回追加しても過去の返事と�
     const rows = buildChatRows(records, stream)
     assert.ok(rows.some(row => row.kind === 'assistant' && row.streaming && row.text))
     assert.equal(new Set(rows.map(row => row.key)).size, rows.length)
-    assert.ok(rows.filter(row => row.kind === 'assistant' && !row.streaming).length >= 74)
+    assert.equal(rows.filter(row => row.kind === 'assistant' && !row.streaming).length, 75)
     assert.ok(ctx.workspaces.list.getSnapshot().items.find(workspace => workspace.workspaceId === 'ws-chat-check')?.sessionIds.includes('chat-long-streaming'))
   } finally { ctx.dispose() }
 })
