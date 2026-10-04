@@ -105,16 +105,26 @@ test('サブエージェントの子は、親のカタログに mode 付きで�
   const { ctx } = build()
   try {
     const list = ctx.sessions.list.getSnapshot()
+    const children = [
+      { id: HOME_MOCK_IDS.child, mode: 'one-shot' },
+      { id: SESSION_TOOLS_MOCK_IDS.children.review, mode: 'continuable' },
+      { id: SESSION_TOOLS_MOCK_IDS.children.tests, mode: 'one-shot' },
+    ] as const
     assert.deepEqual(Object.values(list.byId).filter(row => row.origin === 'subagent').map(row => row.id).sort(),
-      [HOME_MOCK_IDS.child, SESSION_TOOLS_MOCK_IDS.children.review, SESSION_TOOLS_MOCK_IDS.children.tests].sort())
-    const missing = list.ids.flatMap(id => {
-      const summary = list.byId[id]
-      if (summary?.origin !== 'subagent' || !summary.parentId) return []
-      const entries = list.projectionsBySession[summary.parentId]?.values.subagentCatalog
-      const listed = Array.isArray(entries) && entries.some((entry: { kind?: string; id?: string; mode?: string }) => entry.id === id && (entry.mode === 'one-shot' || entry.mode === 'continuable'))
-      return listed ? [] : [id]
-    })
-    assert.deepEqual(missing, [])
+      children.map(child => child.id).sort())
+    for (const child of children) {
+      assert.ok(list.ids.includes(child.id), `${child.id}: 一覧に存在する`)
+      const summary = list.byId[child.id]
+      assert.ok(summary, `${child.id}: 子の情報が存在する`)
+      assert.equal(summary.origin, 'subagent', `${child.id}: 子のorigin`)
+      const parentId = summary.parentId
+      assert.ok(typeof parentId === 'string' && parentId.trim().length > 0, `${child.id}: 親IDが空でない`)
+      const entries = list.projectionsBySession[parentId]?.values.subagentCatalog
+      assert.ok(Array.isArray(entries), `${child.id}: 親のカタログが存在する`)
+      const entry = entries.find((entry: { id?: string }) => entry.id === child.id)
+      assert.ok(entry, `${child.id}: 親のカタログに子が存在する`)
+      assert.equal(entry.mode, child.mode, `${child.id}: カタログのmode`)
+    }
   } finally { ctx.dispose() }
 })
 
