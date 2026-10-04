@@ -74,7 +74,9 @@ for (const scenario of [
     const ownMessages = page.getByRole('article', { name: '自分のメッセージ', exact: true })
     await expect(ownMessages).toHaveCount(1)
     await expect(ownMessages).toHaveText(input)
+    await expect(ownMessages.locator('.chat-bubble')).toBeVisible()
     await expect(page.locator('.chat-context').first()).toBeVisible()
+    await expect(page.locator('.chat-context').first().locator('.chat-row-label')).toBeVisible()
 
     await expect.poll(async () => (await recordsOf(page, sessionId)).some(event => event.type === 'session/title-llm-request')).toBe(true)
     const records = await recordsOf(page, sessionId)
@@ -101,6 +103,7 @@ for (const scenario of [
     expect(output.join('')).toContain(scenario.output)
     const chatTool = page.locator('.chat-tool').filter({ hasText: scenario.tool })
     await expect(chatTool).toHaveCount(1)
+    await expect(chatTool.locator('strong')).toBeVisible()
     await chatTool.click()
     // Only result blocks following the 結果 heading, never the arguments above it.
     const chatResult = page.locator('.chat-detail > .chat-detail-heading:has-text("結果") ~ pre.chat-json')
@@ -113,10 +116,14 @@ for (const scenario of [
     const tool = page.locator('[data-trace-row]').filter({ hasText: `ツール：${scenario.tool}` })
     await expect(tool).toHaveCount(1)
     await expect(tool).not.toContainText('実行中')
+    await expect(tool.locator('.trace-row-title')).toBeVisible()
     await tool.click()
     // The output icon identifies the 結果 row; 引数 has its own data_object row.
     const traceResult = page.locator('.trace-record-row:has(> [slot="leading"]:text-is("output")) > .trace-record-panel')
     await expect(traceResult).toBeVisible()
     await expect(traceResult).toHaveText(output.join(''))
+    const traceResultBlocks = traceResult.locator('.trace-text')
+    await expect(traceResultBlocks).toHaveText(output)
+    for (const block of await traceResultBlocks.all()) await expect(block).toBeVisible()
   })
 }
