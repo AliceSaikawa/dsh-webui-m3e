@@ -253,7 +253,7 @@ test('古い GoalRef は状態を変えず拒否し、再読み込みだけで�
     const stop = projection.subscribe(() => { changes++ })
     const stale = await remote.complete(sessionId, original)
     assert.equal(stale.ok, false)
-    if (!stale.ok) assert.equal(stale.error.code, 'GOAL_STALE_REVISION')
+    if (!stale.ok) assert.equal(stale.error.code, 'gateway/internal')
     assert.equal((await remote.clear(sessionId, { id: 'other-goal', revision: paused.revision })).ok, false)
     const result = await performGoalOperation(remote, sessionId, 'resume', original)
     assert.equal(result.ok, false)

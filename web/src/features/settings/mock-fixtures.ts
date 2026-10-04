@@ -274,7 +274,7 @@ export function settingsFixtures(): SettingsNamespace[] {
     if (row.ns === 'agent-default-model') Object.assign(base, { provider: 'deepseek', model: 'deepseek-v4' })
     if (row.ns === 'llm-pi-ai') base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
     const user: SettingObject = row.ns === 'agent-default-model' ? { reasoningEffort: 'high' } : {}
-    return { ...row, schema: structuredClone(row.schema), base, user, value: { ...structuredClone(base), ...user }, revision: 1, applies: 'live' }
+    return { ...row, schema: structuredClone(row.schema), base, user, value: { ...structuredClone(base), ...user }, revision: 0, applies: 'live' }
   })
   rows.push(exampleFixture())
   return rows
@@ -284,7 +284,7 @@ export function settingsFixtures(): SettingsNamespace[] {
 function exampleFixture(): SettingsNamespace {
   const base: SettingObject = { enabled: true, name: '追加機能', timeout: 30, mode: '標準', retry: { enabled: true, interval: 2 }, models: ['基本モデル', '補助モデル'], labels: { primary: '既定' }, custom: null, localProvider: {} }
   const user: SettingObject = { timeout: 45, retry: { interval: 3 } }
-  return { ns: 'example-extension', autoGenerate: true, revision: 1, applies: 'live', base, user,
+  return { ns: 'example-extension', autoGenerate: true, revision: 0, applies: 'live', base, user,
     value: { ...structuredClone(base), timeout: 45, retry: { enabled: true, interval: 3 } },
     schema: { uid: 0, refs: {
       0: { type: 'object', dict: { enabled: 1, name: 2, timeout: 3, mode: 4, retry: 8, models: 11, labels: 13, custom: 14, protectedInput: 15, localProvider: 16 } },

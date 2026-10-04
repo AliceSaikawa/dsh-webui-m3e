@@ -18,26 +18,41 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
   publish: (value: GoalActivationRef | undefined) => void, failed: () => void) {
   let disposed = false
   let generation = 0
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let attempts = 0
+  const cancelRetry = () => { clearTimeout(retry); retry = undefined }
   const off = onRemoteEvent(remote, 'goal/activation-changed', event => {
     if (disposed || event.sessionId !== sessionId) return
     generation++
+    cancelRetry()
     publish(event.goal)
   })
+  async function refresh() {
+    if (disposed) return
+    cancelRetry()
+    const read = ++generation
+    try {
+      const result = await goals.get(sessionId)
+      if (disposed || read !== generation) return
+      if (!result.ok) {
+        failed()
+        // A persisted snapshot precedes background Agent preparation. That
+        // preparation need not emit an activation edge (disarmed -> disarmed).
+        if (result.error.code === 'gateway/lookup-not-found' && attempts++ < 10) retry = setTimeout(() => { void refresh() }, 250)
+        return
+      }
+      attempts = 0
+      const goal = result.value
+      publish(goal ? { id: goal.id, revision: goal.revision, activation: goal.activation } : undefined)
+    } catch { if (!disposed && read === generation) failed() }
+  }
   return {
-    async refresh() {
-      const read = ++generation
-      try {
-        const result = await goals.get(sessionId)
-        if (disposed || read !== generation) return
-        if (!result.ok) { failed(); return }
-        const goal = result.value
-        publish(goal ? { id: goal.id, revision: goal.revision, activation: goal.activation } : undefined)
-      } catch { if (!disposed && read === generation) failed() }
-    },
+    refresh,
     dispose() {
       if (disposed) return
       disposed = true
       generation++
+      cancelRetry()
       off()
     },
   }

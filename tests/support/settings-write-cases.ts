@@ -4,6 +4,7 @@ export interface SettingWriteCase { id: string; ns: string; patch: SettingObject
 
 /** The auditor's 31 inputs, with outcomes independently verified against DSH. */
 export const settingsWriteCases: SettingWriteCase[] = [
+  { id: 'W32', ns: 'agent-loop', patch: { maxParallelToolCalls: 1.000000001 }, ok: false },
   {
     "id": "W01",
     "ns": "agent-default-model",

@@ -1,6 +1,7 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
 import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionCatalog, PermissionSelection } from './api.ts'
+import { installPermissionCatalogMock } from './mock-permission-catalog.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -39,9 +40,7 @@ const files: readonly FileReference[] = [
 ]
 
 export function extendMock(kit: MockKit): void {
-  kit.addRemote('permissionPresets', {
-    async catalog() { return success(structuredClone(mockPermissionCatalog)) },
-  })
+  installPermissionCatalogMock(kit, mockPermissionCatalog)
   const known = new Set<string>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {
     known.add(sessionId)
@@ -58,8 +57,8 @@ export function extendMock(kit: MockKit): void {
   // The foundation creates new sessions through this public method too.
   // Preserve a later feature's explicit projections when initializing its fixtures.
   const addSession = kit.addSession.bind(kit)
-  kit.addSession = (summary, records) => {
-    addSession(summary, records)
+  kit.addSession = (summary, records, options) => {
+    addSession(summary, records, options)
     initialize(summary.id, summary.projectionValues)
   }
   const removeSession = kit.removeSession.bind(kit)
@@ -95,7 +94,8 @@ export function extendMock(kit: MockKit): void {
       if (!model || (input.reasoningEffort !== undefined && !model.reasoning?.efforts.some((effort) => effort.id === input.reasoningEffort))) {
         return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
       }
-      const value: ModelSelection = { provider: input.provider, model: input.model, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) }
+      const effort = input.reasoningEffort ?? model.reasoning?.defaultEffort
+      const value: ModelSelection = { provider: input.provider, model: input.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
       let current: ModelSelectionProjection | undefined
       kit.updateList(state => { current = state.byId[input.sessionId]?.projectionValues?.modelSelection as ModelSelectionProjection | undefined })
       const projection: ModelSelectionProjection = { lastUsed: current?.lastUsed ?? null, next: value }

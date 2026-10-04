@@ -1,5 +1,6 @@
 import type { ProviderState } from './providers.ts'
 import type { PermissionCatalog } from '../composer/api.ts'
+import { matchesNumberStep } from './number-step.ts'
 
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
 export type SettingObject = { [key: string]: SettingValue }
@@ -206,10 +207,7 @@ export function parseFieldInput(field: SettingField, input: string): { ok: true;
   if (!Number.isFinite(value)) return { ok: false, message: '有効な数値を入力してください。' }
   if (field.min !== undefined && value < field.min) return { ok: false, message: `${field.min} 以上にしてください。` }
   if (field.max !== undefined && value > field.max) return { ok: false, message: `${field.max} 以下にしてください。` }
-  if (field.step !== undefined && field.step > 0) {
-    const steps = (value - (field.min ?? 0)) / field.step
-    if (Math.abs(steps - Math.round(steps)) > 1e-8) return { ok: false, message: `${field.step} 刻みで入力してください。` }
-  }
+  if (!matchesNumberStep(value, field.min, field.step)) return { ok: false, message: `${field.step} 刻みで入力してください。` }
   return { ok: true, value }
 }
 

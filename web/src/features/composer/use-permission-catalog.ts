@@ -23,8 +23,11 @@ export function usePermissionCatalog() {
       } catch { if (active && request === generation) setCatalog(undefined) }
     }
     const off = onRemoteEvent(remote, 'permission-presets/catalog-changed', () => { void load() })
+    const offSettings = onRemoteEvent(remote, 'settings/document-updated', ns => {
+      if (ns === 'permission') { setCatalog(undefined); void load() }
+    })
     void load()
-    return () => { active = false; off() }
+    return () => { active = false; off(); offSettings() }
   }, [api, remote, connected])
   return catalog
 }

@@ -1,5 +1,7 @@
 import { decodeSchema, type SchemaNode, type SettingValue, type SettingsNamespace } from './schema.ts'
 import type { SettingsOperation } from './store.ts'
+import { matchesNumberStep } from './number-step.ts'
+import { applyMockOperations } from './mock-mutations.ts'
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const safe = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
@@ -20,7 +22,7 @@ function accepts(node: SchemaNode, value: unknown, partial = false, openObjects 
       && (!node.meta?.pattern || new RegExp(node.meta.pattern.source, node.meta.pattern.flags).test(value))
     case 'number': return typeof value === 'number' && Number.isFinite(value)
       && (node.meta?.min === undefined || value >= node.meta.min) && (node.meta?.max === undefined || value <= node.meta.max)
-      && (node.meta?.step === undefined || Math.abs((value - (node.meta.min ?? 0)) / node.meta.step - Math.round((value - (node.meta.min ?? 0)) / node.meta.step)) < 1e-8)
+      && matchesNumberStep(value, node.meta?.min, node.meta?.step)
     case 'boolean': return typeof value === 'boolean'
     case 'const': return Object.is(node.value, value)
     case 'union': return node.list?.some(child => accepts(child, value, partial, openObjects, root)) === true
@@ -58,6 +60,7 @@ export function validMockValue(row: SettingsNamespace, value: Record<string, Set
   return accepts(decodeSchema(row.schema), value, false, row.ns !== 'example-extension', true) && validProfileValues(row, value)
 }
 export function validMockOperations(row: SettingsNamespace, operations: readonly SettingsOperation[]): boolean {
+  try { applyMockOperations(row, operations) } catch { return false }
   const root = decodeSchema(row.schema)
   return operations.every(operation => {
     const node = nodeAt(root, operation.path, row.ns !== 'example-extension')
