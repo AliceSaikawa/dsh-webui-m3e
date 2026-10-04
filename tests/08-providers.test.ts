@@ -36,9 +36,9 @@ test('偽データは登録済み・未登録・不要を分け、登録と削�
     const stop = store.subscribe(() => { snapshots.push(JSON.stringify(store.getSnapshot())) })
     assert.equal(await store.load(), true)
     assert.deepEqual(store.getSnapshot().rows.map(item => [item.id, item.status]), [
-      ['deepseek-official', 'registered'], ['cloud', 'missing'], ['local', 'unnecessary'],
+      ['deepseek', 'registered'], ['cloud', 'missing'], ['ollama', 'unnecessary'],
     ])
-    assert.equal(row(store, 'local').writable, false)
+    assert.equal(row(store, 'ollama').writable, false)
     assert.deepEqual(await store.save(row(store), 'submitted-value-never-returned'), { ok: true })
     assert.equal(row(store).status, 'registered')
     const status = unwrapRemoteResult(await remote.credentials.describe(['PI_AI_API_KEY']))
@@ -57,7 +57,7 @@ test('保存と削除の再確認中に更新通知が重なっても操作を�
       try {
         const store = createProviderStore(remote)
         await store.load()
-        const target = row(store, operation === 'save' ? 'cloud' : 'deepseek-official')
+        const target = row(store, operation === 'save' ? 'cloud' : 'deepseek')
         const started = deferred<void>()
         const release = deferred<void>()
         const describe = remote.settings.describe
@@ -128,7 +128,7 @@ test('参照指定のない未稼働の非 pi-ai 提供元も導出参照で状�
     const { ctx, remote } = setup()
     try {
       const list = remote.llm.listProviders
-      remote.llm.listProviders = async () => success(unwrapRemoteResult(await list()).filter(item => item.id !== 'deepseek-official'))
+      remote.llm.listProviders = async () => success(unwrapRemoteResult(await list()).filter(item => item.id !== 'deepseek'))
       const describe = remote.settings.describe
       remote.settings.describe = async () => {
         const description = structuredClone(unwrapRemoteResult(await describe()))
@@ -140,7 +140,7 @@ test('参照指定のない未稼働の非 pi-ai 提供元も導出参照で状�
       remote.credentials.describe = async refs => {
         lookedUp.push(refs)
         const result = unwrapRemoteResult(await lookup(refs))
-        result.DEEPSEEK_OFFICIAL_API_KEY = { configured, writable: true }
+        result.DEEPSEEK_API_KEY = { configured, writable: true }
         return success(result)
       }
       let writes = 0
@@ -149,14 +149,14 @@ test('参照指定のない未稼働の非 pi-ai 提供元も導出参照で状�
       remote.credentials.unset = async () => { writes++; return failure('変更してはいけません') }
       const store = createProviderStore(remote)
       assert.equal(await store.load(), true)
-      const target = row(store, 'deepseek-official')
-      assert.equal(target.ref, 'DEEPSEEK_OFFICIAL_API_KEY')
+      const target = row(store, 'deepseek')
+      assert.equal(target.ref, 'DEEPSEEK_API_KEY')
       assert.equal(target.status, configured ? 'registered' : 'missing')
       assert.equal(target.writable, false)
       assert.equal(store.getSnapshot().error, null)
       const requested = lookedUp[0]
       assert.ok(requested)
-      assert.ok(requested.includes('DEEPSEEK_OFFICIAL_API_KEY'))
+      assert.ok(requested.includes('DEEPSEEK_API_KEY'))
       assert.equal((await store.save(target, 'must-not-write-derived-only-reference')).ok, false)
       assert.equal((await store.remove(target)).ok, false)
       assert.equal(writes, 0)
@@ -181,12 +181,12 @@ test('設定全体とキー専用の読み取り専用状態はどちらも登�
       const store = createProviderStore(remote)
       await store.load()
       assert.equal(row(store).writable, false)
-      assert.equal(row(store, 'deepseek-official').writable, false)
+      assert.equal(row(store, 'deepseek').writable, false)
       assert.equal((await store.save(row(store), 'must-not-be-written')).ok, false)
-      assert.equal((await store.remove(row(store, 'deepseek-official'))).ok, false)
+      assert.equal((await store.remove(row(store, 'deepseek'))).ok, false)
       assert.equal(writes, 0)
       assert.equal(row(store).status, 'missing')
-      assert.equal(row(store, 'deepseek-official').status, 'registered')
+      assert.equal(row(store, 'deepseek').status, 'registered')
       assert.equal(unwrapRemoteResult(await remote.settings.describe()).writable, scenario !== 'settings-readonly')
     } finally { ctx.dispose() }
   }

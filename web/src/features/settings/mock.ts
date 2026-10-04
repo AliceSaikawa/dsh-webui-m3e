@@ -1,15 +1,16 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
 import type { SettingObject, SettingsDescription, SettingsNamespace, SettingValue } from './schema.ts'
-import type { ProviderAddress, ProviderEntry } from './providers.ts'
 import { validMockOperations, validMockPatch, validMockValue } from './mock-validation.ts'
 import { settingsFixtures } from './mock-fixtures.ts'
+import { applyMockOperations, mockSettingsChanged } from './mock-mutations.ts'
+import { mockProviderRegistry, registerMockModelWriter } from './mock-models.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
   describe(): Promise<RemoteResult<SettingsDescription>>
-  update(ns: string, patch: SettingObject, expectedRevision: number): Promise<RemoteResult<SettingsNamespace>>
-  mutate(ns: string, operations: MutateOperation[], expectedRevision: number): Promise<RemoteResult<SettingsNamespace>>
+  update(ns: string, patch: SettingObject, expectedRevision?: number): Promise<RemoteResult<SettingsNamespace>>
+  mutate(ns: string, operations: MutateOperation[], expectedRevision?: number): Promise<RemoteResult<SettingsNamespace>>
 }
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
@@ -39,16 +40,13 @@ function unset(value: SettingObject, path: readonly string[]): void {
   if (Object.keys(child).length === 0) delete value[key]
 }
 
-function set(value: SettingObject, path: readonly string[], next: SettingValue): void {
-  const [key, ...rest] = path
-  if (!key || !allowedKey(key)) return
-  if (rest.length === 0) { value[key] = structuredClone(next); return }
-  if (!isObject(value[key])) value[key] = {}
-  set(value[key] as SettingObject, rest, next)
-}
-
 export function extendMock(kit: MockKit): void {
   const namespaces = new Map(settingsFixtures().map(row => [row.ns, row]))
+  // Configure the scripted adapter without changing the captured DSH defaults.
+  const deepseek = namespaces.get('llm-deepseek')!
+  deepseek.base!.models = [{ id: 'deepseek-v4', name: 'DeepSeek V4' }]
+  deepseek.value.models = structuredClone(deepseek.base!.models)
+  kit.registerSettingsReader(ns => namespaces.get(ns)?.value)
   let writable = true
   let firstWriteConflict = false
   let rejectWrites = false
@@ -56,18 +54,8 @@ export function extendMock(kit: MockKit): void {
   let keyLookupFails = false
   // Keep registration booleans only, never the submitted key material.
   const registeredKeys = new Set(['DEEPSEEK_API_KEY'])
-  const providers: ProviderEntry[] = [
-    { id: 'deepseek-official', name: 'ディープシーク' },
-    { id: 'cloud', name: 'クラウド提供元' },
-    { id: 'local', name: 'ローカル' },
-  ]
-  const directory: ProviderAddress[] = [
-    { provider: 'deepseek-official', displayName: 'ディープシーク', settingsNs: 'llm-deepseek', settingsPath: [] },
-    { provider: 'cloud', displayName: 'クラウド提供元', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'cloud'] },
-    { provider: 'local', displayName: 'ローカル', settingsNs: 'example-extension', settingsPath: ['localProvider'] },
-  ]
 
-  function checkWrite(ns: string, expectedRevision: number): RemoteResult<SettingsNamespace> {
+  function checkWrite(ns: string, expectedRevision?: number): RemoteResult<SettingsNamespace> {
     const current = namespaces.get(ns)
     if (!current) return failure('settings/not-found', 'この設定は見つかりません。')
     if (!writable) return failure('settings/readonly', 'この DSH では設定を変更できません。')
@@ -76,7 +64,7 @@ export function extendMock(kit: MockKit): void {
       current.revision++
       return failure('settings/conflict', 'ほかの場所で設定が変わりました。読み直してください。')
     }
-    if (expectedRevision !== current.revision) return failure('settings/conflict', 'ほかの場所で設定が変わりました。読み直してください。')
+    if (expectedRevision !== undefined && expectedRevision !== current.revision) return failure('settings/conflict', 'ほかの場所で設定が変わりました。読み直してください。')
     if (rejectWrites) return failure('settings/rejected', 'この値は管理者の設定によって許可されていません。')
     return { ok: true, value: current }
   }
@@ -84,10 +72,12 @@ export function extendMock(kit: MockKit): void {
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
     const next = merge(current.base ?? {}, user)
     if (!validMockValue(current, next)) return failure('settings/rejected', '公開された設定の型に合わない変更です。')
+    if (!mockSettingsChanged(current, user)) return success(current)
     current.user = user
     current.value = merge(current.base ?? {}, user)
     current.revision++
     await kit.emit('settings/document-updated', current.ns, { additionalArgs: [current.revision] })
+    if (current.ns === 'llm-deepseek' || current.ns === 'llm-pi-ai') await kit.emit('llm/adapters-updated')
     return success(current)
   }
 
@@ -107,21 +97,21 @@ export function extendMock(kit: MockKit): void {
       if (operations.some(operation => !['set', 'unset'].includes(operation.op) || !operation.path.length || operation.path.some(key => !key || !allowedKey(key)))) {
         return failure('settings/rejected', '設定項目の場所が不正です。')
       }
-      const user = structuredClone(result.value.user ?? {})
       if (!validMockOperations(result.value, operations)) {
         return failure('settings/rejected', '公開されていない設定項目か、不正な値です。')
       }
-      for (const operation of operations) {
-        if (operation.op === 'set') set(user, operation.path, operation.value)
-        else unset(user, operation.path)
-      }
-      return commit(result.value, user)
+      return commit(result.value, applyMockOperations(result.value, operations))
     },
   }
   kit.addRemote('settings', remote)
+  registerMockModelWriter(kit, async selection => {
+    const result = checkWrite('agent-default-model')
+    if (!result.ok) return result
+    return commit(result.value, { ...selection })
+  })
   kit.addRemote('llm', {
-    async listProviders() { return success(providers) },
-    async listConfigurableProviders() { return success(directory) },
+    async listProviders() { return success(mockProviderRegistry(kit).providers) },
+    async listConfigurableProviders() { return success(mockProviderRegistry(kit).directory) },
   })
   kit.addRemote('credentials', {
     async describe(refs: string[]) {

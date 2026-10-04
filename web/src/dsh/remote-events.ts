@@ -14,6 +14,8 @@ export interface RemoteEventMap {
   'credentials/record-updated': unknown[]
   'llm/adapters-updated': []
   'settings/document-updated': [ns: unknown, revision?: unknown]
+  'api-session/added': [summary: { readonly sessionId: string; readonly agentAvailable: boolean }]
+  'api-session/error': [sessionId: string, message: string]
   'goal/activation-changed': [event: {
     readonly sessionId: string
     readonly goal?: { readonly id: string; readonly revision: number; readonly activation: 'armed' | 'disarmed' }
