@@ -39,6 +39,13 @@ test('子カタログを絞り込み、会話へ mode を保ったアドレス�
   const child = { kind: 'child', id: 'child', activity: 'inactive', mode: 'continuable', label: '調査' } as const
   const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: child.id, mode: child.mode, label: child.label, createdAt: 0 }, { id: 'bad', mode: 'unknown', createdAt: 0 }, { id: 'malformed' }] } } as SessionProjectionSnapshot
   assert.equal(catalogEntries(catalog).length, 2)
+  assert.deepEqual(catalogEntries(catalog), [child, { kind: 'diagnostic', id: 'bad' }])
+  const converted = catalogEntries(catalog)[0]!
+  assert.equal(converted.kind, 'child')
+  if (converted.kind === 'child') assert.deepEqual(childAddress('parent', converted), { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
+  const once = catalogEntries({ ...catalog, values: { subagentCatalog: [{ id: 'once', mode: 'one-shot', label: '一度限り', createdAt: 0 }] } })[0]!
+  assert.deepEqual(once, { kind: 'child', id: 'once', mode: 'one-shot', label: '一度限り', activity: 'inactive' })
+  if (once.kind === 'child') assert.deepEqual(childAddress('parent', once), { parentSessionId: 'parent', childSessionId: 'once', mode: 'one-shot' })
   assert.equal(hasChildren('parent', catalog, {}), true)
   assert.deepEqual(childAddress('parent', child), { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
   assert.equal(hasChildren('parent', { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'bad', mode: 'unknown', createdAt: 0 }] } }, {}), false)

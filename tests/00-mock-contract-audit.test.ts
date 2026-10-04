@@ -83,7 +83,7 @@ test('照合 forkは無効な境界と完了ターンのない会話を拒否し
   const blank = await ctx.sessions.create()
   await assert.rejects(ctx.sessions.fork({ sessionId: blank }), /session\/fork-unavailable/)
   await assert.rejects(ctx.sessions.fork({ sessionId: 'missing' }), /session\/not-found/)
-  for (const atSeq of [-1, 0.5, -0, Number.MAX_SAFE_INTEGER + 1]) await assert.rejects(ctx.sessions.fork({ sessionId: id, atSeq }), /gateway\/bad-request/)
+  for (const atSeq of [-1, 0.5, -0, Number.MAX_SAFE_INTEGER + 1]) await assert.rejects(ctx.sessions.fork({ sessionId: id, atSeq }), TypeError)
   await assert.rejects(ctx.sessions.fork({ sessionId: id, atSeq: 10000 }), /session\/fork-unavailable/)
   let created = ''
   const fork = await ctx.sessions.fork({ sessionId: id, atSeq: 1, onCreated(value) { created = value; assert.ok(ctx.sessions.list.getSnapshot().byId[value]) } })
@@ -183,6 +183,33 @@ test('照合 searchは本文だけを探しcwdなし・空語・長過ぎる語�
   ctx.mock.addSession({ id: 'without-cwd', displayTitle: '無所属', running: false, blank: false, updatedAt: 0 }, [{ type: 'user/message', seq: 0, time: 0, data: { content: [{ type: 'text', text: 'needleonly' }] } }])
   assert.deepEqual(await ctx.sessions.search('needleonly', signal), { ok: true, value: { items: [], hasMore: false } })
   for (const query of ['', ' ', 'x'.repeat(501), '\0']) assert.equal(code(await ctx.sessions.search(query, signal)), 'gateway/bad-request')
+})
+
+test('照合 searchは置換前の履歴を除き現在の表示対象だけを検索する', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  ctx.mock.addSession({ id: 'surface-search', displayTitle: '表示対象', cwd: '/mock', running: false, blank: false, updatedAt: 0 }, [
+    { type: 'user/message', seq: 0, time: 0, surfaceOp: 'append', data: { content: [{ type: 'text', text: 'shadowed-needle' }] } },
+    { type: 'assistant/message', seq: 1, time: 0, surfaceOp: 'append', data: { message: { content: [{ type: 'text', text: 'shadowed-answer' }] } } },
+    { type: 'user/message', seq: 2, time: 0, surfaceOp: { op: 'replace', startSeq: 0, endSeq: 1 }, sourceEventSeqs: [0, 1], data: { content: [{ type: 'text', text: 'current-needle' }] } },
+  ])
+  const signal = new AbortController().signal
+  for (const query of ['shadowed-needle', 'shadowed-answer']) assert.deepEqual(await ctx.sessions.search(query, signal), { ok: true, value: { items: [], hasMore: false } })
+  assert.deepEqual(await ctx.sessions.search('current-needle', signal), { ok: true, value: { items: [{ sessionId: 'surface-search', snippet: 'current-needle' }], hasMore: false } })
+})
+
+test('照合 searchはassistantのtool-callの名前と引数も検索する', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  ctx.mock.addSession({ id: 'tool-search', displayTitle: 'ツール検索', cwd: '/mock', running: false, blank: false, updatedAt: 0 }, [
+    { type: 'assistant/message', seq: 0, time: 0, surfaceOp: 'append', data: { message: { content: [{ type: 'tool-call', name: 'needle-tool', arguments: '{"path":"needle-argument"}' }] } } },
+  ])
+  for (const query of ['needle-tool', 'needle-argument']) {
+    const result = await ctx.sessions.search(query, new AbortController().signal)
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.deepEqual(result.value.items.map(item => item.sessionId), ['tool-search'])
+      assert.ok(result.value.items[0]!.snippet.includes(query))
+    }
+  }
 })
 
 test('照合 jobsは非同期で開き別会話のjobを拒否し出力の上限と明示解除を保つ', async t => {

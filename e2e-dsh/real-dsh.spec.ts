@@ -164,33 +164,66 @@ test(`DSH ${dshVersion}: 会話の切り替えシートで検索して別のセ�
 test(`DSH ${dshVersion}: 実行中の送信は順番待ちに入り、終わったあとにモデルへ届く`, async ({ page, integration }) => {
   const { host, llm } = integration
   await openM3e(page, host)
-  await newSession(page, `${MARK.medium} 順番待ちの確認`)
-  await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
-  await page.getByLabel('メッセージ入力欄').fill('順番待ちの追記')
-  await button(page, '順番待ち').click()
-  await expect(page.getByText('順番待ち 1 件')).toBeVisible()
-  await expect(page.getByText('段落20。', { exact: false })).toBeVisible()
-  await expect(page.getByText('こんにちは。偽のモデルです。')).toBeVisible()
-  await expect(page.getByText('順番待ち 1 件')).toHaveCount(0)
-  const queued = llm.requests.filter(request => request.tools?.length && textOf(request.messages.filter(message => message.role === 'user').at(-1)?.content).includes('順番待ちの追記'))
-  expect(queued.length).toBeGreaterThan(0)
-  // The queued message reached the model only after the first reply finished.
-  expect(JSON.stringify(queued[0]!.messages)).toContain('段落20。')
+  const held = llm.holdTurn(`${MARK.medium} 順番待ちの確認`)
+  const before = llm.requests.length
+  try {
+    await newSession(page, `${MARK.medium} 順番待ちの確認`)
+    await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
+    await page.getByLabel('メッセージ入力欄').fill('順番待ちの追記')
+    await button(page, '順番待ち').click()
+    await expect(page.getByText('順番待ち 1 件')).toBeVisible()
+    expect(held.first).toBeDefined()
+    expect(held.continuation).toBeUndefined()
+    expect(llm.requests.slice(before).some(request => JSON.stringify(request.messages).includes('順番待ちの追記'))).toBe(false)
+    held.releaseStep()
+    await expect.poll(() => held.continuation).toBeDefined()
+    expect(toolResults([held.continuation!], 'call-delivery-step').join('')).toContain('m3e-delivery-step')
+    expect(JSON.stringify(held.continuation!.messages)).not.toContain('順番待ちの追記')
+    expect(held.completed).toBe(false)
+    await expect(page.getByText('順番待ち 1 件')).toBeVisible()
+    held.releaseTurn()
+    await expect(page.getByText('段落20。', { exact: false })).toBeVisible()
+    await expect(page.getByText('こんにちは。偽のモデルです。')).toBeVisible()
+    await expect(page.getByText('順番待ち 1 件')).toHaveCount(0)
+    const queued = llm.requests.filter(request => request.tools?.length && textOf(request.messages.filter(message => message.role === 'user').at(-1)?.content).includes('順番待ちの追記'))
+    expect(queued.length).toBeGreaterThan(0)
+    // The queued message reached the model only after the first reply finished.
+    expect(JSON.stringify(queued[0]!.messages)).toContain('段落20。')
+    expect(JSON.stringify(queued[0]!.messages)).toContain('複数ステップの返答が完了しました。')
+    expect(llm.requests.indexOf(queued[0]!)).toBeGreaterThan(llm.requests.indexOf(held.continuation!))
+  } finally { held.releaseStep(); held.releaseTurn() }
 })
 
 test(`DSH ${dshVersion}: 実行中に割り込みで送ると同じ会話のモデルへ届く`, async ({ page, integration }) => {
   const { host, llm } = integration
   await openM3e(page, host)
   const before = llm.requests.length
-  await newSession(page, `${MARK.medium} 割り込みの確認`)
-  await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
-  await page.getByLabel('メッセージ入力欄').fill('割り込みの追記')
-  await button(page, '送り方を選ぶ').click()
-  await page.getByText('割り込み', { exact: true }).click()
-  await expect.poll(() => llm.requests.slice(before).some(request => request.tools?.length
-    && request.messages.some(message => message.role === 'user' && textOf(message.content).includes('割り込みの追記'))), { timeout: 30_000 }).toBe(true)
-  await expect(page.getByRole('article', { name: '自分のメッセージ' }).filter({ hasText: '割り込みの追記' })).toHaveCount(1)
-  await expect(button(page, '実行を停止')).toHaveCount(0, { timeout: 30_000 })
+  const held = llm.holdTurn(`${MARK.medium} 割り込みの確認`)
+  try {
+    await newSession(page, `${MARK.medium} 割り込みの確認`)
+    await expect(page.getByText('段落1。', { exact: false })).toBeVisible()
+    await page.getByLabel('メッセージ入力欄').fill('割り込みの追記')
+    await button(page, '送り方を選ぶ').click()
+    await page.getByText('割り込み', { exact: true }).click()
+    // DSH publishes the durable user message at the next step, after this ack.
+    await expect(page.getByLabel('メッセージ入力欄')).toHaveValue('')
+    // Both inbox placements use this label; next-step delivery distinguishes steer.
+    await expect(page.getByText('順番待ち 1 件')).toBeVisible()
+    expect(held.first).toBeDefined()
+    expect(held.continuation).toBeUndefined()
+    held.releaseStep()
+    await expect.poll(() => held.continuation).toBeDefined()
+    expect(toolResults([held.continuation!], 'call-delivery-step').join('')).toContain('m3e-delivery-step')
+    expect(JSON.stringify(held.continuation!.messages)).toContain('割り込みの追記')
+    expect(JSON.stringify(held.continuation!.messages)).not.toContain('複数ステップの返答が完了しました。')
+    expect(held.completed).toBe(false)
+    await expect(page.getByText('順番待ち 1 件')).toHaveCount(0)
+    await expect.poll(() => llm.requests.slice(before).some(request => request.tools?.length
+      && request.messages.some(message => message.role === 'user' && textOf(message.content).includes('割り込みの追記'))), { timeout: 30_000 }).toBe(true)
+    await expect(page.getByRole('article', { name: '自分のメッセージ' }).filter({ hasText: '割り込みの追記' })).toHaveCount(1)
+    held.releaseTurn()
+    await expect(button(page, '実行を停止')).toHaveCount(0, { timeout: 30_000 })
+  } finally { held.releaseStep(); held.releaseTurn() }
 })
 
 test(`DSH ${dshVersion}: 画像を添付して送るとモデルへ画像が届く`, async ({ page, integration }) => {

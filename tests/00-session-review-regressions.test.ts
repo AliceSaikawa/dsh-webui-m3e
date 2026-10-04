@@ -105,11 +105,18 @@ for (const surface of ['home', 'inbox'] as const) for (const failure of [false, 
     const flight = surface === 'home'
       ? openHomeSession(ctx.sessions, ctx.sessions.list.getSnapshot().byId[child]!, () => { navigated = true }, () => active)
       : openInboxSession(ctx.sessions, child, () => { navigated = true }, () => active)
+    let settled = false
+    const outcome = flight.then(value => { settled = true; return value }, error => { settled = true; return error })
     await flush()
-    const outcome = flight.catch(error => error)
-    if (failure) gate.reject(new Error('準備失敗'))
+    assert.ok(prepared, '子の準備に入っている')
+    assert.equal(ctx.sessions.binding(child), prepared)
+    assert.deepEqual(ctx.sessions.retainInfo(child).getSnapshot(), { referenceCount: 1, retainedBy: { 'm3e.navigation': 1 } })
+    assert.equal(settled, false, 'readyを待っている')
+    const error = new Error('準備失敗')
+    if (failure) gate.reject(error)
     else { active = false; gate.resolve(prepared) }
-    await outcome
+    const result = await outcome
+    if (failure) assert.equal(result, error)
     assert.equal(navigated, false)
     assert.equal(ctx.sessions.binding(a), original)
     assert.equal(owner.state.getSnapshot().sessionId, a)

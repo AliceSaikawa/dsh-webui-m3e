@@ -9,6 +9,7 @@ import { composerApi } from '../web/src/features/composer/api.ts'
 import { mockPermissions } from '../web/src/features/composer/mock.ts'
 import type { SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { INBOX_MOCK_IDS } from '../web/src/features/inbox/mock.ts'
+import { HOME_MOCK_IDS } from '../web/src/features/home/mock.ts'
 import { SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
 import { filterVisibleSearchItems } from '../web/src/features/search/search-visibility.ts'
 
@@ -104,6 +105,8 @@ test('サブエージェントの子は、親のカタログに mode 付きで�
   const { ctx } = build()
   try {
     const list = ctx.sessions.list.getSnapshot()
+    assert.deepEqual(Object.values(list.byId).filter(row => row.origin === 'subagent').map(row => row.id).sort(),
+      [HOME_MOCK_IDS.child, SESSION_TOOLS_MOCK_IDS.children.review, SESSION_TOOLS_MOCK_IDS.children.tests].sort())
     const missing = list.ids.flatMap(id => {
       const summary = list.byId[id]
       if (summary?.origin !== 'subagent' || !summary.parentId) return []

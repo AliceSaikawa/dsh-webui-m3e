@@ -106,9 +106,15 @@ test('R8 再接続で投影を消して既読を自動取得し旧接続の後�
   assert.deepEqual(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.values, {})
   fresh.resolve({ ok: true, value: { title: '新しい値' } })
   await flush()
-  old.resolve({ ok: true, value: { title: '古い応答' } })
+  const snapshot = ctx.sessions.list.getSnapshot().projectionsBySession[id]
+  assert.deepEqual(snapshot, { values: { title: '新しい値' }, state: 'ready', error: null })
+  let notifications = 0
+  const off = ctx.sessions.list.subscribe(() => { notifications++ }); t.after(off)
+  old.resolve({ ok: true, value: { title: '古い応答', staleOnly: true } })
   await pending
   assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.values.title, '新しい値')
+  assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id], snapshot)
+  assert.equal(notifications, 0)
 })
 
 test('R8 空の成功の後でも作成された子の投影通知から同じカタログを開ける', async t => {

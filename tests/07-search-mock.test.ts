@@ -105,7 +105,7 @@ test('偽検索は題名の変更で本文検索を変えず追加履歴を読�
   try {
     await ctx.sessions.retain('search-colors', { source: 'm3e.test' }).binding.session.rename('配色の最終確認')
     ctx.mock.addSession({ id: 'search-added', displayTitle: '追加の会話', cwd: '/mock/search', running: false, blank: false, updatedAt: 1 }, [
-      { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: '途中で追加した本文' }] } },
+      { type: 'user/message', seq: 0, time: 1, surfaceOp: 'append', data: { content: [{ type: 'text', text: '途中で追加した本文' }] } },
     ])
     for (const [query, expectedId] of [['明るい外観', 'search-colors'], ['途中で追加した本文', 'search-added'], ['README の手順を見直して', 'readme-review']] as const) {
       const pending = ctx.sessions.search(query, new AbortController().signal)

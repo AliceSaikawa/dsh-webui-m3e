@@ -170,9 +170,12 @@ test('ジョブ一覧の購読を共有し、最後の解除と空の一覧は r
     b()
     await Promise.resolve()
     assert.equal(ctx.jobs.state.getSnapshot().rows[id], undefined)
-    ctx.jobs.watchRows(id)
+    const stop = ctx.jobs.watchRows(id)
+    await Promise.resolve()
+    assert.deepEqual(ctx.jobs.state.getSnapshot().rows[id], [{ id: 'job', label: '処理', kind: 'bash', status: 'killed', startedAt: 0, output: { total: 0, earliest: 0 } }])
     ctx.mock.setJobs(id, [])
     assert.equal(ctx.jobs.state.getSnapshot().rows[id], undefined)
+    stop()
   } finally { ctx.dispose() }
 })
 

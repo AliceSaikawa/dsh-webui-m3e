@@ -12,12 +12,21 @@ import { appendFileSync } from 'node:fs'
 export interface MessageBlock { type: string; text?: string; tool_use_id?: string; content?: unknown; [key: string]: unknown }
 export interface ChatMessage { role: string; content: MessageBlock[] }
 export interface ChatRequest { model: string; messages: ChatMessage[]; tools?: { name: string; description: string; input_schema: unknown }[] }
+export interface HeldTurn {
+  first?: ChatRequest
+  continuation?: ChatRequest
+  completed: boolean
+  releaseStep(): void
+  releaseTurn(): void
+}
 
 export interface FakeLlm {
   readonly url: string
   readonly requests: ChatRequest[]
   /** Requests whose stream the client closed before the scripted reply finished, such as a stop. */
   readonly abandoned: ChatRequest[]
+  /** Hold the first step and final reply separately to observe queue versus steer. */
+  holdTurn(prompt: string): HeldTurn
   close(): Promise<void>
 }
 
@@ -60,6 +69,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 export async function startFakeLlm(options: { port?: number; log?: string } = {}): Promise<FakeLlm> {
   const requests: ChatRequest[] = []
   const abandoned: ChatRequest[] = []
+  const turns = new Map<string, HeldTurn & { stepGate: Promise<void>; turnGate: Promise<void> }>()
   const server: Server = createServer((req, res) => {
     let body = ''
     req.on('data', chunk => { body += chunk })
@@ -79,8 +89,8 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
         const send = (type: string, fields: Record<string, unknown> = {}) => {
           if (!closed) res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`)
         }
-        const finish = (reason: string) => {
-          send('content_block_stop', { index: 0 })
+        const finish = (reason: string, index = 0) => {
+          send('content_block_stop', { index })
           send('message_delta', { delta: { stop_reason: reason, stop_sequence: null }, usage: { output_tokens: 10 } })
           send('message_stop')
           done = true
@@ -90,15 +100,32 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
           send('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
           for (const part of parts) { if (closed) return; send('content_block_delta', { index: 0, delta: { type: 'text_delta', text: part } }); await sleep(delay) }
         }
-        const tool = (id: string, name: string, input: unknown) => {
-          send('content_block_start', { index: 0, content_block: { type: 'tool_use', id, name, input: {} } })
-          send('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } })
-          finish('tool_use')
+        const tool = (id: string, name: string, input: unknown, index = 0) => {
+          send('content_block_start', { index, content_block: { type: 'tool_use', id, name, input: {} } })
+          send('content_block_delta', { index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } })
+          finish('tool_use', index)
         }
         send('message_start', { message: { id: `fake-${requests.length}`, type: 'message', role: 'assistant', model: request.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } })
         // Title generation and other side requests carry no tools. The title
         // names the first human message so tests can tell sessions apart.
         if (!request.tools?.length) { await words([titleFor(prompt)], 0); finish('end_turn'); return }
+        const held = [...turns].find(([seed]) => request.messages.some(message => message.role === 'user' && textOf(message.content).includes(seed)))?.[1]
+        if (held && !held.first) {
+          held.first = request
+          await words(['段落1。'], 0)
+          await held.stepGate
+          send('content_block_delta', { index: 0, delta: { type: 'text_delta', text: Array.from({ length: 19 }, (_, index) => `段落${index + 2}。`).join('') } })
+          send('content_block_stop', { index: 0 })
+          tool('call-delivery-step', 'bash', { command: 'echo m3e-delivery-step', description: '送信経路の確認' }, 1)
+          return
+        }
+        if (held && !held.continuation && request.messages.some(message => message.content.some(block => block.type === 'tool_result' && block.tool_use_id === 'call-delivery-step'))) {
+          held.continuation = request
+          await held.turnGate
+          await words(['複数ステップの返答が完了しました。'], 0)
+          held.completed = true
+          finish('end_turn'); return
+        }
         if (last?.role === 'user' && last.content.some(block => block.type === 'tool_result')) { await words(['ツールの結果を受け取りました。'], 20); finish('end_turn'); return }
         if (prompt.includes(MARK.slow)) {
           await words(Array.from({ length: 200 }, (_, index) => `第${index + 1}節。`), 150)
@@ -128,6 +155,14 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
     url: `http://127.0.0.1:${port}`,
     requests,
     abandoned,
+    holdTurn(prompt) {
+      let releaseStep!: () => void, releaseTurn!: () => void
+      const stepGate = new Promise<void>(resolve => { releaseStep = resolve })
+      const turnGate = new Promise<void>(resolve => { releaseTurn = resolve })
+      const held = { completed: false, releaseStep, releaseTurn, stepGate, turnGate }
+      turns.set(prompt, held)
+      return held
+    },
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) }),
   }
 }

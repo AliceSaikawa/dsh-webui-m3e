@@ -252,6 +252,8 @@ test('偽データのコンテキスト間でフォルダとアーカイブの�
     const secondPicker = second.remote.directoryPicker as ReturnType<typeof createDirectoryMock>
     await firstPicker.createDirectory('/mock/dev', 'この画面だけ')
     await first.workspaces.archiveSession(HOME_MOCK_IDS.completed)
+    assert.equal((await firstPicker.list('/mock/dev/この画面だけ')).ok, true)
+    assert.ok(first.workspaces.list.getSnapshot().archivedSessionIds.includes(HOME_MOCK_IDS.completed))
     assert.equal((await secondPicker.list('/mock/dev/この画面だけ')).ok, false)
     assert.deepEqual(second.workspaces.list.getSnapshot().archivedSessionIds, [])
     assert.equal(completionStatus(second).getSnapshot().byId[HOME_MOCK_IDS.completed]?.completionUnread, true)

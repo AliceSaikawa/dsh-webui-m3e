@@ -78,16 +78,16 @@ test('親が利用不可でも正常な明示アドレスの子は閲覧用に�
   } finally { ctx.dispose() }
 })
 
-for (const invalid of ['missing-mode', 'wrong-mode', 'wrong-parent', 'wrong-origin', 'not-found'] as const) {
-  test(`B1 ${invalid}はready後にerrorとなり準備の失敗は選択と下書きを保ち参照を解放する`, async t => {
-    const ctx = setup('one-shot'); t.after(() => ctx.dispose())
+for (const mode of ['one-shot', 'continuable'] as const) for (const invalid of ['missing-mode', 'wrong-mode', 'wrong-parent', 'wrong-origin', 'not-found'] as const) {
+  test(`B1 ${mode} ${invalid}はready後にerrorとなり準備の失敗は選択と下書きを保ち参照を解放する`, async t => {
+    const ctx = setup(mode); t.after(() => ctx.dispose())
     const owner = conversationSelection(ctx.sessions)
     await owner.select(parentSessionId)
     const original = ctx.sessions.binding(parentSessionId)
     const key = `session:${parentSessionId}`
     writeDraft(key, { text: '元の下書き', images: [] }); t.after(() => clearDraft(key))
-    const address = { parentSessionId, childSessionId, mode: 'one-shot',
-      ...(invalid === 'wrong-mode' ? { mode: 'continuable' } : {}),
+    const address = { parentSessionId, childSessionId, mode,
+      ...(invalid === 'wrong-mode' ? { mode: mode === 'one-shot' ? 'continuable' : 'one-shot' } : {}),
       ...(invalid === 'wrong-parent' ? { parentSessionId: '別の親' } : {}),
       ...(invalid === 'wrong-origin' ? { childSessionId: MOCK_IDS.sessions.approval } : {}),
       ...(invalid === 'not-found' ? { childSessionId: '存在しない子' } : {}),

@@ -735,7 +735,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     },
     async fork(input) {
       await Promise.resolve()
-      if (input.atSeq !== undefined && (!Number.isSafeInteger(input.atSeq) || input.atSeq < 0 || Object.is(input.atSeq, -0))) throw commandError('gateway/bad-request', '分岐する位置が不正です。', true)
+      if (input.atSeq !== undefined && (!Number.isSafeInteger(input.atSeq) || input.atSeq < 0 || Object.is(input.atSeq, -0))) throw new TypeError(`SessionSeq must be a non-negative safe integer, got ${String(input.atSeq)}`)
       const source = models.get(input.sessionId)
       if (!source) throw commandError('session/not-found', '会話が見つかりません。', true)
       let boundary = input.atSeq ?? [...source.records].reverse().find(event => event.type === 'turn/end')?.seq

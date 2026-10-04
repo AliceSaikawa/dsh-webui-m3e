@@ -74,6 +74,7 @@ test('取得済みの正しいカタログなら再取得せず、子の選択�
       retain(address, options) { steps.push(options.source === 'm3e.navigation' ? 'prepare' : 'select'); return ctx.sessions.retain(address, options) },
     }, childId, () => { steps.push('navigate') })
     assert.deepEqual(steps, ['prepare', 'select', 'navigate'])
+    assert.deepEqual(ctx.sessions.retainInfo(childId).getSnapshot(), { referenceCount: 1, retainedBy: { 'm3e.mainView': 1 } })
   } finally { ctx.dispose() }
 })
 

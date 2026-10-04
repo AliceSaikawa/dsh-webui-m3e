@@ -3,7 +3,7 @@ import type { InboxState } from '../web/src/dsh/services.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
-import { imageBase64, MOCK_IDS, readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
+import { approvalRecords, imageBase64, MOCK_IDS, readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import type { PendingSubmissionRetirement, SessionWireEvent } from '../web/src/dsh/services.ts'
 
@@ -98,17 +98,31 @@ test('キャンセルは待機列を保持し、その後に先頭のメッセ�
   } finally { ctx.dispose() }
 })
 
-test('ストリームの再接続 baseline を置き換えても応答が重複せず確定する', async () => {
+test('ストリームの再接続 baseline を置き換えても応答が重複せず確定する', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
   const ctx = createMockContext()
   try {
     const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
     const text = '再接続後も一度だけ表示します。'
     const done = ctx.mock.streamAssistant(binding.sessionId, text, { chunkMs: 30 })
-    await new Promise((resolve) => setTimeout(resolve, 40))
+    t.mock.timers.tick(40)
+    await Promise.resolve()
     const before = foldSessionWindow(binding.eventSource.getSnapshot())
     assert.ok(before.stream?.content.length)
+    const replacements: ReturnType<typeof foldSessionWindow>[] = []
+    const off = binding.eventSource.subscribe(() => {
+      const snapshot = binding.eventSource.getSnapshot()
+      if (snapshot.change.kind === 'replace') replacements.push(foldSessionWindow(snapshot))
+    }); t.after(off)
     ctx.connection.reconnect()
     assert.equal(ctx.connection.state.getSnapshot(), 'connecting')
+    // Advance the reconnect boundary without letting the generator finish.
+    t.mock.timers.tick(400)
+    await Promise.resolve()
+    assert.equal(replacements.length, 1)
+    assert.ok(replacements[0]?.stream?.content.length)
+    assert.deepEqual(replacements[0]?.records, before.records)
+    for (let i = 0; i < text.length + 1; i++) { t.mock.timers.tick(30); await Promise.resolve() }
     await done
     assert.equal(ctx.connection.state.getSnapshot(), 'connected')
     const after = foldSessionWindow(binding.eventSource.getSnapshot())
@@ -224,7 +238,11 @@ test('全偽履歴のメッセージは JSON として保存できる', () => {
   const ctx = createMockContext()
   try {
     const records: SessionWireEvent[] = []
+    assert.deepEqual(ctx.sessions.list.getSnapshot().ids, [MOCK_IDS.sessions.readme, MOCK_IDS.sessions.approval])
     for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
+    assert.equal(records.length, readmeRecords.length + approvalRecords.length)
+    assert.ok(records.some(event => event.type === 'user/message'))
+    assert.ok(records.some(event => event.type === 'assistant/message'))
     assert.deepEqual(JSON.parse(JSON.stringify(records)), records)
   } finally { ctx.dispose() }
 })
@@ -261,6 +279,12 @@ test('removeSession は選択・一覧・ワークスペース・scope と送信
     const sessionId = MOCK_IDS.sessions.readme
     const binding = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding
     await ctx.workspaces.archiveSession(sessionId)
+    const jobs = [{ id: 'removed-job', kind: 'bash', label: '削除対象の処理', status: 'running' as const, startedAt: 123, output: { total: 7, earliest: 0 } }]
+    ctx.mock.setJobs(sessionId, jobs)
+    const stop = ctx.jobs.watchRows(sessionId)
+    assert.equal(ctx.jobs.state.getSnapshot().rows[sessionId], undefined)
+    await Promise.resolve()
+    assert.deepEqual(ctx.jobs.state.getSnapshot().rows[sessionId], jobs)
     ctx.mock.updateList((state) => {
       state.projectionsBySession = { [sessionId]: { state: 'ready', error: null, values: {} } }
     })
@@ -273,6 +297,7 @@ test('removeSession は選択・一覧・ワークスペース・scope と送信
     assert.equal(list.ids.includes(sessionId), false)
     assert.equal(list.byId[sessionId], undefined)
     assert.equal(ctx.jobs.state.getSnapshot().rows[sessionId], undefined)
+    stop()
     assert.equal(list.projectionsBySession[sessionId], undefined)
     assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(sessionId), false)
     assert.ok(ctx.workspaces.list.getSnapshot().items.every((item) => !item.sessionIds.includes(sessionId)))

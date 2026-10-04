@@ -154,10 +154,16 @@ test('作成済みIDや承認用scopeがあっても文字列URLは pending の�
   const id = await ctx.sessions.create()
   const gateway = ctx.sessions.retain(id, { source: 'm3e.mockGateway' })
   const owner = conversationSelection(ctx.sessions)
-  const pending = owner.select(id)
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  let settled = false
+  const pending = owner.select(id).then(value => { settled = true; return value })
+  for (let i = 0; i < 8; i++) await Promise.resolve()
+  assert.equal(settled, false)
+  assert.equal(retain.mock.callCount(), 0)
   assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 1)
   ctx.mock.updateList(state => ({ ...state, phase: 'ready' }))
-  await pending
+  assert.equal(await pending, true)
+  assert.equal(retain.mock.callCount(), 1)
   assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 2)
   gateway.release()
 })
@@ -166,10 +172,21 @@ test('一覧待機を取り消すと購読を解除し、その後の baseline �
   const ctx = createMockContext(); t.after(() => ctx.dispose())
   ctx.mock.updateList(state => ({ ...state, phase: 'pending' }))
   const owner = conversationSelection(ctx.sessions)
+  const subscribe = ctx.sessions.list.subscribe
+  const listener = t.mock.fn()
+  const unsubscribe = t.mock.fn()
+  t.mock.method(ctx.sessions.list, 'subscribe', (callback: () => void) => {
+    const off = subscribe(() => { listener(); callback() })
+    return () => { unsubscribe(); off() }
+  })
   const pending = owner.select(a)
+  assert.equal(unsubscribe.mock.callCount(), 0)
   owner.clear()
+  assert.equal(unsubscribe.mock.callCount(), 1)
   assert.equal(await pending, false)
+  const calls = listener.mock.callCount()
   ctx.mock.updateList(state => ({ ...state, phase: 'ready' }))
+  assert.equal(listener.mock.callCount(), calls)
   assert.equal(ctx.sessions.scope(a), undefined)
 })
 

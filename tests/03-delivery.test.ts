@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { AgentContext, SessionBinding, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
+import type { AgentContext, SessionBinding, SessionReference, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
 import type { CommandDescriptor, ModelSelection, PlanProjection } from '../web/src/features/composer/api.ts'
 import { deliverDraft, pendingDelivery, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
 import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/features/composer/drafts.ts'
 import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import type { PreparedImage } from '../web/src/features/composer/types.ts'
+import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 
 const image: PreparedImage = {
   id: 'picture', name: '写真.png', previewUrl: 'data:image/png;base64,aW1hZ2U=', width: 10, height: 20,
@@ -33,6 +35,7 @@ function harness(label: string) {
   let modelWait: Promise<void> | undefined
   let commandWait: Promise<void> | undefined
   const commandStarted = deferred<void>()
+  const modelStarted = deferred<void>()
   let commandMatches = true
   let scopeAvailable = true
   let subagent: unknown = null
@@ -85,14 +88,14 @@ function harness(label: string) {
     async refresh() { calls.push('refresh') },
   }
   const api: DeliveryOptions['api'] = {
-    async selectModel(sessionId, selection) { calls.push(`model:${sessionId}`); if (modelWait) await modelWait; return selection },
+    async selectModel(sessionId, selection) { calls.push(`model:${sessionId}`); modelStarted.resolve(); if (modelWait) await modelWait; return selection },
     async listCommands(sessionId) { calls.push(`commands:${sessionId}`); return commands },
   }
   clearDraft(key)
   clearDraft(`session:${id}`)
   const options: DeliveryOptions = { target: { kind: 'new', workspaceId: label }, draftKey: key, sessions, api, mode: 'queue' }
   return {
-    id, key, options, commandStarted: commandStarted.promise, calls, prompts, submissions, failure,
+    id, key, options, modelStarted: modelStarted.promise, commandStarted: commandStarted.promise, calls, prompts, submissions, failure,
     put(draft: Partial<Draft>) { writeDraft(key, { text: '', images: [], ...draft }) },
     existing(mode: 'queue' | 'steer' = 'queue'): DeliveryOptions {
       return { ...options, target: { kind: 'session', sessionId: id }, draftKey: `session:${id}`, mode }
@@ -123,7 +126,7 @@ test('reading or editing a new draft does not create a session, and empty sends 
   assert.equal(readDraft(h.key).text, '   ')
 })
 
-test('first send creates exactly one session, sends image and text, and clears both drafts', async () => {
+test('first send creates exactly one session, sends image and text, and clears both drafts', async t => {
   const h = harness('first')
   h.put({ text: 'この画像を確認してください', images: [image] })
   const result = await deliverDraft(h.options)
@@ -133,6 +136,29 @@ test('first send creates exactly one session, sends image and text, and clears b
   assert.deepEqual(h.prompts[0], { content: [image.prompt, { type: 'text', text: 'この画像を確認してください' }], mode: 'queue', requestId: 'request-1' })
   assert.deepEqual(readDraft(h.key), { text: '', images: [] })
   assert.deepEqual(readDraft(`session:${h.id}`), { text: '', images: [] })
+  // The real fake controller also proves that handoff keeps the same generation alive.
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  h.put({ text: '参照を引き継ぐ', images: [image] })
+  let delivered: SessionReference | undefined
+  let adopted: SessionBinding | undefined
+  const handed = await deliverDraft({ ...h.options, sessions: ctx.sessions,
+    target: { kind: 'new', workspaceId: ctx.workspaces.list.getSnapshot().items[0]!.workspaceId },
+    handoff(reference) {
+      delivered = reference
+      adopted = reference.binding
+      assert.deepEqual(ctx.sessions.retainInfo(reference.sessionId).getSnapshot().retainedBy, { 'm3e.delivery': 1 })
+      owner.adopt(reference)
+      assert.equal(ctx.sessions.binding(reference.sessionId), adopted)
+    },
+  })
+  assert.equal(handed.error, undefined)
+  assert.ok(delivered)
+  assert.equal(handed.createdId, delivered.sessionId)
+  assert.equal(owner.state.getSnapshot().sessionId, handed.createdId)
+  assert.equal(ctx.sessions.binding(handed.createdId!), adopted)
+  assert.deepEqual(ctx.sessions.retainInfo(handed.createdId!).getSnapshot(), { referenceCount: 1, retainedBy: { 'm3e.mainView': 1 } })
+  assert.throws(() => delivered!.binding, /released/)
 })
 
 test('existing sends retain the selected steer mode and accept an image-only message', async () => {
@@ -345,6 +371,10 @@ test('a child becoming read-only or changing parent during preparation cannot se
     h.waitModel(gate.promise)
     writeDraft(`session:${h.id}`, { text: '準備中に状態が変わる', images: [], model: { provider: 'local', model: 'small' } })
     const flight = deliverDraft(h.existing())
+    await h.modelStarted
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    assert.deepEqual(h.calls, [`retain:${h.id}`, `model:${h.id}`])
+    assert.equal(pendingDelivery(`session:${h.id}`), flight)
     if (kind === 'mode') h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
     else h.setSummary({ ...row, parentId: 'other' })
     gate.resolve()
@@ -490,7 +520,8 @@ test('unknown failures and missing published IDs remain creation failures withou
     assert.equal(readDraft(h.key).text, '下書きを残す')
     assert.deepEqual(readDraft(h.key).images, [image])
     assert.equal(readDraft(h.key).workspaceAttachment, undefined)
-    assert.equal(h.calls.some(call => call.startsWith('scope:')), false)
+    assert.equal(h.calls.some(call => call.startsWith('retain:')), false)
+    assert.deepEqual(h.calls, [`create:${label}`])
   }
 })
 
@@ -580,6 +611,10 @@ test('read-only or removed changes during model preparation block subsequent per
     h.waitModel(gate.promise)
     writeDraft(`session:${h.id}`, { text: '後続の変更は送らない', images: [], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true })
     const first = deliverDraft(h.existing())
+    await h.modelStarted
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    assert.deepEqual(h.calls, [`retain:${h.id}`, `model:${h.id}`])
+    assert.equal(pendingDelivery(`session:${h.id}`), first)
     if (removed) h.setRemoved(true)
     else h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
     gate.resolve()
