@@ -17,9 +17,13 @@ function childRecords(id: string, label: string, running: boolean, now: number):
   const rows: SessionWireEvent[] = [
     { seq: 0, time: now, type: 'turn/start', data: { turn: 1 } },
     { seq: 1, time: now, type: 'user/message', surfaceOp: 'append', data: { id: `${id}-request`, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: `${label}をお願いします。` }] } },
-    { seq: 2, time: now + 1000, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, step: 1, stream: [], message: { id: `${id}-answer`, role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text: running ? '承認シートの画面と操作を確認しています。' : '補助画面のテストを確認しました。' }] } } },
+    { seq: 2, time: now, type: 'step/start', data: { turn: 1, step: 1 } },
+    { seq: 3, time: now + 1000, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, step: 1, stream: [], message: { id: `${id}-answer`, role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text: running ? '承認シートの画面と操作を確認しています。' : '補助画面のテストを確認しました。' }] } } },
   ]
-  if (!running) rows.push({ seq: 3, time: now + 2000, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  if (!running) rows.push(
+    { seq: 4, time: now + 2000, type: 'step/end', data: { turn: 1, step: 1 } },
+    { seq: 5, time: now + 2000, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  )
   return rows
 }
 
@@ -65,6 +69,7 @@ export function extendMock(kit: MockKit): void {
 
   const goals = new Map<string, GoalView>()
   function publish(sessionId: string, goal: GoalView | undefined) {
+    const previousActivation = goals.get(sessionId)?.activation ?? 'disarmed'
     if (goal) goals.set(sessionId, goal)
     else goals.delete(sessionId)
     const view = goalProjectionOf(goal)
@@ -72,7 +77,7 @@ export function extendMock(kit: MockKit): void {
       const { activation: _activation, ...durable } = view
       kit.setProjection(sessionId, 'goal', durable)
     } else kit.setProjection(sessionId, 'goal', null)
-    void kit.emit('goal/activation-changed', { sessionId,
+    if (previousActivation !== (goal?.activation ?? 'disarmed')) void kit.emit('goal/activation-changed', { sessionId,
       ...(goal ? { goal: { id: goal.id, revision: goal.revision, activation: goal.activation } } : {}),
     })
   }
@@ -84,8 +89,8 @@ export function extendMock(kit: MockKit): void {
 
   function current(sessionId: string, ref: GoalRef): RemoteResult<GoalView> {
     const goal = goals.get(sessionId)
-    if (!goal) return failure('GOAL_NOT_FOUND', 'ゴールはありません。')
-    if (goal.id !== ref.id || goal.revision !== ref.revision) return failure('GOAL_STALE_REVISION', 'ゴールが更新されています。読み直してください。')
+    if (!goal) return failure('gateway/internal', 'ゴールはありません。')
+    if (goal.id !== ref.id || goal.revision !== ref.revision) return failure('gateway/internal', 'ゴールが更新されています。読み直してください。')
     return success(goal)
   }
   async function update(sessionId: string, ref: GoalRef, action: Exclude<GoalAction, 'clear'>): Promise<RemoteResult<GoalView>> {
@@ -94,7 +99,7 @@ export function extendMock(kit: MockKit): void {
     const goal = result.value
     if ((action === 'pause' && goal.phase !== 'active')
       || (action === 'resume' && (goal.phase === 'complete' || (goal.phase === 'active' && goal.activation === 'armed') || goal.roundsStarted >= goal.maxGoalRounds))
-      || (action === 'complete' && goal.phase === 'complete')) return failure('GOAL_INVALID_STATE', '今の状態ではこの操作はできません。')
+      || (action === 'complete' && goal.phase === 'complete')) return failure('gateway/internal', '今の状態ではこの操作はできません。')
     const { blockedReason: _reason, ...rest } = goal
     const value: GoalView = {
       ...rest, revision: goal.revision + 1, updatedAt: Date.now(),

@@ -2,6 +2,7 @@ import type { MockKit } from '../../dsh/mock/kit.ts'
 import { MOCK_IDS, sharedWorkspaces } from '../../dsh/mock/fixtures.ts'
 import type { SubagentCatalogEntry, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
 import { createDirectoryMock } from './directory-mock.ts'
+import { mockModelCatalog } from '../composer/mock.ts'
 
 export const HOME_MOCK_IDS = {
   completed: 'home-mobile-layout',
@@ -14,11 +15,11 @@ export const HOME_MOCK_IDS = {
 const start = Date.parse('2026-09-25T09:30:00+09:00')
 
 const rows: readonly Omit<SessionSummary, 'retainedBy'>[] = [
-  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } } } },
-  { id: HOME_MOCK_IDS.waiting, displayTitle: 'ワークスペースの確認', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: start - 60_000, projectionValues: { modelSelection: { lastUsed: { provider: 'local', model: 'Qwen' } } } },
+  { id: HOME_MOCK_IDS.completed, displayTitle: 'スマートフォンの余白を調整', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-chat' } } } },
+  { id: HOME_MOCK_IDS.waiting, displayTitle: 'ワークスペースの確認', cwd: '/mock/dsh-webui-m3e', running: true, blank: false, updatedAt: start - 60_000, projectionValues: { modelSelection: { lastUsed: { provider: 'local', model: 'Qwen' }, next: { provider: 'local', model: 'Qwen' } } } },
   { id: HOME_MOCK_IDS.child, displayTitle: '一覧の表示をレビュー', cwd: '/mock/dsh-webui-m3e', parentId: MOCK_IDS.sessions.readme, origin: 'subagent', running: false, blank: false, updatedAt: start - 120_000 },
   { id: HOME_MOCK_IDS.idle, displayTitle: '一覧のメニューを検討', cwd: '/mock/dsh-webui-m3e', running: false, blank: false, updatedAt: start - 86_400_000 },
-  { id: HOME_MOCK_IDS.harness, displayTitle: '接続のテストを整理', cwd: '/mock/deepseek-harness', running: false, blank: false, updatedAt: start - 172_800_000, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } } } },
+  { id: HOME_MOCK_IDS.harness, displayTitle: '接続のテストを整理', cwd: '/mock/deepseek-harness', running: false, blank: false, updatedAt: start - 172_800_000, projectionValues: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-reasoner' } } } },
 ]
 
 function recordsFor(row: Omit<SessionSummary, 'retainedBy'>): SessionWireEvent[] {
@@ -41,7 +42,12 @@ function removeAllSessions(kit: MockKit): void {
 }
 
 export function extendMock(kit: MockKit): void {
-  for (const row of rows) kit.addSession(row, recordsFor(row))
+  for (const row of rows) {
+    const lastUsed = row.projectionValues?.modelSelection as { lastUsed: unknown } | undefined
+    kit.addSession(lastUsed ? { ...row, projectionValues: { ...row.projectionValues,
+      modelSelection: { ...lastUsed, next: structuredClone(mockModelCatalog.default) },
+    } } : row, recordsFor(row))
+  }
   const workspaceSessions: readonly [string, readonly string[]][] = [
     [MOCK_IDS.workspaces.m3e, [HOME_MOCK_IDS.completed, HOME_MOCK_IDS.waiting, HOME_MOCK_IDS.child, HOME_MOCK_IDS.idle]],
     [MOCK_IDS.workspaces.harness, [HOME_MOCK_IDS.harness]],
@@ -58,8 +64,8 @@ export function extendMock(kit: MockKit): void {
   kit.setSessionState(HOME_MOCK_IDS.child, { subagent: {
     address: { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode: 'one-shot' }, parentAvailable,
   } })
-  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
-  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } })
+  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: structuredClone(mockModelCatalog.default) })
+  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: structuredClone(mockModelCatalog.default) })
   kit.addRemote('directoryPicker', createDirectoryMock())
 
   kit.scenario('home', (home) => {

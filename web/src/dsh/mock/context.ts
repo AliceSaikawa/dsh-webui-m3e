@@ -34,13 +34,16 @@ export interface MockKit {
   /** Timed question notification, business wait stream, and durable projection. */
   emitTimedQuestion(sessionId: string, input: MockTimedQuestion): Promise<MockQuestionAnswer | { pending: true; callId: string }>
   getRecords(sessionId: string): readonly SessionWireEvent[]
+  appendEvent(sessionId: string, type: string, data: unknown): SessionWireEvent
+  onRecord(listener: (sessionId: string, event: SessionWireEvent) => void): () => void
+  remoteOf<T>(namespace: string): T | undefined
   setJobs(sessionId: string, rows: readonly SessionJob[]): void
   failJobRows(sessionId: string): void
   emitJobFrame(jobId: string, frame: JobFrame): void
   addRemote(namespace: string, impl: unknown): void
   /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
   emit(event: string, payload?: unknown, options?: MockEmitOptions): Promise<unknown>
-  streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number }): Promise<void>
+  streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number; model?: { provider: string; model: string; reasoningEffort?: string } }): Promise<void>
   setProjection(sessionId: string, key: string, value: unknown): void
   /** Read the latest shared projection as an isolated copy; an absent key is undefined. */
   getProjection<T = unknown>(sessionId: string, key: string): T | undefined
@@ -104,6 +107,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const id = (prefix: string) => `${prefix}-${++serial}`
   const models = new Map<string, SessionModel>()
   const handlers = new Map<string, Set<EventHandler>>()
+  const recordListeners = new Set<(sessionId: string, event: SessionWireEvent) => void>()
   const startupEvents = new Set<{ event: string; owner?: SessionModel; deliver(): void; cancel(): void }>()
   const timers = new Map<ReturnType<typeof setTimeout>, { resolve(): void; owner?: SessionModel }>()
   const scenarios = new Map<string, (kit: MockKit) => void>()
@@ -247,6 +251,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     const event: SessionWireEvent = { type, data: json(data), seq: (model.records.at(-1)?.seq ?? -1) + 1, time: Date.now(), ...(['user/message', 'assistant/message', 'tool/result', 'system/message'].includes(type) ? { surfaceOp: 'append' } : {}) }
     if (!isActive(model)) return event
     model.records.push(event)
+    for (const listener of recordListeners) listener(model.summary.id, event)
     const entry: SessionEventLikeEntry = { type: 'event', event }
     publish(model, [...model.events.getSnapshot().entries, entry], { kind: 'append', entries: [entry] })
     return event
@@ -259,6 +264,13 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   function turnOf(model: SessionModel): number {
     const start = [...model.records].reverse().find((event) => event.type === 'turn/start')
     return start && typeof start.data === 'object' && start.data !== null && 'turn' in start.data ? Number(start.data.turn) : 0
+  }
+  function endTurn(model: SessionModel) {
+    settleAttempt(model)
+    const step = [...model.records].reverse().find(event => event.type.startsWith('step/'))
+    if (step?.type === 'step/start') append(model, 'step/end', step.data)
+    const turn = [...model.records].reverse().find(event => event.type.startsWith('turn/'))
+    if (turn?.type === 'turn/start') append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
   }
   function beginTurn(model: SessionModel, content: readonly ContentBlock[], requestId?: string) {
     const turn = turnOf(model) + 1
@@ -300,6 +312,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   function advanceQueue(model: SessionModel) {
     if (!isActive(model)) return
+    admitQuestionReplies(model)
     const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
     const first = inbox?.['next-turn'][0]
     if (!first) return
@@ -307,6 +320,18 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     beginTurn(model, first.content, first.source.rpcId)
     if (!isActive(model)) return
     void kit.streamAssistant(model.summary.id, '順番待ちのメッセージを受け取りました。', { chunkMs: 30 })
+  }
+  function admitQuestionReplies(model: SessionModel) {
+    if (!isActive(model) || !model.agentAvailable) return
+    const inbox = kit.getProjection<InboxState>(model.summary.id, 'inbox')
+    const replies = inbox?.['next-step'].filter(row => row.source.kind === 'user-question-reply') ?? []
+    for (const message of replies) {
+      // The durable admission, rather than RPC completion, settles the card.
+      append(model, 'user/message', message)
+      const payload = JSON.parse((message.content[0] as { text: string }).text) as { callId: string; answers: MockQuestionAnswer['answers'] }
+      mockQuestions.admitted(model.summary.id, payload.callId, { answers: payload.answers })
+      kit.updateProjection<InboxState>(model.summary.id, 'inbox', current => ({ 'next-turn': current?.['next-turn'] ?? [], 'next-step': current?.['next-step'].filter(row => row.id !== message.id) ?? [] }))
+    }
   }
   function project(model: SessionModel, key: string): MutableSnapshot<unknown> {
     let source = model.projections.get(key)
@@ -393,7 +418,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         if (snapshot.getSnapshot().running && mode === 'queue') {
           kit.updateProjection<InboxState>(summary.id, 'inbox', inbox => ({ 'next-step': inbox?.['next-step'] ?? [], 'next-turn': [...(inbox?.['next-turn'] ?? []), { id: id('message'), role: 'user', source: { kind: 'user', rpcId: wireId }, content }] }))
         } else {
-          if (snapshot.getSnapshot().running) { settleAttempt(model); append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } }) }
+          if (snapshot.getSnapshot().running) endTurn(model)
           const deliver = () => {
             if (!isActive(model)) return
             beginTurn(model, content, wireId)
@@ -425,8 +450,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         else {
           kit.setProjection(summary.id, 'inbox', { ...inbox, [target]: inbox![target].filter(row => row.id !== itemId) })
           if (action.kind === 'steer') {
-            settleAttempt(model)
-            append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
+            endTurn(model)
             beginTurn(model, item.content, item.source.rpcId)
             if (isActive(model)) void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
           }
@@ -443,7 +467,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         // interruptByParent is a no-op for a child without a live Agent.
         if (!isActive(model)) return accepted()
         settleAttempt(model)
-        if (snapshot.getSnapshot().running) append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
+        if (snapshot.getSnapshot().running) endTurn(model)
         running(model, false)
         void delay(0, model).then(() => { if (isActive(model)) advanceQueue(model) })
         return accepted()
@@ -498,10 +522,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
         if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
         const commandId = id('command')
-        const event = append(model, 'command/run', { commandId, name, args: args.join(' '), source: 'user' })
+        append(model, 'command/run', { commandId, name, args: args.join(' '), source: { kind: 'user' } })
         if (name === 'plan') kit.setProjection(summary.id, 'plan', { active: args[0] !== 'off', pending: false })
         if (name === 'permission' && args[0]) kit.setProjection(summary.id, 'permissions', { ...(project(model, 'permissions').getSnapshot() as object), currentValue: args[0] })
-        append(model, 'command/done', { commandId, kind: 'success', text: `/${name} を実行しました`, sourceEventSeq: event.seq })
+        append(model, 'command/done', { commandId, kind: 'success', text: `/${name} を実行しました` })
         return success({ matched: true })
       },
       async readAttachment(attachmentId) {
@@ -944,6 +968,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       for (const [timer, pending] of timers) { clearTimeout(timer); pending.resolve() }
       timers.clear()
       handlers.clear()
+      recordListeners.clear()
       for (const [sessionId, record] of generations) {
         record.live = false
         record.client.live = false
@@ -961,6 +986,9 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
 
   const kit: MockKit = {
+    appendEvent: (sessionId, type, data) => append(getModel(sessionId), type, data),
+    onRecord(listener) { recordListeners.add(listener); return () => { recordListeners.delete(listener) } },
+    remoteOf: <T>(namespace: string) => remote[namespace] as T | undefined,
     emitTimedQuestion: (sessionId, input) => mockQuestions.ask(sessionId, input),
     setConnectionState(state) {
       if (state !== 'connected') { connectionLifetime.abort(); connectionLifetime = new AbortController() }
@@ -1042,7 +1070,17 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     async streamAssistant(sessionId, text, streamOptions = {}) {
       const model = getModel(sessionId)
       settleAttempt(model)
-      const attempt = { id: id('attempt'), turn: turnOf(model) || 1, step: 1, chunks: [] as StreamChunk[], token: ++serial }
+      const boundary = [...model.records].reverse().find(event => event.type.startsWith('turn/'))
+      const newTurn = boundary?.type !== 'turn/start'
+      const turn = turnOf(model) + (newTurn ? 1 : 0)
+      if (newTurn) append(model, 'turn/start', { turn })
+      const stepBoundary = [...model.records].reverse().find(event => event.type.startsWith('step/'))
+      const prior = stepBoundary?.data as { turn?: number; step?: number } | undefined
+      const step = prior?.turn === turn ? (prior.step ?? 0) + (stepBoundary?.type === 'step/start' ? 0 : 1) : 1
+      if (newTurn || stepBoundary?.type !== 'step/start') append(model, 'step/start', { turn, step })
+      const used = streamOptions.model ?? { provider: 'mock', model: 'mock-model' }
+      append(model, 'request/header', { header: { config: used }, reason: model.records.some(event => event.type === 'request/header') ? 'change' : 'initial' })
+      const attempt = { id: id('attempt'), turn, step, chunks: [] as StreamChunk[], token: ++serial }
       model.attempt = attempt
       running(model, true)
       const chunk = (value: StreamChunk) => {
@@ -1060,7 +1098,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       }
       if (!chunk({ type: 'block-end', index: 0, block: { type: 'text', text } })) return
       if (!chunk({ type: 'finish', reason: { kind: 'stop' } })) return
-      const event: SessionWireEvent = { type: 'assistant/message', seq: (model.records.at(-1)?.seq ?? -1) + 1, time: Date.now(), surfaceOp: 'append', data: json({ turn: attempt.turn, step: attempt.step, message: { id: id('message'), role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text }] }, stream: attempt.chunks.map((value) => ({ type: 'chunk', time: Date.now(), chunk: value })) }) }
+      const event: SessionWireEvent = { type: 'assistant/message', seq: (model.records.at(-1)?.seq ?? -1) + 1, time: Date.now(), surfaceOp: 'append', data: json({ turn: attempt.turn, step: attempt.step, message: { id: id('message'), role: 'assistant', source: { kind: 'model', provider: used.provider, model: used.model }, content: [{ type: 'text', text }] }, stream: attempt.chunks.map((value) => ({ type: 'chunk', time: Date.now(), chunk: value })) }) }
       model.records.push(event)
       settleAttempt(model, event)
       append(model, 'step/end', { turn: attempt.turn, step: attempt.step })
@@ -1185,7 +1223,16 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     set: (sessionId, value) => kit.setProjection(sessionId, 'userQuestions', value),
     live: sessionId => models.get(sessionId)?.agentAvailable === true,
     connectionSignal: () => connectionLifetime.signal,
-    admit: (sessionId, callId, questions, answer) => { append(getModel(sessionId), 'user/message', { id: id('message'), role: 'user', source: { kind: 'user-question-reply', callId, outcome: 'answered' }, content: [{ type: 'text', text: JSON.stringify({ kind: 'answer_to_pending_question', tool: 'ask_user_question', callId, questions, answers: answer.answers }) }] }) },
+    queued: (sessionId, callId) => {
+      const inbox = kit.getProjection<InboxState>(sessionId, 'inbox')
+      return [...(inbox?.['next-step'] ?? []), ...(inbox?.['next-turn'] ?? [])].some(row => row.source.kind === 'user-question-reply' && (row.source as { callId?: string }).callId === callId)
+    },
+    enqueue: (sessionId, callId, questions, answer) => {
+      const model = getModel(sessionId)
+      const message = { id: id('message'), role: 'user' as const, source: { kind: 'user-question-reply', callId, outcome: 'answered' }, content: [{ type: 'text' as const, text: JSON.stringify({ kind: 'answer_to_pending_question', tool: 'ask_user_question', callId, questions, answers: answer.answers }) }] }
+      kit.updateProjection<InboxState>(sessionId, 'inbox', inbox => ({ 'next-turn': inbox?.['next-turn'] ?? [], 'next-step': [...(inbox?.['next-step'] ?? []), message] }))
+      void delay(0, model).then(() => { if (isActive(model) && !model.snapshot.getSnapshot().running) admitQuestionReplies(model) })
+    },
   })
   remote.userQuestions = mockQuestions.remote
   completionStatus(ctx)
@@ -1198,7 +1245,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   kit.setProjection(MOCK_IDS.sessions.approval, 'tokenUsage', { uncachedInputTokens: 11668, outputTokens: 812, cacheReadTokens: 0, cacheWriteTokens: 0 })
   const active = getModel(MOCK_IDS.sessions.approval)
-  active.attempt = { id: 'mock-turn-3', turn: 3, step: 1, chunks: [{ type: 'block-start', index: 0, blockType: 'text' }], token: 0 }
+  active.attempt = { id: 'mock-turn-2', turn: 2, step: 1, chunks: [{ type: 'block-start', index: 0, blockType: 'text' }], token: 0 }
   replaceWindow(active)
   kit.scenario('disconnected', () => connectionState.set('disconnected'))
   kit.scenario('reconnecting', () => connectionState.set('connecting'))

@@ -22,11 +22,11 @@ export function createMockQuestions(hooks: {
   set(sessionId: string, projection: MockQuestionProjection): void
   live(sessionId: string): boolean
   connectionSignal(): AbortSignal
-  admit(sessionId: string, callId: string, questions: MockQuestion[], answer: MockQuestionAnswer): void
+  queued(sessionId: string, callId: string): boolean
+  enqueue(sessionId: string, callId: string, questions: MockQuestion[], answer: MockQuestionAnswer): void
 }) {
   const waits = new Map<string, Map<string, Wait>>()
   const replies = new Set<string>()
-  const replyTimers = new Set<ReturnType<typeof setTimeout>>()
   const projection = (sessionId: string) => hooks.get(sessionId) ?? { active: [], settled: [] }
   function close(wait: Wait, code = 'ASK_ABORTED') { clearTimeout(wait.timer); wait.controller.abort(questionError(code)) }
   function settle(sessionId: string, callId: string, answer: MockQuestionAnswer) {
@@ -65,22 +65,18 @@ export function createMockQuestions(hooks: {
       const question = projection(sessionId).active.find(q => q.callId === callId && q.state === 'continued')
       if (!question) return { ok: true, value: false }
       const key = JSON.stringify([sessionId, callId])
-      if (replies.has(key)) return failure('REPLY_QUEUED')
+      if (replies.has(key) || hooks.queued(sessionId, callId)) return failure('REPLY_QUEUED')
       const ids = new Set(answer.answers.map(item => item.id))
       if (ids.size !== answer.answers.length || question.questions.length !== ids.size || question.questions.some(item => !ids.has(item.id))) return failure('BAD_ANSWER')
       replies.add(key)
-      const timer = setTimeout(() => {
-        replyTimers.delete(timer); replies.delete(key)
-        if (!hooks.live(sessionId)) return
-        hooks.admit(sessionId, callId, question.questions, answer)
-        settle(sessionId, callId, answer)
-      }, 0)
-      replyTimers.add(timer)
+      try { hooks.enqueue(sessionId, callId, question.questions, answer) }
+      finally { replies.delete(key) }
       return { ok: true, value: true }
     },
   }
   return {
     remote,
+    admitted: settle,
     async ask(sessionId: string, input: MockTimedQuestion): Promise<MockQuestionAnswer | { pending: true; callId: string }> {
       if (!Number.isSafeInteger(input.timeoutMs) || input.timeoutMs < 1 || input.timeoutMs > 2147483647) throw questionError('BAD_TIMEOUT')
       if (!hooks.live(sessionId)) throw questionError('CALLER_NOT_LIVE')
@@ -119,6 +115,6 @@ export function createMockQuestions(hooks: {
         if (!calls.size) waits.delete(sessionId)
       }
     },
-    dispose() { for (const calls of waits.values()) for (const wait of calls.values()) close(wait); waits.clear(); for (const timer of replyTimers) clearTimeout(timer); replyTimers.clear() },
+    dispose() { for (const calls of waits.values()) for (const wait of calls.values()) close(wait); waits.clear(); replies.clear() },
   }
 }
