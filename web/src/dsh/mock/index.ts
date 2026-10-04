@@ -42,12 +42,11 @@ export function createMockContext(options: MockOptions = {}) {
       return modelCatalog()
     })
   }
-  // The installed SDK allocates a separate wire id for child prompts. This
-  // explicit test option models that behavior without changing ordinary mock.
+  // Child wire identities are part of the normal controller contract. These
+  // flags only gate delivery / lose a response for fault-injection tests.
   if (testWindow.__m3eTestChildRequestIdMismatch || testWindow.__m3eTestChildPromptGate || testWindow.__m3eTestChildLoseResponseOnce) {
     const sessionOf = ctx.sessions.sessionOf.bind(ctx.sessions)
     const wrapped = new WeakSet<object>()
-    let wire = 0
     ctx.mock.patch('sessions.sessionOf', (scope: Parameters<typeof sessionOf>[0]) => {
       const face = sessionOf(scope)
       if (face && !wrapped.has(face) && face.getSnapshot().subagent?.address?.mode === 'continuable') {
@@ -56,7 +55,7 @@ export function createMockContext(options: MockOptions = {}) {
         face.prompt = async (content, mode, signal, requestId) => {
           testWindow.__m3eTestChildPromptCalls = (testWindow.__m3eTestChildPromptCalls ?? 0) + 1
           if (testWindow.__m3eTestChildPromptGate) await testWindow.__m3eTestChildPromptGate
-          const result = await prompt(content, mode, signal, testWindow.__m3eTestChildRequestIdMismatch ? `mock-child-wire-${++wire}` : requestId)
+          const result = await prompt(content, mode, signal, requestId)
           if (result.ok && testWindow.__m3eTestChildLoseResponseOnce) {
             testWindow.__m3eTestChildLoseResponseOnce = false
             return { ok: false, error: { code: 'gateway/internal', message: 'synthetic carrier lost the accepted response', details: {} } }
