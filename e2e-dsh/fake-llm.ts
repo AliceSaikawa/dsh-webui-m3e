@@ -1,5 +1,5 @@
 /**
- * A scripted stand-in for the DeepSeek chat-completions endpoint.
+ * A scripted stand-in for the DeepSeek Messages endpoint (DSH 0.2.0).
  *
  * The real DSH Host talks to this server through DEEPSEEK_BASE_URL, so the
  * Host, its transport, and the M3E browser client are real; only the model is
@@ -9,8 +9,9 @@
 import { createServer, type Server } from 'node:http'
 import { appendFileSync } from 'node:fs'
 
-export interface ChatMessage { role: string; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string }
-export interface ChatRequest { model: string; messages: ChatMessage[]; tools?: { function: { name: string } }[] }
+export interface MessageBlock { type: string; text?: string; tool_use_id?: string; content?: unknown; [key: string]: unknown }
+export interface ChatMessage { role: string; content: MessageBlock[] }
+export interface ChatRequest { model: string; messages: ChatMessage[]; tools?: { name: string; description: string; input_schema: unknown }[] }
 
 export interface FakeLlm {
   readonly url: string
@@ -64,7 +65,8 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
     req.on('data', chunk => { body += chunk })
     req.on('end', () => {
       void (async () => {
-        if (!req.url?.includes('chat/completions')) { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}'); return }
+        // A Files API 404 makes the real adapter fall back to inline base64.
+        if (req.url !== '/v1/messages') { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}'); return }
         const request = JSON.parse(body) as ChatRequest
         requests.push(request)
         const last = request.messages.at(-1)
@@ -74,44 +76,48 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
         let closed = false
         let done = false
         res.on('close', () => { closed = true; if (!done) abandoned.push(request) })
-        const base = { id: `fake-${requests.length}`, object: 'chat.completion.chunk', created: 0, model: request.model }
-        const send = (delta: Record<string, unknown>, finish: string | null = null) => {
-          if (!closed) res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`)
+        const send = (type: string, fields: Record<string, unknown> = {}) => {
+          if (!closed) res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...fields })}\n\n`)
         }
         const finish = (reason: string) => {
-          send({}, reason)
-          if (!closed) res.write(`data: ${JSON.stringify({ ...base, choices: [], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } })}\n\n`)
+          send('content_block_stop', { index: 0 })
+          send('message_delta', { delta: { stop_reason: reason, stop_sequence: null }, usage: { output_tokens: 10 } })
+          send('message_stop')
           done = true
-          if (!closed) { res.write('data: [DONE]\n\n'); res.end() }
+          if (!closed) res.end()
         }
         const words = async (parts: string[], delay: number) => {
-          for (const part of parts) { if (closed) return; send({ content: part }); await sleep(delay) }
+          send('content_block_start', { index: 0, content_block: { type: 'text', text: '' } })
+          for (const part of parts) { if (closed) return; send('content_block_delta', { index: 0, delta: { type: 'text_delta', text: part } }); await sleep(delay) }
         }
-        send({ role: 'assistant', content: '' })
+        const tool = (id: string, name: string, input: unknown) => {
+          send('content_block_start', { index: 0, content_block: { type: 'tool_use', id, name, input: {} } })
+          send('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } })
+          finish('tool_use')
+        }
+        send('message_start', { message: { id: `fake-${requests.length}`, type: 'message', role: 'assistant', model: request.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } })
         // Title generation and other side requests carry no tools. The title
         // names the first human message so tests can tell sessions apart.
-        if (!request.tools?.length) { await words([titleFor(prompt)], 0); finish('stop'); return }
-        if (last?.role === 'tool') { await words(['ツールの結果を受け取りました。'], 20); finish('stop'); return }
+        if (!request.tools?.length) { await words([titleFor(prompt)], 0); finish('end_turn'); return }
+        if (last?.role === 'user' && last.content.some(block => block.type === 'tool_result')) { await words(['ツールの結果を受け取りました。'], 20); finish('end_turn'); return }
         if (prompt.includes(MARK.slow)) {
           await words(Array.from({ length: 200 }, (_, index) => `第${index + 1}節。`), 150)
-          finish('stop'); return
+          finish('end_turn'); return
         }
         if (prompt.includes(MARK.medium)) {
           await words(Array.from({ length: 20 }, (_, index) => `段落${index + 1}。`), 150)
-          finish('stop'); return
+          finish('end_turn'); return
         }
         if (prompt.includes(MARK.approval)) {
-          send({ tool_calls: [{ index: 0, id: 'call-approval', type: 'function', function: { name: 'bash', arguments: '' } }] })
-          send({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ command: 'echo m3e-approval-ok', description: 'Print a test marker', sandbox_permissions: 'danger-full-access', justification: '統合試験の承認確認です。' }) } }] })
-          finish('tool_calls'); return
+          tool('call-approval', 'bash', { command: 'echo m3e-approval-ok', description: 'Print a test marker', sandbox_permissions: 'danger-full-access', justification: '統合試験の承認確認です。' })
+          return
         }
         if (prompt.includes(MARK.question)) {
-          send({ tool_calls: [{ index: 0, id: 'call-question', type: 'function', function: { name: 'ask_user_question', arguments: '' } }] })
-          send({ tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ questions: [{ id: 'color', question: '統合試験の質問です。どちらを選びますか？', options: [{ label: '赤' }, { label: '青' }] }] }) } }] })
-          finish('tool_calls'); return
+          tool('call-question', 'ask_user_question', { questions: [{ id: 'color', question: '統合試験の質問です。どちらを選びますか？', options: [{ label: '赤' }, { label: '青' }] }] })
+          return
         }
         await words(['こんにちは', '。', '偽の', 'モデル', 'です。'], 30)
-        finish('stop')
+        finish('end_turn')
       })().catch(error => { if (!res.headersSent) res.writeHead(500); res.end(String(error)) })
     })
   })

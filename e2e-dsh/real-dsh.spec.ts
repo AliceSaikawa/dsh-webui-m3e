@@ -13,7 +13,8 @@ import type { Page } from '@playwright/test'
 test.describe.configure({ mode: 'serial' })
 
 const toolResults = (requests: readonly ChatRequest[], callId: string) => requests.flatMap(request =>
-  request.messages.filter(message => message.role === 'tool' && message.tool_call_id === callId).map(message => textOf(message.content)))
+  request.messages.filter(message => message.role === 'user').flatMap(message =>
+    message.content.filter(block => block.type === 'tool_result' && block.tool_use_id === callId).map(block => textOf(block.content))))
 
 async function newSession(page: Page, text: string) {
   await button(page, '新しいセッション').click()
@@ -206,7 +207,7 @@ test(`DSH ${dshVersion}: 画像を添付して送るとモデルへ画像が届�
     && request.messages.some(message => message.role === 'user' && textOf(message.content).includes('画像の確認')))
   expect(sent).toBeDefined()
   const user = sent!.messages.filter(message => message.role === 'user' && Array.isArray(message.content))
-  expect(JSON.stringify(user)).toMatch(/"type":"image_url"/)
+  expect(JSON.stringify(user)).toMatch(/"type":"image"/)
 })
 
 test.describe('接続の断絶', () => {
@@ -235,7 +236,8 @@ test.describe('接続の断絶', () => {
   // docs/ui-spec.md「接続が切れたとき」: the progress bar should turn into the
   // banner when reconnecting fails. With DSH 0.1.5-rc.3 the transport keeps
   // retrying in the connecting state, so the banner never appears while the
-  // Host is down (observed for 90 s). Recorded as a known gap, not fixed here.
+  // Host is down (observed for 90 s). DSH 0.2.0-rc.2 still has no banner
+  // within this test's 30 s window, so the existing expected failure remains.
   test(`DSH ${dshVersion}: 既知の差 — Host が止まったままでも「接続が切れました」に切り替わらない`, async ({ page, integration }) => {
     test.fail(true, '仕様との既知の差。docs/dsh-compatibility.md を参照')
     const { host } = integration
