@@ -27,7 +27,7 @@ test('ホームの偽データは共有履歴を保ち、3 ワークスペース
     for (const workspace of workspaces) for (const id of workspace.sessionIds) assert.ok(list.byId[id])
     assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
     assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
+    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } })
   } finally { ctx.dispose() }
 })
 
@@ -90,7 +90,7 @@ test('ホームの子は読み込み済みカタログに登録され、一度�
 test('子の追加は同じ親の既存の行・補助情報と別の親のカタログを保つ', async () => {
   const previousEntry = { id: 'other-review-child', mode: 'continuable' as const, label: '別担当の子', createdAt: 0 }
   const diagnostic = { id: 'other-diagnostic', mode: 'unknown' as const, createdAt: 0 }
-  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' } } } }
+  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } } } }
   const prior: MockExtension = { extendMock(kit) {
     kit.addSession({ id: previousEntry.id, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: previousEntry.label, running: true, blank: true, updatedAt: 1 }, [])
     kit.setProjection(MOCK_IDS.sessions.readme, 'subagentCatalog', [previousEntry, diagnostic])
@@ -158,14 +158,14 @@ test('フォルダはホームから階層をたどれ、隠し属性とパン�
 test('フォルダ作成は絶対パスを返し、一覧への反映と重複を確認できる', async () => {
   const picker = createDirectoryMock()
   const result = await picker.createDirectory('/mock/dev', ' 新しい作業 ')
-  assert.deepEqual(result, { ok: true, value: '/mock/dev/新しい作業' })
+  assert.deepEqual(result, { ok: true, value: '/mock/dev/ 新しい作業 ' })
   const listing = await picker.list('/mock/dev')
   if (!listing.ok) assert.fail('作成先を読み込めません。')
-  assert.ok(listing.value.entries.some((entry) => entry.path === '/mock/dev/新しい作業'))
-  const created = await picker.list('/mock/dev/新しい作業')
+  assert.ok(listing.value.entries.some((entry) => entry.path === '/mock/dev/ 新しい作業 '))
+  const created = await picker.list('/mock/dev/ 新しい作業 ')
   if (!created.ok) assert.fail('作成したフォルダを開けません。')
   assert.deepEqual(created.value.entries, [])
-  const duplicate = await picker.createDirectory('/mock/dev', '新しい作業')
+  const duplicate = await picker.createDirectory('/mock/dev', ' 新しい作業 ')
   assert.equal(duplicate.ok, false)
   if (!duplicate.ok) assert.equal(duplicate.error.code, 'directory-picker/exists')
 })
@@ -175,7 +175,10 @@ test('フォルダ名の不備・読み取り失敗・書き込み失敗を RPC 
   for (const name of ['', '.', '..', 'a/b', 'a\\b']) {
     const result = await picker.createDirectory('/mock/dev', name)
     assert.equal(result.ok, false)
-    if (!result.ok) assert.equal(result.error.code, 'directory-picker/invalid-name')
+    if (!result.ok) {
+      assert.equal(result.error.code, 'gateway/bad-request')
+      assert.deepEqual(result.error.details.issues, [{ code: 'custom', path: [], message: 'host.createDirectory requires a single non-blank path segment name' }])
+    }
   }
   for (const path of ['/mock/unreadable', '/mock/missing']) {
     const result = await picker.list(path)
@@ -187,7 +190,7 @@ test('フォルダ名の不備・読み取り失敗・書き込み失敗を RPC 
   if (!write.ok) assert.equal(write.error.code, 'directory-picker/create-failed')
   const cancelled = await picker.list('/mock', AbortSignal.abort())
   assert.equal(cancelled.ok, false)
-  if (!cancelled.ok) assert.equal(cancelled.error.code, 'rpc/aborted')
+  if (!cancelled.ok) assert.equal(cancelled.error.code, 'gateway/cancelled')
 })
 
 test('empty は会話を除き、no-workspace はワークスペースも除く', () => {

@@ -14,9 +14,13 @@ function childRecords(id: string, label: string, running: boolean, now: number):
   const rows: SessionWireEvent[] = [
     { seq: 0, time: now, type: 'turn/start', data: { turn: 1 } },
     { seq: 1, time: now, type: 'user/message', surfaceOp: 'append', data: { id: `${id}-request`, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: `${label}をお願いします。` }] } },
-    { seq: 2, time: now + 1000, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, step: 1, stream: [], message: { id: `${id}-answer`, role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text: running ? '承認シートの画面と操作を確認しています。' : '補助画面のテストを確認しました。' }] } } },
+    { seq: 2, time: now, type: 'step/start', data: { turn: 1, step: 1 } },
+    { seq: 3, time: now + 1000, type: 'assistant/message', surfaceOp: 'append', data: { turn: 1, step: 1, stream: [], message: { id: `${id}-answer`, role: 'assistant', source: { kind: 'model', provider: 'mock', model: 'mock-model' }, content: [{ type: 'text', text: running ? '承認シートの画面と操作を確認しています。' : '補助画面のテストを確認しました。' }] } } },
   ]
-  if (!running) rows.push({ seq: 3, time: now + 2000, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } })
+  if (!running) rows.push(
+    { seq: 4, time: now + 2000, type: 'step/end', data: { turn: 1, step: 1 } },
+    { seq: 5, time: now + 2000, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+  )
   return rows
 }
 

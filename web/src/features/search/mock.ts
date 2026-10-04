@@ -1,6 +1,6 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { ISessions, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
-import { mockMessageText, validMockSearchQuery } from '../../dsh/mock/search.ts'
+import { mockSearchMatch, validMockSearchQuery } from '../../dsh/mock/search.ts'
 import { sessionRowIds } from '../../dsh/session-rows.ts'
 import { findMatchRanges, normalizeQuery, selectRecentSessions } from './search-utils.ts'
 
@@ -18,7 +18,8 @@ export function excerptOf(text: string, query: string): string | undefined {
   if (!range) return undefined
   const before = Array.from(text.slice(0, range.start))
   const after = Array.from(text.slice(range.end))
-  return `${before.length > 20 ? '…' : ''}${before.slice(-20).join('')}${text.slice(range.start, range.end)}${after.slice(0, 20).join('')}${after.length > 20 ? '…' : ''}`
+  const excerpt = `${before.length > 20 ? '…' : ''}${before.slice(-20).join('')}${text.slice(range.start, range.end)}${after.slice(0, 20).join('')}${after.length > 20 ? '…' : ''}`
+  return Array.from(excerpt).slice(0, 240).join('')
 }
 
 function waitForSearch(signal: AbortSignal): Promise<void> {
@@ -43,17 +44,16 @@ export function extendMock(kit: MockKit): void {
   kit.patch('sessions.search', async function (this: ISessions, input: string, signal: AbortSignal) {
     await waitForSearch(signal)
     if (signal.aborted) throw new DOMException('検索を取り消しました。', 'AbortError')
-    if (fail) return { ok: false, error: { code: 'search/unavailable', message: '検索サービスに接続できません。', details: {} } }
+    if (fail) return { ok: false, error: { code: 'gateway/internal', message: '検索サービスに接続できません。', details: {} } }
     const query = normalizeQuery(input)
     if (!validMockSearchQuery(query)) return { ok: false, error: { code: 'gateway/bad-request', message: '検索語を確認してください。', details: {} } }
     const list = this.list.getSnapshot()
     const rows = selectRecentSessions(sessionRowIds(list).flatMap(id => list.byId[id]?.cwd !== undefined ? [list.byId[id]!] : []), Object.keys(list.byId).length)
     const items = query ? rows.flatMap(row => {
-      const body = mockMessageText([...kit.getRecords(row.id)].sort((a, b) => a.seq - b.seq))
-      const snippet = excerptOf(body, query)
-      return snippet === undefined ? [] : [{ sessionId: row.id, snippet }]
-    }) : []
-    return { ok: true, value: { items: items.slice(0, this.searchResultLimit), hasMore: items.length > this.searchResultLimit } }
+      const match = mockSearchMatch(kit.getRecords(row.id), query)
+      return match ? [{ sessionId: row.id, updatedAt: row.updatedAt, ...match }] : []
+    }).sort((a, b) => b.score - a.score || b.updatedAt - a.updatedAt || a.sessionId.localeCompare(b.sessionId)) : []
+    return { ok: true, value: { items: items.slice(0, this.searchResultLimit).map(({ sessionId, snippet }) => ({ sessionId, snippet })), hasMore: items.length > this.searchResultLimit } }
   })
   kit.scenario('search-error', () => { fail = true })
   kit.scenario('search-more', () => {

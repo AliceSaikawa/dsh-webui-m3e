@@ -55,25 +55,25 @@ export const readmeRecords: readonly SessionWireEvent[] = events([
   [14000, 'assistant/message', { turn: 1, step: 3, message: { role: 'assistant', content: [{ type: 'text', text: 'PWA の手順を README に足しました。\n\nテストが 1 件失敗しています。' }] }, stream: [] }],
   [14000, 'step/end', { turn: 1, step: 3 }],
   [14000, 'turn/end', { turn: 1, reason: 'completed' }],
-  [15000, 'command/run', { commandId: 'readme-permission', name: 'permission', source: 'user' }],
-  [15010, 'command/done', { commandId: 'readme-permission', kind: 'success', text: '/permission を実行しました', sourceEventSeq: 16 }],
+  [15000, 'command/run', { commandId: 'readme-permission', name: 'permission', source: { kind: 'user' } }],
+  [15010, 'command/done', { commandId: 'readme-permission', kind: 'success', text: '/permission を実行しました' }],
 ])
 
-/** Canvas trace: turn 2 complete, turn 3 still running. */
+/** Complete first turn and running second turn, with no artificial predecessor. */
 export const approvalRecords: readonly SessionWireEvent[] = events([
-  [0, 'turn/start', { turn: 2 }],
+  [0, 'turn/start', { turn: 1 }],
   [0, 'user/message', { role: 'user', content: [{ type: 'text', text: '承認シートを作って' }] }],
-  [0, 'step/start', { turn: 2, step: 1 }],
-  [4100, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'ツール名と理由を示す承認シートを作ります。' }, { type: 'tool-call', id: 'approval-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }] }, stream: [{ time: origin, chunk: { type: 'block-start', index: 0, blockType: 'text' } }, { time: origin + 4100, chunk: { type: 'finish', reason: { kind: 'tool-calls' } } }], usage: { inputTokens: 11668, outputTokens: 812, totalTokens: 12480, cacheReadTokens: 0, cacheWriteTokens: 0 } }],
-  [4100, 'tool/call', { turn: 2, step: 1, callId: 'approval-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }],
-  [5300, 'tool/result', { turn: 2, step: 1, message: { role: 'tool', toolCallId: 'approval-bash', content: [{ type: 'text', text: '承認シートのテストが見つかりません。' }], isError: true }, error: { name: 'Error', code: 'EXIT_1' } }],
-  [5300, 'tool/call', { turn: 2, step: 1, callId: 'approval-read', name: 'read_file', arguments: '{"path":"web/src/features/interactions/InteractionSheet.tsx"}' }],
-  [5400, 'tool/result', { turn: 2, step: 1, message: { role: 'tool', toolCallId: 'approval-read', content: [{ type: 'text', text: '承認シートの実装を確認しました。' }] } }],
-  [18400, 'step/end', { turn: 2, step: 1 }],
-  [18400, 'turn/end', { turn: 2, reason: 'completed' }],
-  [20000, 'turn/start', { turn: 3 }],
+  [0, 'step/start', { turn: 1, step: 1 }],
+  [4100, 'assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'ツール名と理由を示す承認シートを作ります。' }, { type: 'tool-call', id: 'approval-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }, { type: 'tool-call', id: 'approval-read', name: 'read_file', arguments: '{"path":"web/src/features/interactions/InteractionSheet.tsx"}' }] }, stream: [{ time: origin, chunk: { type: 'block-start', index: 0, blockType: 'text' } }, { time: origin + 4100, chunk: { type: 'finish', reason: { kind: 'tool-calls' } } }], usage: { inputTokens: 11668, outputTokens: 812, totalTokens: 12480, cacheReadTokens: 0, cacheWriteTokens: 0 } }],
+  [4100, 'tool/call', { turn: 1, step: 1, callId: 'approval-bash', name: 'bash', arguments: '{"command":"pnpm test"}' }],
+  [5300, 'tool/result', { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'approval-bash', content: [{ type: 'text', text: '承認シートのテストが見つかりません。' }], isError: true }, error: { name: 'Error', code: 'EXIT_1' } }],
+  [5300, 'tool/call', { turn: 1, step: 1, callId: 'approval-read', name: 'read_file', arguments: '{"path":"web/src/features/interactions/InteractionSheet.tsx"}' }],
+  [5400, 'tool/result', { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'approval-read', content: [{ type: 'text', text: '承認シートの実装を確認しました。' }] } }],
+  [18400, 'step/end', { turn: 1, step: 1 }],
+  [18400, 'turn/end', { turn: 1, reason: 'completed' }],
+  [20000, 'turn/start', { turn: 2 }],
   [20000, 'user/message', { role: 'user', content: [{ type: 'text', text: 'テストも追加して' }] }],
-  [20000, 'step/start', { turn: 3, step: 1 }],
+  [20000, 'step/start', { turn: 2, step: 1 }],
 ])
 
 export const sharedSessions: readonly { summary: SessionSummary; records: readonly SessionWireEvent[] }[] = [
