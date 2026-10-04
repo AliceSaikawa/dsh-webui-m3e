@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { onRemoteEvent } from '../web/src/dsh/remote-events.ts'
+import type { AgentContext } from '../web/src/dsh/services.ts'
 
 test('通常放送は追加引数を全購読者へ渡し、単一の配列 payload を展開しない', async () => {
   const ctx = createMockContext()
@@ -43,9 +44,14 @@ test('既存の単一 payload・遅延オプション・承認 waterfall の nex
   try {
     const on = ctx.remote.$on as (event: string, handler: (this: unknown, payload: unknown, next: () => Promise<unknown>) => unknown) => () => void
     const received: unknown[] = []
-    const payload = { agent: MOCK_IDS.sessions.readme }
+    const payload = { agent: MOCK_IDS.sessions.readme, toolName: 'bash', callId: 'merge-approval', reason: '確認' }
     on('approval/request', async function (value, next) {
-      received.push(value, ctx.sessions.scopeOf(this))
+      // The real gateway resolves agent IDs to Contexts and adds the delivery signal.
+      const { agent, signal, ...request } = value as Omit<typeof payload, 'agent'> & { agent: AgentContext; signal: AbortSignal }
+      assert.equal(agent, this)
+      assert.ok(signal instanceof AbortSignal)
+      assert.equal(signal.aborted, false)
+      received.push({ ...request, agent: ctx.sessions.scopeOf(agent) }, ctx.sessions.scopeOf(this))
       return `first:${await next()}`
     })
     on('approval/request', () => 'allowed-once')
