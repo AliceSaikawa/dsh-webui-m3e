@@ -19,10 +19,13 @@ export function useConversationSelection(pathname: string): void {
   useLayoutEffect(() => { visit(sessionId) }, [visit, sessionId])
   useLayoutEffect(() => {
     if (sessionId !== undefined && (list.phase !== 'ready' || workspaceList.phase !== 'ready')) return
+    let active = true
     void owner.select(sessionId).catch(error => {
-      if (owner.state.getSnapshot().sessionId !== sessionId) return
+      if (!active || owner.state.getSnapshot().sessionId !== sessionId) return
+      console.error(`会話を選択できませんでした: ${sessionId}`, error)
       showSnackbar(remoteErrorMessage(error, '会話を開けませんでした。もう一度お試しください。'))
     })
+    return () => { active = false }
   }, [owner, sessionId, list.phase, workspaceList.phase])
 }
 
