@@ -277,6 +277,8 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   }
   function retire(model: SessionModel, requestId: string | undefined, retirement: PendingSubmissionRetirement, client = generations.get(model.summary.id)?.client) {
     if (!requestId || !client) return
+    // A latched observation owns its next-frame callback, including during teardown.
+    if (retirement.reason === 'failed' && client.retiring.has(requestId)) return
     const pending = client.submissions.get(requestId)
     if (!pending) return
     client.submissions.delete(requestId)
@@ -319,7 +321,6 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     let jumpTarget = 0
     const client = { start, snapshot, events: eventSource, submissions: new Map<string, BeginSubmissionInput>(), retiring: new Set<string>(), opening: undefined as Promise<void> | undefined, opened: false, live: true, face: undefined as unknown as SessionFace }
     const retireSubmission = (requestId: string | undefined, retirement: PendingSubmissionRetirement) => {
-      if (requestId && retirement.reason === 'failed' && client.retiring.has(requestId)) return
       retire(model, requestId, retirement, client)
     }
     const face: SessionFace = {
@@ -398,11 +399,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           else deliver()
         }
         snapshot.update(state => ({ ...state, blank: false }))
-        if (options.promptResponse) {
-          const response = await options.promptResponse(summary.id)
-          if (!response.ok) return rejectPrompt(response.error.code, response.error.message, response.error.details)
-        }
-        return accepted()
+        const response = options.promptResponse ? await options.promptResponse(summary.id) : accepted()
+        if (signal?.aborted) return rejectPrompt('gateway/cancelled', '送信を取り消しました。')
+        if (!response.ok) return rejectPrompt(response.error.code, response.error.message, response.error.details)
+        return response
       },
       async updateQueue(itemId, action) {
         await Promise.resolve()

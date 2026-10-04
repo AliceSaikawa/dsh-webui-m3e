@@ -163,6 +163,23 @@ test('S6A08 切断・取消・受付後応答喪失は実物のコードで届�
 })
 
 test('S6A09 archiveは稼働中の子孫と自分のjobだけを拒否・停止する', async t => {
+  // Isolate every reason to reject: another activity must not mask a missing check.
+  for (const activity of ['child', 'grandchild', 'owned-job'] as const) {
+    const isolated = createMockContext(); t.after(() => isolated.dispose())
+    assert.equal(isolated.sessions.list.getSnapshot().byId[id]?.running, false)
+    if (activity === 'owned-job') {
+      isolated.mock.setJobs(id, [{ id: 'isolated-job', owner: id, kind: 'bash', label: '処理', status: 'running', startedAt: 0, output: { total: 0, earliest: 0 } }])
+    } else {
+      child(isolated, 'child', id, true)
+      if (activity === 'grandchild') {
+        isolated.mock.setSessionState('child', { running: false })
+        child(isolated, 'grandchild', 'child', true)
+      }
+      isolated.mock.setJobs(id, [])
+    }
+    await assert.rejects(isolated.workspaces.archiveSession(id), /workspace\/session-active/, activity)
+    assert.equal(isolated.workspaces.list.getSnapshot().archivedSessionIds.includes(id), false, activity)
+  }
   const ctx = createMockContext(); t.after(() => ctx.dispose())
   child(ctx, 'child', id, true); child(ctx, 'grandchild', 'child', true)
   const job = (name: string, owner?: string): SessionJob => ({ id: name, owner, kind: 'bash', label: name, status: 'running', startedAt: 0, output: { total: 0, earliest: 0 } })
@@ -246,11 +263,17 @@ test('S6A14 通常会話の開いた履歴から再接続後に投影を復元�
 test('S6A15 検索はイベントを跨がず最強一致の抜粋を240 code pointにする', async t => {
   const ctx = createMockContext(); t.after(() => ctx.dispose())
   const add = (name: string, texts: string[]) => ctx.mock.addSession({ id: name, cwd: '/mock', displayTitle: name, running: false, blank: false, updatedAt: 0 }, texts.map((text, i) => event('user/message', i, { content: [{ type: 'text', text }] })))
-  add('cross', ['first', 'second']); add('weak', ['needle']); add('strong', ['needle needle ' + '😀'.repeat(300)])
+  const strongest = 'needle needle ' + '😀'.repeat(300)
+  add('cross', ['first', 'second']); add('weak', ['needle']); add('strong', ['needle weak earlier', strongest])
   assert.deepEqual(await ctx.sessions.search('first\nsecond', new AbortController().signal), { ok: true, value: { items: [], hasMore: false } })
   const result = await ctx.sessions.search('needle', new AbortController().signal)
   assert.equal(result.ok, true)
-  if (result.ok) { assert.deepEqual(result.value.items.map(item => item.sessionId), ['strong', 'weak']); assert.equal(Array.from(result.value.items[0]!.snippet).length, 240); assert.ok(result.value.items[0]!.snippet.endsWith('😀')) }
+  if (result.ok) {
+    assert.deepEqual(result.value.items.map(item => item.sessionId), ['strong', 'weak'])
+    assert.equal(result.value.items[0]!.snippet, Array.from(strongest).slice(0, 240).join(''))
+    assert.equal(Array.from(result.value.items[0]!.snippet).length, 240)
+    assert.ok(result.value.items[0]!.snippet.endsWith('😀'))
+  }
 })
 
 test('S6A16 lifecycleは通知をまとめ例外を隔離しeventSourceは同期のまま', async t => {
@@ -325,4 +348,98 @@ test('S6A20 期限内回答と遅延回答のbatch・二重受付・記録・投
   t.mock.timers.tick(0); await flush()
   assert.deepEqual(ctx.mock.getProjection(id, 'userQuestions'), { active: [], settled: [{ callId: 'early', answers: answer.answers }, { callId: 'late', answers: answer.answers }] })
   assert.deepEqual((ctx.mock.getRecords(id).at(-1)?.data as any).source, { kind: 'user-question-reply', callId: 'late', outcome: 'answered' })
+})
+
+for (const teardown of ['release', 'dispose'] as const) test(`S6A21 ${teardown}は観測済み退役の添付と理由を次フレームまで保つ`, async t => {
+  const frames: (() => void)[] = [], observed: PendingSubmissionRetirement[] = [], unobserved: PendingSubmissionRetirement[] = []
+  const ctx = createMockContext({ scheduleFrame: callback => frames.push(callback) }); t.after(() => ctx.dispose())
+  const reference = ctx.sessions.retain(id, { source: 'test' })
+  const { session } = await reference.ready
+  const sent = session.beginSubmission({ mode: 'queue', text: '観測済み', attachments: [], onRetire: value => observed.push(value) })
+  assert.equal((await session.prompt([{ type: 'text', text: '観測済み' }, image], 'queue', undefined, sent.requestId)).ok, true)
+  const record = ctx.mock.getRecords(id).find(row => row.type === 'user/message' && (row.data as any).source?.rpcId === sent.requestId)!
+  const attachment = (record.data as any).content.find((part: any) => part.type === 'image').attachment
+  assert.ok(attachment.attachmentId); assert.equal(attachment.bytes, atob(imageBase64).length)
+  const unsent = session.beginSubmission({ mode: 'queue', text: '未観測', attachments: [], onRetire: value => unobserved.push(value) })
+  assert.equal(frames.length, 1)
+  if (teardown === 'release') reference.release(); else ctx.dispose()
+  assert.deepEqual(observed, [])
+  assert.deepEqual(unobserved, [{ reason: 'failed' }])
+  assert.deepEqual(session.getSnapshot().pendingSubmissions.map(row => row.requestId), [sent.requestId])
+  assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 0)
+  frames[0]!()
+  assert.deepEqual(observed, [{ reason: 'observed', attachments: [attachment] }])
+  assert.deepEqual(session.getSnapshot().pendingSubmissions, [])
+  frames[0]!(); sent.abandon(); unsent.abandon(); reference.release(); ctx.dispose()
+  assert.equal(observed.length, 1); assert.equal(unobserved.length, 1)
+})
+
+for (const responseOk of [true, false]) test(`S6A22 受付後取消は応答ok=${responseOk}でもgateway/cancelledになり記録を残す`, async t => {
+  const response = deferred<RemoteResult<{ accepted: true }>>()
+  const ctx = createMockContext({ promptResponse: () => response.promise }); t.after(() => ctx.dispose())
+  const face = (await ctx.sessions.retain(id, { source: 'test' }).ready).session
+  const caller = new AbortController()
+  const pending = face.prompt([{ type: 'text', text: '取消前に受付済み' }], 'queue', caller.signal, 'cancel-after-admission')
+  await flush()
+  const admitted = () => ctx.mock.getRecords(id).filter(row => row.type === 'user/message' && (row.data as any).source?.rpcId === 'cancel-after-admission')
+  const before = admitted(); assert.equal(before.length, 1)
+  caller.abort()
+  response.resolve(responseOk ? { ok: true, value: { accepted: true } } : { ok: false, error: { code: 'gateway/internal', message: '応答失敗', details: {} } })
+  const result = await pending
+  assert.equal(result.ok, false)
+  if (!result.ok) {
+    assert.equal(result.error.code, 'gateway/cancelled')
+    assert.equal(promptOutcomeIsUnknown(new RemoteCallError(result.error)), true)
+    assert.deepEqual(face.getSnapshot().promptError, { op: 'send', error: result.error })
+  }
+  assert.deepEqual(admitted(), before)
+})
+
+test('S6A23 attachWaitはsignal省略でも保持しdisposeで期限を再開する', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100 })
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  on(ctx, 'user-questions/request', () => new Promise(() => {}))
+  const rpc = ctx.remote.userQuestions as MockUserQuestionsRemote
+  const pending = ctx.mock.emitTimedQuestion(id, { callId: 'optional-signal', questions, timeoutMs: 50 })
+  void pending.catch(() => {}) // Teardown may cancel it when the optional-argument assertion fails.
+  const stream = rpc.attachWait(id, 'optional-signal')
+  const iterator = stream[Symbol.asyncIterator]()
+  assert.deepEqual(await iterator.next(), { done: false, value: { remainingMs: 50 } })
+  t.mock.timers.tick(100); await flush()
+  assert.equal(ctx.mock.getProjection<MockQuestionProjection>(id, 'userQuestions')?.active[0]?.state, 'open')
+  const ended = iterator.next()
+  stream.dispose(); await ended; t.mock.timers.tick(0); await flush()
+  assert.deepEqual(await pending, { pending: true, callId: 'optional-signal' })
+  assert.equal(ctx.mock.getProjection<MockQuestionProjection>(id, 'userQuestions')?.active[0]?.state, 'continued')
+})
+
+for (const failure of ['cancel', 'handler'] as const) test(`S6A24 質問の${failure}失敗はactiveだけを除き再取得でも復活しない`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 100 })
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const previous: MockQuestionProjection = {
+    active: [{ callId: 'other-open', questions, state: 'open' }, { callId: 'other-continued', questions, state: 'continued' }],
+    settled: [{ callId: 'answered', answers: answer.answers }],
+  }
+  ctx.mock.setProjection(id, 'userQuestions', previous)
+  const caller = new AbortController(), handlerError = new Error('質問ハンドラーの失敗')
+  on(ctx, 'user-questions/request', () => {
+    if (failure === 'handler') throw handlerError
+    return new Promise(() => {})
+  })
+  const pending = ctx.mock.emitTimedQuestion(id, { callId: 'failed-question', questions, timeoutMs: 50, signal: caller.signal })
+  assert.equal(ctx.mock.getProjection<MockQuestionProjection>(id, 'userQuestions')?.active.at(-1)?.state, 'open')
+  const rejected = assert.rejects(pending, error => failure === 'cancel' ? (error as { code?: string }).code === 'ASK_ABORTED' : error === handlerError)
+  if (failure === 'cancel') caller.abort()
+  await rejected
+  assert.deepEqual(ctx.mock.getProjection(id, 'userQuestions'), previous)
+  ctx.mock.updateList(list => { list.projectionsBySession = Object.fromEntries(Object.entries(list.projectionsBySession).filter(([key]) => key !== id)) })
+  await ctx.sessions.refreshProjections(id)
+  const { session } = await ctx.sessions.retain(id, { source: 'test' }).ready
+  assert.deepEqual(session.projections.faceOf('userQuestions').getSnapshot(), previous)
+  const rpc = ctx.remote.userQuestions as MockUserQuestionsRemote
+  assert.deepEqual(await rpc.answer(id, 'failed-question', answer), { ok: true, value: false })
+  const stream = rpc.attachWait(id, 'failed-question', new AbortController().signal)
+  assert.deepEqual(await stream[Symbol.asyncIterator]().next(), { done: true, value: undefined })
+  stream.dispose(); t.mock.timers.tick(100); await flush()
+  assert.deepEqual(ctx.mock.getProjection(id, 'userQuestions'), previous)
 })

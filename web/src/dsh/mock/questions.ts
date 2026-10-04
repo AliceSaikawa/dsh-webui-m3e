@@ -9,7 +9,7 @@ export interface MockQuestionProjection {
 }
 export interface MockWaitStream extends AsyncIterable<{ remainingMs: number }> { dispose(): void }
 export interface MockUserQuestionsRemote {
-  attachWait(sessionId: string, callId: string, signal: AbortSignal): MockWaitStream
+  attachWait(sessionId: string, callId: string, signal?: AbortSignal): MockWaitStream
   answer(sessionId: string, callId: string, answer: MockQuestionAnswer): Promise<RemoteResult<boolean>>
 }
 const questionError = (code: string) => Object.assign(new Error(code), { name: 'UserQuestionError', code })
@@ -36,7 +36,7 @@ export function createMockQuestions(hooks: {
   const remote: MockUserQuestionsRemote = {
     attachWait(sessionId, callId, signal) {
       const lifetime = new AbortController()
-      const claimSignal = AbortSignal.any([signal, lifetime.signal, hooks.connectionSignal()])
+      const claimSignal = AbortSignal.any([...(signal ? [signal] : []), lifetime.signal, hooks.connectionSignal()])
       const stream = (async function* () {
         if (!hooks.live(sessionId)) throw questionError('CALLER_NOT_LIVE')
         const wait = waits.get(sessionId)?.get(callId)
@@ -105,8 +105,11 @@ export function createMockQuestions(hooks: {
         return result
       } catch (error) {
         const reason = wait.controller.signal.aborted ? wait.controller.signal.reason : error
-        if ((reason as { code?: string })?.code !== 'ASK_TIMED_OUT') throw reason
         const current = projection(sessionId)
+        if ((reason as { code?: string })?.code !== 'ASK_TIMED_OUT') {
+          hooks.set(sessionId, { ...current, active: current.active.filter(q => q.callId !== input.callId) })
+          throw reason
+        }
         hooks.set(sessionId, { ...current, active: current.active.map(q => q.callId === input.callId ? { ...q, state: 'continued' } : q) })
         return { pending: true, callId: input.callId }
       } finally {
