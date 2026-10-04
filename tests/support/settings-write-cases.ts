@@ -4,6 +4,9 @@ export interface SettingWriteCase { id: string; ns: string; patch: SettingObject
 
 /** The auditor's 31 inputs, with outcomes independently verified against DSH. */
 export const settingsWriteCases: SettingWriteCase[] = [
+  { id: 'W33', ns: 'llm-pi-ai', patch: { providers: { openai: { maxRetries: 2 } } }, ok: false },
+  { id: 'W34', ns: 'llm-pi-ai', patch: { providers: { openai: { provider: 'openai' } } }, ok: false },
+  { id: 'W35', ns: 'llm-pi-ai', patch: { providers: { openai: { maxRetryDelayMs: 1000 } } }, ok: false },
   { id: 'W32', ns: 'agent-loop', patch: { maxParallelToolCalls: 1.000000001 }, ok: false },
   {
     "id": "W01",

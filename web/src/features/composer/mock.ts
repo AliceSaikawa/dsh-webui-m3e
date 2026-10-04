@@ -2,6 +2,7 @@ import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
 import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionCatalog, PermissionSelection } from './api.ts'
 import { installPermissionCatalogMock } from './mock-permission-catalog.ts'
+import { readMockModelCatalog, saveMockModelDefault } from '../settings/mock-models.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -80,7 +81,7 @@ export function extendMock(kit: MockKit): void {
     },
   })
   kit.addRemote('session', {
-    async modelCatalog() { return success(structuredClone(mockModelCatalog)) },
+    async modelCatalog() { return success(readMockModelCatalog(kit, mockModelCatalog)) },
     async selectModel(input: ModelSelection & { sessionId: string }) {
       const testWindow = globalThis as typeof globalThis & {
         __m3eTestSelectModelDelay?: number
@@ -90,7 +91,7 @@ export function extendMock(kit: MockKit): void {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       if (testWindow.__m3eTestSelectModelFailure) return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
       if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。')
-      const model = mockModelCatalog.groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
+      const model = readMockModelCatalog(kit, mockModelCatalog).groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
       if (!model || (input.reasoningEffort !== undefined && !model.reasoning?.efforts.some((effort) => effort.id === input.reasoningEffort))) {
         return failure('session/model-unavailable', 'このモデルや考える深さは選べません。')
       }
@@ -100,6 +101,7 @@ export function extendMock(kit: MockKit): void {
       kit.updateList(state => { current = state.byId[input.sessionId]?.projectionValues?.modelSelection as ModelSelectionProjection | undefined })
       const projection: ModelSelectionProjection = { lastUsed: current?.lastUsed ?? null, next: value }
       kit.setProjection(input.sessionId, 'modelSelection', projection)
+      saveMockModelDefault(kit, value)
       return success({ selected: value })
     },
   })

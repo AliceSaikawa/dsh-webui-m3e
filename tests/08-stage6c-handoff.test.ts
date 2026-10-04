@@ -1,6 +1,4 @@
-/** Run explicitly after tmp/stage6c-handoff.md is applied by the file owner.
- * These are wiring checks for the protected file, not substitute implementations.
- * Before handoff all three fail; the ordinary suite reports these pending failures too. */
+/** Integration checks for the settings RPC wiring, including the former handoff. */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'

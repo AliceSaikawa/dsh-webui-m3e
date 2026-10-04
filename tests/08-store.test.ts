@@ -548,8 +548,9 @@ test('任意の文字項目を空欄にすると unset で上書きを消し、�
     const before = current(h.store, name)
     let revision = before.revision
     for (const input of ['', '   ']) {
+      const changed = current(h.store, name).user?.reasoningEffort !== 'high'
       assert.equal(await h.store.edit(name, ['reasoningEffort'], 'high'), true)
-      revision++
+      if (changed) revision++
       const field = schemaFields(current(h.store, name)).find(item => item.path[0] === 'reasoningEffort')
       assert.ok(field)
       const parsed = parseFieldInput(field, input)

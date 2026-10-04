@@ -16,9 +16,9 @@ export function GoalScreen({ sessionId }: { sessionId: string }) {
 }
 
 function GoalContent({ sessionId }: { sessionId: string }) {
-  const { remote } = useDsh()
+  const { remote, connection } = useDsh()
   const { connected } = useConnection()
-  const { projection, snapshot } = useSession(sessionId)
+  const { projection, snapshot, face } = useSession(sessionId)
   const projected = projection<GoalProjection | null>('goal')
   const [observed, setObserved] = useState<GoalObservation>()
   const [busy, setBusy] = useState(false)
@@ -48,15 +48,15 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     setActivationError(false)
     setActivationReady(false)
-    if (!goals || !connected || !goal) return
+    if (!goals || !connected || !goal || !face) return
     const watcher = watchGoalActivation(remote, goals, sessionId, value => {
       setLiveActivation(previous => updateGoalActivation(goal, previous, value))
       setActivationError(false)
       setActivationReady(true)
-    }, () => { setActivationError(true); setActivationReady(false) })
+    }, () => { setActivationError(true); setActivationReady(false) }, { connection: connection.state, session: face })
     void watcher.refresh()
     return () => watcher.dispose()
-  }, [remote, goals, sessionId, goal?.id, goal?.revision, connected, snapshot.running, activationRefresh])
+  }, [remote, goals, sessionId, goal?.id, goal?.revision, connected, connection, face, activationRefresh])
 
   async function refresh() {
     if (!goals || lock.current) return

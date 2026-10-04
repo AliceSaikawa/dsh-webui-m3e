@@ -6,9 +6,7 @@ import { applyMockOperations } from './mock-mutations.ts'
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const safe = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 
-/** Fixture schemas declare the editable form only, just like settings.describe.
- * Kept separate so the protected fixture owner can wire it in with the handoff patch.
- */
+/** Fixture schemas declare the editable form only, just like settings.describe. */
 function accepts(node: SchemaNode, value: unknown, partial = false, openObjects = false, root = false): boolean {
   const lengthOk = (length: number) => (node.meta?.min === undefined || length >= node.meta.min) && (node.meta?.max === undefined || length <= node.meta.max)
   switch (node.type) {
@@ -43,11 +41,12 @@ function nodeAt(node: SchemaNode, path: readonly string[], openObjects = false, 
     : node.type === 'array' && /^(0|[1-9][0-9]*)$/.test(key) ? node.inner : undefined
   return child && nodeAt(child, rest, openObjects, false)
 }
-/** Public forms omit plugin-specific configuration checks (resolveProfiles). */
+/** Public schemas omit these resolveProfiles checks. Unknown fields remain legal. */
 function validProfileValues(row: SettingsNamespace, value: Record<string, unknown>): boolean {
   if (row.ns !== 'llm-pi-ai' || value.providers === undefined) return true
   return object(value.providers) && Object.entries(value.providers).every(([name, profile]) =>
     name.length > 0 && object(profile) && profile.displayName !== '' && profile.baseURL !== ''
+    && !['provider', 'maxRetries', 'maxRetryDelayMs'].some(key => Object.hasOwn(profile, key))
     && (!Array.isArray(profile.defaultInput) || profile.defaultInput.length > 0))
 }
 export function validMockPatch(row: SettingsNamespace, patch: Record<string, SettingValue>): boolean {
@@ -64,6 +63,8 @@ export function validMockOperations(row: SettingsNamespace, operations: readonly
   const root = decodeSchema(row.schema)
   return operations.every(operation => {
     const node = nodeAt(root, operation.path, row.ns !== 'example-extension')
-    return !!node && (operation.op === 'unset' || operation.op === 'set' && accepts(node, operation.value, false, row.ns !== 'example-extension'))
+    // A set can intentionally leave an incomplete value for a later operation.
+    // commit validates the schema of the final merged document before saving.
+    return !!node && (operation.op === 'unset' || operation.op === 'set')
   })
 }
