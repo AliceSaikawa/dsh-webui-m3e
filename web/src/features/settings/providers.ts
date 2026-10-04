@@ -4,7 +4,7 @@ import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
-export const PROVIDER_EVENTS = ['credentials/reference-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
+export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
 
 export interface ProviderEntry { id: string; name: string }
 export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[] }

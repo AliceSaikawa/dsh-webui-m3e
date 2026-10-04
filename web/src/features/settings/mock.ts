@@ -2,6 +2,8 @@ import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
 import type { SettingObject, SettingsDescription, SettingsNamespace, SettingValue } from './schema.ts'
 import type { ProviderAddress, ProviderEntry } from './providers.ts'
+import { validMockOperations, validMockPatch } from './mock-validation.ts'
+import { mockPermissionCatalog } from '../composer/mock.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -14,6 +16,8 @@ const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structured
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 const isObject = (value: SettingValue | undefined): value is SettingObject => typeof value === 'object' && value !== null && !Array.isArray(value)
 const allowedKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
+const validRef = (ref: unknown): ref is string =>
+  typeof ref === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
 
 /** Merge user overrides without sharing mutable objects with callers. */
 function merge(base: SettingObject, patch: SettingObject): SettingObject {
@@ -43,8 +47,8 @@ function set(value: SettingObject, path: readonly string[], next: SettingValue):
   set(value[key] as SettingObject, rest, next)
 }
 
-/** Shapes follow DSH 0.1.5-rc.1: dsh-agent-default-model and dsh-tool-subagent's model selection. */
-function modelFixture(ns: 'agent-default-model' | 'subagent-model-selection'): SettingsNamespace {
+/** Shapes follow DSH 0.2.0-rc.2's public settings views. */
+function modelFixture(ns: 'agent-default-model' | 'subagent-model-selection-settings'): SettingsNamespace {
   if (ns === 'agent-default-model') {
     const base: SettingObject = { provider: 'deepseek', model: 'deepseek-v4' }
     const user: SettingObject = { reasoningEffort: 'high' }
@@ -54,7 +58,7 @@ function modelFixture(ns: 'agent-default-model' | 'subagent-model-selection'): S
       2: { type: 'string', meta: { title: 'モデル', required: true } },
       3: { type: 'string', meta: { title: '推論の強さ' } },
     }
-    return { ns, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user), secrets: [], applies: 'live' }
+    return { ns, autoGenerate: false, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user), secrets: [], applies: 'live' }
   }
   const base: SettingObject = { enabled: false, allowedModels: [] }
   const refs = {
@@ -65,11 +69,11 @@ function modelFixture(ns: 'agent-default-model' | 'subagent-model-selection'): S
     4: { type: 'string', meta: { title: '提供元' } },
     5: { type: 'string', meta: { title: 'モデル' } },
   }
-  return { ns, revision: 1, schema: { uid: 0, refs }, base, user: {}, value: merge(base, {}), secrets: [], applies: 'live' }
+  return { ns, autoGenerate: true, revision: 1, schema: { uid: 0, refs }, base, user: {}, value: merge(base, {}), secrets: [], applies: 'live' }
 }
 
-function fixture(ns: string, name: string, index: number): SettingsNamespace {
-  if (ns === 'agent-default-model' || ns === 'subagent-model-selection') return modelFixture(ns)
+function fixture(ns: string, name: string, _index: number): SettingsNamespace {
+  if (ns === 'agent-default-model' || ns === 'subagent-model-selection-settings') return modelFixture(ns)
   const base: SettingObject = {
     enabled: true,
     name,
@@ -105,11 +109,19 @@ function fixture(ns: string, name: string, index: number): SettingsNamespace {
     dict.protectedInput = 15
     refs[15] = { type: 'string', meta: { title: '保護された項目', role: 'password', description: '値を表示しないための偽データです。' } }
     base.apiKeyEnv = 'DEEPSEEK_API_KEY'
+    dict.apiKeyEnv = 21
+    refs[21] = { type: 'string' }
   }
-  if (ns === 'llm-pi-ai') base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
-  if (ns === 'agent-presets') {
-    base.default = 'default'
-    dict.default = 19
+  if (ns === 'llm-pi-ai') {
+    base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
+    dict.providers = 21
+    refs[21] = { type: 'dict', inner: 22 }
+    refs[22] = { type: 'object', dict: { apiKeyEnv: 23 } }
+    refs[23] = { type: 'string' }
+  }
+  if (ns === 'agent-preset-registry') {
+    base.selectedDefault = 'default'
+    dict.selectedDefault = 19
     refs[19] = { type: 'string', meta: { title: '既定のプリセット' } }
   }
   if (ns === 'agent-loop') {
@@ -128,28 +140,28 @@ function fixture(ns: string, name: string, index: number): SettingsNamespace {
   if (ns === 'permission') {
     base.defaultPreset = 'workspace-write'
     dict.defaultPreset = 16
-    refs[16] = { type: 'union', list: [17, 18], meta: { title: '新しい会話の権限' } }
-    refs[17] = { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } }
-    refs[18] = { type: 'const', value: 'danger-full-access', meta: { description: 'フル アクセス' } }
+    refs[16] = { type: 'string', meta: { title: '新しい会話の権限' } }
   }
-  return { ns, revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user),
+  return { ns,
+    autoGenerate: !ns.startsWith('ui-') && !['permission', 'agent-preset-registry', 'locale', 'llm-deepseek', 'llm-pi-ai'].includes(ns),
+    revision: 1, schema: { uid: 0, refs }, base, user, value: merge(base, user),
     secrets: ns === 'llm-deepseek' ? [{ path: ['protectedInput'], set: true }] : [],
-    applies: index % 3 === 1 ? 'restart' : 'live' }
+    applies: 'live' }
 }
 
 export function extendMock(kit: MockKit): void {
   const definitions = [
     ['agent-default-model', '会話の既定モデル'],
-    ['subagent-model-selection', '補助エージェントのモデル'],
+    ['subagent-model-selection-settings', '補助エージェントのモデル'],
     ['permission', '標準の権限'],
-    ['agent-presets', '基本のプリセット'],
+    ['agent-preset-registry', '基本のプリセット'],
     ['agent-loop', '通常の実行'],
     ['llm-deepseek', 'クラウド提供元'],
     ['llm-pi-ai', '別のクラウド提供元'],
     ['llm-retry', 'モデルの再試行'],
     ['llm-local', 'ローカル提供元'],
     ['web-search-deepseek', '標準の検索'],
-    ['shell', '標準のシェル'],
+    ['bash-sandbox', '標準のシェル'],
     ['locale', '日本語'],
     ['ui-theme', '標準画面の外観'],
     ['ui-onboarding', '標準画面の案内'],
@@ -191,13 +203,18 @@ export function extendMock(kit: MockKit): void {
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
     // Mirrors dsh-tool-subagent's section validator, which rejects this before persisting.
     const next = merge(current.base ?? {}, user)
-    if (current.ns === 'subagent-model-selection' && next.enabled === true
+    if (current.ns === 'subagent-model-selection-settings' && next.enabled === true
       && (!Array.isArray(next.allowedModels) || next.allowedModels.length === 0)) {
       return failure('settings/rejected', 'enabled subagent model selection requires at least one allowed model')
+    }
+    if (current.ns === 'permission'
+      && !mockPermissionCatalog.defaultOptions.some(option => option.value === next.defaultPreset)) {
+      return failure('settings/rejected', '権限の候補から選んでください。')
     }
     current.user = user
     current.value = merge(current.base ?? {}, user)
     current.revision++
+    // The mock kit delivers one payload; the real broadcast also carries the revision.
     await kit.emit('settings/document-updated', current.ns)
     return success(current)
   }
@@ -207,6 +224,9 @@ export function extendMock(kit: MockKit): void {
     async update(ns, patch, expectedRevision) {
       const result = checkWrite(ns, expectedRevision)
       if (!result.ok) return result
+      if (!validMockPatch(result.value, patch)) {
+        return failure('settings/rejected', '公開されていない設定項目か、不正な値です。')
+      }
       return commit(result.value, merge(result.value.user ?? {}, patch))
     },
     async mutate(ns, operations, expectedRevision) {
@@ -216,6 +236,9 @@ export function extendMock(kit: MockKit): void {
         return failure('settings/rejected', '設定項目の場所が不正です。')
       }
       const user = structuredClone(result.value.user ?? {})
+      if (!validMockOperations(result.value, operations)) {
+        return failure('settings/rejected', '公開されていない設定項目か、不正な値です。')
+      }
       for (const operation of operations) {
         if (operation.op === 'set') set(user, operation.path, operation.value)
         else unset(user, operation.path)
@@ -230,20 +253,29 @@ export function extendMock(kit: MockKit): void {
   })
   kit.addRemote('credentials', {
     async describe(refs: string[]) {
+      if (!Array.isArray(refs) || refs.length > 64 || refs.some(ref => !validRef(ref))) {
+        return failure('gateway/bad-request', '参照名を確認してください。')
+      }
       if (keyLookupFails) return failure('credential/unavailable', '登録状況を読み込めません。')
       return success(Object.fromEntries(refs.map(ref => [ref, { configured: registeredKeys.has(ref), writable: writable && keysWritable }])))
     },
     async set(ref: string, value: string) {
+      if (!validRef(ref) || typeof value !== 'string' || !value.length) {
+        return failure('gateway/bad-request', '参照名と値を確認してください。')
+      }
       if (!writable || !keysWritable || rejectWrites || !value.trim()) return failure('credential/rejected', 'キーを登録できません。')
       registeredKeys.add(ref)
       await kit.emit('credentials/reference-updated', ref)
-      return success({ configured: true, writable: true })
+      await kit.emit('credentials/record-updated', undefined)
+      return success(undefined)
     },
     async unset(ref: string) {
+      if (!validRef(ref)) return failure('gateway/bad-request', '参照名を確認してください。')
       if (!writable || !keysWritable || rejectWrites) return failure('credential/rejected', '登録を消せません。')
       registeredKeys.delete(ref)
       await kit.emit('credentials/reference-updated', ref)
-      return success({ configured: false, writable: true })
+      await kit.emit('credentials/record-updated', undefined)
+      return success(undefined)
     },
   })
   kit.scenario('settings-readonly', () => { writable = false })

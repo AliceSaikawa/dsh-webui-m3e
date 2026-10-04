@@ -34,6 +34,7 @@ const messages: Record<string, string> = {
   'workspace/invalid-path': 'このフォルダを利用できません。パスを確認してください。',
   'workspace/name-conflict': '同じ名前のワークスペースがあります。',
   'workspace/move-invalid': 'この場所には移動できません。',
+  'session/provider-credentials-unavailable': 'この提供元の API キーを利用できません。「提供元と API キー」で登録状況を確認してください。',
   'workspace/session-active': '実行中の会話はアーカイブできません。実行を止めてから、もう一度お試しください。',
   'workspace-file/watch-unsupported': 'このファイルの更新通知は利用できません。読み直して確認してください。',
   'directory-picker/unavailable': 'フォルダの選択を利用できません。',

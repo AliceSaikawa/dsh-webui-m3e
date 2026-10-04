@@ -11,6 +11,7 @@ export interface RemoteEventMap {
   'permission-presets/catalog-changed': []
   'commands/change': []
   'credentials/reference-updated': []
+  'credentials/record-updated': unknown[]
   'llm/adapters-updated': []
   'settings/document-updated': [ns: unknown, revision?: unknown]
   'goal/activation-changed': [event: {

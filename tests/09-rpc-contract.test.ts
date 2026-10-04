@@ -49,6 +49,7 @@ test('監視は生成時に開始し対象の直下だけを通知、dispose で
 test('利用できないモデル・監視・実行中アーカイブは理由と次の操作を日本語で案内する', () => {
   const message = (code: string) => remoteErrorMessage({ code, message: 'Host detail', details: {} })
   assert.match(message('session/model-unavailable'), /モデルを選び直して/)
+  assert.match(message('session/provider-credentials-unavailable'), /API キーを利用できません/)
   assert.match(message('session/provider-models-unavailable'), /利用できるモデルがありません/)
   assert.match(message('workspace-file/watch-unsupported'), /更新通知は利用できません。読み直して/)
   assert.match(message('workspace/session-active'), /実行中の会話はアーカイブできません。実行を止めて/)
