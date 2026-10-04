@@ -1,157 +1,202 @@
 # DSH との互換性
 
-この文書は、M3E の画面が DSH（DeepSeek Harness）のどこに依存しているか、どの版で何を確かめたか、版が変わったときに何を直すかをまとめたものです。2026-10-03 に、main `95ea9a0`（0.0.7）を起点として調べました。
+**対応する版は DSH 0.2.0-rc.2 です。0.1.5 系への対応は外しました。** 会話の参照、一覧と投影、V4 記録、設定・ファイルの RPC が変わったため、旧版へ切り替えるだけでは動きません。後方互換の分岐はありません。
 
-対応する版は [src/shared/dsh-compat.ts](../src/shared/dsh-compat.ts) の 1 か所で決めています。
-
-## 結論
-
-- **動く版**：DSH 0.1.5-rc.3 と 0.1.5-rc.2。実物の DSH（偽の LLM）で、下の「実 DSH の統合試験」がすべて通りました。
-- **動かない版**：0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2。どれも起動の段階で止まります。npm の `latest` は 0.2.0-rc.2 なので、**今 DSH を新しく入れた人は M3E を使えません**。
-- 新しい版に合わせるには、下の「新しい版で壊れる境界」の 1〜4 をすべて直す必要があります。1 つずつの小さな修正では足りないことを、実物で確かめました。依存の版を上げる作業（`package.json` の変更）を含むので、今回は行っていません。
+対応版と同梱ライブラリの固定版は [src/shared/dsh-compat.ts](../src/shared/dsh-compat.ts) にあります。この文書は移行後の境界、確認範囲、次に版を上げる手順をまとめます。作業の経過は [99 の実装メモ](design/99-integration.md#2026-10-04dsh-020-rc2-への移行) にあります。
 
 ## 版ごとの確認結果
 
-すべて、このリポジトリの `e2e-dsh/` で、本番から切り離した DSH を起動して確かめました。LLM は偽物です（下の「実 DSH の統合試験」）。
+2026-10-04 の記録を基にしています。文書の起点は、段階 4 までを統合した `722692c` です。段階 5 の RPC は別 worktree の `f365a2f` までの報告に基づき、以下では **「段階 5 報告」** と記します。段階 5 の追加修正と、全段階の統合後の最終結果は指示役からの連絡待ちです。別 worktree の件数を足して最終件数にはしません。
 
-| DSH の版 | 結果 | 止まる場所 |
-|---|---|---|
-| 0.1.5-rc.2 | 15 項目すべて通過※ | ― |
-| 0.1.5-rc.3 | 15 項目すべて通過※（iframe の項目を足す前の 14 項目を 3 回続けて実行し、毎回通過） | ― |
-| 0.1.6-alpha.2 | 起動で停止 | `sessions.open`・`openSubagent`・`clear` がない（境界 3） |
-| 0.1.7-rc.2 | 起動で停止 | プラグインの URL が相対になり、`/m3e/plugins/…` が 404（境界 1） |
-| 0.2.0-rc.2 | 起動で停止 | 0.1.7-rc.2 と同じ |
+| DSH の版・確認時点 | 対応と確認結果 | 型検査・ビルド | 単体試験 | 偽データ e2e |
+|---|---|---|---:|---:|
+| 0.2.0-rc.2・段階 4 統合後 `722692c` | 対応版。実 DSH の内訳は [下表](#実-dsh-の統合試験) | 成功 | 846 件成功 | 124 件成功 |
+| 0.2.0-rc.2・段階 5 報告 `f365a2f`（別 worktree） | RPC の通常経路を確認。レビュー・監査後の修正結果は未確定 | 成功 | 842 件成功 | 125 件成功 |
+| 0.2.0-rc.2・全段階の統合後 | **最終集計待ち** | 未確定 | 未確定 | 未確定 |
+| 0.1.5 系 | 対応対象外。移行後のコードでは再検証していません | ― | ― | ― |
+| 上記以外 | 対応を保証しません。移行後のコードでは未検証です | ― | ― | ― |
 
-※ 15 項目のうち 1 項目は、仕様との既知の差（下の「仕様と実物の差」）が残っていることを確かめる試験です。Playwright は「失敗するはずの試験が失敗した」ことを通過として数えます。正しく動いた経路は 14 項目です。
-
-起動で止まったときは、「この DSH の版に M3E の画面が対応していない可能性があります」という案内と「今の画面に戻す」リンクを出します（0.1.6-alpha.2 と 0.2.0-rc.2 の実物で表示を確かめました）。以前は「ページを読み直してください」とだけ出ていて、読み直しても直らないうえに、今の画面へ戻る方法も出ていませんでした。
+段階 4 統合後は統合報告、段階 5 は仕上げ報告の値です。各段階の保存ログの集計行も確認しました。この文書の更新では試験・ビルドを再実行していません。ビルドには既存のチャンクサイズ警告が残っています。
 
 ## 依存の境界
 
-### 一覧
+DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に必要な分だけ書き写しています。起動時の [contract.ts](../web/src/dsh/contract.ts) は controller の入口を確認しますが、メソッドの存在だけでは引数・戻り値・寿命の一致までは分かりません。下表の `features/` は `web/src/features/` の略で、RPC の行は段階 5 報告に基づきます。
 
-「壊れやすさ」は、DSH の版が変わったときに壊れる見込みです。「高」は実際に新しい版で壊れたもの、「中」は DSH の内部の形に頼っているもの、「低」は DSH が利用者向けに出している入口だけを使うものです。
+| 境界 | 0.2.0-rc.2 の形と注意 | このリポジトリの場所 |
+|---|---|---|
+| 起動グラフ | `__DSH_BOOT__`、`__ModuleLoader__.create()`、相対の `plugins/…`。通信用プラグインと依存だけを個別 URL で読みます | `web/src/dsh/boot.ts`、`boot-graph.ts` |
+| 通信の宛先と `<base>` | M3E の index に `<base href="/">`。プラグイン、RPC、WebSocket、画像送信を Host の `/plugins/…`、`/api/…`、`/api/remote.mux` へ解決します | `src/host/index.ts` の `prepareM3eIndex` |
+| 画面の URL | 通信の基準を変えても画面は `/m3e/` に残します。空のリンク先、hash、検索文字列、戻る操作、PWA scope に注意します | `web/src/app/route-match.ts` の `pageHref`、`router.ts`、`Markdown.tsx` |
+| 共有ライブラリ | cordis 4.0.4、cordis-plugin-loader 1.0.5、dsh-client-store 0.2.0-rc.2 | `package.json`、`src/shared/dsh-compat.ts`、`boot.ts` の `STATIC_MODULES` |
+| 稼働状態 | `loader.await()` の完了だけでは成功を保証しません。`FiberState.ACTIVE = 2`、`importError(id)`、`fiber.await()` で状態と原因を確認します | `boot.ts` の `assertPluginsActive` |
+| 会話の参照 | `retain(target, { source, signal? })`、`using`、`SessionReference.ready/release`。最後の参照を解放すると scope は即時破棄されます | `conversation-selection.ts`、`session-navigation.ts`、`features/composer/delivery.ts` |
+| 参照の借用と失敗 | `scope` / `binding` は保持中だけ使えます。Host 拒否では `ready` が解決しても `openState: 'error'`、中断・解放では拒否になります。signal の中断と明示解放は別です | `web/src/dsh/services.ts`、会話選択・送信処理 |
+| 一覧と子の会話 | 一覧は `ids/byId/phase/projectionsBySession`。子カタログは投影 `subagentCatalog`、行は `id/mode/label` など。`byId` だけにある子と親 ID も扱います | `web/src/dsh/session-navigation.ts`、`session-rows.ts`、`features/session-tools/presentation.ts` |
+| 順番待ち・割り込み | 投影 `inbox` の `next-turn` と利用者由来の `next-step`。編集・削除のメッセージ ID と送信照合の `source.rpcId` を区別します | `web/src/dsh/inbox.ts`、`features/composer/Sheets.tsx` |
+| ジョブ | 一覧から専用の `ctx.jobs.state`、`watchRows` へ移りました。起動グラフにジョブの controller を含めます | `web/src/dsh/jobs.ts`、`boot.ts`、`features/session-tools/JobsScreen.tsx` |
+| 完了して未読 | Host の保存値ではなく、標準画面と同じ観測規則で画面側の `completionUnread` を計算します。永続化しません | `web/src/dsh/completion-status.ts` |
+| V4 記録 | `tool/result` の `message.role` は `tool`。`toolCallId/content/isError` はメッセージ直下です。旧記録は Host が変換します | `features/chat/model.ts`、`tool-output.ts`、`features/trace/model.ts`、`RecordSheet.tsx` |
+| V4 の出どころ・拡張 | `source.kind` に `runtime-context`、`compact-checkpoint`、`plugin:<名前>` など。未知のイベント・ブロックにも `plugin:` が付きます | チャット・トレースの読み取り、`web/src/dsh/session-journal.ts` |
+| 設定の名前空間と保存 | profile の entry id。`subagent-model-selection-settings`、`bash-sandbox`（Windows は `pwsh-sandbox`）、`agent-preset-registry.selectedDefault`。Host の `dsh-settings` と `dsh-config-editor` が profile の `cordis.patch.yml` を編集します | `features/settings/schema.ts`、`store.ts`、`ModelsPanel.tsx`。M3E は RPC を使い、設定ファイルを直接編集しません |
+| 設定の公開範囲 | `.volatile()` の項目だけ公開・編集可能です。`autoGenerate` を尊重し、`applies` は `live` のみ。`revision` は Host のプロセス内で管理します | `features/settings/`。`settings.describe/update/mutate`、通知 `(ns, revision)` |
+| 権限の候補 | 投影 `permissions` は `currentValue` のみ。候補は `permissionPresets.catalog()` と `permission-presets/catalog-changed`。既定値は `defaultOptions/defaultPreset` を使い、`settings.mutate` で `permission` の `defaultPreset` を保存します | `features/composer/api.ts`、`Sheets.tsx`、`features/settings/` |
+| モデル・提供元・API キー | モデルのある提供元だけが利用候補です。キーの照会は登録状態、登録・削除の戻り値は `void`。アカウントに架空のキー参照を作りません | `features/settings/providers.ts`、`features/composer/api.ts`。キー保存の内部実装は保護対象のため未読で、更新放送の正確な引数も未検証です。購読側は引数を使わず再取得します |
+| ファイル RPC | `readBytes(sid, path, { range: { offset, length }, baseFile? }, signal)` のバイト列は `Uint8Array`。`changes(sid, path, signal)` は `RemoteStreamHandle` | `features/session-tools/files.ts`、`FileScreen.tsx`、`FilesScreen.tsx` |
+| その他の RPC・通知 | `commands.list`、`fileReferences.list`、`session.modelCatalog/selectModel`、`directoryPicker`、`goals`、承認・質問の返答 | 各機能の `api.ts`、`operations.ts`、`web/src/dsh/remote-events.ts`、`interactions-store.ts` |
+| エラー・その他の投影 | `RemoteResult` と `RemoteFailure`、エラーコード、`plan/modelSelection/goal/tokenUsage/contextPressure` の形 | `web/src/dsh/remote-result.ts` と各機能。型・案内の試験と、実際のエラー発生は別に確認します |
+| Host・標準画面 | `webServer.register/renderIndex/tapIndex`、`connection.authorizeIndex`、`settings.general.item`。preload の除去は相対 URL にも対応します | `src/host/index.ts`、`src/client/index.tsx` |
+| Host のフォルダ選択 | macOS / Windows の loopback 起動は条件により `native`、SSH 起動の印があれば `browse` になります | `features/home/directory.ts`、`e2e-dsh/dsh-host.ts` |
+| 偽 LLM との接続 | `/v1/messages` と Messages 形式の SSE、`tool_use/tool_result`、画像の `image` ブロック。ブラウザに届く V4 記録とは別の形式です | `e2e-dsh/fake-llm.ts` |
 
-| 区分 | 境界 | このリポジトリの場所 | 壊れやすさ |
-|---|---|---|---|
-| 起動 | `__DSH_BOOT__` の起動グラフ、`__ModuleLoader__.create()`、プラグインの URL の形 | `web/src/dsh/boot.ts`、`boot-graph.ts` | 高（0.1.7 で URL が相対に変わった） |
-| 起動 | 通信用の 8 プラグインの id（`TRANSPORT_PLUGINS`） | `web/src/dsh/boot.ts` | 中（0.2.0 まで同じ id が残っている） |
-| 共有ライブラリ | `@deepseek-ai/cordis`、`@deepseek-ai/cordis-plugin-loader`、`@deepseek-ai/dsh-client-store` の同梱 | `package.json`、`src/shared/dsh-compat.ts`、`web/src/dsh/boot.ts` の `STATIC_MODULES` | 高（版ごとに変わる。0.2.0 は cordis 4.0.4、client-store 0.2.0-rc.2） |
-| 内部の形 | cordis のプラグインが動いている状態の値（`FiberState.ACTIVE = 2`）、`loader.internal` への代入 | `web/src/dsh/boot.ts` | 中（cordis の内部） |
-| controller | `ctx.sessions`、`ctx.workspaces`、`ctx.connection` のメソッドと、状態の形（`SessionListState`、`SessionSnapshot` など） | `web/src/dsh/services.ts`（形の書き写し）、`web/src/dsh/contract.ts`（起動時の確認） | 高（0.1.6 で `open` などが消えた） |
-| RPC | `ctx.remote` の名前空間（`commands`、`fileReferences`、`session`、`settings`、`credentials`、`llm`、`directoryPicker`、`goals`、`workspaceFiles`） | 各機能の 1 ファイルずつ（`composer/api.ts`、`home/directory.ts`、`session-tools/files.ts`・`operations.ts`、`settings/providers.ts`・`store.ts`） | 中（どれも、無いときは機能を止めるだけで、画面全体は落ちない） |
-| 通知 | `ctx.remote.$on` の放送（`commands/change`、`settings/document-updated` など 5 種） | `web/src/dsh/remote-events.ts` | 中 |
-| 通知 | 返事を返す通知（`approval/request`、`user-questions/request`） | `web/src/dsh/interactions-store.ts` | 中 |
-| 記録の形 | 会話の記録の種類（`user/message`、`assistant/message`、`tool/call`、`turn/start` など）と中身の形 | `features/chat/model.ts`、`features/trace/model.ts` | 中（2 か所で別々に読んでいる） |
-| 記録の形 | 投影の名前（`plan`、`permissions`、`modelSelection`、`goal`、`tokenUsage`、`contextPressure`） | 各機能 | 中 |
-| 記録の形 | 子の会話のカタログ行（`kind: 'child'`、`mode`） | `web/src/dsh/session-navigation.ts`（遷移用）、`features/session-tools/presentation.ts`（表示用） | 中 |
-| エラーの形 | `RemoteResult`、エラーコード（`session/not-found`、`gateway/internal` など） | `web/src/dsh/remote-result.ts`、`features/composer/delivery-status.ts` | 中 |
-| Host | `ctx.webServer.register`・`renderIndex`・`tapIndex`、`ctx.connection.authorizeIndex` | `src/host/index.ts`、`src/host/services.d.ts` | 低（0.2.0 でも動いた） |
-| Host | 今の画面の preload の書き方（`<link rel="preload" href="/plugins/…">`） | `src/host/index.ts` の `stripApplicationPreloads` | 高（0.1.7 から相対 URL になり、取り除けない） |
-| 今の画面 | 設定の一般の欄（`settings.general.item`）への行の追加、`package.json` の `dsh.client.inject` | `src/client/index.tsx`、`package.json` | 中 |
-| 今の画面 | Cookie `dsh-webui` と、`/` と `/index.html` だけの切り替え | `src/shared/ui-choice.ts` | 低（M3E 側で決めたもの） |
-| LLM | なし。M3E は LLM に直接つながない | ― | ― |
+### 0.1.5 から 0.2.0 で壊れた境界と、どう直したか
 
-「public API」と呼べるものは、Host 側の `webServer` と `connection.authorizeIndex`、ブラウザ側の `ctx.remote` の RPC と通知くらいです。controller の形、起動グラフ、cordis の内部、記録の形は、DSH が外向けに約束しているものではありません。今の画面の実装を読んで書き写したもので、版が変わると予告なく変わり得ます。
+| 壊れた境界 | 移行で直したこと |
+|---|---|
+| 相対の bootstrap URL が `/m3e/plugins/…` へ向き、起動できませんでした | Host の index に `<base>` を入れ、相対の preload を除去します。ルーターと Markdown のリンクは表示中のページを基準に解決します |
+| RPC・WebSocket・画像の宛先もページの基準 URL に依存していました | Host のルートへそろえました。個別の通信フックを差し込む案も比較し、画像の進捗通知を保てる `<base>` を採用しました |
+| 共有ライブラリと loader の失敗処理が変わりました | 同梱版をそろえ、待機後の稼働状態と失敗原因を確認します。通信失敗を版の不一致に取り違えないようにします |
+| 会話の開閉 API と暗黙の scope 作成がなくなりました | 画面・準備・送信の参照の持ち主を分け、新しい参照を取ってから古い参照を解放します。一覧の準備待ち、失敗後の再選択、離脱・復帰にも対応します |
+| 一覧内の選択・ジョブ・子カタログ、会話内の順番待ち、完了フラグを前提にしていました | 選択は M3E、ジョブは専用 controller、カタログと順番待ちは投影、完了未読は画面側の計算へ移しました |
+| 旧記録の結果ブロックと出どころを読んでいました | V4 だけを読みます。注入文脈と自分の発言を分け、トレースの呼び出しと結果を結合します |
+| 設定、権限候補、ファイル RPC の中身が変わりました | 名前空間、公開項目、候補取得元、バイト列と監視の引数を合わせました（段階 5 報告）。追加修正の完了は下の残件で管理します |
+| 偽 LLM が旧通信形式で応答し、Mac の試験が native のフォルダ選択で止まりました | Messages 形式へ移行し、隔離 Host だけに SSH 起動の印を付けて browse を選びます |
 
-### 新しい版で壊れる境界
+## 仕様と実物の差
 
-0.1.7-rc.2 で、境界を 1 つずつ外しながら、どこまで進むかを実物で確かめました。試した修正はすべて元に戻してあり、コミットしていません。
+[docs/ui-spec.md](ui-spec.md) は今回変更していません。以下は自動的に仕様変更したものではなく、**利用者が決める必要があること**です。
 
-1. **プラグインの URL が相対になった**（0.1.7 から）。起動グラフと `<script src>` が `plugins/??…` になり、`/m3e/` の下では `/m3e/plugins/…` を読みに行って 404 になります。`client-modules: HTML did not preload …` で止まります。試しに Host 側で `/plugins/` に書き換えると、起動グラフの読み込みは通りました。
-2. **通信の宛先が `document.baseURI` 基準になった**（0.1.7 から）。1 を直すと、次は `ws://…/m3e/api/remote.mux` に接続しようとして失敗します。0.1.7 の `dsh-api-gateway` は `__DSH_TRANSPORT__.streamBaseUrl ?? document.baseURI` を使い、画像の送信も `document.baseURI` を使います。試しに index に `<base href="/">` を入れると、接続・一覧・ワークスペースの追加まで通りました。ただし M3E のルーターは `pushState(…, '#' + hash)` を使っているので、`<base>` を入れると URL が `/#/…` に変わります。ルーターも合わせて直す必要があります。
-3. **セッションの開き方が変わった**（0.1.6-alpha.2 から）。`sessions.open`、`openSubagent`、`clear`（0.1.7-rc.2 と 0.2.0-rc.2 では `setSubagentCatalogOpen` と `refreshSubagents` も）がなくなり、参照を数える `retain` / `using` に変わりました。2 まで直した 0.1.7-rc.2 では、会話を開いたところで `Cannot read properties of undefined (reading 'session-…')` が出て落ちました。M3E では `web/src/dsh/conversation-selection.ts`、`session-navigation.ts`、`features/session-tools/SubagentsScreen.tsx`、`features/home/session-navigation.ts`、`features/inbox/session-navigation.ts` が使っています。
-4. **共有ライブラリの版**。0.2.0-rc.2 は cordis 4.0.4、cordis-plugin-loader 1.0.5、dsh-client-store 0.2.0-rc.2 を使います。M3E は 4.0.2 / 1.0.3 / 0.1.5-rc.3 を同梱して渡すので、版を合わせないと、読み込めても中で食い違う恐れがあります。
+| 項目 | 確認した動き・制約 | 決めること |
+|---|---|---|
+| 再接続のバナー | 0.2.0 でも Host 停止中は `connecting` のまま再試行し、進捗バーが続きます。統合試験の観測時間内にバナーは出ません。Host 復帰後の自動再接続は成功しています | 長い再接続をバナーへ切り替える時間、古いデータと手動再接続の案内を決めます |
+| 実行中のアーカイブ | `stopActivity` なしでは `workspace/session-active` で拒否されます。自動停止は加えず、止めてから再試行する案内だけを追加しました（段階 5 報告）。実 DSH でこの UI 操作の再現は未実施です | アーカイブ時に実行を止める操作や確認を設けるかを決めます |
+| 完了して未読 | 標準画面と同じく、観測した実行状態の変化から計算します。起動時の待機中の一覧は未読にせず、会話を開く・再実行する・削除すると消します。保存しないため再読み込み後は引き継ぎません | 端末間や再読み込み後にも未読を保持するかを決めます |
+| 設定項目・反映時期 | 新名前空間の公開項目だけを扱い、`autoGenerate: false` は汎用フォームに出しません。既存の専用画面は維持し、反映は `live` のみです（段階 5 報告） | 仕様書の旧名前空間と再起動後の反映の説明を、今後どう改訂するかを決めます |
+| アカウントでのログイン | 利用可能なアカウント提供元だけを表示する処理があります。ログイン、解除、失効、ログイン要求の画面は未対応で、ログイン済み実機も未検証です | M3E にアカウント操作を追加するかを決めます。通常の Host へのログインとは別です |
+| V4 で増えた記録 | `developer/message` のツール増減は読み飛ばします。標準画面には文脈として表示があります。`forked` は終了境界として扱い、専用の理由表示は足していません | ツール増減や分岐終了の表示を追加するかを決めます。未知ブロックは既存の非対応表示、未知イベントは読み飛ばしです |
+| 期限付きの質問 | 待ち続ける既定の質問への返答を確認しています。期限付き待機と `attachWait` は未対応です（段階 5 報告） | 期限付きの質問を扱う場合の表示と回答方法を決めます |
+| native のフォルダ選択 | OS のダイアログを選ぶ Host では、ブラウザのフォルダ一覧を使う経路が拒否されました。統合試験は browse に限定します | ローカルの native 方式も M3E で扱うかを決めます |
 
-1 と 2 は Host 側か起動処理だけで直せる見込みです。3 は会話を開く処理の作り直しで、4 は依存の更新です。4 つを合わせて、別の作業として行うのがよいと考えます。
+`?mock&scenario=disconnected` は状態を直接作る偽データです。実 DSH の Host 停止時に同じ状態へ移る証拠にはなりません。認証失効時の接続状態も未検証です。
 
-### 仕様と実物の差
+### 段階 5 の最終報告で確認すること
 
-- **接続が切れたときのバナーが出ない**。`docs/ui-spec.md` の「接続が切れたとき」では、再接続に失敗したら進捗バーからバナー（「DSH との接続が切れました」、何分前のデータか、「再接続」ボタン）に切り替えることになっています。実物の DSH 0.1.5-rc.3 では、Host を止めても接続の状態が `connecting` のまま再試行を続けるので、90 秒待ってもバナーに切り替わりませんでした。細い進捗バーが出続けるだけで、古いデータを見ていることも、手で再接続する方法も分かりません。Host が戻れば、約 1 秒で自動で再接続します。直すには、一定時間 `connecting` が続いたらバナーを出すなどの画面の決まりが必要です。仕様を決める必要があるので直していません。統合試験では「既知の差」として、失敗することを確かめる試験（`test.fail`）にしてあります。
-- 偽データの `scenario=disconnected` は `disconnected` の状態を直接作っています。実物で `disconnected` になる条件（認証の失効など）は確かめていません。
+以下は仕様として確定した制約ではなく、レビュー・監査後の修正結果待ちです。
 
-## 今回変えたこと
-
-- **版の決まりを 1 か所に**：`src/shared/dsh-compat.ts` に、対応する DSH の版と、同梱ライブラリの固定版を置きました。`tests/dsh-compat.test.ts` が `package.json` と食い違っていないかを確かめます。
-- **起動時の確認**：`web/src/dsh/contract.ts` に、M3E が呼ぶ controller のメソッドを並べ、起動の直後に 1 回だけ揃っているかを確かめます。足りなければ、起動の失敗として版の案内を出します。偽データの ctx がこの一覧を満たしていることも単体試験で確かめます。
-- **起動に失敗したときの案内**：`web/src/main.tsx`。失敗の理由を分け、起動の決まりで止まったときだけ「版が合っていない可能性」を出します。通信の一時的な失敗まで版のせいにはしません。Host が描いたページなら、どちらの場合も「今の画面に戻す」（`/?ui=classic`）を出します。
-- **放送の購読を 1 か所に**：`ctx.remote.$on` を機能ごとに型を書き換えて呼んでいた 5 か所を、`web/src/dsh/remote-events.ts` の `onRemoteEvent` に寄せました。イベントの名前と中身の形はこのファイルだけに書きます。動きは前と同じです（`$on` がない Host では何もしない）。
-- **子の会話のカタログ行の読み取りを 1 か所に**：同じ読み取りが `web/src/dsh/session-navigation.ts`、`features/home/session-navigation.ts`、`features/inbox/session-navigation.ts` の 3 か所にありました。`subagentCatalogAddress` に寄せ、残りの 2 か所はそれを呼ぶだけにしました。開く手順そのものは変えていません。
-- **実 DSH の統合試験**：`e2e-dsh/`（下の節）。
-- `e2e/playwright.config.ts` と `e2e-dsh/playwright.config.ts` は、環境変数 `M3E_CHROMIUM_PATH` でブラウザの場所を指定できます。
-
-## 変えなかったことと理由
-
-- **新しい DSH への対応**：上の 1〜4 が必要で、依存の更新（`package.json`）とセッションの開き方の作り直しを含みます。大きな書き直しなので、必要性と範囲を確かめたうえで、別の作業にしました。
-- **各機能の RPC の型をまとめて `web/src/dsh/` に移すこと**：今は機能ごとに 1 ファイルにまとまっていて、RPC が無い Host では機能だけを止める作りです。移しても直す場所の数は変わらず、各機能の設計書の担当範囲を大きく動かすことになるので、見送りました。
-- **会話の記録を読む処理の統一**（`chat/model.ts` と `trace/model.ts`）：表示の目的が違い、統一には両方の作り直しが要ります。
-- **接続が切れたときのバナー**：上の「仕様と実物の差」のとおり、画面の決まりを先に決める必要があります。
-- `src/host/services.d.ts` の「DSH 0.1.5-rc.2 から書き写した」という注記：0.1.5-rc.3 と 0.2.0-rc.2 の実物で同じ入口が動くことは確かめましたが、型の定義を全部照らし合わせてはいないので、注記はそのままにしました。
+- 実在する設定名前空間の偽スキーマを公開項目に合わせ、架空のフォーム試験用項目を分離した結果。
+- 開いたままのモデル選択シートへの更新通知が移行前からの動きか、移行で生じた差か。その判断と対応。
+- フォルダ監視の通知を、変更した子ではなく監視対象自身のパスとメタデータに合わせた結果。
+- API キーの管理サービスがない場合の案内文の修正、設定保存から `(ns, revision)` が届くことの確認。
+- 画像の範囲指定、キー更新通知、権限候補の再取得、バイト本文の監査指摘への対応と、画像表示の不安定な失敗の原因・再確認。
 
 ## 実 DSH の統合試験
 
-`e2e-dsh/` は、実物の DSH の Host を起動し、M3E のプラグインを入れて、ブラウザで操作する試験です。LLM だけは偽物で、外のネットワークにはつなぎません。
+`e2e-dsh/` は実物の DSH Host と通信の部品、ビルド・pack した M3E を、Chromium から操作します。**LLM だけは偽物です。本物の LLM の動作を保証する試験ではありません。** 初回の DSH 取得には npm を使いますが、LLM の接続先はローカルです。
 
-- `fake-llm.ts`：DeepSeek の chat completions の形で答える偽の LLM です。DSH には `DEEPSEEK_BASE_URL` で向けます。プロンプトに入れた印（`[[slow]]`、`[[medium]]`、`[[approval]]`、`[[question]]`）で、遅い返答、bash の呼び出し（承認が要る）、`ask_user_question` を返します。
-- `dsh-host.ts`：DSH を `tmp/dsh-integration/` に入れ（初回だけ npm から入れます）、`pnpm build` と `pnpm pack` で作ったプラグインを、毎回新しい `DSH_HOME` と `HOME` に入れて、`127.0.0.1` だけで起動します。利用者の DSH と設定には触れません。
-- 実行方法：
+### 集計
+
+| 確認時点 | 通常の成功 | 既知の差の期待失敗 | 実行・根拠 |
+|---|---:|---:|---|
+| 段階 4 統合後 `722692c` | 19 件 | 1 件 | 統合報告で連続 2 回とも同じ結果。予期しない失敗・skip・flaky なし |
+| 段階 5 報告 `f365a2f`（別 worktree） | 23 件 | 1 件 | 仕上げ報告で連続 2 回とも同じ結果。V4 表示の追加 spec はこの集計に含めません |
+| 全段階の統合後 | **最終集計待ち** | **最終集計待ち** | 段階 5 の修正と統合後に、指示役の結果で更新します |
+
+期待失敗は Host 停止中のバナーの既知の差です。Playwright の `passed` には「失敗すると宣言した試験が失敗した」場合も入るため、通常の成功と分けて読みます。
+
+### 仕組みと実行
+
+- [fake-llm.ts](../e2e-dsh/fake-llm.ts) は `/v1/messages` に応答し、`message_start`、`content_block_*`、`message_delta`、`message_stop` の SSE を返します。ツールは `tool_use/tool_result`、画像は `image` ブロックで到着を確認します。ブラウザへ流れる V4 の `role: 'tool'` とは別の形式です。
+- `[[slow]]`、`[[medium]]`、`[[approval]]`、`[[question]]` で応答を選びます。`holdTurn(prompt)` は指定した会話の進行を試験から解放できるようにし、順番待ちはターン終了後、割り込みは同じターンの次ステップに届くことを区別します。
+- [dsh-host.ts](../e2e-dsh/dsh-host.ts) は `tmp/dsh-integration/` 配下に毎回新しい `HOME` と `DSH_HOME` を作ります。Host と偽 LLM は `127.0.0.1` の空きポートを自動で使い、Host の再起動は同じポートとホームを使います。固定の Vite ポートは使いません。
+- Host に `DEEPSEEK_BASE_URL` と試験用の架空の API キーを渡します。`SSH_CONNECTION` の印で `browse` を選びます。SSH 接続を実行するものではなく、macOS / Windows の native ダイアログを避けて遠隔 Host のブラウザ操作を確認するためです。自動ブラウザ起動の抑止と open-in-app 候補が空になる副作用もあり、それらの経路は検証対象外です。
+- [fixtures.ts](../e2e-dsh/fixtures.ts) で Host を worker 内で共有し、`workers: 1`、再試行なしで実行します。新しい spec は他の spec の会話を前提にせず、必要な会話を自分で用意します。
 
 ```bash
-pnpm exec playwright test -c e2e-dsh/playwright.config.ts
-# 別の版を試す
-M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts
+env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts
 ```
 
-環境変数は `M3E_DSH_VERSION`（試す版）、`M3E_DSH_DIR`（入れ済みの DSH を使う）、`M3E_SKIP_BUILD=1`（ビルドを省く）、`M3E_CHROMIUM_PATH`（ブラウザの場所）です。`pnpm test` には含めていません。DSH を npm から入れるためと、1 回に 1〜2 分かかるためです。
-
-### 実 DSH で確かめた経路（DSH 0.1.5-rc.3）
-
-| 経路 | 試験で確かめたこと |
+| 環境変数 | 用途 |
 |---|---|
-| 接続 | `/m3e/` が起動して一覧が出る。index に埋め込み拒否のヘッダーが付く |
-| 埋め込みの拒否 | 同じ Host のページに iframe で入れても、ブラウザが表示を拒否する |
-| ワークスペース | フォルダの選択から追加できる |
-| セッションの作成と送信 | 最初の送信でセッションができ、LLM に本文が届き、返答が出る |
-| セッションの取得 | 読み込み直しで履歴が戻り、一覧に題名が出る |
-| 逐次表示 | 返答が少しずつ出る（途中の節が見えて、最後の節はまだ無い） |
-| 停止 | 停止ボタンで実行が止まり、LLM への接続が切られ、表示がそれ以上増えない |
-| 承認 | 許可すると bash が動き、結果が LLM に返る。拒否すると実行されない |
-| 質問 | 選んだ答えが LLM に返る |
-| 順番待ち | 実行中の送信が順番待ちに入り、前の返答が終わってから LLM に届く |
-| 割り込み | 実行中に割り込みで送った本文が、同じ会話の LLM に届く |
-| 画像 | 添付した画像が `image_url` として LLM に届く |
-| 会話の切り替え | 切り替えシートで検索し、別のセッションへ移る |
-| 再接続 | Host を止めると再接続中になり送信できない。Host が戻ると自動で戻り、送信できる |
-| 既知の差 | Host が止まったままでもバナーに切り替わらない（失敗することを確かめる試験） |
+| `M3E_DSH_VERSION` | 試す版。省略時は `SUPPORTED_DSH_VERSION` |
+| `M3E_DSH_DIR` | 入れ済みの DSH のディレクトリ。`node_modules/.bin/dsh` を含む場所です |
+| `M3E_SKIP_BUILD=1` | 直前に同じコードをビルド済みの場合だけビルドを省きます。pack は行います |
+| `M3E_CHROMIUM_PATH` | Chromium の実行ファイル。偽データ e2e にも使えます |
 
-ここでの「通過」は、実物の Host と通信の部品、M3E の画面がこの版で正しくつながることだけを意味します。本物の LLM の返答の形（長い考えた内容、並んだツールの呼び出し、途中のエラー）、Safari と iPhone、リバースプロキシ、長く使った `DSH_HOME` での動きは、ここでは確かめていません。
+`pnpm test` には含めていません。結果は `tmp/dsh-integration/report.json`、失敗時の trace などは同じディレクトリの `results/` に出ます。再実行前に必要な証跡を保存してください。起動処理は以前の `run-*` を整理するため、長期利用したホームの検証にはなりません。試験は中断せず終了処理まで待ちます。
+
+### 確かめた経路
+
+| 経路 | 実 DSH と偽 LLM で確認した内容 | 根拠 |
+|---|---|---|
+| 起動・埋め込み拒否 | `/m3e/` の一覧、index のヘッダー、iframe の表示拒否 | `real-dsh.spec.ts` |
+| ワークスペース | browse のフォルダ選択から追加 | 同上 |
+| 会話・履歴 | 初回送信、LLM への本文到着、返答、再読み込み後の履歴と題名、会話切り替え | 同上 |
+| 逐次表示・停止 | 途中の返答、停止時の LLM 接続切断、以降の表示停止 | 同上 |
+| 承認・質問 | 会話から許可・拒否・回答し、結果が LLM に戻ること | 同上 |
+| 順番待ち・割り込み | 待機表示、本文、モデルへ届くターン・ステップの違い | 同上。`holdTurn` で区別します |
+| 画像送信 | Messages の画像ブロックが LLM に届くこと | 同上 |
+| 再接続 | Host 停止中は送れず、復帰後は自動再接続して送れること | 同上。バナーの差は期待失敗として別集計です |
+| 参照の引き継ぎ・復帰 | 初回送信の参照を画面へ引き継ぐこと、送信中に離脱したときの解放、`pagehide/pageshow` 後の送信 | `session-contract.spec.ts`。Safari の実際の BFCache は未検証です |
+| V4 表示 | 承認・質問の結果本文がチャットとトレースで見えること、呼び出しと結果の結合、注入文脈と自分の発言の区別 | `records-v4.spec.ts` |
+| 設定・モデル | 設定の保存と再読み込み、提供元とモデルの表示 | 段階 5 報告の `rpc.spec.ts` |
+| 権限 | 既定値の保存、新規会話への適用、会話内の切り替え | 同上。候補変更時の再取得は監査後の報告待ちです |
+| ファイル | 一覧、テキスト本文、画像寸法、バイト列、実ファイルの変更通知 | 同上。範囲指定・フォルダ監視の追加確認は報告待ちです |
+| API キー | 隔離ホームの架空値の登録・削除と再読み込み後の状態、環境由来の変更不可表示 | 同上。更新放送の購読を検出する追加確認は報告待ちです |
+
+### 試験の強さの確かめ方
+
+移行では、読むレビューに加え、**本体や偽 controller を一時的に壊し、対象の試験が落ちることを確かめる監査**を行いました。成功件数だけでは、準備を通っていない試験や、別の文字列を拾って通る試験を見つけられないためです。
+
+下表は独立監査 M1〜M5 の初回集計です。「調べた試験」の延べ数で、変異の個数や全試験の総数とは異なります。修正結果は報告が確認できた範囲です。
+
+| 対象 | 調べた試験 | 検出 | 空振り | 弱い | 未決・未実施 | 初回に生存した試験の修正結果 |
+|---|---:|---:|---:|---:|---:|---|
+| M1：参照・選択・偽 controller | 151 | 141 | 5 | 5 | 0 | 10 件を強化し、同じ変異で失敗を確認 |
+| M2：送信・子の会話・各機能の単体試験 | 132 | 124 | 4 | 4 | 0 | 8 件を強化し、同じ変異で失敗を確認 |
+| M3：セッションの画面・実 DSH | 39 | 37 | 0 | 2 | 0 | 2 件を強化し、同じ変異で失敗を確認 |
+| M4：V4 記録 | 34 | 29 | 0 | 5 | 0 | 5 件を強化し、同じ変異で失敗を確認 |
+| M5：RPC | 51 | 47 | 0 | 4 | 0 | 4 件の修正・再確認結果待ち |
+| 合計（延べ） | 407 | 378 | 9 | 20 | 0 | 25 件は修正後の検出を確認、4 件は報告待ち |
+
+再確認で追加された「子の親 ID の欠落」と「トレース本文だけが非表示」の穴も修正し、同じ変異で失敗した報告があります。初回集計には足していません。監査対象外の機能まで確認済みという意味でもありません。
+
+次回も、追加した試験と入力・期待を変えた試験ごとに、次の手順を行います。
+
+1. 通常状態での成功と、確かめる動きを確認します。監査用の隔離 worktree を使い、既存の未コミット変更を巻き戻さないようにします。
+2. 最小の変更を本体か偽 controller に当てます。準備の空振りを調べる場合は、データ投入や操作を一時的に省きます。
+3. 対象ファイルや試験名に絞って実行します。型エラー・読み込み失敗・無関係な時間切れは検出に数えません。
+4. 通った場合は「空振り」「一部の確認が弱い」「動きが同じ変異」「別の試験が担当」を分けます。動きが同じなら別の変異で試します。
+5. 強化後に、生存したのと同じ変異を当て直して失敗を確認します。表示試験は本文の一致と、その本文の要素が見えることを確かめます。
+6. 一時変更だけを `git restore <対象ファイル>` で戻し、差分と通常実行を確認します。試験名・変異箇所・狙った失敗・復元結果を記録し、変異はコミットしません。
 
 ### 偽データでしか確かめていないもの
 
-次は `?mock` の偽データと単体試験だけで確かめています。実物の DSH では未確認です。
+次は単体試験や `?mock` の確認が中心で、実 DSH の対応する操作全体は未検証です。
 
-- 子の会話（サブエージェント）への送信、一覧からの子の会話の開き方、サブエージェントの画面
-- 会話の分岐（fork）、題名の変更、アーカイブ、ワークスペースの名前の変更と並べ替え
-- 検索の結果と抜粋
-- 対応待ちの件数と「完了」の消え方
-- 設定の保存、API キーの登録、モデルの一覧と切り替え、権限の切り替え、プラン
-- 統計、ファイル、ジョブ、ゴールの画面
-- 応答が失われたときの「送信結果が不明です」（偽データでは応答の消失を作れますが、実物では作っていません）
-- 承認と質問に、対応待ちの画面やトレースの画面から答えること（統合試験は会話の画面からだけ）
-- 再接続したときに、生成中の応答が途中から続くこと（試験では生成中に止めていない）
+- 実際に生成したサブエージェントへの送信、子カタログの競合・拒否・再試行、統計、ジョブの購読・停止、ゴールの操作。
+- 会話の分岐、手動の題名変更、アーカイブ、ワークスペースの名前変更・並べ替え、検索の結果と抜粋、完了未読の表示と消去。
+- プラン確認、対応待ちやトレースからの承認・質問への回答、応答が失われたときの「送信結果が不明です」。
+- `developer/message`、`forked`、未知の `plugin:` 拡張、compaction の発生時の表示。古い記録の移行・検索 index・ページング全体も未検証です。
+- 監視非対応、writer-held、投影不能、モデル不能などの実際のエラー発生。再接続後に生成途中の応答が続く経路も、復帰後の新規送信とは別に残っています。
+
+偽 controller は公開契約の境界を厳しくしていますが、OS、永続化、LLM の全能力、履歴の全修復は再現しません。段階 5 の旧 `readBytes` 引数は実物では範囲が無視されましたが、偽物は旧呼び出しを見逃さないため拒否します。この意図した差も、実物と同じという説明には含めません。
 
 ### 人が実機で確かめるべきもの
 
-- 本番の DSH の版（`dsh --version`）が 0.1.5-rc.3 であること。違う版なら、上の表のとおり動かない見込みです。
-- iPhone の Safari とホーム画面の Web アプリで、上の経路を一通り（特に、キーボード、シート、再接続）
-- リバースプロキシや TLS を挟む構成で、`/m3e/`、`/plugins/…`、`/api/remote.mux` が通ること。埋め込み拒否のヘッダーが消されないこと
-- 本物の LLM での、長い返答、考えた内容、複数のツール、サブエージェント
-- 長く使った本番の `DSH_HOME`（たくさんのセッション、古い記録）での一覧と履歴の読み込み
+- 利用する Host の `dsh --version` が対応版であること。本番や利用者の DSH の更新・確認は隔離試験に含めていません。
+- iPhone の Safari とホーム画面の Web アプリで、キーボード、シート、画像、送信・停止、再接続を操作すること。特に別ページから「戻る」で **実際の BFCache から復帰**した後に、参照が戻って送れること。
+- TLS やリバースプロキシを挟んで `/m3e/`、`/plugins/…`、`/api/…` が通り、WebSocket と埋め込み拒否のヘッダーが保たれること。
+- 本物の LLM の長い返答、考えた内容、複数ツール、途中のエラー、サブエージェント。実 API キーによる外部接続とログイン済みアカウントも未検証です。
+- 長期利用した `DSH_HOME` の多数の会話と古い記録、Windows のシェル、native のフォルダ選択を使う構成。
 
 ## 版を上げるときの手順
 
-1. `M3E_DSH_VERSION=<新しい版>` で `e2e-dsh` を流し、どこで止まるかを見ます。
-2. 新しい版の `node_modules/@deepseek-ai/` で、cordis・cordis-plugin-loader・dsh-client-store の版を調べ、`package.json` と `src/shared/dsh-compat.ts` を同時に直します（`pnpm test` が食い違いを止めます）。
-3. 新しい版の `dsh-api-session-controller/lib/types/client/contract/` と M3E の `web/src/dsh/services.ts` を照らし合わせ、`web/src/dsh/contract.ts` の一覧を直します。
-4. 上の「依存の境界」の表を上から順に確かめます。
-5. `pnpm typecheck`、`pnpm test`、`pnpm build`、偽データの e2e、`e2e-dsh` がすべて通ってから、README の「必要なもの」とこの文書の表を更新します。
+1. 対応版、起点コミット、既知の差、通常成功と期待失敗を記録します。利用者の DSH を使わず、`e2e-dsh` の隔離環境で新しい版を試し、最初に止まる境界を記録します。
+2. 共有ライブラリを照合し、`package.json` と `src/shared/dsh-compat.ts` を同時に更新します。loader の待機・失敗処理も確認します。
+3. 起動グラフ、preload、`<base>`、RPC・WebSocket・画像の宛先を確認します。`/m3e/` の遷移、空の Markdown リンク、戻る・再読み込み、PWA scope も確認します。
+4. 実 DSH 試験の前提を確認します。LLM の接続形式、SSE、ツールと画像の形式を実物に合わせ、フォルダ選択の native / browse を確認します。環境の差を API の破損と取り違えないようにします。
+5. セッション controller の型・実装を照合し、参照の所有、ready の成功・失敗、解放、一覧と投影、ジョブを移行します。偽 controller も公開契約に合わせ、非同期の準備・中断・後着応答を確認します。
+6. 会話の記録を実際に受信し、チャット・トレース・偽記録を合わせます。その後、設定、権限、提供元、ファイル、通知の RPC を照合します。共通の参照契約が安定すれば、記録と RPC は独立した worktree で進められます。
+7. 実物を読むときは対象パッケージ・ファイルを限定します。保護対象のパスにあるパッケージは読まず、許可された呼び出し側と隔離環境の動作で確認できる範囲を記録します。内部の保存形式や通知の引数を推測で埋めません。
+8. 読むレビューに加え、上の[試験の強さの確かめ方](#試験の強さの確かめ方)を実行します。成功件数が維持されても、確認が失われていないかを壊して確かめます。
+9. 統合したコードで `pnpm typecheck`、`pnpm test`、`pnpm build`、偽データ e2e を通し、実 DSH を連続して確認します。コマンドは [development.md](development.md#試験の使い分け) を参照します。削除・skip・条件の緩和で件数をそろえません。
+10. この文書の集計表を更新し、README の各言語と引き継ぎから参照します。仕様との差、未検証、実機で利用者が判断することを残します。文書だけの修正では試験・ビルドを再実行せず、根拠・リンク・差分を確認します。
