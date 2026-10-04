@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eAssistChip } from '@m3e/react/chips'
 import { M3eIconButton } from '@m3e/react/icon-button'
@@ -19,7 +19,8 @@ export function FilesScreen({ sessionId }: { sessionId: string }) {
 
 function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string }) {
   const { remote, sessions, connection } = useDsh()
-  const api = workspaceFilesOf(remote)
+  // A fresh traced namespace must not restart reads and watches on each render.
+  const api = useMemo(() => workspaceFilesOf(remote), [remote])
   const cwd = useSnapshot(sessions.list).byId[sessionId]?.cwd
   const connectionState = useSnapshot(connection.state)
   const [listing, setListing] = useState<WorkspaceDirectoryListing>()
@@ -48,13 +49,13 @@ function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string 
     setWatchError('')
     void (async () => {
       try {
-        for await (const frame of api.changes(sessionId, controller.signal)) {
+        for await (const frame of api.changes(sessionId, directoryRequestPath(path), controller.signal)) {
           if (controller.signal.aborted) break
           if (frame.kind === 'ready' || directoryChanged(frame.change, cwd, path)) refresh()
         }
         if (!controller.signal.aborted) setWatchError('更新の通知が途切れました。読み直して確認できます。')
-      } catch {
-        if (!controller.signal.aborted) setWatchError('更新を確認できません。読み直して確認できます。')
+      } catch (failure) {
+        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, '更新を確認できません。読み直して確認できます。'))
       }
     })()
     return () => controller.abort()

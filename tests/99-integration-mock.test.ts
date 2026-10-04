@@ -6,7 +6,7 @@ import { createMockContext, type MockExtension, type MockKit } from '../web/src/
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 import { composerApi } from '../web/src/features/composer/api.ts'
-import { mockPermissions } from '../web/src/features/composer/mock.ts'
+import { mockPermissions, mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 import type { SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { INBOX_MOCK_IDS } from '../web/src/features/inbox/mock.ts'
 import { HOME_MOCK_IDS } from '../web/src/features/home/mock.ts'
@@ -80,7 +80,7 @@ test('03 の新しい会話の権限候補は、08 の設定の偽データか�
   try {
     const defaults = await composerApi(ctx.remote).defaultPermissions()
     assert.equal(defaults?.currentValue, mockPermissions.currentValue)
-    assert.deepEqual(defaults?.options.map(option => option.value), mockPermissions.options.map(option => option.value))
+    assert.deepEqual(defaults?.options.map(option => option.value), mockPermissionCatalog.defaultOptions.map(option => option.value))
   } finally { ctx.dispose() }
 })
 

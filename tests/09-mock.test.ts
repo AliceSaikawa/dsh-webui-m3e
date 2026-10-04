@@ -69,13 +69,13 @@ test('仕様の偽ファイルを 5000 行と 1000 行に分けて読むと全�
 
 test('偽の画像はバイト範囲で読め、バイナリの名前とサイズを取得できる', async () => {
   const { remote } = createWorkspaceFilesMock()
-  const first = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { offset: 0, length: 10 }))
+  const first = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { range: { offset: 0, length: 10 } }))
   assert.equal(first.offset, 0)
   assert.equal(first.eof, false)
-  const last = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { offset: 10 }))
+  const last = unwrapRemoteResult(await remote.readBytes(sessionId, 'preview.png', { range: { offset: 10 } }))
   assert.equal(last.offset, 10)
   assert.equal(last.eof, true)
-  assert.equal(Buffer.concat([Buffer.from(first.data, 'base64'), Buffer.from(last.data, 'base64')]).toString('base64'), imageBase64)
+  assert.equal(Buffer.concat([Buffer.from(first.data), Buffer.from(last.data)]).toString('base64'), imageBase64)
   const image = await readImageFile(remote, sessionId, 'preview.png', new AbortController().signal)
   assert.equal(Buffer.from(image.data).toString('base64'), imageBase64)
   const binary = unwrapRemoteResult(await remote.stat(sessionId, 'sample.bin'))
@@ -86,7 +86,7 @@ test('偽の画像はバイト範囲で読め、バイナリの名前とサイ�
 test('ファイル変更を通知し、読み直した内容と一覧のサイズ・バージョンへ反映する', async () => {
   const fixture = createWorkspaceFilesMock()
   const abort = new AbortController()
-  const iterator = fixture.remote.changes(sessionId, abort.signal)[Symbol.asyncIterator]()
+  const iterator = fixture.remote.changes(sessionId, 'README.md', abort.signal)[Symbol.asyncIterator]()
   const old = unwrapRemoteResult(await fixture.remote.stat(sessionId, 'README.md'))
   assert.deepEqual(await iterator.next(), { done: false, value: { kind: 'ready' } })
   const next = iterator.next()
@@ -115,23 +115,23 @@ test('ファイル変更を通知し、読み直した内容と一覧のサイ�
 
 test('ファイル変更の購読を return または事前の中断で終了すると購読を残さない', async () => {
   const fixture = createWorkspaceFilesMock()
-  const iterator = fixture.remote.changes(sessionId)[Symbol.asyncIterator]()
+  const iterator = fixture.remote.changes(sessionId, '.')[Symbol.asyncIterator]()
   await iterator.next()
   assert.equal(fixture.subscriberCount, 1)
   await iterator.return?.()
   assert.equal(fixture.subscriberCount, 0)
   const abort = new AbortController()
   abort.abort()
-  const cancelled = fixture.remote.changes(sessionId, abort.signal)[Symbol.asyncIterator]()
+  const cancelled = fixture.remote.changes(sessionId, '.', abort.signal)[Symbol.asyncIterator]()
   assert.deepEqual(await cancelled.next(), { done: true, value: undefined })
   assert.equal(fixture.subscriberCount, 0)
 })
 
-test('会話の補助画面の偽物を追加しても共有の履歴を書き換えない', () => {
+test('会話の補助画面の偽物を追加しても共有の履歴を書き換えない', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
     assert.ok(workspaceFilesOf(ctx.remote))
   } finally { ctx.dispose() }
 })
@@ -139,10 +139,11 @@ test('会話の補助画面の偽物を追加しても共有の履歴を書き�
 test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描く状態を作る', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
+    const face = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session
     const pressure = face.projections.faceOf('contextPressure').getSnapshot() as ContextPressure
     assert.equal(contextPercent(pressure), 62)
-    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 3)
+    // The native fixture has two actual turns, without an artificial predecessor.
+    assert.equal(maxTurn(foldSessionWindow((await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records), 2)
     ctx.jobs.watchRows(sessionId)
     await Promise.resolve()
     const list = ctx.sessions.list.getSnapshot()
@@ -158,13 +159,13 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
       assert.equal(child.kind, 'child')
       if (child.kind !== 'child') throw new Error('子の会話がありません。')
       const address = childAddress(sessionId, child)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       await conversationSelection(ctx.sessions).select(address)
       assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, child.id)
       assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       assert.equal(list.byId[child.id]?.origin, 'subagent')
-      assert.ok(foldSessionWindow(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      assert.ok(foldSessionWindow((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
     let notified = 0
     const stop = ctx.jobs.state.subscribe(() => { notified++ })
@@ -183,9 +184,11 @@ test('未取得の子シナリオはアドレスを先に設定せず、親の�
     for (const childId of Object.values(SESSION_TOOLS_MOCK_IDS.children)) {
       assert.equal(initial.byId[childId]?.origin, 'subagent')
       assert.equal(initial.byId[childId]?.parentId, sessionId)
-      assert.equal(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, null)
+      assert.equal((await ctx.sessions.retain(childId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, null)
       assert.equal(ctx.sessions.subagentAddress(childId), undefined)
-      assert.ok(foldSessionWindow(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      const unopened = await ctx.sessions.retain(childId, { source: 'm3e.test' }).ready
+      assert.equal(unopened.session.getSnapshot().openError?.code, 'session/agent-busy')
+      assert.deepEqual(unopened.eventSource.getSnapshot().entries, [])
     }
     assert.equal(hasChildren(sessionId, initial.projectionsBySession[sessionId], initial.byId), true)
 
@@ -201,8 +204,9 @@ test('未取得の子シナリオはアドレスを先に設定せず、親の�
       assert.equal(ctx.sessions.binding(child.id)?.session.getSnapshot().subagent, null)
       const address = childAddress(sessionId, child)
       await conversationSelection(ctx.sessions).select(address)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
+      assert.ok(foldSessionWindow(ctx.sessions.binding(child.id)!.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
     assert.deepEqual(children.map(child => child.kind === 'child' ? child.mode : undefined), ['continuable', 'one-shot'])
   } finally { ctx.dispose() }
@@ -213,7 +217,7 @@ test('ゴールの停止・再開・完了・消去は revision を進め、proj
   try {
     const remote = goalsRemoteOf(ctx.remote.goals)
     assert.ok(remote)
-    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
+    const projection = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session.projections.faceOf('goal')
     let notifications = 0
     const stop = projection.subscribe(() => { notifications++ })
     const original = unwrapRemoteResult(await remote.get(sessionId))!
@@ -245,12 +249,12 @@ test('古い GoalRef は状態を変えず拒否し、再読み込みだけで�
     const remote = goalsRemoteOf(ctx.remote.goals)!
     const original = unwrapRemoteResult(await remote.get(sessionId))!
     const paused = unwrapRemoteResult(await remote.pause(sessionId, original))
-    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
+    const projection = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session.projections.faceOf('goal')
     let changes = 0
     const stop = projection.subscribe(() => { changes++ })
     const stale = await remote.complete(sessionId, original)
     assert.equal(stale.ok, false)
-    if (!stale.ok) assert.equal(stale.error.code, 'GOAL_STALE_REVISION')
+    if (!stale.ok) assert.equal(stale.error.code, 'gateway/internal')
     assert.equal((await remote.clear(sessionId, { id: 'other-goal', revision: paused.revision })).ok, false)
     const result = await performGoalOperation(remote, sessionId, 'resume', original)
     assert.equal(result.ok, false)

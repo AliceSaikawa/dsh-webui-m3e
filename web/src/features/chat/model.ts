@@ -236,6 +236,7 @@ function reasoningDurations(value: unknown, content: readonly unknown[]): Readon
 /** Rows built from durable records, plus what live rows need to join them. */
 export interface SettledChat {
   readonly rows: readonly ChatRow[]
+  readonly rpcIds: ReadonlySet<string>
   readonly keys: ReadonlySet<string>
   readonly shownCalls: ReadonlySet<string>
   toolRow(callId: string, name: string, args: string, base: RowBase): ToolRow
@@ -266,6 +267,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     }
   }
   const rows: ChatRow[] = []
+  const rpcIds = new Set<string>()
   const shownCalls = new Set<string>()
   const assistantCallIds = new Set<string>()
   for (const event of events) {
@@ -297,6 +299,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       if (source.kind !== 'user') {
         rows.push({ ...base, kind: 'context', ...contextProvenance(source), content, text: textOf(content) })
       } else {
+        if (typeof source.rpcId === 'string') rpcIds.add(source.rpcId)
         rows.push({ ...base, kind: 'user', content, text: textOf(content) })
       }
     } else if (event.type === 'assistant/message') {
@@ -337,7 +340,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       rows.push({ ...base, kind: 'command', name, text: stringOf(data.text) ?? '', status })
     }
   }
-  return { rows, keys: new Set(rows.map(row => row.key)), shownCalls, toolRow }
+  return { rows, rpcIds, keys: new Set(rows.map(row => row.key)), shownCalls, toolRow }
 }
 
 /** A text block that has not changed keeps its row, so its Markdown is not rendered again. */
@@ -370,7 +373,7 @@ export function appendLiveRows(
     }
   }
   for (const submission of pendingSubmissions) {
-    if (submission.placement !== 'transcript') continue
+    if (submission.placement !== 'transcript' || settled.rpcIds.has(submission.requestId)) continue
     rows.push({ key: `pending:${submission.requestId}`, kind: 'pending', time: submission.time, submission, text: submission.text })
   }
   return rows

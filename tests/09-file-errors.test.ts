@@ -38,7 +38,7 @@ test('大きすぎるテキストページと存在しないパスの偽エラ�
     assert.equal(fileReadErrorMessage(failure), 'ファイルが大きいため表示できません。')
     return true
   })
-  const range = await remote.readBytes('s', 'preview.png', { length: 2 * 1024 * 1024 + 1 })
+  const range = await remote.readBytes('s', 'preview.png', { range: { length: 2 * 1024 * 1024 + 1 } })
   assert.equal(range.ok, false)
   if (!range.ok) assert.equal(range.error.code, 'workspace-file/too-large')
 })
@@ -61,13 +61,13 @@ test('10 MiB を超える画像は stat だけで拒否し、本文を読み始�
 
 test('上限ぴったりの画像を小さい窓で読み、上限を越える要求は出さない', async () => {
   const fixture = createWorkspaceFilesMock()
-  const chunk = Buffer.alloc(IMAGE_READ_BYTES, 65).toString('base64')
+  const chunk = new Uint8Array(IMAGE_READ_BYTES).fill(65)
   const ranges: { offset: number; length: number }[] = []
   const metadata = { absolutePath: '/work/boundary.png', version: 'v1', bytes: MAX_IMAGE_BYTES }
   const remote: WorkspaceFilesRemote = {
     ...fixture.remote,
     async stat() { return { ok: true, value: metadata } },
-    async readBytes(_sessionId, _path, range) {
+    async readBytes(_sessionId, _path, { range = {} }) {
       const offset = range.offset!, length = range.length!
       ranges.push({ offset, length })
       assert.equal(length, IMAGE_READ_BYTES)
@@ -84,13 +84,13 @@ test('上限ぴったりの画像を小さい窓で読み、上限を越える�
 
 test('大きさ不明の画像でも上限までで読み込みを打ち切り、追加の要求を出さない', async () => {
   const fixture = createWorkspaceFilesMock()
-  const chunk = Buffer.alloc(IMAGE_READ_BYTES, 65).toString('base64')
+  const chunk = new Uint8Array(IMAGE_READ_BYTES).fill(65)
   const metadata = { absolutePath: '/work/unknown.png', version: 'v1' }
   let requestedBytes = 0
   const remote: WorkspaceFilesRemote = {
     ...fixture.remote,
     async stat() { return { ok: true, value: metadata } },
-    async readBytes(_sessionId, _path, range) {
+    async readBytes(_sessionId, _path, { range = {} }) {
       requestedBytes += range.length!
       assert.ok(requestedBytes <= MAX_IMAGE_BYTES)
       return { ok: true, value: { ...metadata, offset: range.offset!, data: chunk, eof: false } }
@@ -107,9 +107,9 @@ test('画像の読み込み途中に大きさが上限を越えた場合も後�
   const remote: WorkspaceFilesRemote = {
     ...fixture.remote,
     async stat() { return { ok: true, value: metadata } },
-    async readBytes(_sessionId, _path, range) {
+    async readBytes(_sessionId, _path, { range = {} }) {
       reads++
-      return { ok: true, value: { ...metadata, bytes: reads === 1 ? 2 : MAX_IMAGE_BYTES + 1, offset: range.offset!, data: 'QQ==', eof: false } }
+      return { ok: true, value: { ...metadata, bytes: reads === 1 ? 2 : MAX_IMAGE_BYTES + 1, offset: range.offset!, data: new Uint8Array([65]), eof: false } }
     },
   }
   await assert.rejects(readImageFile(remote, 's', 'growing.png', new AbortController().signal), ImageFileTooLarge)
@@ -123,9 +123,9 @@ test('stat と先頭の画像ページで版が違う場合は混ぜず、中断
   const remote: WorkspaceFilesRemote = {
     ...fixture.remote,
     async stat() { return { ok: true, value: metadata } },
-    async readBytes(_sessionId, _path, range) {
+    async readBytes(_sessionId, _path, { range = {} }) {
       reads++
-      return { ok: true, value: { ...metadata, version: 'v2', offset: range.offset!, data: 'QQ==', eof: true } }
+      return { ok: true, value: { ...metadata, version: 'v2', offset: range.offset!, data: new Uint8Array([65]), eof: true } }
     },
   }
   await assert.rejects(readImageFile(remote, 's', 'change.png', new AbortController().signal), FileVersionChanged)
@@ -143,9 +143,9 @@ test('画像の返却データが要求範囲を越える場合は蓄積せず�
   const remote: WorkspaceFilesRemote = {
     ...fixture.remote,
     async stat() { return { ok: true, value: metadata } },
-    async readBytes(_sessionId, _path, range) {
+    async readBytes(_sessionId, _path, { range = {} }) {
       reads++
-      return { ok: true, value: { ...metadata, offset: range.offset!, data: 'A'.repeat(Math.ceil(IMAGE_READ_BYTES / 3) * 4 + 4), eof: false } }
+      return { ok: true, value: { ...metadata, offset: range.offset!, data: new Uint8Array(IMAGE_READ_BYTES + 1), eof: false } }
     },
   }
   await assert.rejects(readImageFile(remote, 's', 'oversized.png', new AbortController().signal), ImageFileTooLarge)

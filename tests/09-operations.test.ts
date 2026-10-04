@@ -12,7 +12,7 @@ const view: GoalView = {
   roundsStarted: 3, createdAt: 1000, updatedAt: 2000, activation: 'armed',
 }
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
-const failure: RemoteResult<never> = { ok: false, error: { code: 'GOAL_STALE_REVISION', message: '変更済み', details: {} } }
+const failure: RemoteResult<never> = { ok: false, error: { code: 'gateway/internal', message: '変更済み', details: {} } }
 function remote(overrides: Partial<GoalsRemote> = {}): GoalsRemote {
   return {
     get: async () => success(view), pause: async () => success(view), resume: async () => success(view),

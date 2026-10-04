@@ -6,7 +6,7 @@ import type { RemoteResult, SessionJob } from '../web/src/dsh/services.ts'
 import { referencesImage } from '../web/src/dsh/mock/session-validation.ts'
 
 const id = MOCK_IDS.sessions.readme
-const job: SessionJob = { id: 'audit-job', label: '照合用', kind: 'bash', status: 'running', startedAt: 1, output: { total: 0, earliest: 0 } }
+const job: SessionJob = { id: 'audit-job', owner: id, label: '照合用', kind: 'bash', status: 'running', startedAt: 1, output: { total: 0, earliest: 0 } }
 function code(result: RemoteResult<unknown>) { assert.equal(result.ok, false); return result.ok ? '' : result.error.code }
 
 test('照合 workspaceは空名・重複名・不存在・未所属の並べ替えを拒否する', async t => {
@@ -57,7 +57,7 @@ test('照合 initializeDefaultは初回だけ作成し既存データがあれ�
   for (const session of ctx.sessions.list.getSnapshot().ids) ctx.mock.removeSession(session)
   for (const workspace of ctx.workspaces.list.getSnapshot().items) ctx.mock.removeWorkspace(workspace.workspaceId)
   const controller = new AbortController(); controller.abort()
-  await assert.rejects(ctx.workspaces.initializeDefault(controller.signal), /rpc\/aborted/)
+  await assert.rejects(ctx.workspaces.initializeDefault(controller.signal), /gateway\/cancelled/)
   const first = await ctx.workspaces.initializeDefault()
   assert.ok(first)
   assert.equal((await ctx.workspaces.initializeDefault())?.workspaceId, first.workspaceId)

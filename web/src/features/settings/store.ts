@@ -1,6 +1,7 @@
 import type { ConnectionState, RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, buildReset, type SettingPath, type SettingValue, type SettingsDescription, type SettingsNamespace } from './schema.ts'
 import { findSettingField, settingFieldAccess } from './field-access.ts'
+import type { PermissionCatalog } from '../composer/api.ts'
 
 export interface SettingsApi {
   describe(): Promise<RemoteResult<SettingsDescription>>
@@ -9,6 +10,7 @@ export interface SettingsApi {
 }
 export type SettingsOperation = { op: 'set'; path: string[]; value: SettingValue } | { op: 'unset'; path: string[] }
 export interface SettingsState extends SettingsDescription {
+  permissionCatalog?: PermissionCatalog
   phase: 'loading' | 'ready' | 'error'
   error: string | null
   busy: Record<string, boolean>
@@ -19,7 +21,7 @@ export const fieldKey = (ns: string, path: SettingPath): string => JSON.stringif
 const failureMessage = '設定を読み込めませんでした。接続を確認して、もう一度お試しください。'
 
 /** Owns revisions and serializes edits so two controls cannot race each other. */
-export function createSettingsStore(api: SettingsApi) {
+export function createSettingsStore(api: SettingsApi, readPermissions?: () => Promise<PermissionCatalog>) {
   let state: SettingsState = { phase: 'loading', error: null, writable: false, namespaces: [], busy: {}, fieldErrors: {}, generation: {} }
   let sequence = 0
   let connectionState: ConnectionState | undefined
@@ -38,7 +40,7 @@ export function createSettingsStore(api: SettingsApi) {
     const ticket = ++sequence
     const epoch = connectionEpoch
     try {
-      const result = await api.describe()
+      const [result, permissionCatalog] = await Promise.all([api.describe(), readPermissions?.().catch(() => undefined)])
       if (ticket !== sequence || epoch !== connectionEpoch) return false
       if (!result.ok) { publish({ phase: 'error', error: failureMessage, writable: false }); return false }
       const generation = { ...state.generation }
@@ -50,7 +52,7 @@ export function createSettingsStore(api: SettingsApi) {
         return row
       })
       revisionEpoch = epoch
-      publish({ phase: 'ready', error: null, writable: result.value.writable, namespaces, generation })
+      publish({ phase: 'ready', error: null, writable: result.value.writable, namespaces, generation, permissionCatalog })
       return true
     } catch {
       if (ticket === sequence && epoch === connectionEpoch) publish({ phase: 'error', error: failureMessage, writable: false })
@@ -134,20 +136,23 @@ export function createSettingsStore(api: SettingsApi) {
   }
   function edit(ns: string, path: SettingPath, value?: SettingValue): Promise<boolean> {
     return write(ns, path, row => {
-      const field = findSettingField(row, path)
+      const field = findSettingField(row, path, state.permissionCatalog)
       if (!field) return undefined
       const access = settingFieldAccess(row, field)
       if (!(value === undefined ? access.edit || access.reset : access.edit)) return undefined
+      if (value !== undefined && field.kind === 'select' && !field.options?.some(option => Object.is(option.value, value))) return undefined
       return {
         send: () => value === undefined
           ? api.mutate(ns, buildReset(path), row.revision)
-          : api.update(ns, buildPatch(path, value), row.revision),
+          : ns === 'permission' && path.length === 1 && path[0] === 'defaultPreset'
+            ? api.mutate(ns, [{ op: 'set', path: [...path], value }], row.revision)
+            : api.update(ns, buildPatch(path, value), row.revision),
         resetGroup: value === undefined && field.kind === 'group',
       }
     })
   }
   /** Build model edits only when their turn reaches the queue, using the latest saved value. */
-  function editModelSettings(ns: 'agent-default-model' | 'subagent-model-selection',
+  function editModelSettings(ns: 'agent-default-model' | 'subagent-model-selection-settings',
     ops: (row: SettingsNamespace) => SettingsOperation[], reset = false): Promise<boolean> {
     const path = ns === 'agent-default-model' ? ['model'] : ['enabled']
     return write(ns, path, row => {

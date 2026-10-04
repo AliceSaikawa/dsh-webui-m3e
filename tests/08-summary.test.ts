@@ -12,7 +12,7 @@ function namespace(ns: string, value: SettingObject): SettingsNamespace {
     dict[key] = index + 1
     refs[index + 1] = { type: typeof current }
   }
-  return { ns, value, revision: 1, schema: { uid: 0, refs }, applies: 'live' }
+  return { ns, value, autoGenerate: true, revision: 1, schema: { uid: 0, refs }, applies: 'live' }
 }
 
 test('設定トップは項目順にかかわらず実物の既定モデルと権限を要約する', () => {
@@ -28,20 +28,20 @@ test('設定トップは項目順にかかわらず実物の既定モデルと�
   assert.equal(pageSummary('permission', [permission]), 'カスタム')
 })
 
-test('権限の選択肢に日本語の説明があれば表示名に使う', () => {
+test('権限カタログの日本語の表示名を要約に使う', () => {
   const permission = namespace('permission', { defaultPreset: 'restricted' })
   permission.schema = { uid: 0, refs: {
     0: { type: 'object', dict: { defaultPreset: 1 } },
-    1: { type: 'union', list: [2] },
-    2: { type: 'const', value: 'restricted', meta: { description: '読み取りのみ' } },
+    1: { type: 'string' },
   } }
-  assert.equal(pageSummary('permission', [permission]), '読み取りのみ')
+  const options = [{ value: 'restricted', name: '読み取りのみ' }]
+  assert.equal(pageSummary('permission', [permission], { options, defaultOptions: options, defaultPreset: 'restricted' }), '読み取りのみ')
 })
 
 test('エージェントとツールは確認済みの主要設定値だけを要約する', () => {
   const agent = [
     namespace('agent-loop', { enabled: false, maxParallelToolCalls: 4 }),
-    namespace('agent-presets', { name: 'ダミー名', default: 'default' }),
+    namespace('agent-preset-registry', { name: 'ダミー名', selectedDefault: 'default' }),
   ]
   assert.equal(pageSummary('agent', agent), 'プリセット：default・ツールの同時実行数：4')
   const tools = [namespace('web-search-deepseek', { name: 'ダミー名', model: 'deepseek-chat', maxUses: 5 })]

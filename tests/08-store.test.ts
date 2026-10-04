@@ -7,7 +7,7 @@ import { createSettingsStore, fieldKey, type SettingsApi } from '../web/src/feat
 import { parseFieldInput, schemaFields, type SettingsDescription, type SettingsNamespace } from '../web/src/features/settings/schema.ts'
 import { modelResetOperations, modelSaveOperations, subagentSelection } from '../web/src/features/settings/model-settings.ts'
 
-const ns = 'agent-loop'
+const ns = 'example-extension'
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -39,7 +39,7 @@ function current(store: ReturnType<typeof createSettingsStore>, name = ns): Sett
 
 function restartingHarness() {
   let row: SettingsNamespace = {
-    ns, revision: 3, applies: 'live', value: { timeout: 45, name: '設定' }, user: {},
+    ns, autoGenerate: true, revision: 3, applies: 'live', value: { timeout: 45, name: '設定' }, user: {},
     schema: { uid: 0, refs: { 0: { type: 'object', dict: { timeout: 1, name: 2 } }, 1: { type: 'number' }, 2: { type: 'string' } } },
   }
   const revisions: number[] = []
@@ -422,7 +422,7 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
     const described = await h.remote.describe()
     assert.equal(described.ok, true)
     if (!described.ok) return
-    const row = described.value.namespaces.find(item => item.ns === 'llm-deepseek')!
+    const row = described.value.namespaces.find(item => item.ns === 'example-extension')!
     const schema = row.schema as { uid: number; refs: Record<string, { dict?: Record<string, number>; type?: string; meta?: Record<string, unknown> }> }
     schema.refs['0']!.dict!.disabledValue = 17
     schema.refs['17'] = { type: 'string', meta: { disabled: true } }
@@ -431,10 +431,10 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
     h.api.describe = async () => success(described.value)
     await h.store.reload()
     for (const path of [['protectedInput'], ['disabledValue'], ['models'], ['labels'], ['custom'], ['nonexistent']]) {
-      assert.equal(await h.store.edit('llm-deepseek', path, '変更'), false, path.join('.'))
-      assert.equal(await h.store.edit('llm-deepseek', path), false, path.join('.'))
+      assert.equal(await h.store.edit('example-extension', path, '変更'), false, path.join('.'))
+      assert.equal(await h.store.edit('example-extension', path), false, path.join('.'))
     }
-    assert.equal(await h.store.edit('llm-deepseek', ['retry'], { interval: 8 }), false)
+    assert.equal(await h.store.edit('example-extension', ['retry'], { interval: 8 }), false)
     assert.equal(await h.store.edit('missing-namespace', ['enabled'], false), false)
     assert.deepEqual(h.calls, [])
   } finally { h.ctx.dispose() }
@@ -588,27 +588,27 @@ test('続けて選んだサブエージェントのモデルは直列化して�
     await h.store.reload()
     const routeA = { provider: 'deepseek', model: 'deepseek-v4' }
     const routeB = { provider: 'ollama', model: 'local' }
-    const add = (target: typeof routeA) => h.store.editModelSettings('subagent-model-selection', row => [
+    const add = (target: typeof routeA) => h.store.editModelSettings('subagent-model-selection-settings', row => [
       { op: 'set', path: ['allowedModels'], value: [
         ...subagentSelection(row.value).allowedModels.map(item => ({ provider: item.provider, model: item.model })), target,
       ] },
     ])
     assert.deepEqual(await Promise.all([add(routeA), add(routeB)]), [true, true])
-    assert.deepEqual(subagentSelection(current(h.store, 'subagent-model-selection').value).allowedModels, [routeA, routeB])
-    assert.equal(h.calls.filter(call => call.ns === 'subagent-model-selection' && call.kind === 'mutate').length, 2)
+    assert.deepEqual(subagentSelection(current(h.store, 'subagent-model-selection-settings').value).allowedModels, [routeA, routeB])
+    assert.equal(h.calls.filter(call => call.ns === 'subagent-model-selection-settings' && call.kind === 'mutate').length, 2)
   } finally { h.ctx.dispose() }
 })
 
-test('許可モデルが空なら有効化を拒否し、無効中の選択後は有効化できる', async () => {
+test('設定の保存は許可モデルが空でも有効化と一覧の更新を受け入れる', async () => {
   const h = harness()
   try {
     await h.store.reload()
-    const name = 'subagent-model-selection'
+    const name = 'subagent-model-selection-settings'
     const route = { provider: 'deepseek', model: 'deepseek-v4' }
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['enabled'], value: true },
-    ]), false)
-    assert.equal(subagentSelection(current(h.store, name).value).enabled, false)
+    ]), true)
+    assert.equal(subagentSelection(current(h.store, name).value).enabled, true)
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['allowedModels'], value: [route] },
     ]), true)
@@ -618,8 +618,8 @@ test('許可モデルが空なら有効化を拒否し、無効中の選択後�
     assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['allowedModels'], value: [] },
-    ]), false)
-    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
+    ]), true)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [] })
   } finally { h.ctx.dispose() }
 })
 

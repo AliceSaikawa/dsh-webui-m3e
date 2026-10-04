@@ -7,7 +7,7 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { Markdown } from '../../app/Markdown.tsx'
 import { openSheet, openFullSheet, showSnackbar, type CloseOverlay } from '../../app/overlay/index.ts'
 import { navigate } from '../../app/router.ts'
-import { defer, usePendingInteractions, type PendingInteraction, type PendingQuestion, type AskUserQuestionItem } from '../../dsh/interactions.ts'
+import { defer, presentQuestion, usePendingInteractions, type PendingInteraction, type PendingQuestion, type AskUserQuestionItem } from '../../dsh/interactions.ts'
 import { buildPlanApproval, buildQuestionAnswers, hasAnswer, hasPlanReview, questionDraft, selectOption, type QuestionDraft } from './answers.ts'
 import { PresentationQueue } from './presentation-queue.ts'
 import { questionPresentation } from './presentation.ts'
@@ -48,6 +48,7 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
   const cancelled = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useLayoutEffect(() => presentQuestion(pending.key), [pending.key])
   useLayoutEffect(() => {
     const keys = new Set(allPending.map(item => item.key))
     pruneInteractionDrafts(keys)

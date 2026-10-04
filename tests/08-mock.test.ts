@@ -4,12 +4,13 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { groupNamespaces, pageSummary, schemaFields, selectFieldState, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
+import { mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 
 function setup(scenario?: string) {
   const ctx = createMockContext({ extensions: [{ extendMock }], scenario })
   return { ctx, remote: ctx.remote.settings as SettingsMockRemote }
 }
-async function namespace(remote: SettingsMockRemote, ns = 'agent-loop'): Promise<SettingsNamespace & { base: SettingObject; user: SettingObject }> {
+async function namespace(remote: SettingsMockRemote, ns = 'example-extension'): Promise<SettingsNamespace & { base: SettingObject; user: SettingObject }> {
   const description = unwrapRemoteResult(await remote.describe())
   const row = description.namespaces.find(item => item.ns === ns)!
   assert.ok(row.base)
@@ -23,21 +24,21 @@ test('設定の偽データは全ページと全種類、反映時期、除外�
   try {
     const description = unwrapRemoteResult(await remote.describe())
     assert.equal(description.writable, true)
-    assert.equal(description.namespaces.length, 15)
+    assert.equal(description.namespaces.length, 12)
     const grouped = groupNamespaces(description.namespaces)
     assert.deepEqual(Object.fromEntries(Object.entries(grouped).map(([page, items]) => [page, items.length])), {
-      models: 2, permission: 1, agent: 2, providers: 4, tools: 3, other: 1,
+      models: 2, permission: 1, agent: 2, providers: 0, tools: 3, other: 1,
     })
-    assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live', 'restart']))
-    for (const item of description.namespaces.filter(row => !['agent-default-model', 'subagent-model-selection'].includes(row.ns))) {
+    assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live']))
+    for (const item of description.namespaces.filter(row => row.ns === 'example-extension')) {
       const kinds = new Set(leaves(schemaFields(item)).map(field => field.kind))
       for (const kind of ['switch', 'text', 'number', 'select', 'group', 'readonly']) assert.ok(kinds.has(kind as SettingField['kind']), `${item.ns}: ${kind}`)
     }
     const model = await namespace(remote, 'agent-default-model')
     assert.deepEqual(model.value, { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' })
-    const subagent = await namespace(remote, 'subagent-model-selection')
+    const subagent = await namespace(remote, 'subagent-model-selection-settings')
     assert.deepEqual(subagent.value, { enabled: false, allowedModels: [] })
-    const protectedRow = await namespace(remote, 'llm-deepseek')
+    const protectedRow = await namespace(remote, 'example-extension')
     const masked = leaves(schemaFields(protectedRow)).find(field => field.kind === 'masked')!
     assert.equal(Object.hasOwn(masked, 'value'), false)
     for (const data of [protectedRow.value, protectedRow.base, protectedRow.user]) assert.equal(Object.hasOwn(data, 'protectedInput'), false)
@@ -72,21 +73,21 @@ test('偽データの主要設定をトップへ要約し、モデルの保存�
   try {
     const groups = groupNamespaces(unwrapRemoteResult(await remote.describe()).namespaces)
     assert.equal(pageSummary('models', groups.models), 'deepseek-v4・推論の強さ：high')
-    assert.equal(pageSummary('permission', groups.permission), 'ワークスペース書込')
-    assert.equal(pageSummary('agent', groups.agent), 'プリセット：default・ツールの同時実行数：4')
-    assert.equal(pageSummary('tools', groups.tools), '検索モデル：deepseek-chat・検索の上限回数：5')
+    assert.equal(pageSummary('permission', groups.permission, mockPermissionCatalog), 'ワークスペース書込')
+    assert.equal(pageSummary('agent', groups.agent), 'ツールの同時実行数：10')
+    assert.equal(pageSummary('tools', groups.tools), '検索モデル：deepseek-v4-flash・検索の上限回数：5')
     const model = await namespace(remote, 'agent-default-model')
     const changed = unwrapRemoteResult(await remote.update(model.ns, { model: '別のモデル' }, model.revision))
     assert.equal(pageSummary('models', [changed]), '別のモデル・推論の強さ：high')
   } finally { ctx.dispose() }
 })
 
-test('既定値に戻す処理は対象の上書きだけを消し、更新イベントは名前空間を通知する', async () => {
+test('既定値に戻す処理は対象の上書きだけを消し、更新イベントは名前空間と版を通知する', async () => {
   const { ctx, remote } = setup()
   try {
     const events: unknown[] = []
-    const on = ctx.remote.$on as (event: string, handler: (payload: unknown) => void) => () => void
-    const stop = on('settings/document-updated', payload => { events.push(payload) })
+    const on = ctx.remote.$on as (event: string, handler: (...args: unknown[]) => void) => () => void
+    const stop = on('settings/document-updated', (...args) => { events.push(args) })
     const initial = await namespace(remote)
     const changed = unwrapRemoteResult(await remote.update(initial.ns, { retry: { enabled: false } }, initial.revision))
     const reset = unwrapRemoteResult(await remote.mutate(initial.ns, [{ op: 'unset', path: ['retry', 'interval'] }], changed.revision))
@@ -96,7 +97,7 @@ test('既定値に戻す処理は対象の上書きだけを消し、更新イ�
     const resetGroup = unwrapRemoteResult(await remote.mutate(initial.ns, [{ op: 'unset', path: ['retry'] }], reset.revision))
     assert.equal(Object.hasOwn(resetGroup.user!, 'retry'), false)
     assert.deepEqual(resetGroup.value.retry, initial.base.retry)
-    assert.deepEqual(events, [initial.ns, initial.ns, initial.ns])
+    assert.deepEqual(events, [[initial.ns, changed.revision], [initial.ns, reset.revision], [initial.ns, resetGroup.revision]])
     stop()
   } finally { ctx.dispose() }
 })
