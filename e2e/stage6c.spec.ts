@@ -87,7 +87,7 @@ test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な�
   })
   expect(result.ok).toBe(true)
   await expect(chip).toHaveText('権限')
-  await expect(page.getByText('権限の候補を取得できませんでした。')).toBeVisible()
+  await expect(page.locator('.composer-sheet').getByRole('alert')).toHaveText('サーバーでエラーが発生しました。しばらく待ってから、もう一度お試しください。')
   await expect(fullAccess).toHaveCount(0)
   // Keep this same composer and sheet mounted: remounting would perform an
   // initial read even if the settings notification no longer reloaded them.
@@ -100,7 +100,7 @@ test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な�
   })
   expect(restored.ok).toBe(true)
   await expect(chip).toHaveText('ワークスペース書込')
-  await expect(page.getByText('権限の候補を取得できませんでした。')).toHaveCount(0)
+  await expect(page.locator('.composer-sheet').getByRole('alert')).toHaveCount(0)
   await expect(fullAccess).toBeEnabled()
   await fullAccess.click()
   await expect(page.getByRole('heading', { name: '権限の選び直し' })).toHaveCount(0)

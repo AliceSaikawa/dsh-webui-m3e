@@ -45,7 +45,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissionValue = projection<PermissionSelection>('permissions')
-  const permissionCatalog = usePermissionCatalog()
+  const { catalog: permissionCatalog } = usePermissionCatalog()
   const permissions = permissionValue && permissionCatalog ? { ...permissionValue, options: permissionCatalog.options } : undefined
   const { connected } = useConnection()
   const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
@@ -259,7 +259,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }
   async function openPermissions() {
     try {
-      const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions() : undefined)
+      const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions()
+        : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
       if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
       if (!mounted.current) return
       closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} close={close} apply={async value => {
