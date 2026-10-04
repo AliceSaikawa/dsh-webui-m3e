@@ -64,6 +64,14 @@ pnpm exec playwright test -c tmp/e2e-alt-port.config.ts
 
 環境変数は `env M3E_DSH_VERSION=… pnpm exec …` の形で渡します。試験用 Host の `DEEPSEEK_BASE_URL`、架空の API キー、`SSH_CONNECTION` は `e2e-dsh/dsh-host.ts` が設定します。
 
+期限つき質問の spec は `e2e-dsh/timed-questions-fixtures.ts` を使います。`startDsh(llm.url, { timedQuestionSeconds: 2 })` が隔離ホームの `cordis.patch.yml` に専用 preset を置き、`dsh-tool-ask-user` の `mode: 'timed'` と `timeout: 2` を起動前に設定します。この項目は公開設定ではなく、設定 RPC からの変更ではありません。通常の legacy 質問とは別の Host を使い、追加の環境変数は不要です。全体実行にも含まれ、対象だけなら次のように実行します。
+
+```bash
+env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts e2e-dsh/timed-questions.spec.ts e2e-dsh/timed-questions-hidden.spec.ts e2e-dsh/timed-questions-race.spec.ts
+```
+
+`fixture-contract.spec.ts` は偽記録と不正入力を、実物の V4・Session・commands・compaction の検査関数で照合します。この spec は既定の `tmp/dsh-integration/dsh-<版>/` から関数を読み込むため、`M3E_DSH_DIR` を指定しても、全体実行には既定の場所に同じ版が必要です。Host 上で全 fixture の会話を生成したという確認ではありません。
+
 **フォルダ選択の方式に注意してください。** macOS / Windows の loopback 起動では、Host が OS のダイアログを使う `native` を選ぶ場合があります。統合試験は SSH 起動の印で `browse` を選び、ブラウザのフォルダ一覧を操作します。実際に SSH 接続するわけではなく、bind は `127.0.0.1` のままです。この構成では open-in-app の候補が空になるため、native のフォルダ選択や外部アプリ起動の確認には使えません。
 
 Playwright は途中で中断せず、Host・偽 LLM・Vite の終了処理まで待ちます。対象を絞る場合は、実行の最初からファイルや `-g` を指定してください。結果は偽データが `tmp/e2e-report.json`、実 DSH が `tmp/dsh-integration/report.json` に出ます。
@@ -81,5 +89,7 @@ Playwright は途中で中断せず、Host・偽 LLM・Vite の終了処理ま�
 - `?mock&scenario=approval-demo#/s/readme-review/trace`：トレース表示中の承認
 
 各機能は `web/src/dsh/mock/kit.ts` の `MockKit` を使い、自分の `mock.ts` の `extendMock(kit)` でデータやシナリオを追加できます。共通セッション `readme-review` と `approval-sheet` の履歴は変更せず、必要なセッションを追加してください。共有部品の引数と戻り値、静的調査の結果は [00 の実装メモ](design/00-foundation.md#実装メモ) にあります。
+
+偽物も、実物の拒否条件・準備・参照・取消・通知に合わせます。現在の契約と残す差は [偽データの決まりと意図した簡略化](dsh-compatibility.md#偽データの決まりと意図した簡略化) を参照してください。V4 の見本を変えるときは [規則の対応表と表示期待値の再生成手順](../tests/helpers/s6b-v4-rules.md) を使い、対象履歴を消して通すことや、本体と同じ変換で期待値を作ることを避けます。
 
 DSH に入れる手順は README の「入れ方」にあります。
