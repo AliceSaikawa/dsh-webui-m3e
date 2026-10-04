@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import type { ISessions, SessionWireEvent } from '../web/src/dsh/services.ts'
+import type { ContentBlock, ISessions, SessionWireEvent } from '../web/src/dsh/services.ts'
 import { test, expect, button, openM3e } from './fixtures.ts'
 import { MARK } from './fake-llm.ts'
 
@@ -96,12 +96,27 @@ for (const scenario of [
     await info.attach('records-v4', { body: JSON.stringify(records.filter(event =>
       ['user/message', 'tool/call', 'tool/result', 'developer/message', 'session/title-llm-request', 'session/title'].includes(event.type)), null, 2), contentType: 'application/json' })
 
+    const output = (result.data as { message: { content: ContentBlock[] } }).message.content
+      .flatMap(block => block.type === 'text' ? [block.text] : [])
+    expect(output.join('')).toContain(scenario.output)
+    const chatTool = page.locator('.chat-tool').filter({ hasText: scenario.tool })
+    await expect(chatTool).toHaveCount(1)
+    await chatTool.click()
+    // Only result blocks following the 結果 heading, never the arguments above it.
+    const chatResult = page.locator('.chat-detail > .chat-detail-heading:has-text("結果") ~ pre.chat-json')
+    await expect(chatResult).toHaveText(output)
+    for (const block of await chatResult.all()) await expect(block).toBeVisible()
+    await expect(page.locator('.chat-detail').getByText('完了', { exact: true })).toBeVisible()
+    await button(page, '閉じる').click()
+
     await page.getByRole('tab', { name: 'トレース', exact: true }).click()
     const tool = page.locator('[data-trace-row]').filter({ hasText: `ツール：${scenario.tool}` })
     await expect(tool).toHaveCount(1)
     await expect(tool).not.toContainText('実行中')
     await tool.click()
-    await expect(page.locator('.trace-record')).toContainText(scenario.output)
-    await expect(page.locator('.trace-record')).not.toContainText('本文は記録されていません。')
+    // The output icon identifies the 結果 row; 引数 has its own data_object row.
+    const traceResult = page.locator('.trace-record-row:has(> [slot="leading"]:text-is("output")) > .trace-record-panel')
+    await expect(traceResult).toBeVisible()
+    await expect(traceResult).toHaveText(output.join(''))
   })
 }

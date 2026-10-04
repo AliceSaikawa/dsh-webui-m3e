@@ -32,9 +32,19 @@ test('追加の偽履歴はシステム、注入された指示、ファイル�
   try {
     const rows = buildChatRows(foldSessionWindow(ctx.sessions.retain('chat-samples', { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
     assert.deepEqual(rows.map(row => row.kind), ['system', 'context', 'user', 'tool'])
+    const user = rows.find(row => row.kind === 'user')!
+    assert.deepEqual(user.content.filter(block => block.type === 'file'), [
+      { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } },
+    ])
     const result = rows.find(row => row.kind === 'tool')!
     assert.equal(result.status, 'success')
     assert.equal(result.durationMs, 1000)
+    assert.deepEqual(result.result.map(block => block.type), ['text', 'text', 'image', 'file'])
+    assert.deepEqual(result.result.slice(1), [
+      { type: 'text', text: '入れ子の最後の結果です。' },
+      { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '手順の画像.png' } },
+      { type: 'file', attachment: { attachmentId: 'mock-output', name: '結果.txt', bytes: 4096 } },
+    ])
     assert.equal(clipToolResult(result.result).truncated, true)
   } finally { ctx.dispose() }
 })

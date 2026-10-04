@@ -88,22 +88,25 @@ test('V4のblockTypeとblock-endはツール増減とplugin拡張を安全に保
 })
 
 test('V4ツール結果の失敗と拡張フィールドを入力の見出しごと保持する', () => {
-  const events = [
-    record(0, 'turn/start', { turn: 1 }),
-    record(1, 'tool/call', { turn: 1, step: 1, callId: 'failed', name: 'bash', arguments: '{}' }),
-    record(2, 'tool/result', { turn: 1, step: 1, error: { name: 'Error', code: 'EXIT_1', reason: 'adapter-detail' }, message: {
-      role: 'tool', toolCallId: 'failed', content: [text('結果本文')], isError: true,
-      'plugin:result:content': '本文を置き換えない', 'plugin:message:isError': false,
-    } }),
-    record(3, 'assistant/message', { turn: 1, step: 2, message: { content: [text('返事')] } }),
-  ]
-  const chat = buildChatRows(events)[0]!
-  assert.ok(chat.kind === 'tool')
-  assert.equal(chat.status, 'error')
-  assert.deepEqual(chat.result, [text('結果本文')])
-  const rows = buildTrace(events)[0]!.rows
-  assert.equal(rows[0]!.failed, true)
-  assert.deepEqual(rows[1]!.input, [{ type: 'tool-output', toolCallId: 'failed', content: [text('結果本文')], isError: true }])
+  // isError alone must mark failure, even when the adapter supplies no data.error.
+  for (const error of [undefined, { name: 'Error', code: 'EXIT_1', reason: 'adapter-detail' }]) {
+    const events = [
+      record(0, 'turn/start', { turn: 1 }),
+      record(1, 'tool/call', { turn: 1, step: 1, callId: 'failed', name: 'bash', arguments: '{}' }),
+      record(2, 'tool/result', { turn: 1, step: 1, ...(error ? { error } : {}), message: {
+        role: 'tool', toolCallId: 'failed', content: [text('結果本文')], isError: true,
+        'plugin:result:content': '本文を置き換えない', 'plugin:message:isError': false,
+      } }),
+      record(3, 'assistant/message', { turn: 1, step: 2, message: { content: [text('返事')] } }),
+    ]
+    const chat = buildChatRows(events)[0]!
+    assert.ok(chat.kind === 'tool')
+    assert.equal(chat.status, 'error', error ? 'data.error もある失敗' : 'isError だけの失敗')
+    assert.deepEqual(chat.result, [text('結果本文')])
+    const rows = buildTrace(events)[0]!.rows
+    assert.equal(rows[0]!.failed, true, error ? 'data.error もある失敗' : 'isError だけの失敗')
+    assert.deepEqual(rows[1]!.input, [{ type: 'tool-output', toolCallId: 'failed', content: [text('結果本文')], isError: true }])
+  }
 })
 
 test('共有・チャット・トレースの偽記録はV4であり旧tool-resultを含まない', () => {
