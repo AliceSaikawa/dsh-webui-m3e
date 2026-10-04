@@ -10,7 +10,7 @@ const questions = [{ id: 'q', question: '確認', options: [{ label: '進める'
 const answer = { answers: [{ id: 'q', selected: ['進める'] }] }
 const projected = (state: 'open' | 'continued'): UserQuestionProjection => ({ active: [{ callId: 'call', questions, state }], settled: [] })
 
-function setup(options: { empty?: boolean; openingError?: boolean } = {}) {
+function setup(options: { empty?: boolean; openingError?: boolean; remainingMs?: number } = {}) {
   const ctx = createMockContext()
   const store = new InteractionStore()
   let claimSignal: AbortSignal | undefined
@@ -29,7 +29,7 @@ function setup(options: { empty?: boolean; openingError?: boolean } = {}) {
           if (options.openingError) return Promise.reject(new Error('wait transport failed'))
           if (options.empty || opened) return options.empty ? Promise.resolve({ done: true as const, value: undefined }) : done
           opened = true
-          return Promise.resolve({ done: false as const, value: { remainingMs: 1 } })
+          return Promise.resolve({ done: false as const, value: { remainingMs: options.remainingMs ?? 60_000 } })
         } } },
       }
     },
@@ -43,9 +43,76 @@ function setup(options: { empty?: boolean; openingError?: boolean } = {}) {
   }
 }
 
+test('S6B 非表示のtimed質問はopeningの残り時間で期限を迎えカードを残す', { timeout: 1000 }, async () => {
+  const h = setup({ remainingMs: 20 })
+  try {
+    h.ctx.mock.setProjection(id, 'userQuestions', projected('open'))
+    await assert.rejects(h.request(), { code: 'ASK_TIMED_OUT' })
+    assert.equal(h.store.getSnapshot()[0]?.callId, 'call')
+    h.finish()
+    await tick()
+    assert.equal(h.disposed(), 1)
+  } finally { h.dispose() }
+})
+
+test('S6B 遅延した回答RPCはキュー取消で復帰した同じkeyのカードを消さない', async () => {
+  const h = setup()
+  try {
+    h.ctx.mock.setProjection(id, 'userQuestions', projected('continued'))
+    const pending = h.store.getSnapshot()[0] as PendingQuestion
+    let finish!: () => void
+    h.remote.answer = () => new Promise(resolve => { finish = () => resolve({ ok: true, value: true }) })
+    const submitted = pending.answer(answer)
+    h.ctx.mock.setProjection(id, 'inbox', { 'next-step': [{ source: { kind: 'user-question-reply', callId: 'call' } }], 'next-turn': [] })
+    assert.deepEqual(h.store.getSnapshot(), [])
+    h.ctx.mock.setProjection(id, 'inbox', { 'next-step': [], 'next-turn': [] })
+    const restored = h.store.getSnapshot()[0] as PendingQuestion
+    assert.equal(restored.key, pending.key)
+    assert.notEqual(restored, pending)
+    finish()
+    await submitted
+    assert.equal(h.store.getSnapshot()[0], restored)
+    h.remote.answer = async () => {
+      h.ctx.mock.setProjection(id, 'userQuestions', { active: [], settled: [{ callId: 'call', answers: answer.answers }] })
+      return { ok: true, value: true }
+    }
+    await restored.answer(answer)
+    assert.deepEqual(h.store.getSnapshot(), [])
+  } finally { h.dispose() }
+})
+
+test('S6B 表示中の残り時間を保ち、あとで・画面離脱から残期間だけ再開する', { timeout: 1000 }, async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 })
+  for (const departure of ['defer', 'unmount']) {
+    const h = setup({ remainingMs: 50 })
+    try {
+      h.ctx.mock.setProjection(id, 'userQuestions', projected('open'))
+      let expired = false
+      const reply = assert.rejects(h.request().catch(error => { expired = true; throw error }), { code: 'ASK_TIMED_OUT' })
+      await tick()
+      t.mock.timers.tick(20)
+      const key = h.store.getSnapshot()[0]!.key
+      const leave = h.store.presentQuestion(key)
+      t.mock.timers.tick(1000)
+      await tick()
+      assert.equal(expired, false, 'visible card holds the remaining 30 ms')
+      if (departure === 'defer') h.store.defer(key)
+      else leave()
+      t.mock.timers.tick(29)
+      await tick()
+      assert.equal(expired, false)
+      t.mock.timers.tick(1)
+      await reply
+      if (departure === 'defer') leave()
+      h.finish()
+    } finally { h.dispose() }
+  }
+})
+
 test('S6B timedは待機streamを取得し、回答の配送が終わるまでclaimを解放しない', async () => {
   const h = setup()
   try {
+    h.ctx.mock.setProjection(id, 'userQuestions', projected('open'))
     const reply = h.request()
     await tick()
     assert.equal(h.attached(), 1)
@@ -55,6 +122,8 @@ test('S6B timedは待機streamを取得し、回答の配送が終わるまでcl
     assert.equal(h.store.getSnapshot()[0]?.deferred, true)
     await pending.answer(answer)
     assert.deepEqual(await reply, answer)
+    assert.equal(h.store.getSnapshot()[0]?.key, pending.key, 'the projection owns removal after delivery')
+    h.ctx.mock.setProjection(id, 'userQuestions', { active: [], settled: [{ callId: 'call', answers: answer.answers }] })
     assert.deepEqual(h.store.getSnapshot(), [])
     assert.equal(h.signal()?.aborted, false, 'RPC reply precedes claim release')
     assert.equal(h.disposed(), 0)
@@ -82,7 +151,11 @@ test('S6B timedのabort後も同じカードと保留印を維持し、continued
     assert.equal(h.store.getSnapshot().length, 1)
     assert.equal(h.store.getSnapshot()[0]?.deferred, true)
     let received: unknown
-    h.remote.answer = async (...args) => { received = args; return { ok: true, value: true } }
+    h.remote.answer = async (...args) => {
+      received = args
+      h.ctx.mock.setProjection(id, 'userQuestions', { active: [], settled: [{ callId: 'call', answers: answer.answers }] })
+      return { ok: true, value: true }
+    }
     await pending.answer(answer) // The already-mounted sheet's original carrier.
     assert.deepEqual(received, [id, 'call', answer])
     assert.deepEqual(h.store.getSnapshot(), [])

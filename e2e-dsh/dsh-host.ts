@@ -56,6 +56,32 @@ export interface DshHost {
   restart(): Promise<void>
 }
 
+/** Bound startup and clean up the owned process even before a handle can be returned. */
+export async function waitForDshUrl(proc: ChildProcess, stop: () => Promise<void>, timeoutMs = 60_000): Promise<string> {
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      let output = ''
+      const finish = (error?: Error, url?: string) => {
+        clearTimeout(timer)
+        proc.stdout?.off('data', onData); proc.stderr?.off('data', onData)
+        proc.off('exit', onExit); proc.off('error', onError)
+        if (error) reject(error)
+        else resolve(url!)
+      }
+      const onData = (chunk: Buffer) => {
+        output += chunk.toString()
+        const match = /dsh web: (http:\/\/127\.0\.0\.1:\d+\/\?token=\S+)/.exec(output)
+        if (match) finish(undefined, match[1])
+      }
+      const onExit = (code: number | null) => finish(new Error(`dsh-integration: DSH exited (${code})\n${output}`))
+      const onError = (error: Error) => finish(error)
+      const timer = setTimeout(() => finish(new Error(`dsh-integration: DSH did not print its URL\n${output}`)), timeoutMs)
+      proc.stdout?.on('data', onData); proc.stderr?.on('data', onData)
+      proc.once('exit', onExit); proc.once('error', onError)
+    })
+  } catch (error) { await stop(); throw error }
+}
+
 export async function startDsh(llmUrl: string, options: { timedQuestionSeconds?: number } = {}): Promise<DshHost> {
   const install = dshInstall()
   const actual = JSON.parse(readFileSync(join(install, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8')).version as string
@@ -94,24 +120,16 @@ export async function startDsh(llmUrl: string, options: { timedQuestionSeconds?:
   let child: ChildProcess | undefined
   let port = 0
   let loginUrl = ''
-  const boot = () => new Promise<void>((resolve, reject) => {
+  const boot = async () => {
     const proc = spawn(bin, ['web', '--no-open', '--host', '127.0.0.1', '--port', String(port)], { cwd: install, env, stdio: ['ignore', 'pipe', 'pipe'] })
     child = proc
-    let output = ''
-    const timer = setTimeout(() => reject(new Error(`dsh-integration: DSH did not print its URL\n${output}`)), 60_000)
-    const onData = (chunk: Buffer) => {
-      output += chunk.toString()
-      const match = /dsh web: (http:\/\/127\.0\.0\.1:(\d+)\/\?token=\S+)/.exec(output)
-      if (match) { clearTimeout(timer); loginUrl = match[1]!; port = Number(match[2]); resolve() }
-    }
-    proc.stdout!.on('data', onData)
-    proc.stderr!.on('data', onData)
-    proc.on('exit', code => { clearTimeout(timer); if (!loginUrl) reject(new Error(`dsh-integration: DSH exited (${code})\n${output}`)) })
-  })
+    loginUrl = await waitForDshUrl(proc, stop)
+    port = Number(new URL(loginUrl).port)
+  }
   const stop = () => new Promise<void>(resolve => {
     const proc = child
     child = undefined
-    if (!proc || proc.exitCode !== null) { resolve(); return }
+    if (!proc || proc.exitCode !== null || !proc.pid) { resolve(); return }
     proc.once('exit', () => resolve())
     proc.kill('SIGTERM')
     setTimeout(() => proc.kill('SIGKILL'), 10_000).unref()

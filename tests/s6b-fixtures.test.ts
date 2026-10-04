@@ -11,6 +11,9 @@ import * as search from '../web/src/features/search/mock.ts'
 import * as sessionTools from '../web/src/features/session-tools/mock.ts'
 import * as trace from '../web/src/features/trace/mock.ts'
 import { traceExampleRecords, traceRetryCancelledRecords } from '../web/src/features/trace/trace-fixtures.ts'
+import { buildChatRows } from '../web/src/features/chat/model.ts'
+import { selectTrace, turnHeading } from '../web/src/features/trace/model.ts'
+import { approvalRecords } from '../web/src/dsh/mock/fixtures.ts'
 
 // Inspect whole Host histories, not the 100-record Client window. The deliberately
 // broken parser inputs in older unit tests are not normal fixture histories.
@@ -19,12 +22,25 @@ function histories() {
   for (const scenario of [undefined, 'chat-injected-context', 'chat-error', 'open-error', 'chat-long-streaming', 'inbox', 'search-more', 'question-continued']) {
     const ctx = createMockContext({ scenario, extensions: [chat, composer, home, inbox, interactions, search, sessionTools, trace] })
     try {
+      const baseIds = ['readme-review', 'approval-sheet', 'chat-long', 'chat-samples', 'chat-spec-check',
+        'home-mobile-layout', 'home-workspace-question', 'home-review-child', 'home-list-menu', 'home-harness-tests',
+        '05-db-choice', '05-auth-redesign', 'search-permissions', 'search-mobile', 'search-history', 'search-colors',
+        'session-tools-review', 'session-tools-tests', 'trace-example', 'trace-failure-example']
+      const extra = scenario === 'inbox' ? ['inbox-approval', 'inbox-question', 'inbox-plan', 'inbox-completed', 'inbox-other-completed']
+        : scenario === 'search-more' ? Array.from({ length: 24 }, (_, i) => `search-example-${i + 1}`)
+        : scenario === 'open-error' ? ['chat-open-error']
+        : scenario?.startsWith('chat-') ? [scenario] : []
+      assert.deepEqual(Object.keys(ctx.sessions.list.getSnapshot().byId).sort(), [...baseIds, ...extra].sort(), `${scenario ?? 'default'}: fixture initialization must not lose sessions`)
       for (const summary of Object.values(ctx.sessions.list.getSnapshot().byId)) rows.push({
         id: `${scenario ?? 'default'}/${summary.id}`, running: summary.running, records: ctx.mock.getRecords(summary.id),
       })
     } finally { ctx.dispose() }
   }
   rows.push({ id: 'cancelled-retry', running: false, records: traceRetryCancelledRecords })
+  assert.equal(rows.length, 194)
+  assert.deepEqual(rows.filter(row => row.records.length === 0).map(row => row.id), [
+    'open-error/chat-open-error', 'inbox/inbox-approval', 'inbox/inbox-question', 'inbox/inbox-plan', 'inbox/inbox-completed', 'inbox/inbox-other-completed',
+  ])
   return rows
 }
 
@@ -39,7 +55,6 @@ test('S6B 全履歴fixtureのseqは0から密で単調、必須の時刻も整�
 })
 
 test('S6B 全履歴fixtureのV4必須フィールドとproducerの語彙を保つ', () => {
-  const vocabulary = new Set(['user', 'system-prompt', 'model', 'tool', 'agent-instructions', 'session-reference', 'compact-checkpoint', 'plugin:検証用プラグイン'])
   for (const { id, records } of histories()) {
     const ids = new Set<string>()
     for (const event of records) {
@@ -58,10 +73,16 @@ test('S6B 全履歴fixtureのV4必須フィールドとproducerの語彙を保�
       assert.ok(message.id.length > 0 && !ids.has(message.id), `${id}: ${message.id}`)
       ids.add(message.id)
       assert.ok(Array.isArray(message.content), id)
-      assert.ok(vocabulary.has(message.source?.kind), `${id}: ${JSON.stringify(message.source)}`)
+      assert.equal(typeof message.source?.kind, 'string', id)
+      assert.ok(message.source.kind.length > 0, id)
+      // User/developer producers are extensible; the other roles are closed.
+      if (role === 'system') assert.equal(message.source.kind, 'system-prompt', id)
+      if (role === 'assistant') assert.equal(message.source.kind, 'model', id)
+      if (role === 'tool') assert.equal(message.source.kind, 'tool', id)
+      for (const block of message.content) assert.notEqual(block.type, 'tool-result', `${id}: obsolete tool-result block`)
       assert.ok(event.surfaceOp, id)
-      if (role === 'assistant') for (const field of ['provider', 'model']) assert.equal(typeof message.source[field], 'string', id)
-      if (role === 'tool') assert.equal(message.source.callId, message.toolCallId, id)
+      if (role === 'assistant') for (const field of ['provider', 'model']) { assert.equal(typeof message.source[field], 'string', id); assert.ok(message.source[field].length > 0, id) }
+      if (role === 'tool') { assert.equal(message.source.callId, message.toolCallId, id); assert.ok(message.source.callId.length > 0, id) }
       if (message.source.kind === 'agent-instructions') assert.deepEqual(message.source.changes, [{ action: 'set', scope: 'user-global\u0000AGENTS.md', path: '~/.dsh/AGENTS.md' }])
       if (message.source.kind === 'session-reference') assert.deepEqual(message.source, {
         kind: 'session-reference', form: 'recall', version: 1,
@@ -114,18 +135,22 @@ test('S6B 全履歴fixtureのturnとstepの境界、宣言・開始・結果が�
 test('S6B コマンドはsourceオブジェクトと対応するrunを持ち、参照先は非コマンド', () => {
   for (const { id, records } of histories()) {
     const commands = new Set<string>()
+    const runIds = new Set<string>()
     for (const event of records) {
       const data = dataOf(event)
       if (event.type === 'command/run') {
         assert.deepEqual(data.source, { kind: 'user' }, id)
-        assert.ok(!commands.has(data.commandId), id); commands.add(data.commandId)
+        assert.ok(!runIds.has(data.commandId), id); runIds.add(data.commandId); commands.add(data.commandId)
       }
       if (event.type === 'command/done') {
         assert.ok(commands.delete(data.commandId), id)
         if (data.sourceEventSeq !== undefined) {
           assert.equal(data.kind, 'success', id)
+          assert.ok(Number.isSafeInteger(data.sourceEventSeq) && data.sourceEventSeq >= 0, id)
           assert.ok(data.sourceEventSeq < event.seq, id)
-          assert.ok(!records[data.sourceEventSeq]?.type.startsWith('command/'), id)
+          const source = records.find(row => row.seq === data.sourceEventSeq)
+          assert.ok(source, `${id}: missing source event`)
+          assert.ok(source.type !== 'command/run' && source.type !== 'command/done', id)
         }
       }
     }
@@ -157,6 +182,23 @@ test('S6B 要約の置換範囲・全surfaceノード・非負の価格が直後
   assert.deepEqual(data.shadowedSeqs, nodes)
   assert.deepEqual(checkpoint.sourceEventSeqs, nodes)
   assert.equal(typeof data.shadowedTokenCount, 'number')
-  assert.ok(Number.isFinite(data.shadowedTokenCount) && data.shadowedTokenCount >= 0)
+  assert.ok(Number.isSafeInteger(data.shadowedTokenCount) && data.shadowedTokenCount >= 0)
   assert.equal(dataOf(checkpoint).source.compactionId, data.compactionId)
+})
+
+test('S6B 全履歴fixtureのチャット表示行キーは一意', () => {
+  for (const { id, records } of histories()) {
+    const rows = buildChatRows(records)
+    assert.equal(new Set(rows.map(row => row.key)).size, rows.length, id)
+  }
+})
+
+test('S6B approvalの有効な先行空turnは表示を増やさず、従来の見出し2・3を保つ', () => {
+  assert.equal(dataOf(approvalRecords[0]!).turn, 1)
+  assert.deepEqual(selectTrace(approvalRecords, null, true).map(turnHeading), [
+    'ターン 2 ・ 合計 18.4 秒 ・ 12,480 トークン', 'ターン 3 ・ 実行中',
+  ])
+  const failed = approvalRecords.slice(0, 2).map(row => row.type === 'turn/end'
+    ? { ...row, data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } } } : row)
+  assert.equal(selectTrace(failed)[0]?.termination?.kind, 'aborted', 'an empty interrupted turn remains visible')
 })

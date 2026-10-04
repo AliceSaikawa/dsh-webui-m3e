@@ -34,6 +34,8 @@ const files: readonly FileReference[] = [
 ]
 
 export function extendMock(kit: MockKit): void {
+  ;(globalThis as typeof globalThis & { __m3eObserveModelSelection?: (read: (id: string) => unknown) => void })
+    .__m3eObserveModelSelection?.(id => structuredClone(kit.getProjection(id, 'modelSelection')))
   let savedDefault = structuredClone(mockModelCatalog.default)
   const known = new Set<string>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {

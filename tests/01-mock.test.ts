@@ -27,7 +27,7 @@ test('ホームの偽データは共有履歴を保ち、3 ワークスペース
     for (const workspace of workspaces) for (const id of workspace.sessionIds) assert.ok(list.byId[id])
     assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
     assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-chat' } })
+    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } })
   } finally { ctx.dispose() }
 })
 
@@ -90,7 +90,7 @@ test('ホームの子は読み込み済みカタログに登録され、一度�
 test('子の追加は同じ親の既存の行・補助情報と別の親のカタログを保つ', async () => {
   const previousEntry = { id: 'other-review-child', mode: 'continuable' as const, label: '別担当の子', createdAt: 0 }
   const diagnostic = { id: 'other-diagnostic', mode: 'unknown' as const, createdAt: 0 }
-  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-reasoner' } } } }
+  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } } } }
   const prior: MockExtension = { extendMock(kit) {
     kit.addSession({ id: previousEntry.id, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: previousEntry.label, running: true, blank: true, updatedAt: 1 }, [])
     kit.setProjection(MOCK_IDS.sessions.readme, 'subagentCatalog', [previousEntry, diagnostic])

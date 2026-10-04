@@ -1,5 +1,11 @@
 import { test, expect, visit, button, shot } from './helpers'
 import type { Page, Locator } from '@playwright/test'
+import type { ModelSelectionProjection } from '../web/src/dsh/services.ts'
+
+declare global { interface Window {
+  __m3eObserveModelSelection?: (read: (id: string) => unknown) => void
+  __m3eReadModelSelection?: (id: string) => ModelSelectionProjection
+} }
 
 test.use({ reducedMotion: 'no-preference' })
 
@@ -47,14 +53,19 @@ test('既存会話のモデルを選び直しても補助シートを開き直�
 })
 
 test('考える深さをドロップダウンで変更する', async ({ page }) => {
+  await page.addInitScript(() => { window.__m3eObserveModelSelection = read => { window.__m3eReadModelSelection = read as (id: string) => ModelSelectionProjection } })
   await visit(page, '/s/readme-review')
   await button(page, '入力の補助を開く').click()
-  // The restored next selection is the historical, now unavailable model.
-  await choose(page, model(page), 'DeepSeek / DeepSeek V4')
   await expect(effort(page)).toBeVisible()
+  await expect(effort(page)).toHaveJSProperty('value', 'high')
   await choose(page, effort(page), '低')
+  await expect.poll(() => page.evaluate(() => window.__m3eReadModelSelection!('readme-review').next)).toEqual({ provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'low' })
   await expect(effort(page)).toHaveJSProperty('value', 'low')
   await expect(assist(page)).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await expect(assist(page)).toHaveCount(0)
+  await button(page, '入力の補助を開く').click()
+  await expect(effort(page)).toHaveJSProperty('value', 'low')
 })
 
 test('遅いモデル一覧を補助シート内で待ち、応答後に選べる', async ({ page }) => {

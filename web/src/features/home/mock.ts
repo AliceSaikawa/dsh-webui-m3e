@@ -2,6 +2,7 @@ import type { MockKit } from '../../dsh/mock/kit.ts'
 import { MOCK_IDS, sharedWorkspaces } from '../../dsh/mock/fixtures.ts'
 import type { SubagentCatalogEntry, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
 import { createDirectoryMock } from './directory-mock.ts'
+import { mockModelCatalog } from '../composer/mock.ts'
 
 export const HOME_MOCK_IDS = {
   completed: 'home-mobile-layout',
@@ -58,8 +59,8 @@ export function extendMock(kit: MockKit): void {
   kit.setSessionState(HOME_MOCK_IDS.child, { subagent: {
     address: { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode: 'one-shot' }, parentAvailable,
   } })
-  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-chat' } })
-  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-reasoner' } })
+  kit.setProjection(MOCK_IDS.sessions.readme, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: structuredClone(mockModelCatalog.default) })
+  kit.setProjection(MOCK_IDS.sessions.approval, 'modelSelection', { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: structuredClone(mockModelCatalog.default) })
   kit.addRemote('directoryPicker', createDirectoryMock())
 
   kit.scenario('home', (home) => {

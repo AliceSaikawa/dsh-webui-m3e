@@ -116,6 +116,9 @@ export function extendMock(kit: MockKit): void {
   // stream. This fixture represents its already persisted continued state.
   kit.scenario('question-continued', () => {
     kit.setProjection(databaseSessionId, 'userQuestions', structuredClone(continuedQuestionProjection))
+    // Read-only probe of the receiving side, installed only by the browser test.
+    ;(globalThis as typeof globalThis & { __m3eObserveQuestions?: (read: () => unknown) => void })
+      .__m3eObserveQuestions?.(() => structuredClone(kit.getProjection(databaseSessionId, 'userQuestions')))
     kit.addRemote('userQuestions', {
       async answer(sessionId: string, callId: string, answer: AskUserQuestionAnswer) {
         if (sessionId !== databaseSessionId) return { ok: false, error: { code: 'session/not-found', message: '会話が見つかりません。', details: { sessionId } } }

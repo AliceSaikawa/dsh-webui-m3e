@@ -61,7 +61,8 @@ export interface UserQuestionsRemote {
 interface QuestionCard {
   pending: PendingQuestion
   projectedActive?: boolean
-  live?: { answer(value: AskUserQuestionAnswer): void; cancel(): void }
+  live?: { answer(value: AskUserQuestionAnswer): void; cancel(): void; setVisible(visible: boolean): void }
+  visible: number
   rpc?: (answer: AskUserQuestionAnswer) => Promise<boolean>
   submitting: boolean
 }
@@ -128,8 +129,8 @@ export class InteractionStore {
     )
   }
 
-  requestQuestion(sessionId: string, request: AskUserQuestionRequestEvent): Promise<AskUserQuestionAnswer> {
-    if (request.wait?.timed) return this.#timedQuestion(sessionId, request)
+  requestQuestion(sessionId: string, request: AskUserQuestionRequestEvent, remainingMs?: number): Promise<AskUserQuestionAnswer> {
+    if (request.wait?.timed) return this.#timedQuestion(sessionId, request, remainingMs)
     return this.#request<AskUserQuestionAnswer>(
       (key, answer) => ({ key, kind: 'question', sessionId, deferred: false, items: request.questions, answer }),
       request.signal,
@@ -142,16 +143,17 @@ export class InteractionStore {
     const existing = this.#questions.get(key)
     if (existing) return existing
     const card: QuestionCard = {
-      submitting: false,
+      submitting: false, visible: 0,
       pending: { key, kind: 'question', sessionId, callId, deferred: false, items: [...questions],
         answer: async (value) => {
           if (this.#questions.get(key) !== card || card.submitting) throw new Error('この要求への回答はすでに終了しています。')
-          if (card.live) { card.live.answer(value); this.#removeQuestion(key); return }
+          if (card.live) { card.live.answer(value); return }
           if (!card.rpc) throw questionAbortError()
           card.submitting = true
           try {
             if (!await card.rpc(value)) throw questionAbortError()
-            this.#removeQuestion(key)
+            // Host projections own removal, including a queued reply cancelled
+            // before this RPC returns. Its replacement can have the same key.
           } finally { card.submitting = false }
         },
       },
@@ -168,18 +170,31 @@ export class InteractionStore {
     this.#notify()
   }
 
-  #timedQuestion(sessionId: string, request: AskUserQuestionRequestEvent): Promise<AskUserQuestionAnswer> {
+  #timedQuestion(sessionId: string, request: AskUserQuestionRequestEvent, remainingMs?: number): Promise<AskUserQuestionAnswer> {
     if (request.signal?.aborted) return Promise.reject(questionAbortError())
     const card = this.#questionCard(sessionId, request.wait!.callId, request.questions)
     card.live?.cancel()
     return new Promise((resolve, reject) => {
+      let remaining = remainingMs
+      let deadline: number | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined
       const finish = (settle: () => void) => {
         if (card.live !== live) return
+        clearTimeout(timer)
         request.signal?.removeEventListener('abort', live.cancel)
         card.live = undefined
         settle()
       }
       const live = {
+        setVisible: (visible: boolean) => {
+          if (visible) {
+            if (deadline !== undefined) remaining = Math.max(0, deadline - Date.now())
+            clearTimeout(timer); timer = undefined; deadline = undefined
+          } else if (remaining !== undefined && deadline === undefined) {
+            deadline = Date.now() + remaining
+            timer = setTimeout(() => finish(() => reject(Object.assign(questionAbortError(), { code: 'ASK_TIMED_OUT' }))), remaining)
+          }
+        },
         answer: (answer: AskUserQuestionAnswer) => finish(() => resolve(answer)),
         // The projection, not cancellation of the foreground waterfall, owns
         // the timed card's lifetime. A timeout can still be answered via RPC.
@@ -190,7 +205,20 @@ export class InteractionStore {
       }
       card.live = live
       request.signal?.addEventListener('abort', live.cancel, { once: true })
+      live.setVisible(card.visible > 0)
     })
+  }
+
+  /** The existing answer sheet is the focus seat; hidden/queued cards keep counting down. */
+  presentQuestion(key: string): () => void {
+    const card = this.#questions.get(key)
+    if (!card) return () => {}
+    card.visible++
+    card.live?.setVisible(true)
+    return () => {
+      card.visible--
+      if (card.visible === 0) card.live?.setVisible(false)
+    }
   }
 
   /** Mirror the same continued/queued/settled states as the stock question UI. */
@@ -216,6 +244,7 @@ export class InteractionStore {
   }
 
   defer(key: string): void {
+    this.#questions.get(key)?.live?.setVisible(false)
     this.#replace((pending) => pending.key === key && !pending.deferred ? { ...pending, deferred: true } : pending)
   }
 
@@ -330,7 +359,7 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
         const opening = await iterator.next()
         if (opening.done) return await next()
         ended = iterator.next().then(() => { throw questionAbortError() }).catch(error => { lifetime.abort(); throw error })
-        return await Promise.race([store.requestQuestion(sessionId, { ...request, signal }), ended])
+        return await Promise.race([store.requestQuestion(sessionId, { ...request, signal }, opening.value.remainingMs), ended])
       } finally {
         // The answer still has to cross the waterfall transport. Releasing
         // here races it with the Host deadline. Let Host settlement end the
