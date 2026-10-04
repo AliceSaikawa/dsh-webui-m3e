@@ -64,9 +64,13 @@ export function createMockJobs(readRows?: (id: string) => Promise<RemoteResult<r
     const generation = ++entry.generation
     queueMicrotask(() => {
       if (disposed || observations.get(id) !== entry || entry.stopped || generation !== entry.generation) return
-      if (!(entry.sessionId === undefined ? [...host.values()].flat() : host.get(entry.sessionId) ?? []).some(row => row.id === id)) frame(id, { type: 'error', error: 'job/not-found: ジョブが見つかりません。' })
+      if (!accessible(id, entry.sessionId)) frame(id, { type: 'error', error: 'job/not-found: ジョブが見つかりません。' })
       else frame(id, { type: 'opened' })
     })
+  }
+  function accessible(id: string, caller?: string) {
+    const row = [...host.values()].flat().find(row => row.id === id)
+    return row && (row.owner === undefined || row.owner === caller) ? row : undefined
   }
   const jobs: IJobs = {
     state,
@@ -74,7 +78,7 @@ export function createMockJobs(readRows?: (id: string) => Promise<RemoteResult<r
     observe(sessionId, id) { return acquire(observations, id, entry => { entry.sessionId = sessionId; openObservation(id, entry) }, () => state.update(value => { const observed = { ...value.observed }; delete observed[id]; return { ...value, observed } })) },
     async kill(sessionId, id) {
       await Promise.resolve()
-      const row = host.get(sessionId)?.find(row => row.id === id)
+      const row = accessible(id, sessionId)
       if (!row) return { ok: false, error: { code: 'job/not-found', message: 'ジョブが見つかりません。', details: {} } }
       return { ok: true, value: { outcome: row.status === 'running' || row.status === 'stopping' ? 'requested' : 'already-finished' } }
     },

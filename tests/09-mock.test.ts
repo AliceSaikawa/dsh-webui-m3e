@@ -127,11 +127,11 @@ test('ファイル変更の購読を return または事前の中断で終了す
   assert.equal(fixture.subscriberCount, 0)
 })
 
-test('会話の補助画面の偽物を追加しても共有の履歴を書き換えない', () => {
+test('会話の補助画面の偽物を追加しても共有の履歴を書き換えない', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
     assert.ok(workspaceFilesOf(ctx.remote))
   } finally { ctx.dispose() }
 })
@@ -139,10 +139,10 @@ test('会話の補助画面の偽物を追加しても共有の履歴を書き�
 test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描く状態を作る', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
+    const face = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session
     const pressure = face.projections.faceOf('contextPressure').getSnapshot() as ContextPressure
     assert.equal(contextPercent(pressure), 62)
-    assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 3)
+    assert.equal(maxTurn(foldSessionWindow((await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records), 3)
     ctx.jobs.watchRows(sessionId)
     await Promise.resolve()
     const list = ctx.sessions.list.getSnapshot()
@@ -158,13 +158,13 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
       assert.equal(child.kind, 'child')
       if (child.kind !== 'child') throw new Error('子の会話がありません。')
       const address = childAddress(sessionId, child)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       await conversationSelection(ctx.sessions).select(address)
       assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, child.id)
       assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       assert.equal(list.byId[child.id]?.origin, 'subagent')
-      assert.ok(foldSessionWindow(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      assert.ok(foldSessionWindow((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
     let notified = 0
     const stop = ctx.jobs.state.subscribe(() => { notified++ })
@@ -183,9 +183,11 @@ test('未取得の子シナリオはアドレスを先に設定せず、親の�
     for (const childId of Object.values(SESSION_TOOLS_MOCK_IDS.children)) {
       assert.equal(initial.byId[childId]?.origin, 'subagent')
       assert.equal(initial.byId[childId]?.parentId, sessionId)
-      assert.equal(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, null)
+      assert.equal((await ctx.sessions.retain(childId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, null)
       assert.equal(ctx.sessions.subagentAddress(childId), undefined)
-      assert.ok(foldSessionWindow(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
+      const unopened = await ctx.sessions.retain(childId, { source: 'm3e.test' }).ready
+      assert.equal(unopened.session.getSnapshot().openError?.code, 'session/agent-busy')
+      assert.deepEqual(unopened.eventSource.getSnapshot().entries, [])
     }
     assert.equal(hasChildren(sessionId, initial.projectionsBySession[sessionId], initial.byId), true)
 
@@ -201,8 +203,9 @@ test('未取得の子シナリオはアドレスを先に設定せず、親の�
       assert.equal(ctx.sessions.binding(child.id)?.session.getSnapshot().subagent, null)
       const address = childAddress(sessionId, child)
       await conversationSelection(ctx.sessions).select(address)
-      assert.deepEqual(ctx.sessions.retain(child.id, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
+      assert.deepEqual((await ctx.sessions.retain(child.id, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
       assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
+      assert.ok(foldSessionWindow(ctx.sessions.binding(child.id)!.eventSource.getSnapshot()).records.some(row => row.type === 'assistant/message'))
     }
     assert.deepEqual(children.map(child => child.kind === 'child' ? child.mode : undefined), ['continuable', 'one-shot'])
   } finally { ctx.dispose() }
@@ -213,7 +216,7 @@ test('ゴールの停止・再開・完了・消去は revision を進め、proj
   try {
     const remote = goalsRemoteOf(ctx.remote.goals)
     assert.ok(remote)
-    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
+    const projection = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session.projections.faceOf('goal')
     let notifications = 0
     const stop = projection.subscribe(() => { notifications++ })
     const original = unwrapRemoteResult(await remote.get(sessionId))!
@@ -245,7 +248,7 @@ test('古い GoalRef は状態を変えず拒否し、再読み込みだけで�
     const remote = goalsRemoteOf(ctx.remote.goals)!
     const original = unwrapRemoteResult(await remote.get(sessionId))!
     const paused = unwrapRemoteResult(await remote.pause(sessionId, original))
-    const projection = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal')
+    const projection = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).session.projections.faceOf('goal')
     let changes = 0
     const stop = projection.subscribe(() => { changes++ })
     const stale = await remote.complete(sessionId, original)

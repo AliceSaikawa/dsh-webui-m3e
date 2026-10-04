@@ -32,7 +32,7 @@ test('追加した質問とプランのセッションに日本語の題名と�
   assert.equal(list.byId['05-db-choice']?.displayTitle, 'DB の選び直し')
   assert.equal(list.byId['05-auth-redesign']?.displayTitle, '認証の作り直し')
   for (const id of ['05-db-choice', '05-auth-redesign']) {
-    assert.equal(ctx.sessions.retain(id, { source: 'm3e.test' }).binding?.eventSource.getSnapshot().entries[0]?.type, 'event')
+    assert.equal((await ctx.sessions.retain(id, { source: 'm3e.test' }).ready)?.eventSource.getSnapshot().entries[0]?.type, 'event')
   }
   await advance(t, 10_000)
   assert.deepEqual(store.getSnapshot(), [])

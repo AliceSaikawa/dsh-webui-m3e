@@ -30,6 +30,9 @@ test('A1 Aのready後着とBの投影待ちが重なっても所有中のAを解
   const first = owner.select(id)
   await flush()
   const binding = ctx.sessions.binding(id)!
+  // Opening A now seeds its page projections. Make B's catalog cold after
+  // that baseline so this test still exercises the intended overlapping reads.
+  ctx.mock.updateList(list => { list.projectionsBySession = {} })
   const second = owner.select('child')
   await flush()
   aReady.resolve(binding)

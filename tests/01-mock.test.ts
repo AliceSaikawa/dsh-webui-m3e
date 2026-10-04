@@ -12,7 +12,7 @@ import { extendMock, HOME_MOCK_IDS } from '../web/src/features/home/mock.ts'
 
 const extension = { extendMock }
 
-test('ホームの偽データは共有履歴を保ち、3 ワークスペースと状態の異なる 7 会話を用意する', () => {
+test('ホームの偽データは共有履歴を保ち、3 ワークスペースと状態の異なる 7 会話を用意する', async () => {
   const ctx = createMockContext({ extensions: [extension] })
   try {
     const workspaces = ctx.workspaces.list.getSnapshot().items
@@ -25,13 +25,13 @@ test('ホームの偽データは共有履歴を保ち、3 ワークスペース
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.origin, 'subagent')
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.parentId, MOCK_IDS.sessions.readme)
     for (const workspace of workspaces) for (const id of workspace.sessionIds) assert.ok(list.byId[id])
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
     assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
   } finally { ctx.dispose() }
 })
 
-test('先の拡張が追加・並べ替えしたワークスペースと会話順を保ってホームの会話を足す', () => {
+test('先の拡張が追加・並べ替えしたワークスペースと会話順を保ってホームの会話を足す', async () => {
   const prior: MockExtension = { extendMock(kit) {
     const harness = sharedWorkspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
     kit.addSession({ id: 'other-home-session', displayTitle: '別担当の作業', running: false, blank: true, updatedAt: 1 }, [])
@@ -56,10 +56,10 @@ test('先の拡張が追加・並べ替えしたワークスペースと会話�
     const harness = workspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
     assert.equal(harness.title, '変更済みの接続先')
     assert.deepEqual(harness.sessionIds, ['other-harness-session', HOME_MOCK_IDS.harness])
-    assert.ok(ctx.sessions.retain('other-home-session', { source: 'm3e.test' }).binding)
-    assert.ok(ctx.sessions.retain('other-harness-session', { source: 'm3e.test' }).binding)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, approvalRecords)
+    assert.ok((await ctx.sessions.retain('other-home-session', { source: 'm3e.test' }).ready))
+    assert.ok((await ctx.sessions.retain('other-harness-session', { source: 'm3e.test' }).ready))
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
   } finally { ctx.dispose() }
 })
 
@@ -73,7 +73,7 @@ test('ホームの子は読み込み済みカタログに登録され、一度�
     assert.equal(catalog?.state, 'ready')
     assert.equal(catalog?.error, null)
     assert.deepEqual(catalog?.values.subagentCatalog, [{ id: childSessionId, mode: 'one-shot', label: '一覧の表示をレビュー', createdAt: 1790296200000 }])
-    assert.deepEqual(ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, {
+    assert.deepEqual((await ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, {
       address: { parentSessionId, childSessionId, mode: 'one-shot' }, parentAvailable: true,
     })
     await conversationSelection(ctx.sessions).select(parentSessionId)
@@ -82,8 +82,8 @@ test('ホームの子は読み込み済みカタログに登録され、一度�
     assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, childSessionId)
     assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
     assert.deepEqual(ctx.sessions.subagentAddress(childSessionId), address)
-    assert.deepEqual(ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, { address, parentAvailable: true })
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(parentSessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual((await ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(parentSessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
   } finally { ctx.dispose() }
 })
 
