@@ -8,7 +8,7 @@
  * step, and docs/dsh-compatibility.md lists every other boundary to re-check.
  */
 
-/** The target DSH release; the 0.2.0-rc.2 boot and session migration is still pending. */
+/** Supported DSH release, including the migrated boot and Session reference contracts. */
 export const SUPPORTED_DSH_VERSION = '0.2.0-rc.2'
 
 /**

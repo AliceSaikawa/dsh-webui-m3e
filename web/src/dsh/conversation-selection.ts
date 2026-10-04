@@ -167,7 +167,3 @@ export function createConversationVisitTracker(onReentry: (sessionId: string) =>
     if (returning) onReentry(sessionId)
   }
 }
-
-export function canSelectConversation(sessions: Pick<ISessions, 'list' | 'subagentAddress'>, sessionId: string | undefined): boolean {
-  return sessionId !== undefined && (!!sessions.list.getSnapshot().byId[sessionId] || sessions.subagentAddress(sessionId) !== undefined)
-}

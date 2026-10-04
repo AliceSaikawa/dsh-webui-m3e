@@ -1,6 +1,5 @@
 import type { ISessions, SessionListState, SessionTarget, SubagentAddress } from './services.ts'
 import { RemoteCallError } from './remote-result.ts'
-import { conversationSelection } from './conversation-selection.ts'
 
 const refreshes = new WeakMap<ISessions['list'], Map<string, Promise<void>>>()
 function refresh(sessions: Pick<ISessions, 'list' | 'refreshProjections'>, id: string): Promise<void> {
@@ -46,10 +45,4 @@ export async function resolveConversationTarget(sessions: Pick<ISessions, 'list'
   }
   if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
   return isActive() ? address : undefined
-}
-
-export async function openConversationSession(sessions: ISessions, sessionId: string, isActive: () => boolean = () => true): Promise<boolean> {
-  const target = await resolveConversationTarget(sessions, sessionId, isActive)
-  if (target === undefined || !isActive()) return false
-  return conversationSelection(sessions).select(target)
 }
