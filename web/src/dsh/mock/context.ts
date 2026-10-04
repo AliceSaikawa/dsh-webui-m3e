@@ -14,7 +14,12 @@ import { completionStatus } from '../completion-status.ts'
 import { conversationSelection } from '../conversation-selection.ts'
 import { imageAttachment, imageBase64, MOCK_IDS, sharedSessions, sharedWorkspaces } from './fixtures.ts'
 
-type EventHandler = (this: AgentContext, payload: unknown, next: () => Promise<unknown>) => unknown
+type EventHandler = (this: AgentContext, ...args: unknown[]) => unknown
+export interface MockEmitOptions {
+  afterMs?: number
+  /** Additional positional broadcast arguments, after payload. Never flatten payload arrays. */
+  additionalArgs?: readonly unknown[]
+}
 export interface MockKit {
   addWorkspace(workspace: WorkspaceView): void
   /** Update an existing workspace in place; unknown ids throw and identity stays fixed. */
@@ -26,7 +31,7 @@ export interface MockKit {
   emitJobFrame(jobId: string, frame: JobFrame): void
   addRemote(namespace: string, impl: unknown): void
   /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
-  emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
+  emit(event: string, payload: unknown, options?: MockEmitOptions): Promise<unknown>
   streamAssistant(sessionId: string, text: string, options?: { chunkMs?: number }): Promise<void>
   setProjection(sessionId: string, key: string, value: unknown): void
   /** Read the latest shared projection as an isolated copy; an absent key is undefined. */
@@ -155,18 +160,18 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       pending.resolve()
     }
   }
-  async function deliverEvent(event: string, payload: unknown, sessionId: string | undefined, owner: SessionModel | undefined): Promise<unknown> {
+  async function deliverEvent(event: string, args: unknown[], sessionId: string | undefined, owner: SessionModel | undefined): Promise<unknown> {
     if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
     const reference = owner ? sessions.retain(owner.summary.id, { source: 'm3e.mockGateway' }) : undefined
     const scope = reference?.binding.ctx ?? { remote }
     const selected = [...(handlers.get(event) ?? [])]
     try {
     if (event !== 'approval/request' && event !== 'user-questions/request') {
-      return await Promise.all(selected.map((handler) => handler.call(scope, payload, async () => undefined)))
+      return await Promise.all(selected.map((handler) => handler.apply(scope, args)))
     }
     const invoke = async (index: number): Promise<unknown> => {
       const handler = selected[index]
-      return handler ? handler.call(scope, payload, () => invoke(index + 1)) : undefined
+      return handler ? handler.call(scope, args[0], () => invoke(index + 1)) : undefined
     }
     return await invoke(0)
     } finally { reference?.release() }
@@ -888,6 +893,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       remote[namespace] = impl
     },
     async emit(event, payload, options = {}) {
+      const args = [payload, ...(options.additionalArgs ?? [])]
       const input = payload as { agent?: string | { id?: string }; sessionId?: string } | null
       const sessionId = typeof input?.agent === 'string' ? input.agent : input?.agent?.id ?? input?.sessionId
       const owner = sessionId ? models.get(sessionId) : undefined
@@ -895,10 +901,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       if (disposed || (sessionId && (!owner || !isActive(owner)))) return undefined
       if (preparing && !handlers.get(event)?.size) {
         return new Promise((resolve) => {
-          startupEvents.add({ event, owner, deliver: () => resolve(deliverEvent(event, payload, sessionId, owner)), cancel: () => resolve(undefined) })
+          startupEvents.add({ event, owner, deliver: () => resolve(deliverEvent(event, args, sessionId, owner)), cancel: () => resolve(undefined) })
         })
       }
-      return deliverEvent(event, payload, sessionId, owner)
+      return deliverEvent(event, args, sessionId, owner)
     },
     async streamAssistant(sessionId, text, streamOptions = {}) {
       const model = getModel(sessionId)
@@ -1038,7 +1044,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   for (const workspace of sharedWorkspaces) kit.addWorkspace(workspace)
   for (const session of sharedSessions) kit.addSession(session.summary, session.records)
   for (const session of sharedSessions) {
-    kit.setProjection(session.summary.id, 'permissions', { options: [{ value: 'workspace-write', name: 'ワークスペース書込' }], currentValue: 'workspace-write' })
+    kit.setProjection(session.summary.id, 'permissions', { currentValue: 'workspace-write' })
     kit.setProjection(session.summary.id, 'plan', { active: false, pending: false })
   }
   kit.setProjection(MOCK_IDS.sessions.approval, 'tokenUsage', { uncachedInputTokens: 11668, outputTokens: 812, cacheReadTokens: 0, cacheWriteTokens: 0 })

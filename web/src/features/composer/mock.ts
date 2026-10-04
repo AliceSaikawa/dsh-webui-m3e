@@ -1,6 +1,6 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
-import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
+import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionCatalog, PermissionSelection } from './api.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -10,8 +10,13 @@ export const mockCommands: readonly CommandDescriptor[] = [
   { name: 'permission', description: 'この会話の権限を切り替えます。', input: { hint: '権限のプリセット名' } },
   { name: 'model', description: 'この会話で使うモデルを選びます。' },
 ]
-export const mockPermissions: PermissionProjection = {
-  currentValue: 'workspace-write',
+export const mockPermissions: PermissionSelection = { currentValue: 'workspace-write' }
+export const mockPermissionCatalog: PermissionCatalog = {
+  defaultPreset: 'workspace-write',
+  defaultOptions: [
+    { value: 'workspace-write', name: 'ワークスペース書込', description: 'ワークスペースのファイルを読み書きできます。' },
+    { value: 'danger-full-access', name: 'フル アクセス', description: 'ワークスペースの外も含め、すべての操作を許可します。' },
+  ],
   options: [
     { value: 'workspace-write', name: 'ワークスペース書込', description: 'ワークスペースのファイルを読み書きできます。' },
     { value: 'danger-full-access', name: 'フル アクセス', description: 'ワークスペースの外も含め、すべての操作を許可します。' },
@@ -34,6 +39,9 @@ const files: readonly FileReference[] = [
 ]
 
 export function extendMock(kit: MockKit): void {
+  kit.addRemote('permissionPresets', {
+    async catalog() { return success(structuredClone(mockPermissionCatalog)) },
+  })
   const known = new Set<string>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {
     known.add(sessionId)

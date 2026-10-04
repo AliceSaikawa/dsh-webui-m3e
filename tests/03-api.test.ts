@@ -4,7 +4,7 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import { composerApi, permissionDefaultsOf, requireMatched } from '../web/src/features/composer/api.ts'
-import { extendMock, mockModelCatalog, mockPermissions } from '../web/src/features/composer/mock.ts'
+import { extendMock, mockModelCatalog, mockPermissions, mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 
 test('composer RPC は sessionId と中断信号を実物と同じ位置へ渡す', async () => {
   const calls: unknown[][] = []
@@ -59,16 +59,15 @@ test('解除関数のないイベント API でも、閉じた画面へ更新を
   assert.equal(count, 1)
 })
 
-test('権限の既定値は serialized schema の公開候補から読み、全体設定へ書かない', async () => {
+test('権限の既定値と文字列 schema に候補カタログを合わせ、全体設定へ書かない', async () => {
   let reads = 0
-  const api = composerApi({ settings: {
+  const catalog = { options: mockPermissionCatalog.options, defaultOptions: [{ value: 'workspace-write', name: 'ワークスペース書込' }], defaultPreset: 'workspace-write' }
+  const api = composerApi({ permissionPresets: { async catalog() { return { ok: true, value: catalog } } }, settings: {
     async describe() {
       reads++
       return { ok: true, value: { namespaces: [{ ns: 'permission', value: { defaultPreset: 'workspace-write' }, schema: { uid: 1, refs: {
         1: { type: 'object', dict: { defaultPreset: 2 } },
-        2: { type: 'union', list: [3, 4] },
-        3: { type: 'const', value: 'workspace-write', meta: { description: 'ワークスペース書込' } },
-        4: { type: 'const', value: 'custom', meta: { description: 'カスタム' } },
+        2: { type: 'string' },
       } } }] } }
     },
     mutate() { assert.fail('会話の権限は全体設定を書き換えません') },
@@ -76,8 +75,9 @@ test('権限の既定値は serialized schema の公開候補から読み、全�
   assert.deepEqual(await api.defaultPermissions(), { currentValue: 'workspace-write', options: [{ value: 'workspace-write', name: 'ワークスペース書込' }] })
   assert.equal(reads, 1)
   assert.equal(await composerApi({}).defaultPermissions(), undefined)
-  assert.equal(permissionDefaultsOf(undefined), undefined)
-  assert.throws(() => permissionDefaultsOf({ ns: 'permission', value: { defaultPreset: 'unknown' }, schema: { type: 'object', dict: { defaultPreset: { type: 'const', value: 'workspace-write' } } } }), /権限候補/)
+  assert.equal(permissionDefaultsOf(undefined, catalog), undefined)
+  assert.deepEqual(permissionDefaultsOf({ ns: 'permission', value: {}, schema: {} }, catalog), { currentValue: 'workspace-write', options: catalog.defaultOptions })
+  assert.throws(() => permissionDefaultsOf({ ns: 'permission', value: { defaultPreset: 'unknown' }, schema: {} }, catalog), /権限候補/)
 })
 
 test('偽データは既存と最初の送信で作る新規セッションへ projection を公開する', async () => {
@@ -97,7 +97,7 @@ test('偽データは既存と最初の送信で作る新規セッションへ p
     assert.equal((await api.defaultPermissions())?.currentValue, 'workspace-write')
     for (const sessionId of Object.values(MOCK_IDS.sessions)) {
       const face = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session
-      assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), { currentValue: 'workspace-write', options: [{ value: 'workspace-write', name: 'ワークスペース書込' }] })
+      assert.deepEqual(face.projections.faceOf('permissions').getSnapshot(), { currentValue: 'workspace-write' })
       assert.deepEqual(face.projections.faceOf('plan').getSnapshot(), { active: false, pending: false })
       assert.deepEqual(face.projections.faceOf('modelSelection').getSnapshot(), { lastUsed: null, next: null })
     }
@@ -170,7 +170,7 @@ test('偽の commands/change の購読を解除でき、別機能の projection 
 })
 
 test('先行拡張の会話にも補助機能を提供し、明示された projection は保持する', async () => {
-  const permissions = { currentValue: 'fixture-preset', options: [{ value: 'fixture-preset', name: '先行拡張の権限' }] }
+  const permissions = { currentValue: 'fixture-preset' }
   const plan = { active: true, pending: true }
   const modelSelection = { lastUsed: mockModelCatalog.default, next: { provider: 'ollama', model: 'local' } }
   const ctx = createMockContext({ extensions: [

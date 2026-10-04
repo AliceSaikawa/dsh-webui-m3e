@@ -18,6 +18,7 @@ import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
 import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue, type ModelApplyController } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 import { permissionIcon } from './presentation.ts'
+import { usePermissionCatalog } from './use-permission-catalog.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
   // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
@@ -173,18 +174,21 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
   </div>
 }
 
-export function PermissionSheet({ permissions, apply, close }: {
-  permissions: PermissionProjection; apply(value: string): Promise<void>; close(): void
+export function PermissionSheet({ permissions, defaults = false, apply, close }: {
+  permissions: PermissionProjection; defaults?: boolean; apply(value: string): Promise<void>; close(): void
 }) {
+  const catalog = usePermissionCatalog()
+  const options = (defaults ? catalog?.defaultOptions : catalog?.options) ?? []
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function choose(value: string) {
-    if (busy) return
+    if (busy || !options.some(option => option.value === value)) return
     setBusy(true); setError('')
     try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
-    {permissions.options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
+    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
+    {!catalog && <p role="status">権限の候補を取得できませんでした。</p>}
     {error && <p role="alert">{error}</p>}
   </div>
 }

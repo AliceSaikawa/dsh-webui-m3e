@@ -1,4 +1,5 @@
 import type { ProviderState } from './providers.ts'
+import type { PermissionCatalog } from '../composer/api.ts'
 
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
 export type SettingObject = { [key: string]: SettingValue }
@@ -9,9 +10,11 @@ export interface SchemaNode {
   dict?: Record<string, SchemaNode>
   list?: SchemaNode[]
   inner?: SchemaNode
-  meta?: { description?: string; title?: string; role?: string; min?: number; max?: number; step?: number; required?: boolean; disabled?: boolean }
+  sKey?: SchemaNode
+  meta?: { description?: string; title?: string; role?: string; min?: number; max?: number; step?: number; required?: boolean; disabled?: boolean; pattern?: { source: string; flags: string } }
 }
 export interface SettingsNamespace {
+  autoGenerate: boolean
   ns: string
   revision: number
   schema: unknown
@@ -19,7 +22,7 @@ export interface SettingsNamespace {
   base?: SettingObject
   user?: SettingObject
   secrets?: { path: string[]; set: boolean }[]
-  applies: 'live' | 'restart'
+  applies: 'live'
 }
 export interface SettingsDescription { writable: boolean; namespaces: SettingsNamespace[] }
 export interface SettingField {
@@ -49,9 +52,11 @@ export const settingsPages = [
 export type SettingsPage = typeof settingsPages[number]['id']
 
 const names: Record<string, string> = {
-  'agent-default-model': '既定のモデル', 'subagent-model-selection': 'サブエージェントのモデル',
-  permission: '権限', 'agent-presets': 'エージェントのプリセット', 'agent-loop': 'エージェントの動作',
-  'web-search-deepseek': 'Web 検索', shell: 'シェル', locale: '言語と地域',
+  'agent-default-model': '既定のモデル', 'subagent-model-selection-settings': 'サブエージェントのモデル',
+  permission: '権限', 'agent-preset-registry': 'エージェントのプリセット', 'agent-loop': 'エージェントの動作',
+  'web-search-deepseek': 'Web 検索', 'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル', locale: '言語と地域',
+  selectedDefault: '既定のプリセット', defaultPreset: '新しい会話の権限',
+  timeoutMs: '待機時間', maxOutputBytes: '出力の上限',
   enabled: '有効にする', model: 'モデル', default: '既定のモデル', provider: '提供元',
   name: '名前', mode: '動作モード', maxSteps: '最大ステップ数', timeout: '待機時間',
   maxRetries: '再試行の上限', count: '回数', temperature: '応答の多様性',
@@ -81,6 +86,7 @@ export function decodeSchema(input: unknown): SchemaNode {
     if (isObject(node.dict)) result.dict = Object.fromEntries(Object.entries(node.dict).filter(([name]) => safeKey(name)).map(([name, child]) => [name, visit(child, seen, depth + 1)]))
     if (Array.isArray(node.list)) result.list = node.list.map(child => visit(child, seen, depth + 1))
     if ('inner' in node) result.inner = visit(node.inner, seen, depth + 1)
+    if ('sKey' in node) result.sKey = visit(node.sKey, seen, depth + 1)
     return result
   }
   return visit(input.uid, new Set(), 0)
@@ -90,11 +96,14 @@ export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Recor
   const groups: Record<SettingsPage, SettingsNamespace[]> = { models: [], permission: [], agent: [], providers: [], tools: [], other: [] }
   for (const row of namespaces) {
     if (row.ns.startsWith('ui-')) continue
+    // Explicit M3E editors mirror the stock custom pages. Other suppressed
+    // entries (including provider internals) must not become generic forms.
+    if (!row.autoGenerate && !['agent-default-model', 'subagent-model-selection-settings', 'permission', 'bash-sandbox', 'pwsh-sandbox', 'agent-preset-registry', 'locale'].includes(row.ns)) continue
     const page: SettingsPage = row.ns.startsWith('llm-') ? 'providers'
-      : ['agent-default-model', 'subagent-model-selection'].includes(row.ns) ? 'models'
+      : ['agent-default-model', 'subagent-model-selection-settings'].includes(row.ns) ? 'models'
       : row.ns === 'permission' ? 'permission'
-      : ['agent-presets', 'agent-loop'].includes(row.ns) ? 'agent'
-      : ['web-search-deepseek', 'shell', 'locale'].includes(row.ns) ? 'tools' : 'other'
+      : ['agent-preset-registry', 'agent-loop'].includes(row.ns) ? 'agent'
+      : ['web-search-deepseek', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns) ? 'tools' : 'other'
     groups[page].push(row)
   }
   return groups
@@ -109,7 +118,7 @@ export function valueAt(value: unknown, path: SettingPath): SettingValue | undef
   return current as SettingValue | undefined
 }
 
-export function schemaFields(namespace: SettingsNamespace): SettingField[] {
+export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
   const schema = decodeSchema(namespace.schema)
   const protectedPaths: SettingPath[] = (namespace.secrets ?? []).map(entry => entry.path)
   const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
@@ -174,7 +183,10 @@ export function schemaFields(namespace: SettingsNamespace): SettingField[] {
     }))
     return result
   }
-  return fields(schema, [])
+  return fields(schema, []).map(field => namespace.ns === 'permission' && field.kind !== 'masked' && field.path.length === 1 && field.path[0] === 'defaultPreset'
+    ? { ...field, kind: 'select', value: field.value ?? catalog?.defaultPreset,
+        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: option.name, value: option.value })) ?? [] }
+    : field)
 }
 
 export function selectFieldState(field: Pick<SettingField, 'options'>, value: SettingValue | undefined): { index: number; placeholder?: string } {
@@ -219,9 +231,9 @@ export function formatSetting(value: SettingValue | undefined): string {
   return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
 }
 
-export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNamespace[]): string {
+export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNamespace[], catalog?: PermissionCatalog): string {
   const leaves = (fields: SettingField[]): SettingField[] => fields.flatMap(field => field.children ? leaves(field.children) : field)
-  const fields = new Map(namespaces.map(namespace => [namespace.ns, leaves(schemaFields(namespace))]))
+  const fields = new Map(namespaces.map(namespace => [namespace.ns, leaves(schemaFields(namespace, catalog))]))
   // Select documented setting paths after redaction, never raw values or schema order.
   const fieldAt = (ns: string, key: string) => fields.get(ns)?.find(field => field.path.length === 1 && field.path[0] === key && ['text', 'select', 'number', 'switch'].includes(field.kind))
   const textAt = (ns: string, key: string) => {
@@ -244,7 +256,7 @@ export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNam
       ?? (typeof value === 'string' && value ? labels[value] ?? 'カスタム' : 'プリセット：未設定')
   }
   if (page === 'agent') return join([
-    labeled('プリセット', textAt('agent-presets', 'default')),
+    labeled('プリセット', textAt('agent-preset-registry', 'selectedDefault')),
     labeled('ツールの同時実行数', textAt('agent-loop', 'maxParallelToolCalls')),
   ])
   if (page === 'tools') return join([

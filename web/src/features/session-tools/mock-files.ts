@@ -1,5 +1,6 @@
 import type { RemoteResult } from '../../dsh/services.ts'
 import { imageBase64 } from '../../dsh/mock/fixtures.ts'
+import { RemoteCallError } from '../../dsh/remote-result.ts'
 import { MAX_IMAGE_BYTES, workspaceFileErrors } from './files.ts'
 import type {
   WorkspaceDirectoryEntry, WorkspaceFileChange, WorkspaceFileWatchFrame,
@@ -11,9 +12,11 @@ const encoder = new TextEncoder()
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 const bytesOf = (data: string) => Uint8Array.from(atob(data), (character) => character.charCodeAt(0))
-const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, (value) => String.fromCharCode(value)).join(''))
 
 const MAX_PAGE_BYTES = 2 * 1024 * 1024
+const MAX_FILE_BYTES = 32 * 1024 * 1024
+const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const integer = (value: unknown, min: number): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min
 // Virtual files are one repeated ASCII line; no large fixture buffer is kept.
 interface MockFile { bytes: Uint8Array; revision: number; virtualSize?: number }
 const sizeOf = (file: MockFile) => file.virtualSize ?? file.bytes.length
@@ -49,7 +52,7 @@ export function createWorkspaceFilesMock() {
 
   const absolutePath = (path: string) => path ? `${ROOT}/${path}` : ROOT
   const requestFailure = (input: string, signal?: AbortSignal) => signal?.aborted ? failure('rpc/aborted', '読み込みを取り消しました。')
-    : input.length === 0 ? failure('gateway/bad-request', 'パスを指定してください。') : undefined
+    : typeof input !== 'string' || input.length === 0 ? failure('gateway/bad-request', 'パスを指定してください。') : undefined
   const metadata = (path: string, file?: MockFile) => ({ absolutePath: absolutePath(path), version: `mock-${file?.revision ?? 1}`, ...(file ? { bytes: sizeOf(file) } : {}) })
 
   const remote: WorkspaceFilesRemote = {
@@ -77,8 +80,9 @@ export function createWorkspaceFilesMock() {
       if (invalid) return invalid
       const path = relativePath(input)
       if (path === undefined) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (directories.has(path)) return failure('workspace-file/not-regular-file', '通常のファイルではありません。')
       const file = files.get(path)
-      if (!file && !directories.has(path)) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (!file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
       return success(metadata(path, file))
     },
     async read(_sessionId, input, options = {}, signal) {
@@ -87,8 +91,10 @@ export function createWorkspaceFilesMock() {
       const path = relativePath(input)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
-      const offset = Math.max(1, Math.trunc(options.offset ?? 1))
-      const limit = Math.max(1, Math.trunc(options.limit ?? 5000))
+      if (!object(options) || Object.keys(options).some(key => !['offset', 'limit'].includes(key))) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      const offset = options.offset ?? 1
+      const limit = options.limit ?? 5000
+      if (!integer(offset, 1) || !integer(limit, 1) || limit > 5000) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
       if (file.virtualSize !== undefined) {
         if (offset === 1 && file.virtualSize > MAX_PAGE_BYTES) return failure(workspaceFileErrors.tooLarge, 'ファイルが大きいため表示できません。')
         return success({ ...metadata(path, file), offset, text: '', lines: 0, eof: true })
@@ -106,25 +112,45 @@ export function createWorkspaceFilesMock() {
     async readBytes(_sessionId, input, options = {}, signal) {
       const invalid = requestFailure(input, signal)
       if (invalid) return invalid
-      const path = relativePath(input)
+      if (!object(options) || Object.keys(options).some(key => !['range', 'baseFile'].includes(key))
+        || options.range !== undefined && (!object(options.range) || Object.keys(options.range).some(key => !['offset', 'length'].includes(key)))
+        || options.baseFile !== undefined && (typeof options.baseFile !== 'string' || !options.baseFile.length)) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      let target = input
+      if (options.baseFile !== undefined) {
+        const base = relativePath(options.baseFile)
+        if (base === undefined || !files.has(base)) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+        if (input.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(input) || input.includes('\0')) return failure('gateway/bad-request', '相対パスを指定してください。')
+        const parent = base.includes('/') ? base.slice(0, base.lastIndexOf('/') + 1) : ''
+        target = parent + input
+      }
+      const path = relativePath(target)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
-      const offset = Math.max(0, Math.trunc(options.offset ?? 0))
-      const length = options.length ?? MAX_PAGE_BYTES
-      if (!Number.isSafeInteger(length) || length < 1) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
-      if (length > MAX_PAGE_BYTES) return failure(workspaceFileErrors.tooLarge, '読み込み範囲が大きすぎます。')
+      const offset = options.range?.offset ?? 0
+      const length = options.range ? options.range.length ?? MAX_PAGE_BYTES : sizeOf(file)
+      if (!integer(offset, 0) || !integer(length, options.range ? 1 : 0) || !Number.isSafeInteger(offset + length)) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      if (length > (options.range ? MAX_PAGE_BYTES : MAX_FILE_BYTES)) return failure(workspaceFileErrors.tooLarge, '読み込み範囲が大きすぎます。')
       const bytes = file.virtualSize === undefined ? file.bytes.slice(offset, offset + length)
         : new Uint8Array(Math.min(length, Math.max(0, file.virtualSize - offset))).fill(65)
-      return success({ ...metadata(path, file), offset, data: base64Of(bytes), eof: offset + bytes.length >= sizeOf(file) })
+      return success({ ...metadata(path, file), offset, data: bytes, eof: offset + bytes.length >= sizeOf(file) })
     },
-    changes(_sessionId, signal) {
-      return {
-        [Symbol.asyncIterator](): AsyncIterableIterator<WorkspaceFileWatchFrame> {
+    changes(_sessionId, input, signal) {
+          const invalid = requestFailure(input)
+          const path = invalid ? undefined : relativePath(input)
+          const error = invalid && !invalid.ok ? invalid.error : path === undefined || !files.has(path) && !directories.has(path)
+            ? { code: workspaceFileErrors.notFound, message: 'ファイルが見つかりません。', details: {} } : undefined
           let closed = false
           const queue: WorkspaceFileWatchFrame[] = [{ kind: 'ready' }]
           const waiting: ((result: IteratorResult<WorkspaceFileWatchFrame>) => void)[] = []
           const push = (frame: WorkspaceFileWatchFrame) => {
             if (closed) return
+            if (frame.kind === 'change' && path !== undefined) {
+              const target = absolutePath(path)
+              const changed = frame.change.absolutePath
+              if (changed !== target && !(directories.has(path) && changed.slice(0, changed.lastIndexOf('/')) === target)) return
+              // DSH stats the watched target, even when a child triggered the watch.
+              if (directories.has(path)) frame = { kind: 'change', change: metadata(path) }
+            }
             const resolve = waiting.shift()
             if (resolve) resolve({ done: false, value: frame })
             else queue.push(frame)
@@ -138,20 +164,25 @@ export function createWorkspaceFilesMock() {
           }
           if (signal?.aborted) close()
           else {
-            watchers.add(push)
+            if (!error) watchers.add(push)
             signal?.addEventListener('abort', close, { once: true })
           }
-          return {
+          const iterator: AsyncIterableIterator<WorkspaceFileWatchFrame> = {
             [Symbol.asyncIterator]() { return this },
             next() {
               if (closed) return Promise.resolve({ done: true, value: undefined })
+              if (error) { close(); return Promise.reject(new RemoteCallError(error)) }
               const frame = queue.shift()
               if (frame) return Promise.resolve({ done: false, value: frame })
               return new Promise((resolve) => waiting.push(resolve))
             },
             async return() { close(); return { done: true, value: undefined } },
           }
-        },
+      return {
+        [Symbol.asyncIterator]() { return iterator },
+        send(_item: never) { throw new Error('この監視は入力を受け付けません。') },
+        end() {},
+        dispose: close,
       }
     },
   }

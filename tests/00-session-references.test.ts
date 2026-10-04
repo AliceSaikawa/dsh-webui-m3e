@@ -184,7 +184,7 @@ test('実行中アーカイブを黙って停止せず拒否し、既存の日�
   try {
     await assert.rejects(ctx.workspaces.archiveSession(MOCK_IDS.sessions.approval), error => {
       assert.equal((error as { rpcError: { code: string } }).rpcError.code, 'workspace/session-active')
-      assert.equal(remoteErrorMessage(error), '処理に失敗しました。もう一度お試しください。')
+      assert.equal(remoteErrorMessage(error), '実行中の会話はアーカイブできません。実行を止めてから、もう一度お試しください。')
       return true
     })
     assert.deepEqual(ctx.workspaces.list.getSnapshot().archivedSessionIds, [])

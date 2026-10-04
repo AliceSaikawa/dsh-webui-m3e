@@ -4,6 +4,7 @@ import { onRemoteEvent } from '../../dsh/remote-events.ts'
 
 /** Browser wire shapes verified against the installed DSH client plugins. */
 export interface CommandDescriptor {
+  readonly definitionId?: string
   readonly name: string
   readonly description: string
   readonly input?: { readonly hint: string; readonly attachments?: boolean }
@@ -25,10 +26,14 @@ export interface ModelCatalog {
 }
 export interface ModelSelectionProjection { readonly lastUsed: ModelSelection | null; readonly next: ModelSelection | null }
 export interface PermissionOption { readonly value: string; readonly name: string; readonly description?: string }
+export interface PermissionSelection { readonly currentValue: string }
+export interface PermissionCatalog { readonly options: readonly PermissionOption[]; readonly defaultOptions: readonly PermissionOption[]; readonly defaultPreset: string }
+/** Joined presentation; the Session projection itself contains only currentValue. */
 export interface PermissionProjection { readonly options: readonly PermissionOption[]; readonly currentValue: string }
 export interface PlanProjection { readonly active: boolean; readonly pending: boolean }
 
 interface ComposerRemote {
+  readonly permissionPresets?: { catalog(): Promise<RemoteResult<PermissionCatalog>> }
   readonly commands?: { list(sessionId: string): Promise<RemoteResult<readonly CommandDescriptor[]>> }
   readonly fileReferences?: { list(sessionId: string, query: string, signal: AbortSignal): Promise<RemoteResult<readonly FileReference[]>> }
   readonly session?: {
@@ -46,23 +51,11 @@ export function requireMatched(result: RemoteResult<{ matched: boolean }>): void
   if (!unwrapRemoteResult(result).matched) throw new Error('この会話では、そのコマンドを使えません。')
 }
 
-/** Read only the advertised preset enum; never evaluate serialized schema callbacks. */
-export function permissionDefaultsOf(view: SettingsNamespace | undefined): PermissionProjection | undefined {
+/** Default choices come from the process catalog, independently of the schema. */
+export function permissionDefaultsOf(view: SettingsNamespace | undefined, catalog: PermissionCatalog): PermissionProjection | undefined {
   if (!view) return undefined
-  const currentValue = record(view.value)?.defaultPreset
-  const envelope = record(view.schema)
-  const refs = record(envelope?.refs)
-  const nodeOf = (value: unknown): RecordValue | undefined => typeof value === 'number' || typeof value === 'string'
-    ? record(refs?.[String(value)]) : record(value)
-  const root = refs ? nodeOf(envelope?.uid) : envelope
-  const node = root?.type === 'object' ? nodeOf(record(root.dict)?.defaultPreset) : undefined
-  const candidates = node?.type === 'union' && Array.isArray(node.list) ? node.list : [node]
-  const options = candidates.flatMap((candidate): PermissionOption[] => {
-    const choice = nodeOf(candidate)
-    if (choice?.type !== 'const' || typeof choice.value !== 'string' || choice.value === 'custom') return []
-    const description = record(choice.meta)?.description
-    return [{ value: choice.value, name: typeof description === 'string' && description.length > 0 ? description : choice.value }]
-  })
+  const currentValue = record(view.value)?.defaultPreset ?? catalog.defaultPreset
+  const options = catalog.defaultOptions
   if (typeof currentValue !== 'string' || options.length === 0 || !options.some((option) => option.value === currentValue)) {
     throw new Error('新しい会話の権限候補を読み込めませんでした。')
   }
@@ -72,7 +65,12 @@ export function permissionDefaultsOf(view: SettingsNamespace | undefined): Permi
 /** Discovery never creates a Session; selectModel also asks the Host to save its default. */
 export function composerApi(remote: DshRemote) {
   const wire = remote as ComposerRemote
+  async function permissionCatalog(): Promise<PermissionCatalog> {
+    if (!wire.permissionPresets) throw new Error('権限の候補を取得できませんでした。')
+    return unwrapRemoteResult(await wire.permissionPresets.catalog())
+  }
   return {
+    permissionCatalog,
     async listCommands(sessionId: string): Promise<readonly CommandDescriptor[]> {
       if (!wire.commands) throw new Error('コマンドの候補を取得できません。')
       return unwrapRemoteResult(await wire.commands.list(sessionId))
@@ -91,8 +89,9 @@ export function composerApi(remote: DshRemote) {
     },
     async defaultPermissions(): Promise<PermissionProjection | undefined> {
       if (!wire.settings?.describe) return undefined
-      const value = unwrapRemoteResult(await wire.settings.describe())
-      return permissionDefaultsOf(value.namespaces.find((view) => view.ns === 'permission'))
+      const [result, catalog] = await Promise.all([wire.settings.describe(), permissionCatalog()])
+      const value = unwrapRemoteResult(result)
+      return permissionDefaultsOf(value.namespaces.find((view) => view.ns === 'permission'), catalog)
     },
     onCommandsChange(listener: () => void): () => void {
       let active = true

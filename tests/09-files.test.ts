@@ -89,9 +89,9 @@ test('text pagination is one-based and retains empty lines between pages', () =>
 test('image pages are joined using byte offsets and never mix versions', async () => {
   const offsets: number[] = []
   let revision = 'v1'
-  const api: WorkspaceFilesRemote = { ...createWorkspaceFilesMock().remote, async stat() { return { ok: true as const, value: { absolutePath: '/work/a.png', version: 'v1', bytes: 3 } } }, async readBytes(_id: string, _path: string, range: { offset?: number }) {
+  const api: WorkspaceFilesRemote = { ...createWorkspaceFilesMock().remote, async stat() { return { ok: true as const, value: { absolutePath: '/work/a.png', version: 'v1', bytes: 3 } } }, async readBytes(_id, _path, { range = {} }) {
     offsets.push(range.offset ?? 0)
-    return { ok: true as const, value: { absolutePath: '/work/a.png', version: range.offset ? revision : 'v1', bytes: 3, offset: range.offset ?? 0, data: range.offset ? 'Aw==' : 'AQI=', eof: Boolean(range.offset) } }
+    return { ok: true as const, value: { absolutePath: '/work/a.png', version: range.offset ? revision : 'v1', bytes: 3, offset: range.offset ?? 0, data: new Uint8Array(range.offset ? [3] : [1, 2]), eof: Boolean(range.offset) } }
   } }
   const image = await readImageFile(api, 's', 'a.png', new AbortController().signal)
   assert.deepEqual([...image.data], [1, 2, 3])

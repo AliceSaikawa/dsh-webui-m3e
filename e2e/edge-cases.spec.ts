@@ -57,7 +57,7 @@ test('01h フォルダ選択非対応では追加入口を隠す', async ({ page
 })
 
 test('08c 読み取り専用の設定は編集できない', async ({ page }) => {
-  await visit(page, '/settings/permission', 'settings-readonly')
+  await visit(page, '/settings/other', 'settings-readonly')
   await expect(page.getByText('この DSH では設定を変更できません', { exact: true })).toBeVisible()
   await expect(page.getByLabel('名前', { exact: true })).toBeDisabled()
   await expect(page.getByLabel('待機時間', { exact: true })).toBeDisabled()
@@ -67,13 +67,13 @@ test('08c 読み取り専用の設定は編集できない', async ({ page }) =>
 })
 
 test('08d 設定保存の競合は再取得して次の編集を保存できる', async ({ page }) => {
-  await visit(page, '/settings/permission', 'settings-conflict')
+  await visit(page, '/settings/other', 'settings-conflict')
   const input = page.getByLabel('名前', { exact: true })
-  await expect(input).toHaveValue('標準の権限')
+  await expect(input).toHaveValue('追加機能')
   await input.fill('競合する変更')
   await input.press('Tab')
   await expect(page.getByText('ほかの場所で設定が変わりました。読み直しました', { exact: true })).toBeVisible()
-  await expect(input).toHaveValue('標準の権限')
+  await expect(input).toHaveValue('追加機能')
   await shot(page, '08-conflict')
   await input.fill('読み直した後の変更')
   await input.press('Tab')
@@ -81,12 +81,12 @@ test('08d 設定保存の競合は再取得して次の編集を保存できる'
   await expect(input).toHaveValue('読み直した後の変更')
   await button(page, '戻る').click()
   await nav(page, '設定').click()
-  await action(page, '権限').click()
+  await action(page, 'そのほか').click()
   await expect(page.getByLabel('名前', { exact: true })).toHaveValue('読み直した後の変更')
 })
 
 test('08e 設定保存の拒否は項目に理由を表示して入力を保持する', async ({ page }) => {
-  await visit(page, '/settings/permission', 'settings-rejected')
+  await visit(page, '/settings/other', 'settings-rejected')
   const input = page.getByLabel('名前', { exact: true })
   await input.fill('保存が拒否される変更')
   await input.press('Tab')
@@ -103,6 +103,9 @@ test('08f APIキーだけが読み取り専用の場合は登録状況を表示�
   await expect(action(page, 'ディープシーク')).toHaveJSProperty('disabled', true)
   await expect(action(page, 'クラウド提供元')).toHaveJSProperty('disabled', true)
   await expect(action(page, 'ローカル')).toContainText('キーは不要')
+  await button(page, '戻る').click()
+  await nav(page, '設定').click()
+  await action(page, 'そのほか').click()
   await expect(page.getByLabel('名前', { exact: true }).first()).toBeEnabled()
   await shot(page, '08-keys-readonly')
 })
