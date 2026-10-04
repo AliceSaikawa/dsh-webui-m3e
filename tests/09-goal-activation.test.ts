@@ -20,10 +20,10 @@ function harness(get: GoalsRemote['get']) {
   let listener: ((event: GoalActivationChanged) => void) | undefined
   let subscriptions = 0
   const remote = { $on(event: string, next: (event: GoalActivationChanged) => void) {
-    assert.equal(event, 'goal/activation-changed')
-    listener = next
+    assert.ok(['goal/activation-changed', 'api-session/added', 'api-session/error'].includes(event))
+    if (event === 'goal/activation-changed') listener = next
     subscriptions++
-    return () => { subscriptions--; listener = undefined }
+    return () => { subscriptions--; if (event === 'goal/activation-changed') listener = undefined }
   } }
   const goals: GoalsRemote = { get, pause: async () => ok(view), resume: async () => ok(view), complete: async () => ok(view), clear: async () => ok(view) }
   return { remote, goals, emit(event: GoalActivationChanged) { listener?.(event) }, get subscriptions() { return subscriptions } }
@@ -104,9 +104,9 @@ test('再取得の順序を保ち、取得失敗は進行中と扱わず再試�
   const watcher = watchGoalActivation(source.remote, source.goals, sessionId, value => { live = value }, () => { failures++ })
   const oldRead = watcher.refresh()
   source.goals.get = async () => ok({ ...view, activation: 'disarmed' })
-  await watcher.refresh()
+  const latestRead = watcher.refresh()
   first.resolve(ok(view))
-  await oldRead
+  await Promise.all([oldRead, latestRead])
   assert.equal(live?.activation, 'disarmed')
   source.goals.get = async () => ({ ok: false, error: { code: 'gateway/unavailable', message: '取得失敗', details: {} } })
   await watcher.refresh()

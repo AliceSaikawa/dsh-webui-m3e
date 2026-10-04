@@ -209,14 +209,14 @@ test('保存成功を公開し、入れ子の上書きを unset で既定値へ�
     assert.equal(await h.store.edit(ns, ['retry', 'interval'], 7), true)
     assert.deepEqual(current(h.store).value.retry, { enabled: true, interval: 7 })
     assert.deepEqual(current(h.store).user!.retry, { interval: 7 })
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.equal(await h.store.edit(ns, ['retry', 'interval']), true)
     assert.deepEqual(current(h.store).value.retry, { enabled: true, interval: 2 })
     assert.equal(Object.hasOwn(current(h.store).user!, 'retry'), false)
-    assert.equal(current(h.store).revision, 3)
+    assert.equal(current(h.store).revision, 2)
     assert.deepEqual(h.calls, [
-      { kind: 'update', ns, input: { retry: { interval: 7 } }, revision: 1 },
-      { kind: 'mutate', ns, input: [{ op: 'unset', path: ['retry', 'interval'] }], revision: 2 },
+      { kind: 'update', ns, input: { retry: { interval: 7 } }, revision: 0 },
+      { kind: 'mutate', ns, input: [{ op: 'unset', path: ['retry', 'interval'] }], revision: 1 },
     ])
     assert.equal(h.store.getSnapshot().busy[ns], false)
   } finally { h.ctx.dispose() }
@@ -230,7 +230,7 @@ test('読み取り専用では保存と既定値への復帰の RPC を呼ばな
     assert.equal(await h.store.edit(ns, ['enabled'], false), false)
     assert.equal(await h.store.edit(ns, ['timeout']), false)
     assert.deepEqual(h.calls, [])
-    assert.equal(current(h.store).revision, 1)
+    assert.equal(current(h.store).revision, 0)
   } finally { h.ctx.dispose() }
 })
 
@@ -242,13 +242,13 @@ test('競合すると再読込して新しい revision を公開し、日本語�
     await h.store.reload()
     assert.equal(await h.store.edit(ns, ['timeout'], 60), false)
     assert.equal(h.describes, 2)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 45)
     assert.deepEqual(notices, ['ほかの場所で設定が変わりました。読み直しました'])
     assert.ok(h.store.getSnapshot().generation[ns]! > 0)
     assert.deepEqual(h.store.getSnapshot().fieldErrors, {})
     assert.equal(await h.store.edit(ns, ['timeout'], 60), true)
-    assert.equal(h.calls[1]!.revision, 2)
+    assert.equal(h.calls[1]!.revision, 1)
     stop()
   } finally { h.ctx.dispose() }
 })
@@ -318,12 +318,12 @@ test('同時に編集した二つの項目を直列化し、後の保存へ新�
     const first = h.store.edit(ns, ['timeout'], 60)
     const second = h.store.edit(ns, ['name'], '変更後の名前')
     await tick()
-    assert.deepEqual(revisions, [1])
+    assert.deepEqual(revisions, [0])
     assert.equal(h.store.getSnapshot().busy[ns], true)
     gate.resolve()
     assert.deepEqual(await Promise.all([first, second]), [true, true])
-    assert.deepEqual(revisions, [1, 2])
-    assert.equal(current(h.store).revision, 3)
+    assert.deepEqual(revisions, [0, 1])
+    assert.equal(current(h.store).revision, 2)
     assert.equal(current(h.store).value.timeout, 60)
     assert.equal(current(h.store).value.name, '変更後の名前')
     assert.equal(h.store.getSnapshot().busy[ns], false)
@@ -338,7 +338,7 @@ test('先行する保存が競合したとき、古い画面から待機中の�
     const second = h.store.edit(ns, ['name'], '古い画面の編集')
     assert.deepEqual(await Promise.all([first, second]), [false, false])
     assert.equal(h.calls.length, 1)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.notEqual(current(h.store).value.name, '古い画面の編集')
   } finally { h.ctx.dispose() }
 })
@@ -347,14 +347,14 @@ test('外部の更新通知で再読込し、同じ revision や不正な通知�
   const h = harness()
   try {
     await h.store.reload()
-    await h.remote.update(ns, { timeout: 90 }, 1)
-    h.store.documentUpdated(ns, 2)
+    await h.remote.update(ns, { timeout: 90 }, 0)
+    h.store.documentUpdated(ns, 1)
     await tick()
     assert.equal(h.describes, 2)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 90)
     assert.equal(h.store.getSnapshot().generation[ns], 1)
-    h.store.documentUpdated(ns, 2)
+    h.store.documentUpdated(ns, 1)
     h.store.documentUpdated(null)
     await tick()
     assert.equal(h.describes, 2)
@@ -370,14 +370,14 @@ test('保存中の更新通知は保存後にまとめて再読込する', async
     h.api.update = async (name, patch, revision) => { await gate.promise; return original(name, patch, revision) }
     const saving = h.store.edit(ns, ['timeout'], 55)
     await tick()
+    h.store.documentUpdated(ns, 1)
     h.store.documentUpdated(ns, 2)
-    h.store.documentUpdated(ns, 3)
     assert.equal(h.describes, 1)
     gate.resolve()
     assert.equal(await saving, true)
     assert.equal(h.describes, 2)
     assert.equal(current(h.store).value.timeout, 55)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
   } finally { h.ctx.dispose() }
 })
 
@@ -390,10 +390,10 @@ test('保存前に開始した古い describe 応答で新しい保存結果を�
     h.api.describe = () => delayed.promise
     const reading = h.store.reload()
     assert.equal(await h.store.edit(ns, ['timeout'], 88), true)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     delayed.resolve(old)
     assert.equal(await reading, false)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 88)
   } finally { h.ctx.dispose() }
 })
@@ -406,12 +406,12 @@ test('複数の describe が逆順に戻っても、最後に開始した読込�
     const delayed = deferred<RemoteResult<SettingsDescription>>()
     h.api.describe = () => delayed.promise
     const earlier = h.store.reload()
-    await h.remote.update(ns, { timeout: 77 }, 1)
+    await h.remote.update(ns, { timeout: 77 }, 0)
     h.api.describe = () => h.remote.describe()
     assert.equal(await h.store.reload(), true)
     delayed.resolve(old)
     assert.equal(await earlier, false)
-    assert.equal(current(h.store).revision, 2)
+    assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 77)
   } finally { h.ctx.dispose() }
 })
@@ -443,7 +443,7 @@ test('伏せる項目、無効な項目、読み取り専用項目の保存を�
 test('配列・辞書・未知型・入れ子は unset だけで既定値へ戻し、兄弟の上書きを保つ', async () => {
   const h = harness()
   try {
-    assert.equal((await h.remote.update(ns, { models: ['変更'], labels: { extra: '追加' }, custom: { nested: true } }, 1)).ok, true)
+    assert.equal((await h.remote.update(ns, { models: ['変更'], labels: { extra: '追加' }, custom: { nested: true } }, 0)).ok, true)
     await h.store.reload()
     let revision = current(h.store).revision
     for (const key of ['models', 'labels', 'custom', 'retry']) {
@@ -548,8 +548,9 @@ test('任意の文字項目を空欄にすると unset で上書きを消し、�
     const before = current(h.store, name)
     let revision = before.revision
     for (const input of ['', '   ']) {
+      const changed = current(h.store, name).user?.reasoningEffort !== 'high'
       assert.equal(await h.store.edit(name, ['reasoningEffort'], 'high'), true)
-      revision++
+      if (changed) revision++
       const field = schemaFields(current(h.store, name)).find(item => item.path[0] === 'reasoningEffort')
       assert.ok(field)
       const parsed = parseFieldInput(field, input)
@@ -575,7 +576,7 @@ test('既定モデルの完全な変更と復帰はそれぞれ一度の書き�
     assert.equal(await h.store.editModelSettings('agent-default-model', () =>
       modelSaveOperations({ provider: 'ollama', model: 'local' })), true)
     assert.deepEqual(current(h.store, 'agent-default-model').value, { provider: 'ollama', model: 'local' })
-    assert.deepEqual(h.calls, [{ kind: 'mutate', ns: 'agent-default-model', revision: 1, input: modelSaveOperations({ provider: 'ollama', model: 'local' }) }])
+    assert.deepEqual(h.calls, [{ kind: 'mutate', ns: 'agent-default-model', revision: 0, input: modelSaveOperations({ provider: 'ollama', model: 'local' }) }])
     assert.equal(await h.store.editModelSettings('agent-default-model', () => modelResetOperations, true), true)
     assert.deepEqual(current(h.store, 'agent-default-model').value, { provider: 'deepseek', model: 'deepseek-v4' })
     assert.equal(h.calls.length, 2)

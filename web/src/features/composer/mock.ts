@@ -1,7 +1,8 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult, SessionSummary } from '../../dsh/services.ts'
 import type { CommandDescriptor, FileReference, ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionCatalog, PermissionSelection } from './api.ts'
-import type { SettingsMockRemote } from '../settings/mock.ts'
+import { installPermissionCatalogMock } from './mock-permission-catalog.ts'
+import { readMockModelCatalog, saveMockModelDefault } from '../settings/mock-models.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string, details: Record<string, unknown> = {}): RemoteResult<never> => ({ ok: false, error: { code, message, details } })
@@ -40,29 +41,11 @@ const files: readonly FileReference[] = [
 ]
 
 export function extendMock(kit: MockKit): void {
+  installPermissionCatalogMock(kit, mockPermissionCatalog)
   ;(globalThis as typeof globalThis & { __m3eObserveModelSelection?: (read: (id: string) => unknown) => void })
     .__m3eObserveModelSelection?.(id => structuredClone(kit.getProjection(id, 'modelSelection')))
   let savedDefault = structuredClone(mockModelCatalog.default)
-  const defaultSelection = async () => {
-    const settings = kit.remoteOf<SettingsMockRemote>('settings')
-    const description = await settings?.describe()
-    const value = description?.ok ? description.value.namespaces.find(row => row.ns === 'agent-default-model')?.value : undefined
-    return value ? value as unknown as ModelSelection : savedDefault
-  }
-  const saveDefault = async (value: ModelSelection) => {
-    const settings = kit.remoteOf<SettingsMockRemote>('settings')
-    if (!settings) { savedDefault = structuredClone(value); return }
-    const description = await settings.describe()
-    const row = description.ok ? description.value.namespaces.find(row => row.ns === 'agent-default-model') : undefined
-    if (!row) return
-    await settings.mutate(row.ns, [
-      { op: 'set', path: ['provider'], value: value.provider }, { op: 'set', path: ['model'], value: value.model },
-      value.reasoningEffort === undefined ? { op: 'unset', path: ['reasoningEffort'] } : { op: 'set', path: ['reasoningEffort'], value: value.reasoningEffort },
-    ], row.revision)
-  }
-  kit.addRemote('permissionPresets', {
-    async catalog() { return success(structuredClone(mockPermissionCatalog)) },
-  })
+  const modelCatalog = () => readMockModelCatalog(kit, { ...mockModelCatalog, default: savedDefault })
   const known = new Set<string>()
   const initialize = (sessionId: string, initial: Readonly<Record<string, unknown>> = {}) => {
     known.add(sessionId)
@@ -79,8 +62,8 @@ export function extendMock(kit: MockKit): void {
   // The foundation creates new sessions through this public method too.
   // Preserve a later feature's explicit projections when initializing its fixtures.
   const addSession = kit.addSession.bind(kit)
-  kit.addSession = (summary, records) => {
-    addSession(summary, records)
+  kit.addSession = (summary, records, options) => {
+    addSession(summary, records, options)
     initialize(summary.id, summary.projectionValues)
   }
   const removeSession = kit.removeSession.bind(kit)
@@ -108,7 +91,7 @@ export function extendMock(kit: MockKit): void {
   kit.streamAssistant = (sessionId, text, options) => {
     const current = kit.getProjection<ModelSelectionProjection>(sessionId, 'modelSelection')
     const start = (used: ModelSelection) => streamAssistant(sessionId, text, { ...options, model: structuredClone(used) })
-    return current?.next ? start(current.next) : kit.remoteOf('settings') ? defaultSelection().then(start) : start(savedDefault)
+    return start(current?.next ?? modelCatalog().default)
   }
 
   kit.addRemote('commands', {
@@ -124,7 +107,7 @@ export function extendMock(kit: MockKit): void {
     },
   })
   kit.addRemote('session', {
-    async modelCatalog() { return success(structuredClone({ ...mockModelCatalog, default: await defaultSelection() })) },
+    async modelCatalog() { return success(modelCatalog()) },
     async selectModel(input: ModelSelection & { sessionId: string }) {
       const testWindow = globalThis as typeof globalThis & {
         __m3eTestSelectModelDelay?: number
@@ -135,7 +118,7 @@ export function extendMock(kit: MockKit): void {
       const unavailable = () => failure('session/model-unavailable', 'このモデルや考える深さは選べません。', { provider: input.provider, model: input.model })
       if (testWindow.__m3eTestSelectModelFailure) return unavailable()
       if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。', { sessionId: input.sessionId })
-      const model = mockModelCatalog.groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
+      const model = modelCatalog().groups.find((group) => group.id === input.provider)?.models.find((model) => model.id === input.model)
       if (!model || (input.reasoningEffort !== undefined && !model.reasoning?.efforts.some((effort) => effort.id === input.reasoningEffort))) {
         return unavailable()
       }
@@ -143,7 +126,8 @@ export function extendMock(kit: MockKit): void {
       const value: ModelSelection = { provider: input.provider, model: input.model, ...(effort === undefined ? {} : { reasoningEffort: effort }) }
       kit.appendEvent(input.sessionId, 'model/selection', value)
       // Model installation does not await default persistence in the real Host.
-      void Promise.resolve().then(() => saveDefault(value))
+      if (kit.remoteOf('settings')) saveMockModelDefault(kit, value)
+      else void Promise.resolve().then(() => { savedDefault = structuredClone(value) })
       return success({ selected: value })
     },
   })

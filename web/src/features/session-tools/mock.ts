@@ -1,7 +1,7 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import { MOCK_IDS } from '../../dsh/mock/fixtures.ts'
-import type { RemoteResult, SessionWireEvent } from '../../dsh/services.ts'
-import { goalProjectionOf, type GoalAction, type GoalRef, type GoalsRemote, type GoalView } from './operations.ts'
+import type { SessionWireEvent } from '../../dsh/services.ts'
+import { installGoalMock } from './mock-goals.ts'
 import { createWorkspaceFilesMock } from './mock-files.ts'
 
 export const SESSION_TOOLS_MOCK_IDS = {
@@ -9,9 +9,6 @@ export const SESSION_TOOLS_MOCK_IDS = {
   children: { review: 'session-tools-review', tests: 'session-tools-tests' },
   jobs: { running: 'session-tools-check', complete: 'session-tools-child', failed: 'session-tools-failure' },
 } as const
-
-const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
-const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 
 function childRecords(id: string, label: string, running: boolean, now: number): SessionWireEvent[] {
   const rows: SessionWireEvent[] = [
@@ -67,69 +64,13 @@ export function extendMock(kit: MockKit): void {
     })
   })
 
-  const goals = new Map<string, GoalView>()
-  function publish(sessionId: string, goal: GoalView | undefined) {
-    const previousActivation = goals.get(sessionId)?.activation ?? 'disarmed'
-    if (goal) goals.set(sessionId, goal)
-    else goals.delete(sessionId)
-    const view = goalProjectionOf(goal)
-    if (view) {
-      const { activation: _activation, ...durable } = view
-      kit.setProjection(sessionId, 'goal', durable)
-    } else kit.setProjection(sessionId, 'goal', null)
-    if (previousActivation !== (goal?.activation ?? 'disarmed')) void kit.emit('goal/activation-changed', { sessionId,
-      ...(goal ? { goal: { id: goal.id, revision: goal.revision, activation: goal.activation } } : {}),
+  installGoalMock(kit, parent, now)
+  kit.addRemote('workspaceFiles', createWorkspaceFilesMock(id => {
+    let root: string | undefined
+    kit.updateList(state => {
+      const header = state.byId[id]
+      if (header) root = header.cwd ?? '/mock/dsh-webui-m3e'
     })
-  }
-  publish(parent, {
-    id: 'session-tools-goal', revision: 1, objective: '承認シートを作り、テストで操作を確かめる',
-    phase: 'active', maxGoalRounds: 8, roundsStarted: 3, createdAt: now - 240000, updatedAt: now,
-    activation: 'armed',
-  })
-
-  function current(sessionId: string, ref: GoalRef): RemoteResult<GoalView> {
-    const goal = goals.get(sessionId)
-    if (!goal) return failure('gateway/internal', 'ゴールはありません。')
-    if (goal.id !== ref.id || goal.revision !== ref.revision) return failure('gateway/internal', 'ゴールが更新されています。読み直してください。')
-    return success(goal)
-  }
-  async function update(sessionId: string, ref: GoalRef, action: Exclude<GoalAction, 'clear'>): Promise<RemoteResult<GoalView>> {
-    const result = current(sessionId, ref)
-    if (!result.ok) return result
-    const goal = result.value
-    if ((action === 'pause' && goal.phase !== 'active')
-      || (action === 'resume' && (goal.phase === 'complete' || (goal.phase === 'active' && goal.activation === 'armed') || goal.roundsStarted >= goal.maxGoalRounds))
-      || (action === 'complete' && goal.phase === 'complete')) return failure('gateway/internal', '今の状態ではこの操作はできません。')
-    const { blockedReason: _reason, ...rest } = goal
-    const value: GoalView = {
-      ...rest, revision: goal.revision + 1, updatedAt: Date.now(),
-      phase: action === 'pause' ? 'paused' : action === 'resume' ? 'active' : 'complete',
-      activation: action === 'resume' ? 'armed' : 'disarmed',
-    }
-    publish(sessionId, value)
-    return success(structuredClone(value))
-  }
-  const remote: GoalsRemote = {
-    async get(sessionId) { return success(structuredClone(goals.get(sessionId))) },
-    pause: (sessionId, ref) => update(sessionId, ref, 'pause'),
-    resume: (sessionId, ref) => update(sessionId, ref, 'resume'),
-    complete: (sessionId, ref) => update(sessionId, ref, 'complete'),
-    async clear(sessionId, ref) {
-      const result = current(sessionId, ref)
-      if (!result.ok) return result
-      const tombstone = { id: result.value.id, revision: result.value.revision + 1 }
-      publish(sessionId, undefined)
-      return success(tombstone)
-    },
-  }
-  kit.addRemote('goals', remote)
-  kit.addRemote('workspaceFiles', createWorkspaceFilesMock().remote)
-  kit.scenario('goal-blocked', () => {
-    const goal = goals.get(parent)!
-    publish(parent, { ...goal, revision: goal.revision + 1, phase: 'blocked', activation: 'disarmed', blockedReason: { code: 'verification-failed', message: '承認シートのテストに失敗しました。原因の確認が必要です。' } })
-  })
-  kit.scenario('goal-disarmed', () => {
-    const goal = goals.get(parent)!
-    publish(parent, { ...goal, activation: 'disarmed' })
-  })
+    return root
+  }).remote)
 }
