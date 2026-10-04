@@ -269,3 +269,20 @@ for (const width of [375, 390]) {
     await info.attach('interleaved-flight-resources', { body: JSON.stringify({ baseline, observations }), contentType: 'application/json' })
   })
 }
+
+test('B2 購読計測は最後のreleaseで外部投影の解除漏れを隠さない', async ({ page }) => {
+  await instrument(page); await visit(page, '/')
+  const result = await page.evaluate(async () => {
+    const state = window as any, ctx = state.__robustnessContext
+    const ref = ctx.sessions.retain('readme-review', { source: 'm3e.leakProbe' })
+    const binding = await ref.ready
+    const before = state.__robustnessObservables.active
+    const stop = binding.session.projections.faceOf('permissions').subscribe(() => {})
+    const subscribed = state.__robustnessObservables.active
+    ref.release()
+    const released = state.__robustnessObservables.active
+    stop()
+    return { added: subscribed - before, explicitlyRemoved: released - state.__robustnessObservables.active }
+  })
+  expect(result).toEqual({ added: 1, explicitlyRemoved: 1 })
+})

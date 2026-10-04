@@ -145,7 +145,7 @@ for (const change of ['remove', 'archive', 'parent', 'origin', 'blank'] as const
       const ctx = (window as any).__pickerContext
       if (change === 'archive') await ctx.workspaces.archiveSession('session-tools-review', { stopActivity: true })
       else ctx.mock.updateList((list: any) => {
-        if (change === 'remove') list.ids = list.ids.filter((id: string) => id !== 'session-tools-review')
+        if (change === 'remove') { list.ids = list.ids.filter((id: string) => id !== 'session-tools-review'); delete list.byId['session-tools-review'] }
         else list.byId['session-tools-review'] = { ...list.byId['session-tools-review'], ...(change === 'parent' ? { parentId: 'readme-review' } : change === 'origin' ? { origin: undefined } : { blank: true }) }
       })
     }, change)
@@ -175,6 +175,7 @@ for (const mode of ['one-shot', 'unknown', 'error'] as const) {
     await row(page, '承認シートの見直し').click()
     await page.evaluate(mode => {
       const state = window as any, parent = state.__pickerCatalog['approval-sheet']
+      if (mode === 'one-shot') state.__pickerContext.mock.setProjection('session-tools-review', 'subagent', { mode, seq: 0 })
       state.__pickerCatalog = { 'approval-sheet': mode === 'error'
         ? { values: {}, state: 'error', error: { code: 'gateway/internal', message: '合成の取得失敗', details: {} } }
         : { ...parent, values: { ...parent.values, subagentCatalog: parent.values.subagentCatalog.map((entry: any) => entry.id === 'session-tools-review' ? { ...entry, mode } : entry) } } }

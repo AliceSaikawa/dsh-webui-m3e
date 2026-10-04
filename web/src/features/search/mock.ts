@@ -1,5 +1,7 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
-import type { ISessions, JsonValue, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
+import type { ISessions, SessionSummary, SessionWireEvent } from '../../dsh/services.ts'
+import { mockMessageText, validMockSearchQuery } from '../../dsh/mock/search.ts'
+import { sessionRowIds } from '../../dsh/session-rows.ts'
 import { findMatchRanges, normalizeQuery, selectRecentSessions } from './search-utils.ts'
 
 const origin = Date.parse('2026-09-25T09:00:00+09:00')
@@ -9,14 +11,6 @@ const fixtures = [
   ['search-history', '履歴の表示を整える', '昨日の会話を表示してスクロール位置を確かめます。'],
   ['search-colors', '画面の配色を確認する', '明るい外観と暗い外観のどちらでも文字が読めます。'],
 ] as const
-
-function textOf(value: JsonValue): string {
-  if (!value || typeof value !== 'object') return ''
-  if (Array.isArray(value)) return value.map(textOf).filter(Boolean).join('\n')
-  const object = value as { readonly [key: string]: JsonValue }
-  if ((object.type === 'text' || object.type === 'reasoning') && typeof object.text === 'string') return object.text
-  return Object.values(object).map(textOf).filter(Boolean).join('\n')
-}
 
 /** Twenty Unicode characters either side of the first literal match. */
 export function excerptOf(text: string, query: string): string | undefined {
@@ -51,11 +45,12 @@ export function extendMock(kit: MockKit): void {
     if (signal.aborted) throw new DOMException('検索を取り消しました。', 'AbortError')
     if (fail) return { ok: false, error: { code: 'search/unavailable', message: '検索サービスに接続できません。', details: {} } }
     const query = normalizeQuery(input)
+    if (!validMockSearchQuery(query)) return { ok: false, error: { code: 'gateway/bad-request', message: '検索語を確認してください。', details: {} } }
     const list = this.list.getSnapshot()
-    const rows = selectRecentSessions(list.ids.flatMap(id => list.byId[id] ? [list.byId[id]!] : []), list.ids.length)
+    const rows = selectRecentSessions(sessionRowIds(list).flatMap(id => list.byId[id]?.cwd !== undefined ? [list.byId[id]!] : []), Object.keys(list.byId).length)
     const items = query ? rows.flatMap(row => {
-      const body = [...kit.getRecords(row.id)].sort((a, b) => a.seq - b.seq).map(event => textOf(event.data)).filter(Boolean).join('\n')
-      const snippet = excerptOf(body, query) ?? excerptOf(row.displayTitle, query)
+      const body = mockMessageText([...kit.getRecords(row.id)].sort((a, b) => a.seq - b.seq))
+      const snippet = excerptOf(body, query)
       return snippet === undefined ? [] : [{ sessionId: row.id, snippet }]
     }) : []
     return { ok: true, value: { items: items.slice(0, this.searchResultLimit), hasMore: items.length > this.searchResultLimit } }

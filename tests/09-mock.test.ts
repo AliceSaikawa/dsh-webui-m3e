@@ -144,6 +144,7 @@ test('統計 62%・ジョブ 3 件・子 2 件からメニュー全項目を描�
     assert.equal(contextPercent(pressure), 62)
     assert.equal(maxTurn(foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records), 3)
     ctx.jobs.watchRows(sessionId)
+    await Promise.resolve()
     const list = ctx.sessions.list.getSnapshot()
     assert.equal(ctx.jobs.state.getSnapshot().rows[sessionId]?.length, 3)
     assert.equal(runningJobCount(ctx.jobs.state.getSnapshot().rows[sessionId]), 1)

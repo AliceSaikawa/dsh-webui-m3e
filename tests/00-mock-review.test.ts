@@ -19,6 +19,7 @@ for (const child of [false, true]) {
       ctx.mock.setSessionState(sessionId, { running: false })
       ctx.mock.setSessionState('other-completed', { running: false })
       if (child) {
+        ctx.mock.setProjection(sessionId, 'subagent', { mode: 'continuable', seq: 0 })
         ctx.mock.updateList((state) => {
           state.projectionsBySession = { [parentSessionId]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'continuable', label: '子', createdAt: 0 }] } } }
         })
@@ -29,7 +30,8 @@ for (const child of [false, true]) {
       assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, sessionId)
       ctx.mock.setProjection(sessionId, 'plan', { active: true, pending: false })
       assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
-      await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.rename('既読の会話')
+      const renamed = await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.rename('既読の会話')
+      assert.equal(renamed.ok, !child)
       assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
       await conversationSelection(ctx.sessions).select(undefined)
       await conversationSelection(ctx.sessions).select(sessionId)
@@ -44,6 +46,7 @@ for (const child of [false, true]) {
     try {
       if (child) {
         ctx.mock.addSession({ id: sessionId, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: '子の会話', running: true, blank: false, updatedAt: 0 }, [])
+        ctx.mock.setProjection(sessionId, 'subagent', { mode: 'one-shot', seq: 0 })
         ctx.mock.updateList((state) => {
           state.projectionsBySession = { [MOCK_IDS.sessions.readme]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'one-shot', createdAt: 0 }] } } }
         })
@@ -51,8 +54,9 @@ for (const child of [false, true]) {
       ctx.mock.setSessionState(sessionId, { openState: 'error', openError: error })
       await assert.rejects(conversationSelection(ctx.sessions).select(child ? { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: sessionId, mode: 'one-shot' } : sessionId))
       assert.equal(ctx.sessions.retainInfo(sessionId).getSnapshot().referenceCount, 0)
-      assert.equal(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.getSnapshot().openState, 'error')
-      assert.deepEqual(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.getSnapshot().openError, error)
+      const binding = await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready
+      assert.equal(binding.session.getSnapshot().openState, 'error')
+      assert.deepEqual(binding.session.getSnapshot().openError, error)
     } finally { ctx.dispose() }
   })
 }

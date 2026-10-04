@@ -22,7 +22,9 @@ export function extendMock(kit: MockKit): void {
     event(0, 'turn/start', { turn: 1 }),
     event(1, 'system/message', { message: { role: 'system', content: [{ type: 'text', text: 'あなたはコーディングを手伝う AI です。\n\n添付とツール結果の表示を確認できます。' }] } }),
     event(2, 'user/message', { id: 'chat-samples-instructions', role: 'user', source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>\nThe following workspace instructions may be relevant to your work.\n\nInstructions from: ~/.dsh/AGENTS.md\n\n# 個人共通の作業方針\n\n- 説明は日本語で、結論から書く。\n</system-reminder>' }] }),
-    event(3, 'user/message', { role: 'user', content: [{ type: 'text', text: '結果を確認して' }, { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } }] }),
+    event(3, 'user/message', { role: 'user', // The same image used by the legacy nested result below has a declared
+    // first-party reference, as required by 0.2.0 session.attachment authorization.
+    content: [{ type: 'text', text: '結果を確認して' }, { type: 'image', attachment: { attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67, width: 1, height: 1, name: '入力画像.png' } }, { type: 'file', attachment: { attachmentId: 'mock-file', name: '確認事項.txt', bytes: 2048 } }] }),
     event(4, 'assistant/message', { message: { role: 'assistant', content: [{ type: 'tool-call', id: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }] } }),
     event(5, 'tool/call', { callId: 'chat-long-result', name: 'read_file', arguments: '{"path":"確認事項.txt"}' }),
     event(6, 'tool/result', { message: { role: 'user', source: { kind: 'tool', callId: 'chat-long-result' }, content: [{ type: 'tool-result', toolCallId: 'chat-long-result', content: [

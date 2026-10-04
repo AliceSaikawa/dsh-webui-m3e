@@ -45,6 +45,8 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
   const initialized = useRef(false)
   const anchor = useRef<ScrollAnchor | null>(null)
   const busy = useRef(false)
+  const mounted = useRef(false)
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const closeSheet = useRef<(() => void) | undefined>(undefined)
   const current = useRef({ active, query, hasRows: false, loadingOlder: false })
   current.current = { active, query, hasRows: turns.some(turn => turn.rows.length > 0), loadingOlder: loading || snapshot.loadingOlder }
@@ -138,8 +140,8 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     setLoading(true)
     setLoadError('')
     try { await face.loadOlder() }
-    catch { setLoadError('前の記録を読み込めませんでした。もう一度お試しください。') }
-    finally { busy.current = false; setLoading(false) }
+    catch { if (mounted.current) setLoadError('前の記録を読み込めませんでした。もう一度お試しください。') }
+    finally { if (mounted.current) { busy.current = false; setLoading(false) } }
   }
   const showRecord = (row: TraceRow) => {
     if (!current.current.active) return

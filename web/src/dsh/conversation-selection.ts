@@ -37,7 +37,7 @@ export class ConversationSelection {
     pageWindow()?.addEventListener('pagehide', this.onPageHide)
     pageWindow()?.addEventListener('pageshow', this.onPageShow)
   }
-  select(target: SessionTarget | undefined): Promise<boolean> {
+  async select(target: SessionTarget | undefined): Promise<boolean> {
     if (target === undefined) { this.clear(); return Promise.resolve(true) }
     const key = typeof target === 'string' ? target : JSON.stringify(target)
     const sessionId = typeof target === 'string' ? target : target.childSessionId
@@ -47,10 +47,6 @@ export class ConversationSelection {
     const revision = ++this.revision
     for (const controller of this.preparations) controller.abort()
     this.cancelWait?.()
-    if (this.reference?.sessionId === sessionId && typeof target === 'string' && this.reference.binding.session.getSnapshot().openState === 'open') {
-      this.state.set({ sessionId, pending: false })
-      return this.flight = Promise.resolve(true)
-    }
     this.state.set({ sessionId, pending: true })
     this.flight = this.open(target, revision)
     return this.flight
@@ -65,9 +61,7 @@ export class ConversationSelection {
     for (const controller of this.preparations) controller.abort()
     this.cancelWait?.()
     this.desired = typeof target === 'string' ? target : JSON.stringify(target)
-    const previous = this.reference
-    this.reference = next
-    previous?.release()
+    this.replaceReference(next)
     this.state.set({ sessionId: next.sessionId, pending: false })
     this.flight = Promise.resolve(true)
   }
@@ -99,9 +93,12 @@ export class ConversationSelection {
     if (snapshot.openState === 'error') throw new RemoteCallError(snapshot.openError ?? { code: 'session/open-failed', message: '会話を開けませんでした。', details: {} })
   }
   private async open(target: SessionTarget, revision: number): Promise<boolean> {
-    let acquired: SessionReference | undefined
     const active = () => revision === this.revision
     try {
+      if (typeof target === 'string' && this.reference?.sessionId === target && this.reference.binding.session.getSnapshot().openState === 'open') {
+        this.state.set({ sessionId: target, pending: false })
+        return true
+      }
       if (typeof target === 'string' && this.sessions.list.getSnapshot().phase !== 'ready') {
         await new Promise<void>(resolve => {
           const finish = () => { unsubscribe(); if (this.cancelWait === finish) this.cancelWait = undefined; resolve() }
@@ -113,34 +110,36 @@ export class ConversationSelection {
       const resolved = typeof target === 'string' ? await resolveConversationTarget(this.sessions, target, active) : target
       if (!active() || resolved === undefined) return false
       if (typeof resolved !== 'string' && resolved.mode === 'unknown') throw new Error('子の会話の情報を読み込めませんでした。')
-      acquired = this.sessions.retain(resolved, { source: MAIN_VIEW_SOURCE })
-      // Acquire first: never drop an overlapping generation to zero.
-      const previous = this.reference
-      this.reference = acquired
-      previous?.release()
+      const acquired = this.sessions.retain(resolved, { source: MAIN_VIEW_SOURCE })
+      // Transfer ownership synchronously. This async operation only borrows it
+      // from here on; stale completions must never release the owner's reference.
+      this.replaceReference(acquired)
       const binding = await acquired.ready
-      if (!active()) { acquired.release(); return false }
+      if (!active()) return false
       const snapshot = binding.session.getSnapshot()
       this.checkOpen(snapshot)
       this.state.set({ sessionId: acquired.sessionId, pending: false })
       return true
     } catch (error) {
-      acquired?.release()
       if (!active()) return false
-      this.reference?.release()
-      this.reference = undefined
+      this.replaceReference(undefined)
       this.desired = undefined
       this.state.set({ ...this.state.getSnapshot(), pending: false, error })
       throw error
     }
+  }
+  /** The sole release point for the main-view reference, including pending opens. */
+  private replaceReference(next: SessionReference | undefined): void {
+    const previous = this.reference
+    this.reference = next
+    previous?.release()
   }
   clear(): void {
     ++this.revision
     for (const controller of this.preparations) controller.abort()
     this.desired = undefined
     this.cancelWait?.()
-    this.reference?.release()
-    this.reference = undefined
+    this.replaceReference(undefined)
     this.state.set({ pending: false })
   }
   dispose(): void {

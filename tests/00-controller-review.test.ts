@@ -197,7 +197,9 @@ test('R11 killの受付は行を完了させず別の一覧通知で停止を反
 
 test('R11 observeは別の出力・終了通知で更新し最後の解除で消す', async t => {
   const ctx = createMockContext(); t.after(() => ctx.dispose())
+  ctx.mock.setJobs(id, [job])
   const stop = ctx.jobs.observe(id, job.id)
+  await flush()
   ctx.mock.emitJobFrame(job.id, { type: 'opened' })
   ctx.mock.emitJobFrame(job.id, { type: 'output', text: '出力' })
   assert.equal(ctx.jobs.state.getSnapshot().observed[job.id]?.streaming, true)

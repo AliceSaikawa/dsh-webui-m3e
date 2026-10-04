@@ -14,17 +14,18 @@ const child: SessionSummary = {
   retainedBy: {}, running: false, blank: false, updatedAt: 1,
 }
 
-function fixture() {
+function fixture(mode: 'one-shot' | 'continuable' = 'one-shot') {
   const ctx = createMockContext()
   ctx.mock.addSession({ id: parentId, displayTitle: '親の会話', running: false, blank: false, updatedAt: 0 }, [])
   ctx.mock.addSession({ ...child, running: true }, [])
+  ctx.mock.setProjection(childId, 'subagent', { mode, seq: 0 })
   ctx.mock.setSessionState(childId, { running: false })
   return ctx
 }
 
 for (const mode of ['one-shot', 'continuable'] as const) {
   test(`対応待ちの子を開く前に未取得の親カタログを読み、${mode}のアドレスで選択する`, async () => {
-    const ctx = fixture()
+    const ctx = fixture(mode)
     const steps: string[] = []
     const address: SubagentAddress = { parentSessionId: parentId, childSessionId: childId, mode }
     try {

@@ -1,3 +1,4 @@
+import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
 import { selectRecentSessions } from './search-utils.ts'
 import { MAIN_VIEW_SOURCE } from '../../dsh/conversation-selection.ts'
@@ -24,7 +25,7 @@ export function filterVisibleSearchItems<T extends { sessionId: string }>(
   workspaces: SearchWorkspaceList,
   showSubagents = false,
 ): T[] {
-  const currentIds = new Set(list.ids)
+  const currentIds = new Set(sessionRowIds(list))
   const archived = new Set(workspaces.archivedSessionIds)
   return items.filter(item => {
     const row = list.byId[item.sessionId]
@@ -42,7 +43,7 @@ export function selectVisibleRecentSessions(
   showSubagents = false,
 ): SessionSummary[] {
   const archived = new Set(workspaces.archivedSessionIds)
-  const visible = list.ids.flatMap(id => {
+  const visible = sessionRowIds(list).flatMap(id => {
     const row = list.byId[id]
     return row !== undefined && sessionVisible(row, archived, showSubagents) ? [row] : []
   })

@@ -4,8 +4,10 @@ import type {
   SessionBinding, SessionEventChange, SessionEventLikeEntry, SessionEventWindow,
   SessionFace, SessionListState, SessionSnapshot, SessionSummary, SessionWireEvent,
   StreamChunk, WorkspaceSnapshot, WorkspaceView, SessionReference, SessionRetainInfo,
-  SessionTarget, SessionJob, InboxState, ObservableSnapshot, RemoteFailure,
+  SessionTarget, SessionJob, InboxState, RemoteFailure, SubagentAddress, SubagentCatalogEntry,
 } from '../services.ts'
+import { normalizeMockTitle, referencesImage } from './session-validation.ts'
+import { mockMessageText, validMockSearchQuery } from './search.ts'
 import { createMockJobs, type JobFrame } from './jobs.ts'
 import { observable, type MutableSnapshot } from './observable.ts'
 import { completionStatus } from '../completion-status.ts'
@@ -60,6 +62,7 @@ interface SessionModel {
   records: SessionWireEvent[]
   start: number
   hostProjections: Record<string, unknown>
+  acceptedRequests: Set<string>
   projections: Map<string, MutableSnapshot<unknown>>
   attempt?: { id: string; turn: number; step: number; chunks: StreamChunk[]; token: number }
 }
@@ -96,6 +99,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const readProjectionIds = new Set<string>()
   const unresolvedAddresses = new Set<string>()
   const retainObservers = new Map<string, MutableSnapshot<SessionRetainInfo>>()
+  const scopeIds = new WeakMap<object, string>()
   const generations = new Map<string, { client: ReturnType<typeof makeClient>; binding: SessionBinding; sources: Record<string, number>; live: boolean; cleanups: Set<() => void> }>()
 
   function publishRetention(sessionId: string) {
@@ -110,28 +114,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     if (existing) return existing
     const model = getModel(sessionId)
     const client = makeClient(model)
-    const record = { client, binding: undefined as unknown as SessionBinding, sources: {} as Record<string, number>, live: true, cleanups: new Set<() => void>() }
-    const guard = () => { if (!record.live) throw new Error('Session generation is disposed') }
-    const watch = <T>(source: ObservableSnapshot<T>): ObservableSnapshot<T> => ({
-      getSnapshot: source.getSnapshot,
-      subscribe(listener) {
-        guard()
-        const unsubscribe = source.subscribe(listener)
-        const release = () => { unsubscribe(); record.cleanups.delete(release) }
-        record.cleanups.add(release)
-        return release
-      },
-    })
-    const overrides = new Map<PropertyKey, unknown>()
-    const projectionFaces = new Map<string, ObservableSnapshot<unknown>>()
-    const source = client.face
-    const face = new Proxy(source, { get(target, key) {
-      if (key === 'subscribe') return watch(source).subscribe
-      if (key === 'projections') return { faceOf: (name: string) => { guard(); let face = projectionFaces.get(name); if (!face) { face = watch(source.projections.faceOf(name)); projectionFaces.set(name, face) }; return face } }
-      const value = overrides.has(key) ? overrides.get(key) : Reflect.get(target, key)
-      return typeof value === 'function' && key !== 'getSnapshot' ? (...args: unknown[]) => { guard(); return value.apply(target, args) } : value
-    }, set(_target, key, value) { guard(); overrides.set(key, value); return true } })
-    record.binding = { sessionId, session: face, ctx: { remote, sessionId, agent: sessionId }, eventSource: watch(client.events) }
+    const record = { client, binding: undefined as unknown as SessionBinding, sources: Object.create(null) as Record<string, number>, live: true, cleanups: new Set<() => void>() }
+    // Only controller-owned subscriptions belong to this generation. Direct
+    // subscribers (especially projection faces shared across generations) must
+    // unsubscribe themselves, exactly as the SDK's notifier subscriptions do.
+    record.binding = { sessionId, session: client.face, ctx: { remote, sessionId, agent: sessionId }, eventSource: client.events }
+    scopeIds.set(record.binding.ctx, sessionId)
     let previous = model.snapshot.getSnapshot()
     record.cleanups.add(model.snapshot.subscribe(() => {
       const next = model.snapshot.getSnapshot()
@@ -269,6 +257,8 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     const snapshot = observable<SessionSnapshot>({ ...model.snapshot.getSnapshot(), pendingSubmissions: [], promptAttempted: false, promptError: null, awaitingFirstTurn: false, loadingOlder: false, hasMore: start > 0 })
     const entries: SessionEventLikeEntry[] = [...model.records.slice(start).map(event => ({ type: 'event' as const, event })), ...model.events.getSnapshot().entries.filter(entry => entry.type === 'transient')]
     const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
+    let jump: Promise<void> | undefined
+    let jumpTarget = 0
     const client = { start, snapshot, events: eventSource, submissions: new Map<string, BeginSubmissionInput>(), live: true, face: undefined as unknown as SessionFace }
     const retireSubmission = (requestId: string | undefined, retirement: PendingSubmissionRetirement) => retire(model, requestId, retirement, client)
     const face: SessionFace = {
@@ -281,12 +271,30 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           return { requestId, abandon() {} }
         }
         client.submissions.set(requestId, input)
-        snapshot.update((state) => ({ ...state, pendingSubmissions: [...state.pendingSubmissions, { requestId, placement: state.running ? (input.mode === 'steer' ? 'steering' : 'queued') : 'transcript', time: Date.now(), text: input.text, attachments: input.attachments }] }))
+        snapshot.update((state) => ({ ...state, promptAttempted: true, pendingSubmissions: [...state.pendingSubmissions, { requestId, placement: state.running ? (input.mode === 'steer' ? 'steering' : 'queued') : 'transcript', time: Date.now(), text: input.text, attachments: input.attachments }] }))
         return { requestId, abandon: () => retireSubmission(requestId, { reason: 'failed' }) }
       },
       async prompt(parts, mode, signal, requestId) {
         if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-        snapshot.update((state) => ({ ...state, promptAttempted: true, promptError: null }))
+        snapshot.update((state) => ({ ...state, promptAttempted: true, promptError: null, lastAgentError: null }))
+        const rejectPrompt = (code: string, message: string, details = {}) => {
+          const result = failure(code, message, details)
+          if (!result.ok) snapshot.update(state => ({ ...state, promptError: { op: 'send', error: result.error } }))
+          retireSubmission(requestId, { reason: 'failed' })
+          return result
+        }
+        await Promise.resolve()
+        if (!parts.some(part => part.type !== 'text' || part.text.trim())) return rejectPrompt('gateway/bad-request', '空白以外のメッセージを入力してください。')
+        const address = snapshot.getSnapshot().subagent?.address
+        if (address && parts.some(part => part.type === 'file')) return rejectPrompt('subagent/attachment-invalid', '子の会話にファイルは送れません。', { reason: 'SUBAGENT_FILE_UNSUPPORTED' })
+        if (address && !models.has(address.parentSessionId)) return rejectPrompt('subagent/parent-unavailable', '親の会話を利用できません。')
+        if (summary.origin === 'subagent') {
+          const error = validateAddress(model, address)
+          if (error) return rejectPrompt(error.code, error.message, error.details)
+          if ((model.hostProjections.subagent as { mode: string }).mode !== 'continuable') return rejectPrompt('subagent/not-resumable', 'この子の会話は続けられません。')
+        }
+        if (!address && requestId && model.acceptedRequests.has(requestId)) return accepted()
+        if (parts.some(part => part.type === 'file')) return rejectPrompt('session/attachment-invalid', '添付ファイルの受付情報が見つかりません。', { reason: 'FILE_NOT_STAGED' })
         if (signal?.aborted || connectionState.getSnapshot() !== 'connected') {
           const result = failure(signal?.aborted ? 'rpc/aborted' : 'connection/disconnected', signal?.aborted ? '送信を取り消しました。' : '接続が切れています。')
           if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
@@ -306,11 +314,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
             return { type: 'file', attachment: { attachmentId: part.receiptId, name: '添付ファイル', bytes: 0 } }
           })
         } catch {
-          const result = failure('attachment/invalid-data', '画像のデータを読み込めませんでした。')
+          const result = failure('session/attachment-invalid', '画像のデータを読み込めませんでした。')
           if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
           retireSubmission(requestId, { reason: 'failed' })
           return result
         }
+        if (!address && requestId) model.acceptedRequests.add(requestId)
         if (snapshot.getSnapshot().running && mode === 'queue') {
           kit.updateProjection<InboxState>(summary.id, 'inbox', inbox => ({ 'next-step': inbox?.['next-step'] ?? [], 'next-turn': [...(inbox?.['next-turn'] ?? []), { id: id('message'), role: 'user', source: { kind: 'user', ...(requestId ? { rpcId: requestId } : {}) }, content }] }))
         } else {
@@ -322,12 +331,14 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return accepted()
       },
       async updateQueue(itemId, action) {
-        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        await Promise.resolve()
         const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
         if (action.kind === 'edit') {
           if (action.content.some(block => block.type !== 'text')) return failure('session/attachment-invalid', 'テキストだけを編集できます。', { reason: 'QUEUE_EDIT_NON_TEXT' })
           if (!action.content.some(block => block.text.trim())) return failure('gateway/bad-request', '空白以外のメッセージを入力してください。')
         }
+        if (model.summary.origin === 'subagent' && (model.hostProjections.subagent as { mode?: string } | undefined)?.mode !== 'continuable') return failure('session/agent-busy', 'この子の会話の待機列は変更できません。')
+        if (!isActive(model)) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
         const target = inbox?.['next-turn'].some(row => row.id === itemId) ? 'next-turn' : 'next-step'
         const item = inbox?.[target].find(row => row.id === itemId)
         if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
@@ -345,7 +356,14 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return accepted()
       },
       async cancel() {
-        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        await Promise.resolve()
+        const address = snapshot.getSnapshot().subagent?.address
+        const denied = !isActive(model) ? address ? undefined : failure('session/not-found', '会話が見つかりません。')
+          : address ? model.summary.origin !== 'subagent' || model.summary.parentId !== address.parentSessionId ? failure('subagent/unauthorized', '子の会話の親が一致しません。') : undefined
+          : model.summary.origin === 'subagent' ? failure('session/agent-busy', '子の会話には親のアドレスが必要です。') : undefined
+        if (denied && !denied.ok) { snapshot.update(value => ({ ...value, promptError: { op: 'stop', error: denied.error } })); return denied }
+        // interruptByParent is a no-op for a child without a live Agent.
+        if (!isActive(model)) return accepted()
         settleAttempt(model)
         if (snapshot.getSnapshot().running) append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
         running(model, false)
@@ -353,26 +371,51 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return accepted()
       },
       async rename(title) {
+        await Promise.resolve()
+        if (model.summary.origin === 'subagent') return failure('session/agent-busy', '子の会話はこの操作を利用できません。')
         if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-        const normalized = title.trim()
+        const normalized = normalizeMockTitle(title)
         if (!normalized) return failure('session/title-invalid', '題名を入力してください。', { sessionId: model.summary.id })
         updateSummary(model, { title: normalized, displayTitle: normalized })
         const event = append(model, 'session/title', { title: normalized })
+        kit.setProjection(summary.id, 'title', normalized)
         return success({ title: normalized, seq: event.seq })
       },
       async loadOlder() {
-        if (!isActive(model) || client.start === 0 || snapshot.getSnapshot().loadingOlder) return
-        snapshot.update((state) => ({ ...state, loadingOlder: true }))
-        await Promise.resolve()
-        if (!isActive(model) || !client.live) return
-        const previousStart = client.start
-        client.start = Math.max(0, client.start - pageSize)
-        const older: SessionEventLikeEntry[] = model.records.slice(client.start, previousStart).map((event) => ({ type: 'event', event }))
-        eventSource.update(window => ({ entries: [...older, ...window.entries], change: { kind: 'prepend', entries: older }, hasMore: client.start > 0, revision: window.revision + 1 }))
-        snapshot.update((state) => ({ ...state, hasMore: client.start > 0, loadingOlder: false }))
+        if (!isActive(model) || !client.live || snapshot.getSnapshot().openState !== 'open' || client.start === 0 || snapshot.getSnapshot().loadingOlder) return
+        snapshot.update(state => ({ ...state, loadingOlder: true }))
+        try {
+          await Promise.resolve()
+          if (!isActive(model) || !client.live) return
+          prepend(Math.max(0, client.start - pageSize))
+        } finally { snapshot.update(state => ({ ...state, loadingOlder: false })) }
       },
-      async loadThrough(seq) { while (isActive(model) && client.start > 0 && (model.records[client.start]?.seq ?? 0) > seq) await face.loadOlder() },
+      loadThrough(seq) {
+        if (!isActive(model) || !client.live || snapshot.getSnapshot().openState !== 'open' || client.start === 0 || (model.records[client.start]?.seq ?? 0) <= seq) return Promise.resolve()
+        if (jump) { jumpTarget = Math.min(jumpTarget, seq); return jump }
+        if (snapshot.getSnapshot().loadingOlder) return Promise.resolve()
+        jumpTarget = seq
+        snapshot.update(state => ({ ...state, loadingOlder: true }))
+        jump = (async () => {
+          let pendingStart = client.start
+          try {
+            while (pendingStart > 0 && (model.records[pendingStart]?.seq ?? 0) > jumpTarget) {
+              const before = pendingStart
+              await Promise.resolve()
+              if (!isActive(model) || !client.live) return
+              pendingStart = Math.max(0, pendingStart - pageSize)
+              if (pendingStart >= before) return
+            }
+          } finally {
+            jump = undefined
+            if (isActive(model) && client.live && pendingStart < client.start) prepend(pendingStart)
+            snapshot.update(state => ({ ...state, loadingOlder: false }))
+          }
+        })()
+        return jump
+      },
       async command(line) {
+        await Promise.resolve()
         if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
         const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
         if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
@@ -384,10 +427,19 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         return success({ matched: true })
       },
       async readAttachment(attachmentId) {
+        await Promise.resolve()
         if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        const referenced = referencesImage(model.records, attachmentId)
+        if (!referenced) return failure('session/attachment-invalid', 'この会話で使われていない画像です。', { reason: 'ATTACHMENT_NOT_REFERENCED' })
         const value = attachments.get(attachmentId)
-        return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('attachment/not-found', '画像が見つかりません。')
+        return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('session/attachment-invalid', '画像が見つかりません。', { reason: 'ATTACHMENT_NOT_FOUND' })
       },
+    }
+    function prepend(start: number) {
+      const older: SessionEventLikeEntry[] = model.records.slice(start, client.start).map(event => ({ type: 'event', event }))
+      client.start = start
+      eventSource.update(window => ({ entries: [...older, ...window.entries], change: { kind: 'prepend', entries: older }, hasMore: start > 0, revision: window.revision + 1 }))
+      snapshot.update(state => ({ ...state, hasMore: start > 0 }))
     }
     client.face = face
     return client
@@ -403,29 +455,89 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       projectionsBySession: { ...list.projectionsBySession, [sessionId]: { values, state, error } } }))
   }
 
+  function validateAddress(model: SessionModel, address: SubagentAddress | undefined): RemoteFailure | null {
+    const sessionId = model.summary.id
+    const fail = (code: string, message: string, details = {}): RemoteFailure => ({ code, message, details })
+    if (unresolvedAddresses.has(sessionId)) return fail(address ? 'subagent/not-found' : 'session/not-found', '会話が見つかりません。', { sessionId })
+    if (!address) return model.summary.origin === 'subagent' ? fail('session/agent-busy', '子の会話には親のアドレスが必要です。') : null
+    if (model.summary.origin !== 'subagent' || model.summary.parentId !== address.parentSessionId) return fail('subagent/unauthorized', '子の会話の親が一致しません。', { childSessionId: sessionId })
+    const identity = model.hostProjections.subagent as { mode: string; seq: number } | null | undefined
+    const inherited = model.records.find(event => event.type === 'session/end-seed')?.seq ?? 0
+    if (identity == null || identity.seq < inherited) return fail('subagent/catalog-diagnostic', '子の会話の情報を読み込めません。', { reason: identity === null ? 'corrupt' : 'unsupported' })
+    return address.mode !== 'unknown' && identity.mode !== address.mode ? fail('subagent/unauthorized', '子の会話の種類が一致しません。', { childSessionId: sessionId }) : null
+  }
+  // MockKit supplies Host data; a catalog fixture establishes a child's durable
+  // descriptor once. Later caller addresses/catalog edits cannot change it.
+  function seedChildDescriptor(parentId: string, rows: readonly SubagentCatalogEntry[]) {
+    for (const row of rows) {
+      const child = models.get(row.id)
+      if (child?.summary.parentId === parentId && child.summary.origin === 'subagent' && !Object.hasOwn(child.hostProjections, 'subagent') && row.mode !== 'unknown') {
+        child.hostProjections.subagent = { mode: row.mode, seq: 0, ...('label' in row ? { label: row.label } : {}) }
+      }
+    }
+  }
+
+  function commandError(code: string, message: string, structured = false, details: Record<string, unknown> = {}): Error {
+    const error = new Error(code + ': ' + message)
+    return structured ? Object.assign(error, { rpcError: { code, message, details } }) : error
+  }
+  function attachSession(workspace: WorkspaceView, sessionId: string) {
+    workspaceList.update(state => ({ ...state, items: state.items.map(item => item.workspaceId === workspace.workspaceId && !item.sessionIds.includes(sessionId) ? { ...item, sessionIds: [sessionId, ...item.sessionIds] } : item) }))
+  }
+  function increasedForkTitle(title: string) {
+    const ascii = /^(.*?)\((\d+)\)$/u.exec(title)
+    if (ascii) return ascii[1] + '(' + (BigInt(ascii[2]!) + 1n) + ')'
+    const full = /^(.*?)（(\d+)）$/u.exec(title)
+    if (full) return full[1] + '（' + (BigInt(full[2]!) + 1n) + '）'
+    return title + ' (1)'
+  }
+  let defaultWorkspaceId: string | undefined
   const workspaces: IWorkspaces = {
     list: workspaceList,
-    async initializeDefault() { return undefined },
-    async unarchiveSession(sessionId) { workspaceList.update(state => ({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })) },
-    async pinSession(id) { workspaceList.update(state => ({ ...state, pinnedSessionIds: [id, ...state.pinnedSessionIds.filter(value => value !== id)] })) },
-    async unpinSession(id) { workspaceList.update(state => ({ ...state, pinnedSessionIds: state.pinnedSessionIds.filter(value => value !== id) })) },
+    async initializeDefault(signal) {
+      await Promise.resolve()
+      if (signal?.aborted) throw commandError('rpc/aborted', '初期化を取り消しました。', true)
+      const state = workspaceList.getSnapshot()
+      if (defaultWorkspaceId) return state.items.find(item => item.workspaceId === defaultWorkspaceId)
+      if (state.items.length || state.archivedSessionIds.length || models.size) return undefined
+      const workspace = await workspaces.create({ path: '/mock/Documents/DeepSeek' })
+      defaultWorkspaceId = workspace.workspaceId
+      return workspace
+    },
+    async unarchiveSession(sessionId) { await Promise.resolve(); workspaceList.update(state => ({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })) },
+    async pinSession(id) {
+      await Promise.resolve()
+      if (workspaceList.getSnapshot().pinnedSessionIds.includes(id)) return
+      if (!models.has(id)) throw commandError('session/not-found', '会話が見つかりません。')
+      if (workspaceList.getSnapshot().archivedSessionIds.includes(id)) throw commandError('gateway/bad-request', 'アーカイブした会話は固定できません。')
+      workspaceList.update(state => ({ ...state, pinnedSessionIds: [id, ...state.pinnedSessionIds.filter(value => value !== id)] })) },
+    async unpinSession(id) { await Promise.resolve(); workspaceList.update(state => ({ ...state, pinnedSessionIds: state.pinnedSessionIds.filter(value => value !== id) })) },
     async create({ path }) {
+      await Promise.resolve()
+      if (!path.startsWith('/') || path.includes('\0')) throw commandError('workspace/invalid-path', '絶対パスを指定してください。', true)
+      path = '/' + path.split('/').filter(Boolean).reduce<string[]>((parts, part) => { if (part === '..') parts.pop(); else if (part !== '.') parts.push(part); return parts }, []).join('/')
       const previous = workspaceList.getSnapshot().items.find((item) => item.path === path)
       if (previous) return previous
       const now = new Date().toISOString()
       const workspace: WorkspaceView = { workspaceId: id('workspace'), path, title: path.split('/').filter(Boolean).at(-1) ?? 'ワークスペース', sessionIds: [], createdAt: now, updatedAt: now }
-      kit.addWorkspace(workspace)
+      workspaceList.update(state => ({ ...state, items: [workspace, ...state.items] }))
       return workspace
     },
     async rename(workspaceId, title) {
+      await Promise.resolve()
+      title = title.trim()
+      if (!title) throw commandError('gateway/bad-request', '名前を入力してください。')
       const previous = workspaceList.getSnapshot().items.find((item) => item.workspaceId === workspaceId)
-      if (!previous) throw new Error('ワークスペースが見つかりません。')
-      const next = { ...previous, title: title.trim() || previous.title, updatedAt: new Date().toISOString() }
+      if (!previous) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。')
+      if (workspaceList.getSnapshot().items.some(item => item.workspaceId !== workspaceId && item.title === title)) throw commandError('workspace/name-conflict', '同じ名前が使われています。')
+      const next = { ...previous, title, updatedAt: new Date().toISOString() }
       workspaceList.update((state) => ({ ...state, items: state.items.map((item) => item.workspaceId === workspaceId ? next : item) }))
       return next
     },
-    async delete(workspaceId) { kit.removeWorkspace(workspaceId) },
+    async delete(workspaceId) { await Promise.resolve(); if (!workspaceList.getSnapshot().items.some(item => item.workspaceId === workspaceId)) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。'); kit.removeWorkspace(workspaceId) },
     async insertBefore(workspaceId, beforeWorkspaceId) {
+      const items = workspaceList.getSnapshot().items
+      if (!items.some(item => item.workspaceId === workspaceId) || (beforeWorkspaceId !== undefined && !items.some(item => item.workspaceId === beforeWorkspaceId))) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。')
       workspaceList.update((state) => {
         const target = state.items.find((item) => item.workspaceId === workspaceId)
         if (!target || workspaceId === beforeWorkspaceId) return state
@@ -436,34 +548,49 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       })
     },
     async archiveSession(sessionId, options) {
-      const model = getModel(sessionId)
+      await Promise.resolve()
+      if (workspaceList.getSnapshot().archivedSessionIds.includes(sessionId)) return
+      const model = models.get(sessionId)
+      if (!model) throw commandError('session/not-found', '会話が見つかりません。', true, { sessionId })
       if ((model.snapshot.getSnapshot().running || hostJobs.get(sessionId)?.some(row => row.status === 'running' || row.status === 'stopping')) && !options?.stopActivity) {
-        throw { rpcError: { code: 'workspace/session-active', message: 'Session has running activity', details: { sessionId } } }
+        throw commandError('workspace/session-active', '会話で処理が実行中です。', true, { sessionId })
       }
-      if (options?.stopActivity) running(model, false)
-      workspaceList.update((state) => ({ ...state, archivedSessionIds: [...new Set([...state.archivedSessionIds, sessionId])] }))
+      workspaceList.update((state) => ({ ...state, archivedSessionIds: [...new Set([...state.archivedSessionIds, sessionId])], pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId) }))
+      if (options?.stopActivity) {
+        settleAttempt(model)
+        running(model, false)
+        kit.setJobs(sessionId, (hostJobs.get(sessionId) ?? []).map(row => row.status === 'running' || row.status === 'stopping' ? { ...row, status: 'killed', finishedAt: Date.now() } : row))
+      }
     },
     async insertSessionBefore(workspaceId, sessionId, beforeSessionId) {
+      await Promise.resolve()
       const workspace = workspaceList.getSnapshot().items.find((item) => item.workspaceId === workspaceId)
-      if (!workspace) throw new Error('ワークスペースが見つかりません。')
+      if (!workspace) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。')
+      if (!workspace.sessionIds.includes(sessionId) || (beforeSessionId !== undefined && !workspace.sessionIds.includes(beforeSessionId))) throw commandError('workspace/move-invalid', '並べ替える会話がワークスペースにありません。')
       if (sessionId === beforeSessionId && workspace.sessionIds.includes(sessionId)) return workspace
       const sessionIds = workspace.sessionIds.filter((value) => value !== sessionId)
       const index = sessionIds.indexOf(beforeSessionId ?? '')
       sessionIds.splice(index < 0 ? sessionIds.length : index, 0, sessionId)
       const next = { ...workspace, sessionIds, updatedAt: new Date().toISOString() }
-      workspaceList.update((state) => ({ ...state, archivedSessionIds: state.archivedSessionIds.filter((value) => value !== sessionId), items: state.items.map((item) => item.workspaceId === workspaceId ? next : { ...item, sessionIds: item.sessionIds.filter((value) => value !== sessionId) }) }))
+      workspaceList.update((state) => ({ ...state, items: state.items.map((item) => item.workspaceId === workspaceId ? next : item) }))
       return next
     },
   }
 
+  let listRead: Promise<void> | undefined
   const sessions: ISessions = {
     list, searchResultLimit: 20,
     async create(input = {}) {
+      await Promise.resolve()
       const sessionId = input.sessionId ?? id('session')
-      if (models.has(sessionId)) return sessionId
-      const workspace = workspaceList.getSnapshot().items.find((item) => item.workspaceId === input.workspaceId)
-      kit.addSession({ id: sessionId, displayTitle: '新しいセッション', cwd: input.cwd ?? workspace?.path, running: false, blank: true, updatedAt: Date.now() }, [])
-      if (workspace) await workspaces.insertSessionBefore(workspace.workspaceId, sessionId)
+      const workspace = workspaceList.getSnapshot().items.find(item => item.workspaceId === input.workspaceId)
+      if (input.workspaceId && !workspace) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。', true)
+      const cwd = workspace?.path ?? input.cwd ?? '/mock'
+      const existing = models.get(sessionId)
+      if (existing?.summary.origin === 'subagent') throw commandError('session/agent-busy', '子の会話を通常の会話として作成できません。', true)
+      if (existing && existing.summary.cwd !== cwd) throw commandError('session/conflict', '会話のフォルダが一致しません。', true)
+      if (!existing) kit.addSession({ id: sessionId, displayTitle: '新しいセッション', cwd, running: false, blank: true, updatedAt: Date.now() }, [])
+      if (workspace) attachSession(workspace, sessionId)
       return sessionId
     },
     retain(target: SessionTarget, { source, signal }) {
@@ -479,14 +606,21 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         kit.setSessionState(sessionId, { openState: 'error', openError: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } })
       }
       const model = getModel(sessionId)
-      if (address) model.snapshot.update(state => ({ ...state, subagent: { address, parentAvailable: models.has(address.parentSessionId) } }))
       const record = generation(sessionId)
+      if (address) record.client.snapshot.update(state => ({ ...state, subagent: { address, parentAvailable: models.has(address.parentSessionId) } }))
       record.sources[source] = (record.sources[source] ?? 0) + 1
       let released = false
       let rejectReady: (error: unknown) => void = () => {}
       const ready = new Promise<SessionBinding>((resolve, reject) => {
         rejectReady = reject
-        queueMicrotask(() => { if (!released && record.live) { record.cleanups.delete(cancelReady); resolve(record.binding) } })
+        queueMicrotask(() => {
+          if (released || !record.live) return
+          const error = validateAddress(model, address)
+          const host = model.snapshot.getSnapshot()
+          record.client.snapshot.update(state => ({ ...state, openState: error ? 'error' : host.openState, openError: error ?? host.openError }))
+          record.cleanups.delete(cancelReady)
+          resolve(record.binding)
+        })
       })
       const cancelReady = () => rejectReady(new Error('Session generation is disposed'))
       record.cleanups.add(cancelReady)
@@ -573,31 +707,70 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       projectionReads.set(sessionId, { controller, promise })
       return promise
     },
-    async refresh() { list.update((state) => ({ ...state, phase: 'ready' })) },
+    refresh() {
+      if (listRead) return listRead
+      listRead = Promise.resolve().then(() => {
+        if (disposed) return
+        list.update(state => {
+          const rows = [...models.values()].filter(model => !unresolvedAddresses.has(model.summary.id))
+          const known = new Set(rows.map(model => model.summary.id))
+          const ids = [...state.ids.filter(id => known.has(id)), ...rows.map(model => model.summary.id).filter(id => !state.ids.includes(id))]
+          return { ...state, ids, byId: Object.fromEntries(rows.map(model => [model.summary.id, model.summary])), phase: 'ready' }
+        })
+      }).finally(() => { listRead = undefined })
+      return listRead
+    },
     async search(query, signal) {
       if (signal.aborted) return failure('rpc/aborted', '検索を取り消しました。')
-      const needle = query.toLocaleLowerCase()
+      const normalized = query.trim()
+      if (!validMockSearchQuery(normalized)) return failure('gateway/bad-request', '検索語を確認してください。')
+      const needle = normalized.toLocaleLowerCase()
       const matches = [...models.values()].flatMap((model) => {
-        const contents = model.records.map((event) => JSON.stringify(event.data)).join('\n')
-        const haystack = `${model.summary.displayTitle}\n${contents}`
+        if (model.summary.cwd === undefined) return []
+        const haystack = mockMessageText(model.records)
         const index = haystack.toLocaleLowerCase().indexOf(needle)
         return index < 0 ? [] : [{ sessionId: model.summary.id, snippet: haystack.slice(Math.max(0, index - 15), index + 100) }]
       })
       return success({ items: matches.slice(0, sessions.searchResultLimit), hasMore: matches.length > sessions.searchResultLimit })
     },
     async fork(input) {
-      const source = getModel(input.sessionId)
+      await Promise.resolve()
+      if (input.atSeq !== undefined && (!Number.isSafeInteger(input.atSeq) || input.atSeq < 0 || Object.is(input.atSeq, -0))) throw commandError('gateway/bad-request', '分岐する位置が不正です。', true)
+      const source = models.get(input.sessionId)
+      if (!source) throw commandError('session/not-found', '会話が見つかりません。', true)
+      let boundary = input.atSeq ?? [...source.records].reverse().find(event => event.type === 'turn/end')?.seq
+      if (input.atSeq === undefined && boundary !== undefined) {
+        for (const next of source.records.slice(boundary + 1)) {
+          if (next.type === 'turn/start' || next.type === 'user/message' && next.surfaceOp === 'append' || next.type === 'agent/inbox/spliced') break
+          boundary = next.seq
+        }
+      }
+      if (boundary === undefined || source.records[boundary]?.seq !== boundary) throw commandError('session/fork-unavailable', '分岐できる記録がありません。', true)
       const sessionId = id('fork')
-      const title = input.increaseTitle === false ? source.summary.displayTitle : `${source.summary.displayTitle}（分岐）`
-      kit.addSession({ ...source.summary, id: sessionId, title, displayTitle: title, running: false, updatedAt: Date.now() }, source.records.filter((event) => input.atSeq === undefined || event.seq <= input.atSeq))
-      const workspace = workspaceList.getSnapshot().items.find((item) => item.sessionIds.includes(input.sessionId))
-      if (workspace) await workspaces.insertSessionBefore(workspace.workspaceId, sessionId)
+      // These fixtures retain the exact prefix and seed boundary. Full V4
+      // synthetic tool/step repair is outside this in-memory history renderer.
+      const records = source.records.slice(0, boundary + 1)
+      records.push({ type: 'session/end-seed', seq: boundary + 1, time: source.records[boundary]!.time, data: { inherited: true } })
+      const title = source.summary.title
+      kit.addSession({ id: sessionId, parentId: source.summary.id, cwd: source.summary.cwd, title, displayTitle: title ?? source.summary.displayTitle, running: false, blank: false, updatedAt: Date.now() }, records)
+      let owner = source
+      let workspace = workspaceList.getSnapshot().items.find(item => item.sessionIds.includes(owner.summary.id))
+      const visited = new Set<string>()
+      while (!workspace && owner.summary.origin === 'subagent' && owner.summary.parentId && !visited.has(owner.summary.id)) {
+        visited.add(owner.summary.id)
+        const parent = models.get(owner.summary.parentId)
+        if (!parent) break
+        owner = parent
+        workspace = workspaceList.getSnapshot().items.find(item => item.sessionIds.includes(owner.summary.id))
+      }
+      if (workspace) attachSession(workspace, sessionId)
       input.onCreated?.(sessionId)
+      if (input.increaseTitle && title) await sessions.using(sessionId, { source: 'm3e.mockFork' }, ref => ref.binding.session.rename(increasedForkTitle(title)))
       return sessionId
     },
     scope: (sessionId) => generations.get(sessionId)?.binding.ctx,
-    scopeOf(scope) { for (const [sessionId, record] of generations) if (record.binding.ctx === scope) return sessionId; return undefined },
-    sessionOf(scope) { const sessionId = sessions.scopeOf(scope); return sessionId ? generations.get(sessionId)?.binding.session : undefined },
+    scopeOf(scope) { return typeof scope === 'object' && scope !== null ? scopeIds.get(scope) : undefined },
+    sessionOf(scope) { const sessionId = sessions.scopeOf(scope); return sessionId && generations.get(sessionId)?.binding.ctx === scope ? generations.get(sessionId)?.binding.session : undefined },
     binding: (sessionId) => generations.get(sessionId)?.binding,
   }
 
@@ -704,8 +877,9 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
       const projections = new Map<string, MutableSnapshot<unknown>>()
 
-      const model: SessionModel = { summary: structuredClone({ ...summary, retainedBy: {} }), records, start, snapshot, events: eventSource, projections, hostProjections: {} }
+      const model: SessionModel = { summary: structuredClone({ ...summary, retainedBy: {} }), records, start, snapshot, events: eventSource, projections, hostProjections: {}, acceptedRequests: new Set() }
       models.set(summary.id, model)
+      if (summary.parentId) seedChildDescriptor(summary.parentId, (models.get(summary.parentId)?.hostProjections.subagentCatalog ?? []) as readonly SubagentCatalogEntry[])
       for (const [key, value] of Object.entries(model.summary.projectionValues ?? {})) { model.hostProjections[key] = value; project(model, key).set(value) }
       list.update((state) => ({ ...state, ids: [...state.ids, summary.id], byId: { ...state.byId, [summary.id]: model.summary } }))
     },
@@ -759,6 +933,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const model = getModel(sessionId)
       const next = structuredClone(value)
       model.hostProjections[key] = next
+      if (key === 'subagentCatalog') seedChildDescriptor(sessionId, next as readonly SubagentCatalogEntry[])
       project(model, key).set(next)
       model.summary = { ...model.summary, projectionValues: { ...model.summary.projectionValues, [key]: next } }
       list.update(state => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, projectionsBySession: { ...state.projectionsBySession, [sessionId]: {
@@ -828,7 +1003,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       })
       kit.setJobs(sessionId, [])
       for (const other of models.values()) {
-        if (other.summary.parentId === sessionId) other.snapshot.update((state) => ({ ...state, subagent: state.subagent ? { ...state.subagent, parentAvailable: false } : null }))
+        if (other.summary.parentId === sessionId) {
+          const client = generations.get(other.summary.id)?.client
+          client?.snapshot.update(state => ({ ...state, subagent: state.subagent ? { ...state.subagent, parentAvailable: false } : null }))
+        }
       }
       for (const requestId of [...(generations.get(model.summary.id)?.client.submissions.keys() ?? [])]) retire(model, requestId, { reason: 'failed' })
     },

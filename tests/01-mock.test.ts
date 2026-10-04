@@ -257,3 +257,17 @@ test('偽データのコンテキスト間でフォルダとアーカイブの�
     assert.equal(completionStatus(second).getSnapshot().byId[HOME_MOCK_IDS.completed]?.completionUnread, true)
   } finally { first.dispose(); second.dispose() }
 })
+
+test('B1 ホームの子はmode欠落と不一致をready後のopenErrorで拒否する', async () => {
+  const ctx = createMockContext({ extensions: [extension] })
+  try {
+    for (const mode of [undefined, 'continuable']) {
+      const reference = ctx.sessions.retain({ parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode } as Parameters<typeof ctx.sessions.retain>[0], { source: 'm3e.test' })
+      const snapshot = (await reference.ready).session.getSnapshot()
+      assert.equal(snapshot.openState, 'error')
+      assert.equal(snapshot.openError?.code, 'subagent/unauthorized')
+      reference.release()
+      assert.equal(ctx.sessions.retainInfo(HOME_MOCK_IDS.child).getSnapshot().referenceCount, 0)
+    }
+  } finally { ctx.dispose() }
+})

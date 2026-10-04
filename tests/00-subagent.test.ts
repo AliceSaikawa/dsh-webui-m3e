@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { readDraft, writeDraft, clearDraft } from '../web/src/features/composer/drafts.ts'
 import type { SubagentAddress } from '../web/src/dsh/services.ts'
 
 const parentSessionId = MOCK_IDS.sessions.readme
@@ -76,3 +77,33 @@ test('親が利用不可でも正常な明示アドレスの子は閲覧用に�
     assert.deepEqual(reference.binding.session.getSnapshot().subagent, { address, parentAvailable: false })
   } finally { ctx.dispose() }
 })
+
+for (const invalid of ['missing-mode', 'wrong-mode', 'wrong-parent', 'wrong-origin', 'not-found'] as const) {
+  test(`B1 ${invalid}はready後にerrorとなり準備の失敗は選択と下書きを保ち参照を解放する`, async t => {
+    const ctx = setup('one-shot'); t.after(() => ctx.dispose())
+    const owner = conversationSelection(ctx.sessions)
+    await owner.select(parentSessionId)
+    const original = ctx.sessions.binding(parentSessionId)
+    const key = `session:${parentSessionId}`
+    writeDraft(key, { text: '元の下書き', images: [] }); t.after(() => clearDraft(key))
+    const address = { parentSessionId, childSessionId, mode: 'one-shot',
+      ...(invalid === 'wrong-mode' ? { mode: 'continuable' } : {}),
+      ...(invalid === 'wrong-parent' ? { parentSessionId: '別の親' } : {}),
+      ...(invalid === 'wrong-origin' ? { childSessionId: MOCK_IDS.sessions.approval } : {}),
+      ...(invalid === 'not-found' ? { childSessionId: '存在しない子' } : {}),
+    } as SubagentAddress
+    if (invalid === 'missing-mode') delete (address as { mode?: string }).mode
+    const ref = ctx.sessions.retain(address, { source: 'm3e.test' })
+    const state = (await ref.ready).session.getSnapshot()
+    assert.equal(state.openState, 'error')
+    assert.equal(state.openError?.code, invalid === 'not-found' ? 'subagent/not-found' : 'subagent/unauthorized')
+    ref.release()
+    let navigations = 0
+    await assert.rejects(owner.prepare(address, () => true, () => { navigations++ }))
+    assert.equal(navigations, 0)
+    assert.equal(owner.state.getSnapshot().sessionId, parentSessionId)
+    assert.equal(ctx.sessions.binding(parentSessionId), original)
+    assert.equal(readDraft(key).text, '元の下書き')
+    assert.equal(ctx.sessions.retainInfo(address.childSessionId).getSnapshot().referenceCount, 0)
+  })
+}

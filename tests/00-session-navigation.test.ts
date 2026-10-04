@@ -13,6 +13,7 @@ function setup() {
   for (const id of ['parent', 'other', 'child']) {
     ctx.mock.addSession({ id, displayTitle: id, running: false, blank: false, updatedAt: 1, ...(id === 'child' ? { origin: 'subagent' as const, parentId: 'parent' } : {}) }, [])
   }
+  ctx.mock.setProjection('child', 'subagent', { mode: 'one-shot', seq: 0 })
   return ctx
 }
 function deferred() {
@@ -58,6 +59,7 @@ test('親だけを持つ分岐は通常選択し、同じ会話の二重選択�
 
 test('09 が先に子を選択した後の URL 同期では再選択しない', async (t) => {
   const ctx = setup()
+  ctx.mock.setProjection('child', 'subagent', { mode: 'continuable', seq: 0 })
   ctx.mock.updateList(state => { state.projectionsBySession = { parent: ready('continuable') } })
   await conversationSelection(ctx.sessions).select({ ...address, mode: 'continuable' })
   const select = t.mock.method(ctx.sessions, 'retain')

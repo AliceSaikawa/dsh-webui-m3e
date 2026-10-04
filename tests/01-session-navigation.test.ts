@@ -14,6 +14,7 @@ function catalog(mode: 'one-shot' | 'continuable'): SessionProjectionSnapshot {
 function fixture(initial?: SessionProjectionSnapshot) {
   const ctx = createMockContext(); contexts.push(ctx)
   ctx.mock.addSession(child, [])
+  ctx.mock.setProjection(child.id, 'subagent', { mode: initial?.values.subagentCatalog?.[0]?.mode ?? 'continuable', seq: 0 })
   let snapshot: SessionListState = {
     ids: [child.id], byId: { [child.id]: child }, phase: 'ready',
     projectionsBySession: initial ? { parent: initial } : {},

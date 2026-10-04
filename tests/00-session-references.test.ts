@@ -32,23 +32,28 @@ test('retainInfo は読み取りだけで通知せず、同じ世代を参照数
     b.release()
     assert.equal(ctx.sessions.scope(id), undefined)
     assert.equal(ctx.sessions.binding(id), undefined)
-    assert.equal(ctx.sessions.scopeOf(binding.ctx), undefined)
+    assert.equal(ctx.sessions.scopeOf(binding.ctx), id)
+    assert.equal(ctx.sessions.sessionOf(binding.ctx), undefined)
     const next = ctx.sessions.retain(id, { source: 'm3e.a' })
     assert.notEqual(next.binding, binding)
     assert.notEqual(next.binding.ctx, binding.ctx)
     assert.notEqual(next.binding.session, binding.session)
+    assert.equal(ctx.sessions.scopeOf(binding.ctx), id)
+    assert.equal(ctx.sessions.sessionOf(binding.ctx), undefined)
+    assert.equal(ctx.sessions.sessionOf(next.binding.ctx), next.binding.session)
   } finally { ctx.dispose() }
 })
 
-test('最後の解放はすべての購読を止め、未確定の送信を failed に退役させる', async () => {
+test('B2 最後の解放は内部購読だけ止め、外部の投影購読は明示解除まで世代を越えて残る', async () => {
   const ctx = createMockContext()
   try {
     const reference = ctx.sessions.retain(id, { source: 'm3e.test' })
     const binding = await reference.ready
     let changes = 0
-    binding.session.subscribe(() => { changes++ })
-    binding.eventSource.subscribe(() => { changes++ })
-    binding.session.projections.faceOf('goal').subscribe(() => { changes++ })
+    const stopSnapshot = binding.session.subscribe(() => { changes++ })
+    const stopEvents = binding.eventSource.subscribe(() => { changes++ })
+    const projection = binding.session.projections.faceOf('goal')
+    const stopProjection = projection.subscribe(() => { changes++ })
     const retirements: PendingSubmissionRetirement[] = []
     binding.session.beginSubmission({ text: '未送信', attachments: [], mode: 'queue', onRetire: value => retirements.push(value) })
     reference.release()
@@ -56,9 +61,14 @@ test('最後の解放はすべての購読を止め、未確定の送信を fail
     const before = changes
     ctx.mock.setProjection(id, 'goal', { active: true })
     ctx.mock.setSessionState(id, { running: true })
-    assert.equal(changes, before)
-    assert.throws(() => binding.session.subscribe(() => {}), /disposed/)
-    assert.throws(() => binding.session.beginSubmission({ text: '', attachments: [], mode: 'queue' }), /disposed/)
+    assert.equal(changes, before + 1)
+    const next = ctx.sessions.retain(id, { source: 'm3e.test' })
+    assert.equal(next.binding.session.projections.faceOf('goal'), projection)
+    ctx.mock.setProjection(id, 'goal', { active: false })
+    assert.equal(changes, before + 2)
+    stopProjection(); stopSnapshot(); stopEvents()
+    ctx.mock.setProjection(id, 'goal', { active: true })
+    assert.equal(changes, before + 2)
   } finally { ctx.dispose() }
 })
 
@@ -150,6 +160,8 @@ test('ジョブ一覧の購読を共有し、最後の解除と空の一覧は r
     assert.equal(ctx.jobs.state.getSnapshot().rows[id], undefined)
     const a = ctx.jobs.watchRows(id), b = ctx.jobs.watchRows(id)
     a(); a()
+    assert.equal(ctx.jobs.state.getSnapshot().rows[id], undefined)
+    await Promise.resolve()
     assert.equal(ctx.jobs.state.getSnapshot().rows[id]?.length, 1)
     assert.deepEqual(await ctx.jobs.kill(id, 'job'), { ok: true, value: { outcome: 'requested' } })
     assert.equal(ctx.jobs.state.getSnapshot().rows[id]?.[0]?.status, 'running')

@@ -1,3 +1,4 @@
+import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
 
 export const CONVERSATION_CHOICE_LIMIT = 50
@@ -24,7 +25,7 @@ export function conversationChoices(
   const search = query.trim().toLocaleLowerCase()
   const seen = new Set<string>()
   const groups: ConversationChoice[][] = [[], [], []]
-  for (const id of list.ids) {
+  for (const id of sessionRowIds(list)) {
     if (seen.has(id) || !Object.hasOwn(list.byId, id)) continue
     seen.add(id)
     const row = list.byId[id]
@@ -45,6 +46,6 @@ export function conversationChoiceAvailable(
   archived: readonly string[],
 ): boolean {
   const current = Object.hasOwn(list.byId, row.id) ? list.byId[row.id] : undefined
-  return routeableId(row.id) && list.ids.includes(row.id) && !!current && current.id === row.id && !archived.includes(row.id) && !current.blank
+  return routeableId(row.id) && sessionRowIds(list).includes(row.id) && !!current && current.id === row.id && !archived.includes(row.id) && !current.blank
     && current.origin === row.origin && current.parentId === row.parentId
 }

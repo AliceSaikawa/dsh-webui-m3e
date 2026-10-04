@@ -42,7 +42,7 @@ test('a delayed choice rejects removal, archival, identity/origin/parent changes
   const list = catalog([original])
   assert.equal(conversationChoiceAvailable(original, list, []), true)
   assert.equal(conversationChoiceAvailable(original, list, ['child']), false)
-  assert.equal(conversationChoiceAvailable(original, { ...list, ids: [] }, []), false)
+  assert.equal(conversationChoiceAvailable(original, { ...list, ids: [], byId: {} }, []), false)
   for (const patch of [{ id: 'different' }, { origin: undefined }, { parentId: 'different' }, { blank: true }]) {
     assert.equal(conversationChoiceAvailable(original, catalog([{ ...original, ...patch }]), []), false)
   }

@@ -1,5 +1,6 @@
 import { isPlanReview, type PendingInteraction } from '../../dsh/interactions-store.ts'
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
+import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { M3eSessionList } from '../../dsh/completion-status.ts'
 
 interface InboxRow {
@@ -71,7 +72,7 @@ export function relativeTime(updatedAt: number, now: number): string {
 /** Archived sessions leave the completed list; pending requests still need an answer. */
 function completedSessions(list: M3eSessionList, archivedSessionIds: readonly string[]): SessionSummary[] {
   const archived = new Set(archivedSessionIds)
-  return [...new Set(list.ids)].flatMap(id => {
+  return sessionRowIds(list).flatMap(id => {
     const session = list.byId[id]
     return session?.completionUnread === true && !archived.has(id) ? [session] : []
   })
