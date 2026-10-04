@@ -20,6 +20,7 @@ function fixture(t: TestContext) {
   const events = new Map<string, (...args: unknown[]) => void>()
   const remote = { $on(name: string, fn: (...args: unknown[]) => void) { events.set(name, fn); return () => { events.delete(name) } } } as unknown as DshRemote
   let reads = 0, failures = 0, ready = false, live: GoalActivationRef | undefined
+  const publications: (GoalActivationRef | undefined)[] = []
   let pending: (() => Promise<unknown>) | undefined
   const goals = { async get() {
     reads++
@@ -27,9 +28,9 @@ function fixture(t: TestContext) {
     return ready ? { ok: true, value: { id: 'goal', revision: 1, activation: 'disarmed' } }
       : { ok: false, error: { code: 'gateway/lookup-not-found', message: '準備前', details: {} } }
   } } as unknown as GoalsRemote
-  const watcher = watchGoalActivation(remote, goals, 'session', value => { live = value }, () => { failures++ }, { connection, session, projection })
+  const watcher = watchGoalActivation(remote, goals, 'session', value => { live = value; publications.push(value) }, () => { failures++ }, { connection, session, projection })
   t.after(() => watcher.dispose())
-  return { watcher, connection, session, projection, events, reads: () => reads, failures: () => failures, live: () => live,
+  return { watcher, connection, session, projection, events, publications, reads: () => reads, failures: () => failures, live: () => live,
     emit(name: string, ...args: unknown[]) { events.get(name)?.(...args) },
     ready() { ready = true }, pending(fn: () => Promise<unknown>) { pending = fn },
     async tick(ms: number) { t.mock.timers.tick(ms); await drain() } }
@@ -93,6 +94,8 @@ test('B2 会話が削除されたら待機を止め、遅い応答も適用し�
   f.pending(() => response)
   const reading = f.watcher.refresh()
   f.session.set({ ...f.session.getSnapshot(), removed: true })
+  f.emit('goal/activation-changed', { sessionId: 'session', goal: { id: 'removed', revision: 1, activation: 'armed' } })
+  assert.equal(f.publications.length, 0, '削除後の activation 通知は公開しない')
   finish({ ok: true, value: { id: 'removed', revision: 1, activation: 'armed' } })
   await reading
   await drain()
@@ -106,6 +109,8 @@ test('B2 切断中は待機を止め、再接続で新しい状態を取得す�
   const f = fixture(t)
   await f.watcher.refresh()
   f.connection.set('disconnected')
+  f.emit('goal/activation-changed', { sessionId: 'session', goal: { id: 'goal', revision: 1, activation: 'armed' } })
+  assert.equal(f.publications.length, 0, '切断中の activation 通知は公開しない')
   await f.tick(3000)
   assert.equal(f.reads(), 1)
   f.ready()
@@ -217,4 +222,69 @@ test('B2 別会話の準備・失敗通知は無視し、Agent破棄では古い
   finish({ ok: true, value: { id: 'stale', revision: 1, activation: 'armed' } })
   await reading
   assert.equal(f.live(), undefined)
+})
+
+for (const edge of ['added', 'projection'] as const) test(`B2 ${edge}通知100件を直列の再取得にまとめ、最後の通知を取りこぼさない`, async t => {
+  const f = fixture(t)
+  let revision = 0, active = 0, peak = 0
+  const requests: { revision: number; finish: () => void }[] = []
+  f.pending(async () => {
+    const observed = revision
+    active++; peak = Math.max(peak, active)
+    try {
+      await new Promise<void>(resolve => { requests.push({ revision: observed, finish: resolve }) })
+      return { ok: true, value: { id: 'goal', revision: observed, activation: 'disarmed' } }
+    } finally { active-- }
+  })
+  const notify = () => {
+    revision++
+    if (edge === 'added') f.emit('api-session/added', { sessionId: 'session', agentAvailable: true })
+    else f.projection.set({ goal: { id: 'goal', revision } })
+  }
+  for (let i = 0; i < 100; i++) notify()
+  assert.equal(peak, 1, '進行中の読み取りを重ねない')
+  assert.equal(f.reads(), 1)
+  requests[0]!.finish(); await drain()
+  assert.equal(f.reads(), 2, '100件の通知の末尾を1回だけ読み直す')
+  assert.deepEqual(requests.map(request => request.revision), [1, 100])
+  assert.equal(f.publications.length, 0, '通知より古い応答を公開しない')
+  // A new edge during the trailing read must itself get a trailing read.
+  notify()
+  assert.equal(f.reads(), 2)
+  requests[1]!.finish(); await drain()
+  assert.equal(f.reads(), 3)
+  assert.deepEqual(requests.map(request => request.revision), [1, 100, 101])
+  assert.equal(f.publications.length, 0)
+  requests[2]!.finish(); await drain()
+  assert.deepEqual(f.publications, [{ id: 'goal', revision: 101, activation: 'disarmed' }])
+  assert.equal(peak, 1)
+  assert.equal(active, 0)
+  await f.tick(3600000)
+  assert.equal(f.reads(), 3, '通知が止まれば読み取りも止まる')
+})
+
+for (const stop of ['dispose', 'disconnect', 'remove', 'error', 'unavailable'] as const) test(`B2 ${stop}で進行中と待ちの読取りを無効にする`, async t => {
+  const f = fixture(t)
+  let finish!: (value: unknown) => void
+  const response = new Promise(resolve => { finish = resolve })
+  f.pending(() => response)
+  const reading = f.watcher.refresh()
+  for (let i = 0; i < 100; i++) f.projection.set({ goal: { id: 'goal', revision: i + 1 } })
+  assert.equal(f.reads(), 1)
+  if (stop === 'dispose') f.watcher.dispose()
+  else if (stop === 'disconnect') f.connection.set('disconnected')
+  else if (stop === 'remove') f.session.set({ ...f.session.getSnapshot(), removed: true })
+  else if (stop === 'error') f.emit('api-session/error', 'session', '準備に失敗しました')
+  else f.emit('api-session/added', { sessionId: 'session', agentAvailable: false })
+  const failures = f.failures()
+  finish({ ok: true, value: { id: 'stale', revision: 1, activation: 'armed' } })
+  await reading
+  await drain()
+  assert.equal(f.publications.length, 0)
+  assert.equal(f.failures(), failures, '古い応答から失敗も再通知しない')
+  assert.equal(f.reads(), 1, '停止前にたまった読み直しを実行しない')
+  if (stop === 'dispose') {
+    assert.equal(f.events.size, 0)
+    assert.equal(f.connection.count() + f.session.count() + f.projection.count(), 0)
+  }
 })

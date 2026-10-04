@@ -23,11 +23,16 @@ export function updateGoalActivation(ref: GoalRef, previous: GoalActivationRef |
  * wait for a state edge or an explicit refresh, never a timer. Agent creation
  * emits api-session/added even when goal activation remains disarmed. Each
  * failure event invalidates in-flight reads, regardless of its diagnostic text.
+ * State edges during a read request one trailing read of the latest state.
  */
 export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessionId: string,
   publish: (value: GoalActivationRef | undefined) => void, failed: () => void, lifecycle?: GoalActivationLifecycle) {
   let disposed = false
   let generation = 0
+  let reading = false
+  let pending = false
+  let currentRead = Promise.resolve()
+  const invalidate = () => { generation++; pending = false }
   const canRead = () => !lifecycle || (lifecycle.connection.getSnapshot() === 'connected'
     && !lifecycle.session.getSnapshot().removed && lifecycle.session.getSnapshot().openState === 'open')
   const offActivation = onRemoteEvent(remote, 'goal/activation-changed', event => {
@@ -38,27 +43,38 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
   const offAvailability = onRemoteEvent(remote, 'api-session/added', summary => {
     if (disposed || summary.sessionId !== sessionId || !canRead()) return
     if (summary.agentAvailable) void refresh()
-    else { generation++; failed() }
+    else { invalidate(); failed() }
   })
   const offError = onRemoteEvent(remote, 'api-session/error', id => {
     if (disposed || id !== sessionId || !canRead()) return
-    generation++
+    invalidate()
     failed()
   })
-  async function refresh() {
-    if (disposed) return
-    const read = ++generation
-    if (!canRead()) { failed(); return }
+  function refresh(): Promise<void> {
+    if (disposed) return Promise.resolve()
+    generation++
+    if (!canRead()) { pending = false; failed(); return Promise.resolve() }
+    pending = true
+    if (!reading) {
+      reading = true
+      currentRead = readPending()
+    }
+    return currentRead
+  }
+  async function readPending() {
     try {
-      const result = await goals.get(sessionId)
-      if (disposed || read !== generation || !canRead()) return
-      if (!result.ok) {
-        failed()
-        return
+      while (pending && !disposed && canRead()) {
+        pending = false
+        const read = generation
+        try {
+          const result = await goals.get(sessionId)
+          if (disposed || read !== generation || !canRead()) continue
+          if (!result.ok) { failed(); continue }
+          const goal = result.value
+          publish(goal ? { id: goal.id, revision: goal.revision, activation: goal.activation } : undefined)
+        } catch { if (!disposed && read === generation && canRead()) failed() }
       }
-      const goal = result.value
-      publish(goal ? { id: goal.id, revision: goal.revision, activation: goal.activation } : undefined)
-    } catch { if (!disposed && read === generation) failed() }
+    } finally { reading = false }
   }
   let previousConnection = lifecycle?.connection.getSnapshot()
   let previousSession = lifecycle?.session.getSnapshot()
@@ -70,8 +86,7 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
       && session.running === previous.running) return
     previousConnection = connection
     previousSession = session
-    generation++
-    if (!canRead()) { failed(); return }
+    if (!canRead()) { invalidate(); failed(); return }
     void refresh()
   }
   const disposers = lifecycle ? [lifecycle.connection.subscribe(changed), lifecycle.session.subscribe(changed),
@@ -81,7 +96,7 @@ export function watchGoalActivation(remote: DshRemote, goals: GoalsRemote, sessi
     dispose() {
       if (disposed) return
       disposed = true
-      generation++
+      invalidate()
       offActivation()
       offAvailability()
       offError()
