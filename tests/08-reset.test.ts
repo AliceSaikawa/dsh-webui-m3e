@@ -5,7 +5,7 @@ import type { SettingsNamespace } from '../web/src/features/settings/schema.ts'
 
 function fixture(): SettingsNamespace {
   return {
-    ns: 'example', revision: 1, applies: 'live',
+    ns: 'example', autoGenerate: true, revision: 1, applies: 'live',
     value: { list: ['変更'], labels: { main: '変更' }, group: { child: '変更' }, unknown: { count: 2 }, text: '変更' },
     user: { list: ['変更'], labels: { main: '変更' }, group: { child: '変更' }, unknown: { count: 2 }, text: '変更' },
     schema: { uid: 0, refs: {

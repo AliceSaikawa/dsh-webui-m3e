@@ -39,7 +39,7 @@ function current(store: ReturnType<typeof createSettingsStore>, name = ns): Sett
 
 function restartingHarness() {
   let row: SettingsNamespace = {
-    ns, revision: 3, applies: 'live', value: { timeout: 45, name: '設定' }, user: {},
+    ns, autoGenerate: true, revision: 3, applies: 'live', value: { timeout: 45, name: '設定' }, user: {},
     schema: { uid: 0, refs: { 0: { type: 'object', dict: { timeout: 1, name: 2 } }, 1: { type: 'number' }, 2: { type: 'string' } } },
   }
   const revisions: number[] = []
