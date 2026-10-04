@@ -13,6 +13,7 @@ export async function openInboxSession(
   sessionId: string,
   navigate: (path: string) => void,
   isActive: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!isActive()) return
   const row = sessions.list.getSnapshot().byId[sessionId]
@@ -35,7 +36,8 @@ export async function openInboxSession(
     }
     if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
     if (!isActive()) return
-    if (!await conversationSelection(sessions).select(address)) return
+    await conversationSelection(sessions).prepare(address, isActive, () => navigate(`/s/${encodeURIComponent(sessionId)}`), signal)
+    return
   }
   if (isActive()) navigate(`/s/${encodeURIComponent(sessionId)}`)
 }

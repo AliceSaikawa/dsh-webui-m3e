@@ -33,7 +33,10 @@ async function instrument(page: Page) {
     ['dsh/mock/context.ts', (body: string) => {
       expect(body.match(/\breturn ctx;?/g)).toHaveLength(1)
       return body.replace(/\breturn ctx;?/, `globalThis.__robustnessContext = ctx;
-        globalThis.__robustnessMock = () => ({ models: models.size, timers: timers.size, startup: startupEvents.size, handlers: [...handlers.values()].reduce((n, set) => n + set.size, 0), handlerKeys: handlers.size, submissions: [...models.values()].reduce((n, model) => n + model.submissions.size, 0), attachments: attachments.size, records: [...models.values()].reduce((n, model) => n + model.records.length, 0) });
+        globalThis.__robustnessRetiredGenerationStores = 0;
+        const removeGeneration = generations.delete.bind(generations);
+        generations.delete = id => { const removed = removeGeneration(id); if (removed) globalThis.__robustnessRetiredGenerationStores += 2; return removed; };
+        globalThis.__robustnessMock = () => ({ models: models.size, generations: generations.size, timers: timers.size, startup: startupEvents.size, handlers: [...handlers.values()].reduce((n, set) => n + set.size, 0), handlerKeys: handlers.size, submissions: [...generations.values()].reduce((n, generation) => n + generation.client.submissions.size, 0), attachments: attachments.size, records: [...models.values()].reduce((n, model) => n + model.records.length, 0) });
         return ctx;`)
     }],
   ] as const) {
@@ -46,7 +49,7 @@ async function instrument(page: Page) {
 async function metrics(page: Page) {
   return page.evaluate(() => {
     const state = window as any
-    return { drafts: state.__robustnessDrafts(), flights: state.__robustnessFlights(), mock: state.__robustnessMock(), observable: { ...state.__robustnessObservables }, pointerdown: state.__robustnessPointerListeners.size,
+    return { drafts: state.__robustnessDrafts(), flights: state.__robustnessFlights(), mock: state.__robustnessMock(), observable: { ...state.__robustnessObservables, retiredGenerationStores: state.__robustnessRetiredGenerationStores }, pointerdown: state.__robustnessPointerListeners.size,
       storageKeys: Object.keys(localStorage).filter(key => key.startsWith('m3e:composer:')).sort() }
   })
 }
@@ -69,7 +72,11 @@ async function settled(page: Page) {
 }
 function resources(value: Awaited<ReturnType<typeof metrics>>) {
   const { records: _records, ...mock } = value.mock
-  return { ...value, mock }
+  // 0.2.0 creates two new client stores per retained generation. Keep exact
+  // conservation of allocations after accounting only for retired generations;
+  // subscriptions and the live generation count must still equal the baseline.
+  const { retiredGenerationStores, ...observable } = value.observable
+  return { ...value, mock, observable: { ...observable, created: observable.created - retiredGenerationStores } }
 }
 for (const width of [375, 390]) {
   test(`03 ${width}px 固定会話を反復し切断・再接続しても購読と保持状態が増えない`, async ({ page }, info) => {

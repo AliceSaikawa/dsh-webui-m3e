@@ -7,7 +7,7 @@ import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 import type { SubagentAddress, SessionProjectionSnapshot } from '../web/src/dsh/services.ts'
 
 const address: SubagentAddress = { parentSessionId: 'parent', childSessionId: 'child', mode: 'one-shot' }
-const ready = (mode: SubagentAddress['mode'] = 'one-shot'): SessionProjectionSnapshot => ({ state: 'ready', error: null, values: { subagentCatalog: [{ id: 'child', mode, createdAt: 0 }] } })
+const ready = (mode: SubagentAddress['mode'] = 'one-shot'): SessionProjectionSnapshot => ({ state: 'ready', error: null, values: { subagentCatalog: [{ id: 'child', mode, label: '子', createdAt: 0 }] } })
 function setup() {
   const ctx = createMockContext({ extensions: [] })
   for (const id of ['parent', 'other', 'child']) {
@@ -152,7 +152,7 @@ test('取得中に別の会話へ離れたら取得成功も失敗もその会�
 test('未知 mode・別の種類・親の変更・取得エラーでは子も通常会話も選ばない', async (t) => {
   const cases: Array<{ catalog: SessionProjectionSnapshot; changeParent?: boolean }> = [
     { catalog: ready('unknown') },
-    { catalog: { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'other-child', createdAt: 0, mode: 'continuable' }] } } },
+    { catalog: { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'other-child', createdAt: 0, label: '子', mode: 'continuable' }] } } },
     { catalog: ready(), changeParent: true },
     { catalog: { state: 'error', error: { code: 'gateway/internal', message: '失敗', details: {} }, values: { subagentCatalog: [] } } },
   ]

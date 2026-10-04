@@ -4,8 +4,9 @@ import type {
   SessionBinding, SessionEventChange, SessionEventLikeEntry, SessionEventWindow,
   SessionFace, SessionListState, SessionSnapshot, SessionSummary, SessionWireEvent,
   StreamChunk, WorkspaceSnapshot, WorkspaceView, SessionReference, SessionRetainInfo,
-  SessionTarget, JobsSnapshot, SessionJob, InboxState, ObservableSnapshot,
+  SessionTarget, SessionJob, InboxState, ObservableSnapshot, RemoteFailure,
 } from '../services.ts'
+import { createMockJobs, type JobFrame } from './jobs.ts'
 import { observable, type MutableSnapshot } from './observable.ts'
 import { completionStatus } from '../completion-status.ts'
 import { conversationSelection } from '../conversation-selection.ts'
@@ -19,6 +20,8 @@ export interface MockKit {
   addSession(summary: Omit<SessionSummary, 'retainedBy'> & Partial<Pick<SessionSummary, 'retainedBy'>>, records: readonly SessionWireEvent[]): void
   getRecords(sessionId: string): readonly SessionWireEvent[]
   setJobs(sessionId: string, rows: readonly SessionJob[]): void
+  failJobRows(sessionId: string): void
+  emitJobFrame(jobId: string, frame: JobFrame): void
   addRemote(namespace: string, impl: unknown): void
   /** Use payload.agent or payload.sessionId. Initial setup events wait for their first handler. */
   emit(event: string, payload: unknown, options?: { afterMs?: number }): Promise<unknown>
@@ -47,7 +50,7 @@ export type MockExtension = {
   readonly source?: string
   extendMock(kit: MockKit): void
 }
-export interface MockOptions { scenario?: string; extensions?: readonly MockExtension[]; pageSize?: number }
+export interface MockOptions { scenario?: string; extensions?: readonly MockExtension[]; pageSize?: number; readJobRows?: (id: string) => Promise<RemoteResult<readonly SessionJob[]>>; readProjections?: (id: string, signal: AbortSignal) => Promise<RemoteResult<Record<string, unknown> | null>> }
 export interface MockContext extends DshContext { readonly mock: MockKit; dispose(): void }
 
 interface SessionModel {
@@ -56,9 +59,8 @@ interface SessionModel {
   events: MutableSnapshot<SessionEventWindow>
   records: SessionWireEvent[]
   start: number
+  hostProjections: Record<string, unknown>
   projections: Map<string, MutableSnapshot<unknown>>
-  submissions: Map<string, BeginSubmissionInput>
-  binding: SessionBinding
   attempt?: { id: string; turn: number; step: number; chunks: StreamChunk[]; token: number }
 }
 
@@ -87,13 +89,14 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const pageSize = Math.max(1, options.pageSize ?? 100)
   const connectionState = observable<'connected' | 'disconnected' | 'connecting'>('connected')
   const list = observable<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
-  const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null })
-  const jobState = observable<JobsSnapshot>({ rows: {}, observed: {} })
-  const hostJobs = new Map<string, readonly SessionJob[]>()
-  const jobWatches = new Map<string, number>()
+  const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null })
+  const mockJobs = createMockJobs(options.readJobRows)
+  const hostJobs = mockJobs.host
+  const projectionReads = new Map<string, { controller: AbortController; promise: Promise<void> }>()
+  const readProjectionIds = new Set<string>()
   const unresolvedAddresses = new Set<string>()
   const retainObservers = new Map<string, MutableSnapshot<SessionRetainInfo>>()
-  const generations = new Map<string, { binding: SessionBinding; sources: Record<string, number>; live: boolean; cleanups: Set<() => void> }>()
+  const generations = new Map<string, { client: ReturnType<typeof makeClient>; binding: SessionBinding; sources: Record<string, number>; live: boolean; cleanups: Set<() => void> }>()
 
   function publishRetention(sessionId: string) {
     const retainedBy = { ...generations.get(sessionId)?.sources }
@@ -106,7 +109,8 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     const existing = generations.get(sessionId)
     if (existing) return existing
     const model = getModel(sessionId)
-    const record = { binding: undefined as unknown as SessionBinding, sources: {} as Record<string, number>, live: true, cleanups: new Set<() => void>() }
+    const client = makeClient(model)
+    const record = { client, binding: undefined as unknown as SessionBinding, sources: {} as Record<string, number>, live: true, cleanups: new Set<() => void>() }
     const guard = () => { if (!record.live) throw new Error('Session generation is disposed') }
     const watch = <T>(source: ObservableSnapshot<T>): ObservableSnapshot<T> => ({
       getSnapshot: source.getSnapshot,
@@ -120,14 +124,31 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     })
     const overrides = new Map<PropertyKey, unknown>()
     const projectionFaces = new Map<string, ObservableSnapshot<unknown>>()
-    const source = model.binding.session
+    const source = client.face
     const face = new Proxy(source, { get(target, key) {
       if (key === 'subscribe') return watch(source).subscribe
       if (key === 'projections') return { faceOf: (name: string) => { guard(); let face = projectionFaces.get(name); if (!face) { face = watch(source.projections.faceOf(name)); projectionFaces.set(name, face) }; return face } }
       const value = overrides.has(key) ? overrides.get(key) : Reflect.get(target, key)
       return typeof value === 'function' && key !== 'getSnapshot' ? (...args: unknown[]) => { guard(); return value.apply(target, args) } : value
     }, set(_target, key, value) { guard(); overrides.set(key, value); return true } })
-    record.binding = { sessionId, session: face, ctx: { remote, sessionId, agent: sessionId }, eventSource: watch(model.events) }
+    record.binding = { sessionId, session: face, ctx: { remote, sessionId, agent: sessionId }, eventSource: watch(client.events) }
+    let previous = model.snapshot.getSnapshot()
+    record.cleanups.add(model.snapshot.subscribe(() => {
+      const next = model.snapshot.getSnapshot()
+      const changes = Object.fromEntries(Object.keys(next).filter(key => next[key as keyof SessionSnapshot] !== previous[key as keyof SessionSnapshot]).map(key => [key, next[key as keyof SessionSnapshot]]))
+      previous = next
+      client.snapshot.update(state => ({ ...state, ...changes, ...(next.removed ? { loadingOlder: false, awaitingFirstTurn: false } : {}) }))
+    }))
+    record.cleanups.add(model.events.subscribe(() => {
+      const host = model.events.getSnapshot()
+      const current = client.events.getSnapshot()
+      const change = host.change
+      const entries = !isActive(model) ? []
+        : change.kind === 'append' ? [...current.entries, ...change.entries]
+        : change.kind === 'settle-assistant' ? [...current.entries.filter(entry => entry.type !== 'transient' || entry.event.data.attemptId !== change.attemptId), ...(change.entry ? [change.entry] : [])]
+        : [...model.records.slice(client.start).map(event => ({ type: 'event' as const, event })), ...host.entries.filter(entry => entry.type === 'transient')]
+      client.events.set({ entries, change, hasMore: isActive(model) && client.start > 0, revision: current.revision + 1 })
+    }))
     generations.set(sessionId, record)
     return record
   }
@@ -209,12 +230,12 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     append(model, 'step/start', { turn, step: 1 })
     running(model, true)
   }
-  function retire(model: SessionModel, requestId: string | undefined, retirement: PendingSubmissionRetirement) {
-    if (!requestId) return
-    const pending = model.submissions.get(requestId)
+  function retire(model: SessionModel, requestId: string | undefined, retirement: PendingSubmissionRetirement, client = generations.get(model.summary.id)?.client) {
+    if (!requestId || !client) return
+    const pending = client.submissions.get(requestId)
     if (!pending) return
-    model.submissions.delete(requestId)
-    model.snapshot.update((state) => ({ ...state, pendingSubmissions: state.pendingSubmissions.filter((row) => row.requestId !== requestId) }))
+    client.submissions.delete(requestId)
+    client.snapshot.update((state) => ({ ...state, pendingSubmissions: state.pendingSubmissions.filter((row) => row.requestId !== requestId) }))
     pending.onRetire?.(retirement)
   }
   function settleAttempt(model: SessionModel, commit?: SessionWireEvent) {
@@ -241,12 +262,153 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     return source
   }
 
+
+  function makeClient(model: SessionModel) {
+    const summary = model.summary
+    const start = Math.max(0, model.records.length - pageSize)
+    const snapshot = observable<SessionSnapshot>({ ...model.snapshot.getSnapshot(), pendingSubmissions: [], promptAttempted: false, promptError: null, awaitingFirstTurn: false, loadingOlder: false, hasMore: start > 0 })
+    const entries: SessionEventLikeEntry[] = [...model.records.slice(start).map(event => ({ type: 'event' as const, event })), ...model.events.getSnapshot().entries.filter(entry => entry.type === 'transient')]
+    const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
+    const client = { start, snapshot, events: eventSource, submissions: new Map<string, BeginSubmissionInput>(), live: true, face: undefined as unknown as SessionFace }
+    const retireSubmission = (requestId: string | undefined, retirement: PendingSubmissionRetirement) => retire(model, requestId, retirement, client)
+    const face: SessionFace = {
+      sessionId: summary.id, getSnapshot: snapshot.getSnapshot, subscribe: snapshot.subscribe,
+      projections: { faceOf: (key) => project(model, key) },
+      beginSubmission(input) {
+        const requestId = id('request')
+        if (!isActive(model)) {
+          input.onRetire?.({ reason: 'failed' })
+          return { requestId, abandon() {} }
+        }
+        client.submissions.set(requestId, input)
+        snapshot.update((state) => ({ ...state, pendingSubmissions: [...state.pendingSubmissions, { requestId, placement: state.running ? (input.mode === 'steer' ? 'steering' : 'queued') : 'transcript', time: Date.now(), text: input.text, attachments: input.attachments }] }))
+        return { requestId, abandon: () => retireSubmission(requestId, { reason: 'failed' }) }
+      },
+      async prompt(parts, mode, signal, requestId) {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        snapshot.update((state) => ({ ...state, promptAttempted: true, promptError: null }))
+        if (signal?.aborted || connectionState.getSnapshot() !== 'connected') {
+          const result = failure(signal?.aborted ? 'rpc/aborted' : 'connection/disconnected', signal?.aborted ? '送信を取り消しました。' : '接続が切れています。')
+          if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
+          retireSubmission(requestId, { reason: 'failed' })
+          return result
+        }
+        let content: ContentBlock[]
+        try {
+          content = parts.map((part) => {
+            if (part.type === 'text') return { type: 'text', text: part.text }
+            if (part.type === 'image') {
+              const data = Uint8Array.from(atob(part.data), (character) => character.charCodeAt(0))
+              const attachment = { ...imageAttachment, attachmentId: id('image'), bytes: data.length, mediaType: part.mediaType, ...(part.name ? { name: part.name } : {}) }
+              attachments.set(attachment.attachmentId, { attachment, data })
+              return { type: 'image', attachment }
+            }
+            return { type: 'file', attachment: { attachmentId: part.receiptId, name: '添付ファイル', bytes: 0 } }
+          })
+        } catch {
+          const result = failure('attachment/invalid-data', '画像のデータを読み込めませんでした。')
+          if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
+          retireSubmission(requestId, { reason: 'failed' })
+          return result
+        }
+        if (snapshot.getSnapshot().running && mode === 'queue') {
+          kit.updateProjection<InboxState>(summary.id, 'inbox', inbox => ({ 'next-step': inbox?.['next-step'] ?? [], 'next-turn': [...(inbox?.['next-turn'] ?? []), { id: id('message'), role: 'user', source: { kind: 'user', ...(requestId ? { rpcId: requestId } : {}) }, content }] }))
+        } else {
+          if (snapshot.getSnapshot().running) { settleAttempt(model); append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } }) }
+          beginTurn(model, content, requestId)
+          if (isActive(model)) void kit.streamAssistant(summary.id, 'メッセージを受け取りました。これは偽データによる応答です。', { chunkMs: 30 })
+        }
+        retireSubmission(requestId, { reason: 'observed', attachments: content.flatMap((block) => block.type === 'image' || block.type === 'file' ? [block.attachment] : []) })
+        return accepted()
+      },
+      async updateQueue(itemId, action) {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
+        if (action.kind === 'edit') {
+          if (action.content.some(block => block.type !== 'text')) return failure('session/attachment-invalid', 'テキストだけを編集できます。', { reason: 'QUEUE_EDIT_NON_TEXT' })
+          if (!action.content.some(block => block.text.trim())) return failure('gateway/bad-request', '空白以外のメッセージを入力してください。')
+        }
+        const target = inbox?.['next-turn'].some(row => row.id === itemId) ? 'next-turn' : 'next-step'
+        const item = inbox?.[target].find(row => row.id === itemId)
+        if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
+        if (action.kind === 'steer' && (target !== 'next-turn' || !model.snapshot.getSnapshot().running)) return failure('session/steer-unavailable', '今は割り込めません。', { itemId })
+        if (action.kind === 'edit') kit.setProjection(summary.id, 'inbox', { ...inbox, [target]: inbox![target].map(row => row.id === itemId ? { ...row, content: action.content } : row) })
+        else {
+          kit.setProjection(summary.id, 'inbox', { ...inbox, [target]: inbox![target].filter(row => row.id !== itemId) })
+          if (action.kind === 'steer') {
+            settleAttempt(model)
+            append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
+            beginTurn(model, item.content, item.source.rpcId)
+            if (isActive(model)) void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
+          }
+        }
+        return accepted()
+      },
+      async cancel() {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        settleAttempt(model)
+        if (snapshot.getSnapshot().running) append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
+        running(model, false)
+        void delay(0, model).then(() => { if (isActive(model)) advanceQueue(model) })
+        return accepted()
+      },
+      async rename(title) {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        const normalized = title.trim()
+        if (!normalized) return failure('session/title-invalid', '題名を入力してください。', { sessionId: model.summary.id })
+        updateSummary(model, { title: normalized, displayTitle: normalized })
+        const event = append(model, 'session/title', { title: normalized })
+        return success({ title: normalized, seq: event.seq })
+      },
+      async loadOlder() {
+        if (!isActive(model) || client.start === 0 || snapshot.getSnapshot().loadingOlder) return
+        snapshot.update((state) => ({ ...state, loadingOlder: true }))
+        await Promise.resolve()
+        if (!isActive(model) || !client.live) return
+        const previousStart = client.start
+        client.start = Math.max(0, client.start - pageSize)
+        const older: SessionEventLikeEntry[] = model.records.slice(client.start, previousStart).map((event) => ({ type: 'event', event }))
+        eventSource.update(window => ({ entries: [...older, ...window.entries], change: { kind: 'prepend', entries: older }, hasMore: client.start > 0, revision: window.revision + 1 }))
+        snapshot.update((state) => ({ ...state, hasMore: client.start > 0, loadingOlder: false }))
+      },
+      async loadThrough(seq) { while (isActive(model) && client.start > 0 && (model.records[client.start]?.seq ?? 0) > seq) await face.loadOlder() },
+      async command(line) {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
+        if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
+        const commandId = id('command')
+        const event = append(model, 'command/run', { commandId, name, args: args.join(' '), source: 'user' })
+        if (name === 'plan') kit.setProjection(summary.id, 'plan', { active: args[0] !== 'off', pending: false })
+        if (name === 'permission' && args[0]) kit.setProjection(summary.id, 'permissions', { ...(project(model, 'permissions').getSnapshot() as object), currentValue: args[0] })
+        append(model, 'command/done', { commandId, kind: 'success', text: `/${name} を実行しました`, sourceEventSeq: event.seq })
+        return success({ matched: true })
+      },
+      async readAttachment(attachmentId) {
+        if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
+        const value = attachments.get(attachmentId)
+        return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('attachment/not-found', '画像が見つかりません。')
+      },
+    }
+    client.face = face
+    return client
+  }
+
+  function publishProjection(sessionId: string, values: Readonly<Record<string, unknown>>, state: 'idle' | 'loading' | 'ready' | 'error', error: RemoteFailure | null) {
+    const model = models.get(sessionId)
+    if (model) {
+      for (const key of new Set([...model.projections.keys(), ...Object.keys(values)])) project(model, key).set(values[key])
+      model.summary = { ...model.summary, projectionValues: values }
+    }
+    list.update(list => ({ ...list, ...(model ? { byId: { ...list.byId, [sessionId]: model.summary } } : {}),
+      projectionsBySession: { ...list.projectionsBySession, [sessionId]: { values, state, error } } }))
+  }
+
   const workspaces: IWorkspaces = {
     list: workspaceList,
     async initializeDefault() { return undefined },
     async unarchiveSession(sessionId) { workspaceList.update(state => ({ ...state, archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId) })) },
-    async pinSession() {},
-    async unpinSession() {},
+    async pinSession(id) { workspaceList.update(state => ({ ...state, pinnedSessionIds: [id, ...state.pinnedSessionIds.filter(value => value !== id)] })) },
+    async unpinSession(id) { workspaceList.update(state => ({ ...state, pinnedSessionIds: state.pinnedSessionIds.filter(value => value !== id) })) },
     async create({ path }) {
       const previous = workspaceList.getSnapshot().items.find((item) => item.path === path)
       if (previous) return previous
@@ -332,7 +494,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const release = () => {
         if (released) return
         released = true
-        signal?.removeEventListener('abort', release)
+        signal?.removeEventListener('abort', abortReady)
         record.cleanups.delete(cancelReady)
         record.cleanups.delete(release)
         rejectReady(signal?.reason ?? new Error('Session reference released'))
@@ -342,15 +504,18 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         else delete record.sources[source]
         if (!Object.keys(record.sources).length) {
           record.live = false
+          record.client.live = false
           generations.delete(sessionId)
+          for (const requestId of [...record.client.submissions.keys()]) retire(model, requestId, { reason: 'failed' }, record.client)
           for (const cleanup of record.cleanups) cleanup()
-          for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
           if (unresolvedAddresses.delete(sessionId)) kit.removeSession(sessionId)
         }
         publishRetention(sessionId)
       }
+      const abortReady = () => rejectReady(signal?.reason)
       record.cleanups.add(release)
-      signal?.addEventListener('abort', release, { once: true })
+      signal?.addEventListener('abort', abortReady, { once: true })
+      void ready.then(() => signal?.removeEventListener('abort', abortReady), () => signal?.removeEventListener('abort', abortReady))
       const reference: SessionReference = { sessionId, ready, release, [Symbol.dispose]: release,
         get binding() { if (released || !record.live) throw new Error('Session reference released'); return record.binding } }
       publishRetention(sessionId)
@@ -378,13 +543,35 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       }
       return undefined
     },
-    async refreshProjections(sessionId) {
+    refreshProjections(sessionId) {
+      const existing = projectionReads.get(sessionId)
+      if (existing) return existing.promise
       const previous = list.getSnapshot().projectionsBySession[sessionId]
-      if (previous?.state === 'ready') return
-      const model = models.get(sessionId)
-      list.update(state => ({ ...state, projectionsBySession: { ...state.projectionsBySession, [sessionId]: model
-        ? { values: Object.fromEntries([...model.projections].map(([key, value]) => [key, value.getSnapshot()])), state: 'ready', error: null }
-        : { values: {}, state: 'error', error: { code: 'session/not-found', message: '会話が見つかりません。', details: {} } } } }))
+      if (previous?.state === 'ready') return Promise.resolve()
+      readProjectionIds.add(sessionId)
+      const initial = previous?.values ?? {}
+      const controller = new AbortController()
+      publishProjection(sessionId, initial, 'loading', null)
+      const promise = Promise.resolve().then(async () => {
+        try {
+          const result = await (options.readProjections?.(sessionId, controller.signal)
+            ?? Promise.resolve(success(models.has(sessionId) ? structuredClone(getModel(sessionId).hostProjections) : null)))
+          if (controller.signal.aborted) return
+          const current = list.getSnapshot().projectionsBySession[sessionId]?.values ?? {}
+          if (!result.ok) { publishProjection(sessionId, current, 'error', result.error); return }
+          const values = result.value === null
+            ? current === initial ? {} : current
+            : Object.fromEntries([...new Set([...Object.keys(current), ...Object.keys(result.value)])]
+              .flatMap(key => current[key] !== initial[key] ? [[key, current[key]]] : Object.hasOwn(result.value!, key) ? [[key, result.value![key]]] : []))
+          publishProjection(sessionId, values, 'ready', null)
+        } catch (error) {
+          if (controller.signal.aborted) return
+          if (!error || typeof error !== 'object' || !('code' in error && 'message' in error && 'details' in error)) throw error
+          publishProjection(sessionId, list.getSnapshot().projectionsBySession[sessionId]?.values ?? {}, 'error', error as RemoteFailure)
+        } finally { if (projectionReads.get(sessionId)?.controller === controller) projectionReads.delete(sessionId) }
+      })
+      projectionReads.set(sessionId, { controller, promise })
+      return promise
     },
     async refresh() { list.update((state) => ({ ...state, phase: 'ready' })) },
     async search(query, signal) {
@@ -436,39 +623,29 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           if (disposed) return
           for (const model of models.values()) replaceWindow(model)
           workspaceList.update((state) => ({ ...state }))
-          list.update((state) => ({ ...state, projectionsBySession: Object.fromEntries(Object.entries(state.projectionsBySession).map(([id, projection]) => [id, { ...projection, state: 'idle', error: null }])) }))
+          for (const read of projectionReads.values()) read.controller.abort()
+          projectionReads.clear()
+          const targets = new Set(readProjectionIds)
+          for (const record of generations.values()) {
+            const parent = record.binding.session.getSnapshot().subagent?.address.parentSessionId
+            if (parent) targets.add(parent)
+          }
+          for (const sessionId of Object.keys(list.getSnapshot().projectionsBySession)) publishProjection(sessionId, {}, 'idle', null)
+          for (const sessionId of targets) void sessions.refreshProjections(sessionId)
+          mockJobs.reconnect()
           connectionState.set('connected')
         })
       },
     },
     sessions, workspaces, remote,
-    jobs: {
-      state: jobState,
-      watchRows(sessionId) {
-        jobWatches.set(sessionId, (jobWatches.get(sessionId) ?? 0) + 1)
-        jobState.update(state => { const rows = { ...state.rows }; const jobs = hostJobs.get(sessionId); if (jobs?.length) rows[sessionId] = jobs; else delete rows[sessionId]; return { ...state, rows } })
-        let released = false
-        return () => {
-          if (released) return
-          released = true
-          const count = (jobWatches.get(sessionId) ?? 1) - 1
-          if (count) jobWatches.set(sessionId, count)
-          else { jobWatches.delete(sessionId); jobState.update(state => { const rows = { ...state.rows }; delete rows[sessionId]; return { ...state, rows } }) }
-        }
-      },
-      observe() { return () => {} },
-      async kill(sessionId, jobId) {
-        const row = hostJobs.get(sessionId)?.find(job => job.id === jobId)
-        if (!row) return failure('job/not-found', 'ジョブが見つかりません。')
-        if (row.status !== 'running' && row.status !== 'stopping') return success({ outcome: 'already-finished' as const })
-        kit.setJobs(sessionId, (hostJobs.get(sessionId) ?? []).map(row => row.id === jobId ? { ...row, status: 'killed', finishedAt: Date.now() } : row))
-        return success({ outcome: 'requested' as const })
-      },
-    },
+    jobs: mockJobs.jobs,
     get mock() { return kit },
     dispose() {
       conversationSelection(sessions).dispose()
+      for (const read of projectionReads.values()) read.controller.abort()
+      projectionReads.clear()
       completionStatus(ctx).dispose()
+      mockJobs.dispose()
       disposed = true
       settingsReader = undefined
       for (const pending of startupEvents) pending.cancel()
@@ -478,23 +655,25 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       handlers.clear()
       for (const [sessionId, record] of generations) {
         record.live = false
+        record.client.live = false
+        const model = models.get(sessionId)
+        if (model) for (const requestId of [...record.client.submissions.keys()]) retire(model, requestId, { reason: 'failed' }, record.client)
         for (const cleanup of record.cleanups) cleanup()
         generations.delete(sessionId)
         publishRetention(sessionId)
       }
       for (const model of models.values()) {
         model.attempt = undefined
-        for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
+        for (const requestId of [...(generations.get(model.summary.id)?.client.submissions.keys() ?? [])]) retire(model, requestId, { reason: 'failed' })
       }
     },
   }
 
   const kit: MockKit = {
     getRecords(sessionId) { return structuredClone(getModel(sessionId).records) },
-    setJobs(sessionId, rows) {
-      hostJobs.set(sessionId, structuredClone(rows))
-      if (jobWatches.has(sessionId)) jobState.update(state => { const next = { ...state.rows }; if (rows.length) next[sessionId] = hostJobs.get(sessionId)!; else delete next[sessionId]; return { ...state, rows: next } })
-    },
+    setJobs: mockJobs.setRows,
+    failJobRows: mockJobs.failRows,
+    emitJobFrame: mockJobs.frame,
     addWorkspace(workspace) {
       if (workspaceList.getSnapshot().items.some((item) => item.workspaceId === workspace.workspaceId)) {
         console.error(`偽のワークスペースが重複しています: ${workspace.workspaceId}`)
@@ -524,122 +703,10 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       const snapshot = observable<SessionSnapshot>({ sessionId: summary.id, pendingSubmissions: [], running: summary.running, subagent: null, removed: false, openState: 'open', openError: null, hasMore: start > 0, loadingOlder: false, promptError: null, blank: summary.blank, lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false })
       const eventSource = observable<SessionEventWindow>({ entries, hasMore: start > 0, revision: 1, change: { kind: 'replace', entries } })
       const projections = new Map<string, MutableSnapshot<unknown>>()
-      const scope: AgentContext = { remote, sessionId: summary.id, agent: summary.id }
-      const face: SessionFace = {
-        sessionId: summary.id, getSnapshot: snapshot.getSnapshot, subscribe: snapshot.subscribe,
-        projections: { faceOf: (key) => project(model, key) },
-        beginSubmission(input) {
-          const requestId = id('request')
-          if (!isActive(model)) {
-            input.onRetire?.({ reason: 'failed' })
-            return { requestId, abandon() {} }
-          }
-          model.submissions.set(requestId, input)
-          snapshot.update((state) => ({ ...state, pendingSubmissions: [...state.pendingSubmissions, { requestId, placement: state.running ? (input.mode === 'steer' ? 'steering' : 'queued') : 'transcript', time: Date.now(), text: input.text, attachments: input.attachments }] }))
-          return { requestId, abandon: () => retire(model, requestId, { reason: 'failed' }) }
-        },
-        async prompt(parts, mode, signal, requestId) {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          snapshot.update((state) => ({ ...state, promptAttempted: true, promptError: null }))
-          if (signal?.aborted || connectionState.getSnapshot() !== 'connected') {
-            const result = failure(signal?.aborted ? 'rpc/aborted' : 'connection/disconnected', signal?.aborted ? '送信を取り消しました。' : '接続が切れています。')
-            if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
-            retire(model, requestId, { reason: 'failed' })
-            return result
-          }
-          let content: ContentBlock[]
-          try {
-            content = parts.map((part) => {
-              if (part.type === 'text') return { type: 'text', text: part.text }
-              if (part.type === 'image') {
-                const data = Uint8Array.from(atob(part.data), (character) => character.charCodeAt(0))
-                const attachment = { ...imageAttachment, attachmentId: id('image'), bytes: data.length, mediaType: part.mediaType, ...(part.name ? { name: part.name } : {}) }
-                attachments.set(attachment.attachmentId, { attachment, data })
-                return { type: 'image', attachment }
-              }
-              return { type: 'file', attachment: { attachmentId: part.receiptId, name: '添付ファイル', bytes: 0 } }
-            })
-          } catch {
-            const result = failure('attachment/invalid-data', '画像のデータを読み込めませんでした。')
-            if (!result.ok) snapshot.update((state) => ({ ...state, promptError: { op: 'send', error: result.error } }))
-            retire(model, requestId, { reason: 'failed' })
-            return result
-          }
-          if (snapshot.getSnapshot().running && mode === 'queue') {
-            kit.updateProjection<InboxState>(summary.id, 'inbox', inbox => ({ 'next-step': inbox?.['next-step'] ?? [], 'next-turn': [...(inbox?.['next-turn'] ?? []), { id: id('message'), role: 'user', source: { kind: 'user', ...(requestId ? { rpcId: requestId } : {}) }, content }] }))
-          } else {
-            if (snapshot.getSnapshot().running) { settleAttempt(model); append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } }) }
-            beginTurn(model, content, requestId)
-            if (isActive(model)) void kit.streamAssistant(summary.id, 'メッセージを受け取りました。これは偽データによる応答です。', { chunkMs: 30 })
-          }
-          retire(model, requestId, { reason: 'observed', attachments: content.flatMap((block) => block.type === 'image' || block.type === 'file' ? [block.attachment] : []) })
-          return accepted()
-        },
-        async updateQueue(itemId, action) {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          const inbox = project(model, 'inbox').getSnapshot() as InboxState | undefined
-          const item = inbox?.['next-turn'].find(row => row.id === itemId)
-          if (!item) return failure('session/queue-item-not-found', '順番待ちのメッセージが見つかりません。', { itemId })
-          if (action.kind === 'edit') kit.setProjection(summary.id, 'inbox', { ...inbox, 'next-turn': inbox!['next-turn'].map(row => row.id === itemId ? { ...row, content: action.content } : row) })
-          else {
-            kit.setProjection(summary.id, 'inbox', { ...inbox, 'next-turn': inbox!['next-turn'].filter(row => row.id !== itemId) })
-            if (action.kind === 'steer') {
-              settleAttempt(model)
-              append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
-              beginTurn(model, item.content, item.source.rpcId)
-              if (isActive(model)) void kit.streamAssistant(summary.id, '割り込みのメッセージを受け取りました。', { chunkMs: 30 })
-            }
-          }
-          return accepted()
-        },
-        async cancel() {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          settleAttempt(model)
-          if (snapshot.getSnapshot().running) append(model, 'turn/end', { turn: turnOf(model), reason: { kind: 'aborted', reason: { kind: 'user' } } })
-          running(model, false)
-          void delay(0, model).then(() => { if (isActive(model)) advanceQueue(model) })
-          return accepted()
-        },
-        async rename(title) {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          const normalized = title.trim()
-          if (!normalized) return failure('session/title-invalid', '題名を入力してください。', { sessionId: model.summary.id })
-          updateSummary(model, { title: normalized, displayTitle: normalized })
-          const event = append(model, 'session/title', { title: normalized })
-          return success({ title: normalized, seq: event.seq })
-        },
-        async loadOlder() {
-          if (!isActive(model) || model.start === 0 || snapshot.getSnapshot().loadingOlder) return
-          snapshot.update((state) => ({ ...state, loadingOlder: true }))
-          await Promise.resolve()
-          if (!isActive(model)) return
-          const previousStart = model.start
-          model.start = Math.max(0, model.start - pageSize)
-          const older: SessionEventLikeEntry[] = model.records.slice(model.start, previousStart).map((event) => ({ type: 'event', event }))
-          publish(model, [...older, ...eventSource.getSnapshot().entries], { kind: 'prepend', entries: older })
-          snapshot.update((state) => ({ ...state, hasMore: model.start > 0, loadingOlder: false }))
-        },
-        async loadThrough(seq) { while (isActive(model) && model.start > 0 && (model.records[model.start]?.seq ?? 0) > seq) await face.loadOlder() },
-        async command(line) {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
-          if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
-          const commandId = id('command')
-          const event = append(model, 'command/run', { commandId, name, args: args.join(' '), source: 'user' })
-          if (name === 'plan') kit.setProjection(summary.id, 'plan', { active: args[0] !== 'off', pending: false })
-          if (name === 'permission' && args[0]) kit.setProjection(summary.id, 'permissions', { ...(project(model, 'permissions').getSnapshot() as object), currentValue: args[0] })
-          append(model, 'command/done', { commandId, kind: 'success', text: `/${name} を実行しました`, sourceEventSeq: event.seq })
-          return success({ matched: true })
-        },
-        async readAttachment(attachmentId) {
-          if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
-          const value = attachments.get(attachmentId)
-          return value ? success({ attachment: { ...value.attachment }, data: value.data.slice() }) : failure('attachment/not-found', '画像が見つかりません。')
-        },
-      }
-      const model: SessionModel = { summary: structuredClone({ ...summary, retainedBy: {} }), records, start, snapshot, events: eventSource, projections, submissions: new Map(), binding: { sessionId: summary.id, session: face, eventSource, ctx: scope } }
+
+      const model: SessionModel = { summary: structuredClone({ ...summary, retainedBy: {} }), records, start, snapshot, events: eventSource, projections, hostProjections: {} }
       models.set(summary.id, model)
-      for (const [key, value] of Object.entries(model.summary.projectionValues ?? {})) project(model, key).set(value)
+      for (const [key, value] of Object.entries(model.summary.projectionValues ?? {})) { model.hostProjections[key] = value; project(model, key).set(value) }
       list.update((state) => ({ ...state, ids: [...state.ids, summary.id], byId: { ...state.byId, [summary.id]: model.summary } }))
     },
     addRemote(namespace, impl) {
@@ -691,6 +758,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     setProjection(sessionId, key, value) {
       const model = getModel(sessionId)
       const next = structuredClone(value)
+      model.hostProjections[key] = next
       project(model, key).set(next)
       model.summary = { ...model.summary, projectionValues: { ...model.summary.projectionValues, [key]: next } }
       list.update(state => ({ ...state, byId: { ...state.byId, [sessionId]: model.summary }, projectionsBySession: { ...state.projectionsBySession, [sessionId]: {
@@ -762,7 +830,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       for (const other of models.values()) {
         if (other.summary.parentId === sessionId) other.snapshot.update((state) => ({ ...state, subagent: state.subagent ? { ...state.subagent, parentAvailable: false } : null }))
       }
-      for (const requestId of [...model.submissions.keys()]) retire(model, requestId, { reason: 'failed' })
+      for (const requestId of [...(generations.get(model.summary.id)?.client.submissions.keys() ?? [])]) retire(model, requestId, { reason: 'failed' })
     },
     removeWorkspace(workspaceId) {
       workspaceList.update((state) => ({ ...state, items: state.items.filter((item) => item.workspaceId !== workspaceId) }))

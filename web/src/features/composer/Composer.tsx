@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eAssistChip } from '@m3e/react/chips'
 import { M3eIconButton } from '@m3e/react/icon-button'
@@ -20,6 +20,8 @@ import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe
 import { prepareImage } from './images.ts'
 import { errorText, ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
+import { registerDeliveryDestination, handoffDeliveryDestination } from './delivery-destination.ts'
+import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
 import { createModelApplyController } from './model-picker.ts'
@@ -109,6 +111,14 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     writeDraft(draftKey, { ...readDraft(draftKey), model: undefined, ...commandText })
     return selected
   }), [draftKey, modelApply])
+  useLayoutEffect(() => {
+    const origin = window.location.hash
+    return registerDeliveryDestination(draftKey, reference => {
+      if (window.location.hash !== origin) return
+      conversationSelection(services.sessions).adopt(reference)
+      navigate(`/s/${encodeURIComponent(reference.sessionId)}`, { replace: true })
+    })
+  }, [draftKey, services.sessions])
   useEffect(() => { modelApply.setComposerBusy(busy) }, [busy, modelApply])
   useEffect(() => {
     mounted.current = true
@@ -179,7 +189,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     restoreRetryFocus.current = restoreFocus
     locked.current = true; setBusy(true); setSuggesting(false); setAuxError('')
     update({ error: undefined })
-    finishDelivery(await deliverDraft({ target, draftKey, sessions: services.sessions, api, mode }))
+    finishDelivery(await deliverDraft({ target, draftKey, sessions: services.sessions, api, mode, handoff: reference => handoffDeliveryDestination(draftKey, reference) }))
   }
   function finishDelivery(result: DeliveryResult) {
     if (result.error !== undefined) {

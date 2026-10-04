@@ -36,11 +36,11 @@ for (const mode of ['one-shot', 'continuable'] as const) {
           steps.push('catalog')
           assert.equal(id, parentId)
           ctx.mock.updateList(list => { list.projectionsBySession = {
-            [id]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: childId, createdAt: 0, mode }] } },
+            [id]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: childId, createdAt: 0, label: '子', mode }] } },
           } })
         },
         retain(value, options) {
-          steps.push('select')
+          steps.push(options.source === 'm3e.navigation' ? 'prepare' : 'select')
           assert.deepEqual(value, address)
           return ctx.sessions.retain(value, options)
         },
@@ -54,7 +54,7 @@ for (const mode of ['one-shot', 'continuable'] as const) {
         assert.equal(ctx.sessions.retainInfo(childId).getSnapshot().retainedBy['m3e.mainView'], 1)
         assert.equal(completionStatus(ctx).getSnapshot().byId[childId]?.completionUnread, false)
       })
-      assert.deepEqual(steps, ['catalog', 'select', 'navigate'])
+      assert.deepEqual(steps, ['catalog', 'prepare', 'select', 'navigate'])
     } finally { ctx.dispose() }
   })
 }
@@ -70,9 +70,9 @@ test('取得済みの正しいカタログなら再取得せず、子の選択�
       ...ctx.sessions,
     list: ctx.sessions.list,
       async refreshProjections() { assert.fail('取得済みのカタログは再取得しない') },
-      retain(address, options) { steps.push('select'); return ctx.sessions.retain(address, options) },
+      retain(address, options) { steps.push(options.source === 'm3e.navigation' ? 'prepare' : 'select'); return ctx.sessions.retain(address, options) },
     }, childId, () => { steps.push('navigate') })
-    assert.deepEqual(steps, ['select', 'navigate'])
+    assert.deepEqual(steps, ['prepare', 'select', 'navigate'])
   } finally { ctx.dispose() }
 })
 

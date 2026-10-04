@@ -24,6 +24,7 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
   const [error, setError] = useState('')
   const locked = useRef(false)
   const active = useRef(true)
+  const opening = useRef<AbortController | undefined>(undefined)
   const root = useRef<HTMLDivElement>(null)
   const focusTarget = useRef<string | undefined>(currentId)
   const focusPending = useRef(false)
@@ -43,11 +44,12 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
     const sheet = root.current?.closest('m3e-bottom-sheet')
     // Native dismissal starts before OverlayHost removes the logical entry.
     // Hiding underneath another overlay is an interruption, not a dismissal.
-    const closing = () => { if (getOverlays().at(-1)?.close === close) { active.current = false; restoreAfterDismissal() } }
+    const closing = () => { if (getOverlays().at(-1)?.close === close) { active.current = false; opening.current?.abort(); restoreAfterDismissal() } }
     sheet?.addEventListener('cancel', closing)
     sheet?.addEventListener('closing', closing)
     return () => {
       active.current = false
+      opening.current?.abort()
       sheet?.removeEventListener('cancel', closing)
       sheet?.removeEventListener('closing', closing)
     }
@@ -55,7 +57,7 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
   // Native sheet closing can retain the component through its exit animation.
   // Check the logical overlay too, so Escape/swipe invalidates delayed selection.
   const isOpen = () => active.current && getOverlays().some(entry => entry.close === close)
-  const dismiss = () => { active.current = false; restoreAfterDismissal(); close() }
+  const dismiss = () => { active.current = false; opening.current?.abort(); restoreAfterDismissal(); close() }
   const choices = useMemo(() => conversationChoices(list, workspaceList, currentId, query), [list, workspaceList, currentId, query])
   async function choose(id: string, keyboard = false) {
     if (locked.current || !isOpen()) return
@@ -67,6 +69,8 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
       return
     }
     locked.current = true; setBusy(true); setError('')
+    opening.current?.abort()
+    opening.current = new AbortController()
     let opened = false
     try {
       await openHomeSession(sessions, row, path => {
@@ -74,7 +78,7 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
         focusTarget.current = keyboard ? id : undefined
         dismiss(); navigate(path)
       },
-        () => isOpen() && conversationChoiceAvailable(row, sessions.list.getSnapshot(), workspaces.list.getSnapshot().archivedSessionIds))
+        () => isOpen() && conversationChoiceAvailable(row, sessions.list.getSnapshot(), workspaces.list.getSnapshot().archivedSessionIds), opening.current.signal)
       if (!opened && isOpen()) setError('会話の状態が変わりました。一覧から選び直してください。')
     } catch (cause) {
       if (isOpen()) setError(remoteErrorMessage(cause, '会話を開けませんでした。もう一度お試しください。'))

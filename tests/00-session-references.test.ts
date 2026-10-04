@@ -63,7 +63,7 @@ test('最後の解放はすべての購読を止め、未確定の送信を fail
 })
 
 for (const end of ['release', 'abort', 'dispose'] as const) {
-  test(`ready 待ちを ${end} すると reject し、参照が残らない`, async () => {
+  test(`ready 待ちを ${end} すると reject し、所有権は明示的な解放まで残る`, async () => {
     const ctx = createMockContext()
     const controller = new AbortController()
     const reference = ctx.sessions.retain(id, { source: 'm3e.test', signal: controller.signal })
@@ -71,9 +71,11 @@ for (const end of ['release', 'abort', 'dispose'] as const) {
     else if (end === 'abort') controller.abort()
     else ctx.dispose()
     await assert.rejects(reference.ready)
-    assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 0)
-    assert.equal(ctx.sessions.binding(id), undefined)
+    assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, end === 'abort' ? 1 : 0)
+    if (end === 'abort') assert.ok(reference.binding)
+    else assert.equal(ctx.sessions.binding(id), undefined)
     reference.release()
+    assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 0)
     ctx.dispose()
   })
 }
@@ -110,14 +112,18 @@ test('知らない文字列は例外、明示アドレスの Remote 失敗は re
 })
 
 test('投影は ready なら再読込せず、失敗は次回に再試行し、再接続で再取得可能になる', async () => {
-  const ctx = createMockContext()
+  let fail = true
+  const ctx = createMockContext({ readProjections: async () => fail ? { ok: false, error: { code: 'gateway/internal', message: '注入した失敗', details: {} } } : { ok: true, value: {} } })
   try {
+    await ctx.sessions.refreshProjections(id)
+    assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.state, 'error')
+    fail = false
     await ctx.sessions.refreshProjections(id)
     const loaded = ctx.sessions.list.getSnapshot().projectionsBySession[id]
     await ctx.sessions.refreshProjections(id)
     assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id], loaded)
     await ctx.sessions.refreshProjections('later')
-    assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession.later?.state, 'error')
+    assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession.later?.state, 'ready')
     ctx.mock.addSession({ id: 'later', displayTitle: '後着', running: false, blank: true, updatedAt: 0 }, [])
     await ctx.sessions.refreshProjections('later')
     assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession.later?.state, 'ready')
@@ -125,7 +131,7 @@ test('投影は ready なら再読込せず、失敗は次回に再試行し、�
     await new Promise<void>(resolve => {
       const stop = ctx.connection.state.subscribe(() => { if (ctx.connection.state.getSnapshot() === 'connected') { stop(); resolve() } })
     })
-    assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.state, 'idle')
+    assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.state, 'loading')
     await ctx.sessions.refreshProjections(id)
     assert.equal(ctx.sessions.list.getSnapshot().projectionsBySession[id]?.state, 'ready')
   } finally { ctx.dispose() }
@@ -146,9 +152,11 @@ test('ジョブ一覧の購読を共有し、最後の解除と空の一覧は r
     a(); a()
     assert.equal(ctx.jobs.state.getSnapshot().rows[id]?.length, 1)
     assert.deepEqual(await ctx.jobs.kill(id, 'job'), { ok: true, value: { outcome: 'requested' } })
-    assert.equal(ctx.jobs.state.getSnapshot().rows[id]?.[0]?.status, 'killed')
+    assert.equal(ctx.jobs.state.getSnapshot().rows[id]?.[0]?.status, 'running')
+    ctx.mock.setJobs(id, [{ id: 'job', label: '処理', kind: 'bash', status: 'killed', startedAt: 0, output: { total: 0, earliest: 0 } }])
     assert.deepEqual(await ctx.jobs.kill(id, 'job'), { ok: true, value: { outcome: 'already-finished' } })
     b()
+    await Promise.resolve()
     assert.equal(ctx.jobs.state.getSnapshot().rows[id], undefined)
     ctx.jobs.watchRows(id)
     ctx.mock.setJobs(id, [])

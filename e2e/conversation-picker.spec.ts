@@ -23,7 +23,7 @@ async function holdChild(page: Page) {
     state.__pickerCalls = { refresh: 0, select: 0 }
     ctx.mock.updateList((list: any) => { list.projectionsBySession = {} })
     const original = ctx.sessions.retain.bind(ctx.sessions)
-    ctx.sessions.retain = (...args: any[]) => { if (typeof args[0] !== 'string') state.__pickerCalls.select++; return original(...args) }
+    ctx.sessions.retain = (...args: any[]) => { if (typeof args[0] !== 'string' && args[1].source === 'm3e.mainView') state.__pickerCalls.select++; return original(...args) }
     ctx.sessions.refreshProjections = () => new Promise(resolve => { state.__pickerCalls.refresh++; state.__pickerRelease = resolve })
   })
 }

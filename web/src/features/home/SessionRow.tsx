@@ -24,11 +24,13 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   const [opening, setOpening] = useState(false)
   const pendingOpen = useRef(false)
   const active = useRef(true)
-  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
+  const openingLifetime = useRef<AbortController | undefined>(undefined)
+  useEffect(() => { active.current = true; return () => { active.current = false; openingLifetime.current?.abort() } }, [])
   async function open() {
     if (pendingOpen.current) return
     pendingOpen.current = true; setOpening(true)
-    try { await openHomeSession(sessions, row, navigate, () => active.current) }
+    openingLifetime.current = new AbortController()
+    try { await openHomeSession(sessions, row, navigate, () => active.current, openingLifetime.current.signal) }
     catch (error) { if (active.current) showSnackbar(remoteErrorMessage(error, '子の会話を開けませんでした。読み直してお試しください。')) }
     finally { pendingOpen.current = false; if (active.current) setOpening(false) }
   }

@@ -20,7 +20,7 @@ for (const child of [false, true]) {
       ctx.mock.setSessionState('other-completed', { running: false })
       if (child) {
         ctx.mock.updateList((state) => {
-          state.projectionsBySession = { [parentSessionId]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'continuable', createdAt: 0 }] } } }
+          state.projectionsBySession = { [parentSessionId]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'continuable', label: '子', createdAt: 0 }] } } }
         })
         await conversationSelection(ctx.sessions).select({ parentSessionId, childSessionId: sessionId, mode: 'continuable' })
       } else await conversationSelection(ctx.sessions).select(sessionId)

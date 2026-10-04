@@ -17,6 +17,7 @@ export async function openHomeSession(
   row: SessionSummary,
   navigate: (path: string) => void,
   isActive: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (row.origin === 'subagent') {
     if (!row.parentId) throw new Error('親の会話が見つかりません。')
@@ -32,7 +33,8 @@ export async function openHomeSession(
     }
     if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
     if (!isActive()) return
-    if (!await conversationSelection(sessions).select(address)) return
+    await conversationSelection(sessions).prepare(address, isActive, () => navigate(`/s/${encodeURIComponent(row.id)}`), signal)
+    return
   }
   if (isActive()) navigate(`/s/${encodeURIComponent(row.id)}`)
 }

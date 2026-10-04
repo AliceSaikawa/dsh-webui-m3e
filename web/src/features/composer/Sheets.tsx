@@ -190,7 +190,7 @@ export function PermissionSheet({ permissions, apply, close }: {
 }
 
 export function QueueSheet({ sessionId, close }: { sessionId: string; close(): void }) {
-  const { face, projection } = useSession(sessionId)
+  const { face, snapshot, projection } = useSession(sessionId)
   const items = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const [selectedId, setSelectedId] = useState<string | undefined>(items.length === 1 ? items[0]?.id : undefined)
   const [error, setError] = useState('')
@@ -207,7 +207,7 @@ export function QueueSheet({ sessionId, close }: { sessionId: string; close(): v
     {!selected ? items.map(item => <SheetRow key={item.id} detail={item.placement === 'steering' ? '割り込み待ち' : '順番待ち'} onClick={() => setSelectedId(item.id)}>{item.preview || item.text || '画像付きのメッセージ'}</SheetRow>) : <>
       <p className="composer-queue-preview">{selected.preview || selected.text || '画像付きのメッセージ'}</p>
       <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <TextPromptDialog {...queueEditPrompt(face, selected, done)} />, { label: '順番待ちのメッセージを編集' }) }}>編集</SheetRow>
-      <SheetRow icon="bolt" disabled={busy || !face} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
+      <SheetRow icon="bolt" disabled={busy || !face || selected.placement !== 'queued' || !snapshot.running} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
       <SheetRow icon="delete" disabled={busy || !face} onClick={() => { void act({ kind: 'remove' }) }}>取り消す</SheetRow>
       {items.length > 1 && <M3eButton onClick={() => setSelectedId(undefined)}>一覧に戻る</M3eButton>}
     </>}

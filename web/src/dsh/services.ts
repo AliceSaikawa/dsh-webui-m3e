@@ -75,7 +75,10 @@ export interface SessionJob {
   readonly startedAt: number
   readonly finishedAt?: number
 }
-export interface SubagentCatalogEntry { readonly id: string; readonly createdAt: number; readonly mode: SubagentAddress['mode']; readonly label?: string }
+export type SubagentCatalogEntry = { readonly id: string; readonly createdAt: number } & (
+  | { readonly mode: 'continuable'; readonly label: string }
+  | { readonly mode: 'one-shot' | 'unknown'; readonly label?: string }
+)
 export interface SessionProjectionSnapshot {
   readonly values: Readonly<Record<string, unknown>> & { readonly subagentCatalog?: readonly SubagentCatalogEntry[] }
   readonly state: 'idle' | 'loading' | 'ready' | 'error'
@@ -108,6 +111,7 @@ export interface WorkspaceView {
 export interface WorkspaceSnapshot {
   readonly items: readonly WorkspaceView[]
   readonly archivedSessionIds: readonly string[]
+  readonly pinnedSessionIds: readonly string[]
   readonly state: 'idle' | 'loading' | 'error'
   readonly phase: 'pending' | 'ready'
   readonly error: RemoteFailure | null

@@ -20,7 +20,8 @@ export function InboxScreen() {
   const [now, setNow] = useState(Date.now)
   const [openingId, setOpeningId] = useState<string | null>(null)
   const navigationAttempt = useRef(0)
-  useEffect(() => () => { navigationAttempt.current++ }, [])
+  const openingLifetime = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => { navigationAttempt.current++; openingLifetime.current?.abort() }, [])
   const rows = buildInboxRows(pending, list, workspaceList, now)
   const status = inboxStatus(rows, list, workspaceList)
   const hasCompleted = rows.completed.length > 0
@@ -33,11 +34,13 @@ export function InboxScreen() {
   }, [hasCompleted])
 
   async function openCompleted(sessionId: string) {
+    openingLifetime.current?.abort()
+    openingLifetime.current = new AbortController()
     const attempt = ++navigationAttempt.current
     const origin = window.location.hash
     const isActive = () => navigationAttempt.current === attempt && window.location.hash === origin
     setOpeningId(sessionId)
-    try { await openInboxSession(sessions, sessionId, navigate, isActive) }
+    try { await openInboxSession(sessions, sessionId, navigate, isActive, openingLifetime.current.signal) }
     catch (error) { if (isActive()) showSnackbar(remoteErrorMessage(error, '会話を開けませんでした。もう一度お試しください。')) }
     // Clear even after an unrelated hash change so the rows cannot stay disabled.
     finally { if (navigationAttempt.current === attempt) setOpeningId(null) }

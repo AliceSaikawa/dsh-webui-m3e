@@ -35,7 +35,7 @@ function workspace(workspaceId: string, title: string, sessionIds: string[], pat
   return { workspaceId, title, sessionIds, path, createdAt: '', updatedAt: '' }
 }
 function workspaceState(items: readonly WorkspaceView[] = [], overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot {
-  return { items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null, ...overrides }
+  return { items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null, ...overrides }
 }
 
 test('返事待ちは到着順と「あとで」を保持し、完了は更新の新しい順になる', () => {

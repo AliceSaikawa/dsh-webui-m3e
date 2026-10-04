@@ -26,7 +26,7 @@ function fixture(initial?: SessionProjectionSnapshot) {
       ...ctx.sessions,
       list: { getSnapshot: () => snapshot, subscribe: () => () => {} },
       async refreshProjections(id: string) { calls.push(['refresh', id]) },
-      retain(target: import('../web/src/dsh/services.ts').SessionTarget, options: import('../web/src/dsh/services.ts').SessionRetainOptions) { calls.push(['select', target]); return ctx.sessions.retain(target, options) },
+      retain(target: import('../web/src/dsh/services.ts').SessionTarget, options: import('../web/src/dsh/services.ts').SessionRetainOptions) { calls.push([options.source === 'm3e.navigation' ? 'prepare' : 'select', target]); return ctx.sessions.retain(target, options) },
     },
     navigate: (path: string) => { calls.push(['navigate', path]) },
   }
@@ -37,6 +37,7 @@ test('child selection includes its catalog mode and occurs before route navigati
     const f = fixture(catalog(mode))
     await openHomeSession(f.sessions, child, f.navigate)
     assert.deepEqual(f.calls, [
+      ['prepare', { parentSessionId: 'parent', childSessionId: child.id, mode }],
       ['select', { parentSessionId: 'parent', childSessionId: child.id, mode }],
       ['navigate', `/s/${encodeURIComponent(child.id)}`],
     ])
@@ -48,7 +49,7 @@ test('an unloaded child catalog is refreshed and the new snapshot supplies the a
   f.sessions.refreshProjections = async id => { f.calls.push(['refresh', id]); f.updateCatalog(catalog('continuable')) }
   await openHomeSession(f.sessions, child, f.navigate)
   assert.deepEqual(f.calls, [
-    ['refresh', 'parent'], ['select', { parentSessionId: 'parent', childSessionId: child.id, mode: 'continuable' }],
+    ['refresh', 'parent'], ['prepare', { parentSessionId: 'parent', childSessionId: child.id, mode: 'continuable' }], ['select', { parentSessionId: 'parent', childSessionId: child.id, mode: 'continuable' }],
     ['navigate', `/s/${encodeURIComponent(child.id)}`],
   ])
 })
