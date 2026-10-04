@@ -146,6 +146,6 @@ pnpm typecheck、pnpm test、pnpm build を通し、自分のブランチにコ�
 
 - 対応版は **DSH 0.2.0-rc.2** です。0.1.5 系への対応は外しました。版の宣言は `src/shared/dsh-compat.ts` にあります。
 - 同梱する共有ライブラリは、cordis 4.0.4、cordis-plugin-loader 1.0.5、dsh-client-store 0.2.0-rc.2 です。`package.json` と宣言の一致を単体試験で確かめます。
-- 段階 6-B までの確認結果、段階 6-C と最後の全体監査・レビューの残件、実機で残る確認は [dsh-compatibility.md](../dsh-compatibility.md) を参照してください。本番（Arch）や利用者の DSH の版・動作は、隔離した実 DSH の試験とは別に確認します。
+- 段階 1〜6 は `52c2297` に統合済みです。指示役の最後の検証と全体監査・レビューは未完了、PR はこれからです。集計の暫定値、ゴールの応答停止時の制限、実機で残る確認は [dsh-compatibility.md](../dsh-compatibility.md) を参照してください。本番（Arch）や利用者の DSH の版・動作は、隔離した実 DSH の試験とは別に確認します。
 - 古い API 調査メモと過去の実装メモは、その時点の記録です。次の変更では、`tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/` の対象パッケージの型・実装を根拠にします。保護対象のパスは読みません。
 - 標準画面の `dsh-client-ui-*` は参照用です。M3E はこれらを読み込まず、通信用プラグインだけを起動します。
