@@ -4,7 +4,6 @@ import type { SettingObject, SettingsDescription, SettingsNamespace, SettingValu
 import type { ProviderAddress, ProviderEntry } from './providers.ts'
 import { validMockOperations, validMockPatch, validMockValue } from './mock-validation.ts'
 import { settingsFixtures } from './mock-fixtures.ts'
-import { mockPermissionCatalog } from '../composer/mock.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -83,17 +82,8 @@ export function extendMock(kit: MockKit): void {
   }
 
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
-    // Mirrors dsh-tool-subagent's section validator, which rejects this before persisting.
     const next = merge(current.base ?? {}, user)
     if (!validMockValue(current, next)) return failure('settings/rejected', '公開された設定の型に合わない変更です。')
-    if (current.ns === 'subagent-model-selection-settings' && next.enabled === true
-      && (!Array.isArray(next.allowedModels) || next.allowedModels.length === 0)) {
-      return failure('settings/rejected', 'enabled subagent model selection requires at least one allowed model')
-    }
-    if (current.ns === 'permission' && next.defaultPreset !== undefined
-      && !mockPermissionCatalog.defaultOptions.some(option => option.value === next.defaultPreset)) {
-      return failure('settings/rejected', '権限の候補から選んでください。')
-    }
     current.user = user
     current.value = merge(current.base ?? {}, user)
     current.revision++
