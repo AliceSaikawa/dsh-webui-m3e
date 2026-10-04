@@ -1,9 +1,10 @@
 import { decodeSchema, schemaFields, type SchemaNode, type SettingField, type SettingPath, type SettingsNamespace } from './schema.ts'
+import type { PermissionCatalog } from '../composer/api.ts'
 
 const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
 const samePath = (left: SettingPath, right: SettingPath) => left.length === right.length && containsPath(left, right)
 
-export function findSettingField(namespace: SettingsNamespace, path: SettingPath): SettingField | undefined {
+export function findSettingField(namespace: SettingsNamespace, path: SettingPath, catalog?: PermissionCatalog): SettingField | undefined {
   function find(fields: SettingField[]): SettingField | undefined {
     for (const field of fields) {
       if (samePath(field.path, path)) return field
@@ -12,7 +13,7 @@ export function findSettingField(namespace: SettingsNamespace, path: SettingPath
     }
     return undefined
   }
-  return find(schemaFields(namespace))
+  return find(schemaFields(namespace, catalog))
 }
 
 /** A whole-value reset must not also remove a protected or disabled descendant. */

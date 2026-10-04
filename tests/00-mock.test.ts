@@ -7,14 +7,14 @@ import { approvalRecords, imageBase64, MOCK_IDS, readmeRecords } from '../web/sr
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
 import type { PendingSubmissionRetirement, SessionWireEvent } from '../web/src/dsh/services.ts'
 
-test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の controller 契約で公開する', (t) => {
+test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の controller 契約で公開する', async (t) => {
   const ctx = createMockContext()
   try {
     assert.equal(ctx.remote.workspace, undefined)
     assert.equal(Object.hasOwn(ctx.remote, 'workspace'), false)
     assert.deepEqual(ctx.workspaces.list.getSnapshot().items.map((item) => item.title), ['dsh-webui-m3e', 'deepseek-harness', 'notes'])
     assert.equal(ctx.sessions.list.getSnapshot().ids.length, 2)
-    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready)
     assert.equal(ctx.sessions.sessionOf(ctx.sessions.scope(binding.sessionId)), binding.session)
     assert.equal(ctx.sessions.scopeOf(binding.ctx), binding.sessionId)
     assert.equal(binding.session.getSnapshot().running, false)
@@ -27,7 +27,7 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
     assert.deepEqual(data.message.source, { kind: 'tool', callId: data.message.toolCallId })
     assert.equal(data.message.content[0]!.type, 'text')
     assert.equal(data.message.isError, true)
-    const running = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
+    const running = (await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready)
     assert.equal(running.session.getSnapshot().running, true)
     assert.equal(foldSessionWindow(running.eventSource.getSnapshot()).stream?.turn, 3)
     const errors = t.mock.method(console, 'error', () => {})
@@ -40,14 +40,18 @@ test('共有の 3 ワークスペースと Canvas の 2 履歴を実物の contr
 })
 
 test('送信前の echo は prompt による観測時に 1 回だけ退役し、履歴が重複しない', async () => {
-  const ctx = createMockContext()
+  const frames: (() => void)[] = []
+  const ctx = createMockContext({ scheduleFrame: callback => frames.push(callback) })
   try {
-    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready)
     const retirements: PendingSubmissionRetirement[] = []
     const submission = binding.session.beginSubmission({ mode: 'queue', text: '確認しました', attachments: [], onRetire: (value) => retirements.push(value) })
     assert.equal(binding.session.getSnapshot().pendingSubmissions[0]?.placement, 'transcript')
     assert.equal((await binding.session.prompt([{ type: 'text', text: '確認しました' }, { type: 'image', mediaType: 'image/png', data: imageBase64, name: '確認.png' }], 'queue', undefined, submission.requestId)).ok, true)
     submission.abandon()
+    assert.equal(retirements.length, 0)
+    assert.equal(binding.session.getSnapshot().pendingSubmissions.length, 1)
+    frames.splice(0).forEach(frame => frame())
     assert.equal(retirements.length, 1)
     const retirement = retirements[0]!
     assert.equal(retirement.reason, 'observed')
@@ -66,7 +70,7 @@ test('送信前の echo は prompt による観測時に 1 回だけ退役し、
 test('実行中の送信は queue に入り、編集・削除・割り込みできる', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready)
     const initialCount = foldSessionWindow(binding.eventSource.getSnapshot()).records.length
     await binding.session.prompt([{ type: 'text', text: '待機するメッセージ' }], 'queue')
     const queued = queueFromInbox(binding.session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined)[0]!
@@ -136,7 +140,7 @@ test('ストリームの再接続 baseline を置き換えても応答が重複�
 test('ページングは既存履歴に古い記録を継ぎ足し、loadThrough で必要な位置まで読む', async () => {
   const ctx = createMockContext({ pageSize: 4 })
   try {
-    const binding = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready)
     assert.equal(binding.session.getSnapshot().hasMore, true)
     await binding.session.loadOlder()
     assert.equal(binding.eventSource.getSnapshot().change.kind, 'prepend')
@@ -171,13 +175,13 @@ test('切断・接続中・独自シナリオを選び、切断時の送信エ�
   const ctx = createMockContext({ scenario: 'disconnected' })
   try {
     assert.equal(ctx.connection.state.getSnapshot(), 'disconnected')
-    const session = ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session
+    const session = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).session
     const retirement: PendingSubmissionRetirement[] = []
     const pending = session.beginSubmission({ mode: 'queue', text: '送信', attachments: [], onRetire: (value) => retirement.push(value) })
     const result = await session.prompt([{ type: 'text', text: '送信' }], 'queue', undefined, pending.requestId)
     assert.equal(result.ok, false)
     assert.deepEqual(retirement, [{ reason: 'failed' }])
-    assert.equal(session.getSnapshot().promptError?.error.code, 'connection/disconnected')
+    assert.equal(session.getSnapshot().promptError?.error.code, 'gateway/internal')
   } finally { ctx.dispose() }
   const reconnecting = createMockContext({ scenario: 'reconnecting' })
   assert.equal(reconnecting.connection.state.getSnapshot(), 'connecting')
@@ -218,29 +222,30 @@ test('セッション追加・分岐・ワークスペース操作は共通の�
     const sessionId = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
     assert.equal(ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspace.workspaceId)?.sessionIds[0], sessionId)
     const fork = await ctx.sessions.fork({ sessionId: MOCK_IDS.sessions.readme, atSeq: 5 })
-    const events = foldSessionWindow(ctx.sessions.retain(fork, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records
-    assert.equal(events.length, 7)
+    const events = foldSessionWindow((await ctx.sessions.retain(fork, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records
+    assert.equal(events.length, 9)
     assert.deepEqual(events.slice(0, 6), readmeRecords.slice(0, 6))
     assert.equal(events[6]?.type, 'session/end-seed')
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(events.slice(7).map(event => event.type), ['step/end', 'turn/end'])
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
     await ctx.workspaces.archiveSession(fork)
     assert.ok(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(fork))
     await assert.rejects(ctx.workspaces.insertSessionBefore(workspace.workspaceId, fork, sessionId), /workspace\/move-invalid/)
     assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(fork), true)
     await ctx.workspaces.unarchiveSession(fork)
     assert.equal(ctx.workspaces.list.getSnapshot().archivedSessionIds.includes(fork), false)
-    const attachment = await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.readAttachment('mock-readme-image')
+    const attachment = await (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).session.readAttachment('mock-readme-image')
     assert.equal(attachment.ok, true)
     if (attachment.ok) assert.ok(attachment.value.data.length > 0)
   } finally { ctx.dispose() }
 })
 
-test('全偽履歴のメッセージは JSON として保存できる', () => {
+test('全偽履歴のメッセージは JSON として保存できる', async () => {
   const ctx = createMockContext()
   try {
     const records: SessionWireEvent[] = []
     assert.deepEqual(ctx.sessions.list.getSnapshot().ids, [MOCK_IDS.sessions.readme, MOCK_IDS.sessions.approval])
-    for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow(ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
+    for (const sessionId of ctx.sessions.list.getSnapshot().ids) records.push(...foldSessionWindow((await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records)
     assert.equal(records.length, readmeRecords.length + approvalRecords.length)
     assert.ok(records.some(event => event.type === 'user/message'))
     assert.ok(records.some(event => event.type === 'assistant/message'))
@@ -248,10 +253,10 @@ test('全偽履歴のメッセージは JSON として保存できる', () => {
   } finally { ctx.dispose() }
 })
 
-test('機能のシナリオから会話のエラー状態を通知し、一覧の実行状態も合わせる', () => {
+test('機能のシナリオから会話のエラー状態を通知し、一覧の実行状態も合わせる', async () => {
   const ctx = createMockContext()
   try {
-    const binding = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready)
     const failure = { code: 'mock/open-failed', message: '会話を読み込めません。', details: {} }
     const promptError = { op: 'send' as const, error: { code: 'mock/send-failed', message: '送信できません。', details: {} } }
     let changes = 0
@@ -265,6 +270,8 @@ test('機能のシナリオから会話のエラー状態を通知し、一覧�
     assert.equal(state.running, false)
     assert.equal(ctx.sessions.list.getSnapshot().byId[binding.sessionId]?.running, false)
     assert.equal(foldSessionWindow(binding.eventSource.getSnapshot()).stream, null)
+    assert.equal(changes, 0)
+    await Promise.resolve()
     assert.equal(changes, 1)
     failure.message = '変更済み'
     assert.equal(binding.session.getSnapshot().openError?.message, '会話を読み込めません。')

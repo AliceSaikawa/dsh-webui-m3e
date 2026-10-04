@@ -80,7 +80,7 @@ test('空白だけの題名は実物と同じエラーコードと sessionId を
   const ctx = createMockContext()
   try {
     const sessionId = MOCK_IDS.sessions.readme
-    const binding = ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready)
     const summary = completionStatus(ctx).getSnapshot().byId[sessionId]
     const events = binding.eventSource.getSnapshot()
     const result = await binding.session.rename(' \n\t ')
@@ -93,7 +93,7 @@ test('空白だけの題名は実物と同じエラーコードと sessionId を
   } finally { ctx.dispose() }
 })
 
-test('拡張の重複 ID はその行だけエラー表示して無視し、元データと残りの初期化を維持する', (t) => {
+test('拡張の重複 ID はその行だけエラー表示して無視し、元データと残りの初期化を維持する', async (t) => {
   const errors = t.mock.method(console, 'error', () => {})
   const workspace = sharedWorkspaces[0]!
   const session = sharedSessions[0]!
@@ -109,10 +109,10 @@ test('拡張の重複 ID はその行だけエラー表示して無視し、元�
     assert.match(String(errors.mock.calls[1]!.arguments[0]), new RegExp(session.summary.id))
     assert.deepEqual(ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspace.workspaceId), workspace)
     assert.equal(completionStatus(ctx).getSnapshot().byId[session.summary.id]?.displayTitle, session.summary.displayTitle)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain(session.summary.id, { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, session.records)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(session.summary.id, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, session.records)
     assert.equal(ctx.workspaces.list.getSnapshot().items.filter((item) => item.workspaceId === workspace.workspaceId).length, 1)
     assert.equal(ctx.sessions.list.getSnapshot().ids.filter((id) => id === session.summary.id).length, 1)
     assert.equal(ctx.workspaces.list.getSnapshot().items.some((item) => item.workspaceId === 'later-workspace'), true)
-    assert.ok(ctx.sessions.retain('later-session', { source: 'm3e.test' }).binding)
+    assert.ok((await ctx.sessions.retain('later-session', { source: 'm3e.test' }).ready))
   } finally { ctx.dispose() }
 })

@@ -12,7 +12,7 @@ export interface RemoteFailure {
   readonly isDSHRemoteError?: true
 }
 export type RemoteResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: RemoteFailure }
-export type ConnectionState = 'connected' | 'disconnected' | 'connecting'
+export type ConnectionState = 'connected' | 'disconnected' | 'connecting' | undefined
 export interface Connection {
   readonly state: ObservableSnapshot<ConnectionState>
   reconnect(): void

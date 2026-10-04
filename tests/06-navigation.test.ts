@@ -29,7 +29,7 @@ for (const mode of ['one-shot', 'continuable'] as const) {
     const steps: string[] = []
     const address: SubagentAddress = { parentSessionId: parentId, childSessionId: childId, mode }
     try {
-      assert.equal(ctx.sessions.retain(childId, { source: 'm3e.test' }).binding.session.getSnapshot().subagent, null)
+      assert.equal((await ctx.sessions.retain(childId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, null)
       const sessions: Pick<ISessions, keyof ISessions> = {
       ...ctx.sessions,
     list: ctx.sessions.list,

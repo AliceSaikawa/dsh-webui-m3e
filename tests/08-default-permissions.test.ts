@@ -4,20 +4,18 @@ import { composerApi } from '../web/src/features/composer/api.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { createSettingsStore } from '../web/src/features/settings/store.ts'
+import { extendMock as extendComposer, mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 
 test('03の公開APIから08の現在の既定権限を読み、保存と復帰のあとも最新値を取得できる', async () => {
-  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  const ctx = createMockContext({ extensions: [{ extendMock }, { extendMock: extendComposer }] })
   try {
     const consumer = composerApi(ctx.remote)
     const before = await consumer.defaultPermissions()
     assert.deepEqual(before, {
       currentValue: 'workspace-write',
-      options: [
-        { value: 'workspace-write', name: 'ワークスペース書込' },
-        { value: 'danger-full-access', name: 'フル アクセス' },
-      ],
+      options: mockPermissionCatalog.defaultOptions,
     })
-    const store = createSettingsStore(ctx.remote.settings as SettingsMockRemote)
+    const store = createSettingsStore(ctx.remote.settings as SettingsMockRemote, consumer.permissionCatalog)
     await store.reload()
     assert.equal(await store.edit('permission', ['defaultPreset'], 'danger-full-access'), true)
     assert.equal((await consumer.defaultPermissions())?.currentValue, 'danger-full-access')

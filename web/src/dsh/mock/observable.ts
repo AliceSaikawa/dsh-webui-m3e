@@ -6,13 +6,21 @@ export interface MutableSnapshot<T> extends ObservableSnapshot<T> {
   update(update: (previous: T) => T): void
 }
 
-export function observable<T>(initial: T): MutableSnapshot<T> {
+export function observable<T>(initial: T, flush: 'sync' | 'microtask' = 'sync'): MutableSnapshot<T> {
   let current = initial
   const listeners = new Set<() => void>()
+  let scheduled = false
+  const notify = () => {
+    scheduled = false
+    for (const listener of [...listeners]) {
+      try { listener() } catch (error) { console.error('[mock] subscriber failed:', error) }
+    }
+  }
   const set = (value: T) => {
     if (Object.is(current, value)) return
     current = value
-    for (const listener of [...listeners]) listener()
+    if (flush === 'sync') notify()
+    else if (!scheduled) { scheduled = true; queueMicrotask(notify) }
   }
   return {
     getSnapshot: () => current,
@@ -24,3 +32,6 @@ export function observable<T>(initial: T): MutableSnapshot<T> {
     update: (update) => set(update(current)),
   }
 }
+
+/** Session lifecycle notifications coalesce; eventSource remains synchronous. */
+export function lifecycle<T>(initial: T): MutableSnapshot<T> { return observable(initial, 'microtask') }

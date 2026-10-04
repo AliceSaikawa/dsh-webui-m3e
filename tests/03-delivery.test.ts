@@ -7,6 +7,7 @@ import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/featur
 import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import type { PreparedImage } from '../web/src/features/composer/types.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { imageBase64 } from '../web/src/dsh/mock/fixtures.ts'
 import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 
 const image: PreparedImage = {
@@ -139,7 +140,7 @@ test('first send creates exactly one session, sends image and text, and clears b
   // The real fake controller also proves that handoff keeps the same generation alive.
   const ctx = createMockContext(); t.after(() => ctx.dispose())
   const owner = conversationSelection(ctx.sessions)
-  h.put({ text: '参照を引き継ぐ', images: [image] })
+  h.put({ text: '参照を引き継ぐ', images: [{ ...image, prompt: { ...image.prompt, data: imageBase64 } }] })
   let delivered: SessionReference | undefined
   let adopted: SessionBinding | undefined
   const handed = await deliverDraft({ ...h.options, sessions: ctx.sessions,

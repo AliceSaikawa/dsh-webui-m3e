@@ -2,14 +2,16 @@ import type { DshRemote } from './services.ts'
 
 /**
  * Broadcast events from `ctx.remote.$on` that the M3E page listens to, with
- * payloads restated from the installed DSH client plugins (DSH 0.1.5-rc.3).
+ * payloads restated from the installed DSH client plugins (DSH 0.2.0-rc.2).
  * Keeping every name here means a renamed or reshaped event is found in one
  * file. The answerable approval/question waterfalls live in
  * ./interactions-store.ts because their handlers must return an answer.
  */
 export interface RemoteEventMap {
+  'permission-presets/catalog-changed': []
   'commands/change': []
   'credentials/reference-updated': []
+  'credentials/record-updated': unknown[]
   'llm/adapters-updated': []
   'settings/document-updated': [ns: unknown, revision?: unknown]
   'goal/activation-changed': [event: {

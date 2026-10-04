@@ -13,6 +13,9 @@ import { queueFromInbox } from '../../dsh/inbox.ts'
 import { useSession } from '../../dsh/session.ts'
 import { sessionAccess } from '../../dsh/session-access.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { usePermissionCatalog } from './use-permission-catalog.ts'
+import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
@@ -25,6 +28,7 @@ import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
 import { createModelApplyController } from './model-picker.ts'
+import { PROVIDER_EVENTS } from '../settings/providers.ts'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -40,9 +44,9 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const { face, snapshot, projection } = useSession(sessionId)
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
-  const permissionValue = projection<PermissionProjection>('permissions')
-  // 0.2.0 projects the selection only; its separate catalog RPC is migrated in stage 5.
-  const permissions = Array.isArray(permissionValue?.options) ? permissionValue : undefined
+  const permissionValue = projection<PermissionSelection>('permissions')
+  const permissionCatalog = usePermissionCatalog()
+  const permissions = permissionValue && permissionCatalog ? { ...permissionValue, options: permissionCatalog.options } : undefined
   const { connected } = useConnection()
   const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
   const snapshotOfDraft = useCallback(() => readDraft(draftKey), [draftKey])
@@ -55,6 +59,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const [catalog, setCatalog] = useState<ModelCatalog>()
   const catalogCache = useRef<ModelCatalog | undefined>(undefined)
   const catalogRequest = useRef<Promise<ModelCatalog> | undefined>(undefined)
+  const catalogGeneration = useRef(0)
   const modelApply = useMemo(() => createModelApplyController(), [])
   const [defaults, setDefaults] = useState<PermissionProjection>()
   const [cursor, setCursor] = useState(draft.text.length)
@@ -88,9 +93,12 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const loadCatalog = useCallback((force = false): Promise<ModelCatalog> => {
     if (!force && catalogCache.current) return Promise.resolve(catalogCache.current)
     if (catalogRequest.current) return catalogRequest.current
+    const generation = ++catalogGeneration.current
     const request = api.modelCatalog().then(value => {
-      catalogCache.current = value
-      if (mounted.current) setCatalog(value)
+      if (generation === catalogGeneration.current) {
+        catalogCache.current = value
+        if (mounted.current) setCatalog(value)
+      }
       return value
     }).finally(() => { if (catalogRequest.current === request) catalogRequest.current = undefined })
     catalogRequest.current = request
@@ -131,12 +139,33 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }, [])
   useEffect(() => { autosize.current?.resizeToFitContent(true) }, [draft.text])
   useEffect(() => {
-    if (!connected) return
+    const invalidate = () => {
+      catalogGeneration.current++
+      catalogCache.current = undefined
+      catalogRequest.current = undefined
+      if (connected) {
+        const request = loadCatalog(true)
+        const generation = catalogGeneration.current
+        void request.catch(() => { if (mounted.current && generation === catalogGeneration.current) setCatalog(undefined) })
+      }
+    }
+    invalidate()
+    const stops = PROVIDER_EVENTS.map(event => onRemoteEvent(services.remote, event, invalidate))
+    return () => { catalogGeneration.current++; stops.forEach(stop => stop()) }
+  }, [services.remote, connected, loadCatalog])
+  useEffect(() => {
+    if (!connected || target.kind !== 'new') return
     let active = true
-    void loadCatalog().catch(() => { /* The sheet shows the error and offers retry. */ })
-    if (target.kind === 'new') void api.defaultPermissions().then(value => { if (active) setDefaults(value) }).catch(() => { /* No invented presets. */ })
-    return () => { active = false }
-  }, [api, connected, loadCatalog, target.kind])
+    let generation = 0
+    const reload = async () => {
+      const request = ++generation
+      try { const value = await api.defaultPermissions(); if (active && request === generation) setDefaults(value) }
+      catch { if (active && request === generation) setDefaults(undefined) }
+    }
+    const off = onRemoteEvent(services.remote, 'settings/document-updated', ns => { if (ns === 'permission') void reload() })
+    void reload()
+    return () => { active = false; off() }
+  }, [api, connected, target.kind, permissionCatalog, services.remote])
   useEffect(() => {
     if (!sessionId || !connected) return
     let active = true
@@ -233,7 +262,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions() : undefined)
       if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
       if (!mounted.current) return
-      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} close={close} apply={async value => {
+      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
         else if (face) { requireMatched(await face.command(`/permission ${value}`)); update({ permission: undefined }) }
       }} />, { label: '権限の選び直し' })

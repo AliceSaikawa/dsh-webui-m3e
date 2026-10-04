@@ -202,7 +202,7 @@ for (const width of [375, 390]) {
         const original = face.prompt.bind(face)
         face.prompt = async (...args: any[]) => {
           // Cases 0/2 hold the known synthetic response after acceptance;
-          // case 1 holds before acceptance to test explicit disconnected refusal.
+          // Case 1 holds before acceptance; a lost carrier reports uncertain delivery.
           const beforeAcceptance = state.__robustnessBeforeAcceptance
           const result = beforeAcceptance ? undefined : await original(...args)
           await new Promise(resolve => { state.__robustnessPrompts.push({ sessionId, release: resolve, released: false, phase: beforeAcceptance ? 'before-acceptance' : 'accepted-response-held' }) })
@@ -237,7 +237,8 @@ for (const width of [375, 390]) {
       if (cycle === 1) {
         await navigate(page, 'session-tools-review')
         await expect(input).toHaveValue(b)
-        await expect(page.getByRole('alert')).toContainText('接続')
+        await expect(page.getByRole('alert')).toContainText('送信結果が不明です')
+        await expect(page.getByRole('alert')).toContainText('同じ内容が重複して届く可能性があります。')
         expect(await page.evaluate(() => (window as any).__robustnessPrompts.length)).toBe(beforeCalls + 2)
         await button(page, '再接続').click()
         await expect(button(page, '送信')).toBeEnabled()
@@ -262,7 +263,7 @@ for (const width of [375, 390]) {
       await navigate(page, '')
       const current = await settled(page)
       expect(resources(current)).toEqual(resources(baseline))
-      observations.push({ cycle, calls: (await page.evaluate(() => (window as any).__robustnessPrompts.length)) - beforeCalls, childBeforeNormal: true, phase: cycle === 1 ? 'pre-acceptance-disconnected-refusal' : 'post-acceptance-response-order', ...current })
+      observations.push({ cycle, calls: (await page.evaluate(() => (window as any).__robustnessPrompts.length)) - beforeCalls, childBeforeNormal: true, phase: cycle === 1 ? 'pre-acceptance-carrier-loss' : 'post-acceptance-response-order', ...current })
     }
     await navigate(page, 'session-tools-review')
     await shot(page, `robustness-reordered-delivery-${width}`)

@@ -6,6 +6,7 @@ import type { RemoteResult } from '../web/src/dsh/services.ts'
 import { extendMock } from '../web/src/features/settings/mock.ts'
 import { createKeyDraft, createProviderStore, keyInfo, type KeyOutcome, type ProviderRemote, type ProviderStore } from '../web/src/features/settings/providers.ts'
 import { schemaFields, valueAt } from '../web/src/features/settings/schema.ts'
+import { mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 
 function setup(scenario?: string) {
   const ctx = createMockContext({ extensions: [{ extendMock }], scenario })
@@ -415,8 +416,8 @@ test('権限の偽データは03の既定値とプリセット候補に一致す
   try {
     const settings = unwrapRemoteResult(await remote.settings.describe())
     const permission = settings.namespaces.find(item => item.ns === 'permission')!
-    assert.equal(valueAt(permission.value, ['defaultPreset']), 'workspace-write')
-    const field = schemaFields(permission).find(item => item.path[0] === 'defaultPreset')!
+    assert.equal(valueAt(permission.value, ['defaultPreset']), undefined)
+    const field = schemaFields(permission, mockPermissionCatalog).find(item => item.path[0] === 'defaultPreset')!
     assert.equal(field.kind, 'select')
     assert.deepEqual(field.options, [
       { value: 'workspace-write', label: 'ワークスペース書込' },

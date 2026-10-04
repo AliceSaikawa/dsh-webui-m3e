@@ -109,13 +109,13 @@ test('V4ツール結果の失敗と拡張フィールドを入力の見出しご
   }
 })
 
-test('共有・チャット・トレースの偽記録はV4であり旧tool-resultを含まない', () => {
+test('共有・チャット・トレースの偽記録はV4であり旧tool-resultを含まない', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock: chatMock }, { extendMock: traceMock }] })
   try {
     let count = 0
     for (const id of ctx.sessions.list.getSnapshot().ids) {
       const reference = ctx.sessions.retain(id, { source: 'm3e.test' })
-      for (const event of foldSessionWindow(reference.binding.eventSource.getSnapshot()).records) {
+      for (const event of foldSessionWindow((await reference.ready).eventSource.getSnapshot()).records) {
         if (event.type !== 'tool/result') continue
         count++
         const message = (event.data as { message: { id: string; role: string; source: { kind: string; callId: string }; toolCallId: string; content: { type: string }[] } }).message

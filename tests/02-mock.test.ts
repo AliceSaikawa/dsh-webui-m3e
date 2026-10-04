@@ -10,7 +10,7 @@ import { clipToolResult } from '../web/src/features/chat/tool-output.ts'
 test('長い会話を4回読み込み、元の共有履歴と表示済みの末尾を保つ', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const binding = ctx.sessions.retain('chat-long', { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain('chat-long', { source: 'm3e.test' }).ready)
     const journal = () => foldSessionWindow(binding.eventSource.getSnapshot())
     const initial = journal().records
     assert.equal(initial.length, 100)
@@ -29,14 +29,14 @@ test('長い会話を4回読み込み、元の共有履歴と表示済みの末�
     assert.equal(binding.session.getSnapshot().hasMore, false)
     assert.deepEqual(journal().records.slice(-100), initial)
     assert.equal(buildChatRows(journal().records).length, 150)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.retain('readme-review', { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain('readme-review', { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
   } finally { ctx.dispose() }
 })
 
-test('追加の偽履歴はシステム、注入された指示、ファイル、複数ブロックと長いツール結果を含む', () => {
+test('追加の偽履歴はシステム、注入された指示、ファイル、複数ブロックと長いツール結果を含む', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const rows = buildChatRows(foldSessionWindow(ctx.sessions.retain('chat-samples', { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
+    const rows = buildChatRows(foldSessionWindow((await ctx.sessions.retain('chat-samples', { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records)
     assert.deepEqual(rows.map(row => row.kind), ['system', 'context', 'user', 'tool'])
     const user = rows.find(row => row.kind === 'user')!
     assert.deepEqual(user.content.filter(block => block.type === 'file'), [
@@ -55,10 +55,10 @@ test('追加の偽履歴はシステム、注入された指示、ファイル�
   } finally { ctx.dispose() }
 })
 
-test('仕様確認の偽履歴に12秒の思考、read_file、失敗bash、成否のコマンドを含む', () => {
+test('仕様確認の偽履歴に12秒の思考、read_file、失敗bash、成否のコマンドを含む', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    const rows = buildChatRows(foldSessionWindow(ctx.sessions.retain('chat-spec-check', { source: 'm3e.test' }).binding.eventSource.getSnapshot()).records)
+    const rows = buildChatRows(foldSessionWindow((await ctx.sessions.retain('chat-spec-check', { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records)
     const reasoning = rows.find(row => row.kind === 'reasoning')
     assert.ok(reasoning?.kind === 'reasoning')
     assert.equal(reasoning.durationMs, 12_000)
@@ -67,12 +67,12 @@ test('仕様確認の偽履歴に12秒の思考、read_file、失敗bash、成�
   } finally { ctx.dispose() }
 })
 
-test('処理エラーと読込エラーのシナリオを既存の公開入口で用意する', () => {
+test('処理エラーと読込エラーのシナリオを既存の公開入口で用意する', async () => {
   for (const scenario of ['chat-error', 'open-error']) {
     const ctx = createMockContext({ scenario, extensions: [{ extendMock }] })
     try {
       const id = scenario === 'chat-error' ? 'chat-error' : 'chat-open-error'
-      const state = ctx.sessions.retain(id, { source: 'm3e.test' }).binding.session.getSnapshot()
+      const state = (await ctx.sessions.retain(id, { source: 'm3e.test' }).ready).session.getSnapshot()
       if (scenario === 'chat-error') assert.ok(state.lastAgentError)
       else assert.equal(state.openState, 'error')
       assert.ok(ctx.workspaces.list.getSnapshot().items.some(workspace => workspace.sessionIds.includes(id)))
@@ -83,7 +83,7 @@ test('処理エラーと読込エラーのシナリオを既存の公開入口�
 test('偽の生成が始まり、途中の本文を表示できる', { timeout: 1000 }, async () => {
   const ctx = createMockContext({ scenario: 'streaming', extensions: [{ extendMock }] })
   try {
-    const binding = ctx.sessions.retain('approval-sheet', { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain('approval-sheet', { source: 'm3e.test' }).ready)
     assert.ok(foldSessionWindow(binding.eventSource.getSnapshot()).stream)
     await new Promise<void>(resolve => {
       const unsubscribe = binding.eventSource.subscribe(() => {
@@ -99,7 +99,7 @@ test('偽の生成が始まり、途中の本文を表示できる', { timeout: 
 test('長い会話の偽生成は履歴を4回追加しても過去の返事と重ならず表示できる', { timeout: 1000 }, async () => {
   const ctx = createMockContext({ scenario: 'chat-long-streaming', extensions: [{ extendMock }] })
   try {
-    const binding = ctx.sessions.retain('chat-long-streaming', { source: 'm3e.test' }).binding
+    const binding = (await ctx.sessions.retain('chat-long-streaming', { source: 'm3e.test' }).ready)
     const journal = () => foldSessionWindow(binding.eventSource.getSnapshot())
     assert.equal(journal().records.length, 100)
     await binding.session.loadOlder()

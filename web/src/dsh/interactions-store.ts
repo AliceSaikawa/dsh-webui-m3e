@@ -11,6 +11,7 @@ export interface AskUserQuestionOption {
 export interface AskUserQuestionIntent {
   kind: 'plan-review'
   approve: string
+  callId?: string
 }
 
 export interface AskUserQuestionItem {
@@ -38,6 +39,7 @@ export interface ApprovalRequestEvent {
   toolName: string
   callId?: string
   reason?: string
+  displayReason?: { en: string; [locale: string]: string }
   signal?: AbortSignal
 }
 
