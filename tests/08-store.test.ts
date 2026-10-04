@@ -599,7 +599,7 @@ test('続けて選んだサブエージェントのモデルは直列化して�
   } finally { h.ctx.dispose() }
 })
 
-test('許可モデルが空なら有効化を拒否し、無効中の選択後は有効化できる', async () => {
+test('設定の保存は許可モデルが空でも有効化と一覧の更新を受け入れる', async () => {
   const h = harness()
   try {
     await h.store.reload()
@@ -607,8 +607,8 @@ test('許可モデルが空なら有効化を拒否し、無効中の選択後�
     const route = { provider: 'deepseek', model: 'deepseek-v4' }
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['enabled'], value: true },
-    ]), false)
-    assert.equal(subagentSelection(current(h.store, name).value).enabled, false)
+    ]), true)
+    assert.equal(subagentSelection(current(h.store, name).value).enabled, true)
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['allowedModels'], value: [route] },
     ]), true)
@@ -618,8 +618,8 @@ test('許可モデルが空なら有効化を拒否し、無効中の選択後�
     assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
     assert.equal(await h.store.editModelSettings(name, () => [
       { op: 'set', path: ['allowedModels'], value: [] },
-    ]), false)
-    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [route] })
+    ]), true)
+    assert.deepEqual(subagentSelection(current(h.store, name).value), { enabled: true, allowedModels: [] })
   } finally { h.ctx.dispose() }
 })
 

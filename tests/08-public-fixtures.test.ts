@@ -6,6 +6,9 @@ import { validMockOperations, validMockPatch, validMockValue } from '../web/src/
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
+import { settingsWriteCases, dictionaryKeyCases } from './support/settings-write-cases.ts'
+import { expectedWrites, runSettingWrites } from './support/settings-writes.ts'
+import type { SettingObject } from '../web/src/features/settings/schema.ts'
 
 const row = (ns: string) => settingsFixtures().find(row => row.ns === ns)!
 
@@ -44,13 +47,36 @@ test('公開fixtureの検査は実在パスの成功と非公開パス・型・�
   assert.equal(validMockPatch(row('subagent-model-selection-settings'), { allowedModels: [{ provider: 'deepseek', model: 'deepseek-v4' }] }), true)
   assert.equal(validMockPatch(row('subagent-model-selection-settings'), { allowedModels: [{}] }), false)
   assert.equal(validMockPatch(row('subagent-model-selection-settings'), { allowedModels: [{ provider: '', model: 'x' }] }), false)
-  assert.equal(validMockPatch(row('llm-pi-ai'), { providers: { cloud: { unknown: true } } }), false)
+  assert.equal(validMockPatch(row('llm-pi-ai'), { providers: { cloud: { unknown: true } } }), true)
   assert.equal(validMockPatch(row('llm-deepseek'), { thinking: 'unsupported' }), false)
   assert.equal(validMockPatch(row('web-search-deepseek'), { maxUses: 0 }), false)
   for (const fixture of settingsFixtures()) assert.equal(validMockValue(fixture, fixture.value), true, fixture.ns)
   const llm = row('llm-deepseek')
   assert.equal(validMockValue(llm, { ...llm.value, retryPolicy: { maxRetries: 3 } }), false)
   assert.equal(validMockValue(llm, { ...llm.value, retryPolicy: { mode: 'normal', maxRetries: 3 } }), true)
+})
+
+test('設定の検証は実DSHと共有する31入力と辞書キー2入力を判定する', () => {
+  const merge = (base: SettingObject, patch: SettingObject): SettingObject => {
+    const next = structuredClone(base)
+    for (const [key, value] of Object.entries(patch)) next[key] = value && typeof value === 'object' && !Array.isArray(value)
+      ? merge(next[key] && typeof next[key] === 'object' && !Array.isArray(next[key]) ? next[key] as SettingObject : {}, value)
+      : structuredClone(value)
+    return next
+  }
+  const cases = [...settingsWriteCases, ...dictionaryKeyCases]
+  assert.deepEqual(cases.map(item => {
+    const fixture = row(item.ns)
+    return { id: item.id, ok: validMockPatch(fixture, item.patch) && validMockValue(fixture, merge(fixture.value, item.patch)) }
+  }), cases.map(({ id, ok }) => ({ id, ok })))
+})
+
+test('偽RPCは実DSHと共有する31入力と辞書キー2入力の受理・拒否を一致させる', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const cases = [...settingsWriteCases, ...dictionaryKeyCases]
+    assert.deepEqual(await runSettingWrites(ctx.remote.settings as SettingsMockRemote, cases), expectedWrites(cases))
+  } finally { ctx.dispose() }
 })
 
 test('偽RPCは実物と同じくpermissionの架空項目を拒否しbashの公開項目を保存する', async () => {

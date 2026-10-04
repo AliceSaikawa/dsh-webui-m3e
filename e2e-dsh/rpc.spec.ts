@@ -10,6 +10,9 @@ import { root } from './dsh-host.ts'
 import { autoPresetControl, pagedPng } from './rpc-audit.ts'
 import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
 import { decodeSchema, type SchemaNode } from '../web/src/features/settings/schema.ts'
+import { settingsWriteCases, dictionaryKeyCases } from '../tests/support/settings-write-cases.ts'
+import { expectedWrites, runSettingWrites } from '../tests/support/settings-writes.ts'
+import { expectedSchemaShape } from '../tests/support/settings-schema.ts'
 
 function publicShape(node: SchemaNode): unknown {
   return {
@@ -147,7 +150,7 @@ test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる
   for (const fixture of settingsFixtures().filter(row => row.ns !== 'example-extension')) {
     const actual = description.namespaces.find(row => row.ns === fixture.ns)!
     expect(actual, fixture.ns).toBeDefined()
-    expect(publicShape(decodeSchema(fixture.schema)), fixture.ns).toEqual(publicShape(decodeSchema(actual.schema)))
+    expect(publicShape(decodeSchema(actual.schema)), fixture.ns).toEqual(expectedSchemaShape(fixture.schema))
     expect(fixture.autoGenerate, fixture.ns).toBe(actual.autoGenerate)
     // These two mock routes deliberately configure its scripted provider directory.
     if (!['agent-default-model', 'llm-pi-ai'].includes(fixture.ns)) expect(fixture.value, fixture.ns).toEqual(actual.value)
@@ -175,6 +178,27 @@ test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる
     })
     expect(rejected).toEqual([{ ok: false, code: 'settings/rejected' }, { ok: false, code: 'settings/rejected' }])
   } finally { await setValue(page, 'bash-sandbox', ['timeoutMs']) }
+})
+
+test('S5 設定の31入力と辞書キー2入力を実DSHへ書き込み受理と拒否を確認する', async ({ page, integration }, info) => {
+  await setup(page, integration.host)
+  const api: SettingsApi = {
+    describe: () => page.evaluate(() => window.__rpcReview.remote.settings.describe()),
+    update: (ns, patch, revision) => page.evaluate(async ({ ns, patch, revision }) => {
+      const result = await window.__rpcReview.remote.settings.update(ns, patch, revision)
+      // RemoteError fields are accessors; project them before crossing Playwright's bridge.
+      return result.ok ? result : { ok: false as const, error: { code: result.error.code, message: result.error.message, details: result.error.details } }
+    }, { ns, patch, revision }),
+    mutate: (ns, ops, revision) => page.evaluate(async ({ ns, ops, revision }) => {
+      const result = await window.__rpcReview.remote.settings.mutate(ns, ops, revision)
+      return result.ok ? result : { ok: false as const, error: { code: result.error.code, message: result.error.message, details: result.error.details } }
+    }, { ns, ops, revision }),
+  }
+  const cases = [...settingsWriteCases, ...dictionaryKeyCases]
+  const outcomes = await runSettingWrites(api, cases)
+  writeFileSync(join(root, 'tmp/stage5-fix3-real-writes.json'), JSON.stringify(outcomes, null, 2))
+  await info.attach('settings-write-outcomes', { body: JSON.stringify(outcomes), contentType: 'application/json' })
+  expect(outcomes).toEqual(expectedWrites(cases))
 })
 
 test('S5 モデルと提供元は実物の一覧を表示し環境由来のキーは変更できない', async ({ page, integration }) => {
