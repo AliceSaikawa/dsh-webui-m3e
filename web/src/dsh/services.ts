@@ -31,10 +31,12 @@ export interface FileAttachmentRef { attachmentId: string; name: string; bytes: 
 export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
-  | { type: 'image'; attachment: ImageAttachmentRef }
+  | { type: 'image'; attachment: ImageAttachmentRef; offloaded?: true }
   | { type: 'file'; attachment: FileAttachmentRef }
   | { type: 'tool-call'; id: string; name: string; arguments: string }
-  | { type: 'tool-result'; toolCallId: string; content: ContentBlock[]; isError?: boolean }
+  | { type: 'tool-addition'; toolName: string; tool?: never }
+  | { type: 'tool-removal'; toolName: string }
+  | { type: `plugin:${string}`; readonly [key: string]: unknown }
 export type PromptContentPart =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'image'; readonly mediaType: ImageAttachmentRef['mediaType']; readonly data: string; readonly name?: string }

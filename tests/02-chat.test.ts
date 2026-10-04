@@ -7,9 +7,10 @@ import {
 import type { AssistantStream, StreamBlock } from '../web/src/dsh/session-journal.ts'
 import type { JsonValue, PendingSubmission, SessionWireEvent, StreamChunk } from '../web/src/dsh/services.ts'
 import { readmeRecords } from '../web/src/dsh/mock/fixtures.ts'
+import { mockRecord } from '../web/src/dsh/mock/record.ts'
 
 function event(seq: number, type: string, data: JsonValue, time = seq * 100): SessionWireEvent {
-  return { seq, type, data, time }
+  return mockRecord(seq, type, time, data)
 }
 function stream(chunks: StreamChunk[]): AssistantStream {
   return { attemptId: 'attempt-1', turn: 1, step: 1, chunks, content: [] }
@@ -28,7 +29,7 @@ test('chat rows keep visible message kinds, omit ignored attempts, and append tr
     event(3, 'assistant/attempt', { message: { content: [{ type: 'text', text: '残さない試行' }] } }),
     { ...event(4, 'assistant/message', { message: { content: [{ type: 'text', text: '無視' }] } }), ignorable: true },
     event(5, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '検討' }, { type: 'text', text: '返事' }] } }),
-    event(6, 'system/message', { message: '処理を再開しました' }),
+    event(6, 'system/message', { message: { content: [{ type: 'text', text: '処理を再開しました' }] } }),
     event(7, 'future/event', { text: '知らない種類' }),
   ]
   const frozen = JSON.stringify(records)
@@ -49,12 +50,12 @@ test('replacement summaries never enter chat rows, tool result matching, or call
     event(2, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'complete', name: 'read_file', arguments: '{}' }, { type: 'tool-call', id: 'running', name: 'bash', arguments: '{}' }] } }),
     replace(event(3, 'user/message', { content: [{ type: 'text', text: 'モデル用の要約' }] })),
     replace(event(4, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '置換された検討' }, { type: 'tool-call', id: 'orphan', name: '表示しない名前', arguments: '{}' }] } })),
-    event(5, 'tool/result', { callId: 'complete', content: [{ type: 'text', text: '元の結果' }] }),
-    replace(event(6, 'tool/result', { callId: 'complete', content: [{ type: 'text', text: '結果の要約' }], isError: true })),
-    replace(event(7, 'tool/result', { callId: 'running', content: [{ type: 'text', text: '完了させない' }] })),
-    replace(event(8, 'tool/result', { callId: 'invisible', content: [{ type: 'text', text: '追加しない結果' }] })),
+    event(5, 'tool/result', { message: { role: 'tool', toolCallId: 'complete', content: [{ type: 'text', text: '元の結果' }] } }),
+    replace(event(6, 'tool/result', { message: { role: 'tool', toolCallId: 'complete', content: [{ type: 'text', text: '結果の要約' }], isError: true } })),
+    replace(event(7, 'tool/result', { message: { role: 'tool', toolCallId: 'running', content: [{ type: 'text', text: '完了させない' }] } })),
+    replace(event(8, 'tool/result', { message: { role: 'tool', toolCallId: 'invisible', content: [{ type: 'text', text: '追加しない結果' }] } })),
     replace(event(9, 'tool/call', { callId: 'orphan', name: '使わない呼出情報' })),
-    event(10, 'tool/result', { callId: 'orphan', content: [{ type: 'text', text: '残す孤立結果' }] }),
+    event(10, 'tool/result', { message: { role: 'tool', toolCallId: 'orphan', content: [{ type: 'text', text: '残す孤立結果' }] } }),
   ]
   const rows = buildChatRows(records)
   assert.deepEqual(rows.map(row => row.kind), ['user', 'tool', 'tool', 'tool'])
@@ -73,7 +74,7 @@ test('string replacement operations are excluded just like object replacement op
     event(2, 'user/message', { content: [{ type: 'text', text: 'モデル用の要約' }] }),
     event(3, 'assistant/message', { message: { content: [{ type: 'reasoning', text: '置換された検討' }] } }),
     event(4, 'system/message', { message: { content: [{ type: 'text', text: '置換された通知' }] } }),
-    event(5, 'tool/result', { callId: 'call', content: [{ type: 'text', text: '置換された結果' }] }),
+    event(5, 'tool/result', { message: { role: 'tool', toolCallId: 'call', content: [{ type: 'text', text: '置換された結果' }] } }),
   ]
   for (const surfaceOp of ['replace', { op: 'replace', startSeq: 1, endSeq: 2 }] as const) {
     const rows = buildChatRows([call, ...replaced.map(record => ({ ...record, surfaceOp }))])
@@ -86,11 +87,11 @@ test('string replacement operations are excluded just like object replacement op
 
 test('tool calls are matched by callId across interleaved records and keep the assistant fork point', () => {
   const records = [
-    event(8, 'tool/result', { message: { source: { callId: 'b' }, content: [{ type: 'tool-result', toolCallId: 'b', content: [{ type: 'text', text: 'B の結果' }], isError: true }] } }, 2500),
+    event(8, 'tool/result', { message: { role: 'tool', source: { kind: 'tool', callId: 'b' }, toolCallId: 'b', content: [{ type: 'text', text: 'B の結果' }], isError: true } }, 2500),
     event(1, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'a', name: 'read_file', arguments: '{"path":"a.txt"}' }, { type: 'tool-call', id: 'b', name: 'bash', arguments: '{"command":"pnpm test"}' }] } }),
     event(2, 'tool/call', { callId: 'a', name: 'read_file' }, 1000),
     event(3, 'tool/call', { callId: 'b', name: 'bash' }, 1100),
-    event(9, 'tool/result', { message: { source: { callId: 'a' }, content: [{ type: 'tool-result', toolCallId: 'a', content: [{ type: 'text', text: 'A の結果' }] }] }, meta: { durationMs: 99999 } }, 3000),
+    event(9, 'tool/result', { message: { role: 'tool', source: { kind: 'tool', callId: 'a' }, toolCallId: 'a', content: [{ type: 'text', text: 'A の結果' }] }, meta: { durationMs: 99999 } }, 3000),
   ]
   const rows = buildChatRows(records)
   assert.equal(rows.length, 2)
@@ -112,8 +113,8 @@ test('tool calls are matched by callId across interleaved records and keep the a
 test('orphan results remain visible and unknown duration is not inferred from assistant timestamps', () => {
   const rows = buildChatRows([
     event(1, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'pending', name: 'bash', arguments: '' }, { type: 'tool-call', id: 'without-start', name: 'read_file', arguments: '' }] } }),
-    event(2, 'tool/result', { callId: 'orphan', message: { content: [{ type: 'text', text: '結果だけ' }] }, error: { code: 'FAILED' } }),
-    event(3, 'tool/result', { message: { toolCallId: 'without-start', content: [{ type: 'text', text: '完了' }] } }),
+    event(2, 'tool/result', { message: { role: 'tool', toolCallId: 'orphan', content: [{ type: 'text', text: '結果だけ' }], isError: true }, error: { code: 'FAILED' } }),
+    event(3, 'tool/result', { message: { role: 'tool', toolCallId: 'without-start', content: [{ type: 'text', text: '完了' }] } }),
   ])
   assert.equal(rows.length, 3)
   const [running, completed, orphan] = rows
@@ -131,9 +132,9 @@ test('orphan results remain visible and unknown duration is not inferred from as
 test('ignored tool results do not complete a call and negative elapsed values clamp to zero', () => {
   const rows = buildChatRows([
     event(1, 'assistant/message', { message: { content: [{ type: 'tool-call', id: 'a', name: 'a', arguments: '' }, { type: 'tool-call', id: 'b', name: 'b', arguments: '' }] } }),
-    { ...event(2, 'tool/result', { callId: 'a', content: [] }), ignorable: true },
+    { ...event(2, 'tool/result', { message: { role: 'tool', toolCallId: 'a', content: [] } }), ignorable: true },
     event(3, 'tool/call', { callId: 'b' }, 1000),
-    event(4, 'tool/result', { callId: 'b', content: [] }, 900),
+    event(4, 'tool/result', { message: { role: 'tool', toolCallId: 'b', content: [] } }, 900),
   ])
   const [a, b] = rows
   if (a?.kind !== 'tool' || b?.kind !== 'tool') throw new Error('ツール行がありません')
@@ -181,9 +182,9 @@ test('tool identity uses the file icon only for read_file and keeps a terminal f
 
 test('system messages read the installed message payload and preserve structured text content', () => {
   const rows = buildChatRows([
-    event(1, 'system/message', { message: '処理を再開しました' }),
+    event(1, 'system/message', { message: { content: [{ type: 'text', text: '処理を再開しました' }] } }),
     event(2, 'system/message', { message: { content: [{ type: 'text', text: '最初の行' }, { type: 'text', text: '次の行' }] } }),
-    event(3, 'system/message', { text: '以前の偽データ' }),
+    event(3, 'system/message', { message: { content: [{ type: 'text', text: '以前の偽データ' }] } }),
   ])
   assert.deepEqual(rows.map(row => row.kind === 'system' ? row.text : ''), ['処理を再開しました', '最初の行\n\n次の行', '以前の偽データ'])
 })
@@ -317,11 +318,11 @@ test('malformed message JSON is skipped while unsupported result blocks keep the
     event(1, 'assistant/message', null),
     event(2, 'system/message', []),
     event(3, 'assistant/message', { message: { content: [null, { type: 'text', text: 42 }, { type: 'tool-call' }] } }),
-    event(4, 'tool/result', { callId: 'opaque', content: [{ type: 'audio', data: 'opaque' }] }),
+    event(4, 'tool/result', { message: { role: 'tool', toolCallId: 'opaque', content: [{ type: 'plugin:audio', data: 'opaque' }] } }),
   ])
   assert.equal(rows.length, 1)
   assert.ok(rows[0]?.kind === 'tool')
-  assert.deepEqual(rows[0].result, [{ type: 'unsupported', originalType: 'audio' }])
+  assert.deepEqual(rows[0].result, [{ type: 'unsupported', originalType: 'plugin:audio' }])
 })
 
 test('scroll decisions follow the bottom threshold and preserve the visible anchor after prepend', () => {
@@ -361,7 +362,7 @@ test('context that DSH injects as a user message is not shown as the user speaki
     event(2, 'user/message', { source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md' }, { path: 'AGENTS.md' }] }, content: [{ type: 'text', text: '<system-reminder>指示</system-reminder>' }] }),
     event(3, 'user/message', { source: { kind: 'session-reference', references: [{ label: '前の会話' }] }, content: [{ type: 'text', text: '参照した内容' }] }),
     event(4, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: '本人の質問' }] }),
-    event(5, 'user/message', { source: { kind: 'plugin', plugin: 'capture' }, content: [{ type: 'file', attachment: { attachmentId: 'injected-file', name: '注入.txt', bytes: 10 } }] }),
+    event(5, 'user/message', { source: { kind: 'plugin:capture' }, content: [{ type: 'file', attachment: { attachmentId: 'injected-file', name: '注入.txt', bytes: 10 } }] }),
   ]
   const rows = buildChatRows(records)
   assert.deepEqual(rows.map(row => row.kind), ['system', 'context', 'context', 'user', 'context'])

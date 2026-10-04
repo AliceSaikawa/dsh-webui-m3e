@@ -58,8 +58,8 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   const toolResult = (turn: number, step: number, callId: string, result: string, advance: number, isError = false) => append('tool/result', {
     turn, step,
     message: {
-      id: `trace-result-${callId}`, role: 'user', source: { kind: 'tool', callId },
-      content: [{ type: 'tool-result', toolCallId: callId, content: [text(result)], isError }],
+      id: `trace-result-${callId}`, role: 'tool', source: { kind: 'tool', callId },
+      toolCallId: callId, content: [text(result)], isError,
     },
     ...(isError ? { error: { name: 'Error', code: 'EXIT_1' } } : {}),
   }, advance)
@@ -123,7 +123,7 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
     usage: { inputTokens: 600, outputTokens: 80, cacheReadTokens: 120, cacheWriteTokens: 0 },
   }, 700)
   append('user/message', {
-    id: 'trace-checkpoint', role: 'user', source: { kind: 'plugin', plugin: 'compact', compactionId }, content: summary,
+    id: 'trace-checkpoint', role: 'user', source: { kind: 'compact-checkpoint', compactionId }, content: summary,
   }, 0, { surfaceOp: { op: 'replace', startSeq: request.seq, endSeq: rootResult.seq }, sourceEventSeqs: [request.seq, response.seq, rootResult.seq] })
   append('compaction/end', { compactionId, turn: 2 }, 10)
 
