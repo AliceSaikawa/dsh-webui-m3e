@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test'
 import type { SettingsApi } from '../web/src/features/settings/store.ts'
 import type { ModelCatalog, PermissionCatalog } from '../web/src/features/composer/api.ts'
 import type { RemoteResult, ISessions, DshServices } from '../web/src/dsh/services.ts'
-import type { WorkspaceFilesRemote } from '../web/src/features/session-tools/files.ts'
+import type { WorkspaceFilesRemote, WorkspaceFileWatchFrame } from '../web/src/features/session-tools/files.ts'
 import { test, expect, button, openM3e } from './fixtures.ts'
 import { root } from './dsh-host.ts'
 import { autoPresetControl, pagedPng } from './rpc-audit.ts'
@@ -29,7 +29,7 @@ type Rpc = {
 }
 declare global { interface Window {
   __rpcReview: { remote: Rpc; sessions: ISessions; workspaces: DshServices['workspaces'] }
-  __rpcWatchReady?: boolean
+  __rpcWatch?: { handle: ReturnType<WorkspaceFilesRemote['changes']>; iterator: AsyncIterator<WorkspaceFileWatchFrame> }
   __rpcDelivered: string[]
   __rpcSubscriptions: { event: string; active: boolean }[]
 } }
@@ -97,6 +97,43 @@ async function setValue(page: Page, ns: string, path: string[], value?: string |
     const response = await api.mutate(ns, [value === undefined ? { op: 'unset', path } : { op: 'set', path, value }], row.revision)
     if (!response.ok) throw new Error(response.error.message)
   }, { ns, path, value })
+}
+
+function fileVersion(path: string): string {
+  const stat = statSync(path, { bigint: true })
+  return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
+}
+
+async function expectWatchedChange(page: Page, sessionId: string, target: string, absolutePath: string, mutate: () => void) {
+  try {
+    const ready = await page.evaluate(async ({ sessionId, target }) => {
+      const handle = window.__rpcReview.remote.workspaceFiles.changes(sessionId, target)
+      const iterator = handle[Symbol.asyncIterator]()
+      window.__rpcWatch = { handle, iterator }
+      return iterator.next()
+    }, { sessionId, target })
+    expect(ready).toEqual({ done: false, value: { kind: 'ready' } })
+    const before = fileVersion(absolutePath)
+    mutate()
+    const expected = { absolutePath, version: fileVersion(absolutePath) }
+    expect(expected.version, '監視対象の状態を変える操作が必要').not.toBe(before)
+    // ready starts watching; it does not flush earlier filesystem notifications.
+    // Keep pulling queued frames until the independently measured post-write version.
+    const observed = await page.evaluate(async version => {
+      const { iterator } = window.__rpcWatch!
+      for (;;) {
+        const { value, done } = await iterator.next()
+        if (done) throw new Error('操作後の版を通知する前に監視が終了しました')
+        if (value.kind === 'change' && 'version' in value.change && value.change.version === version) return value.change
+      }
+    }, expected.version)
+    expect(observed).toEqual(expected)
+  } finally {
+    await page.evaluate(() => {
+      window.__rpcWatch?.handle.dispose()
+      delete window.__rpcWatch
+    })
+  }
 }
 
 test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる', async ({ page, integration }) => {
@@ -257,36 +294,12 @@ test('S5 実 DSH の対象パス監視とバイト範囲の検証を確認する
     return response.ok ? { ok: true } : { ok: false, code: response.error.code }
   }, sessionId)
   expect(rejected).toEqual({ ok: false, code: 'gateway/bad-request' })
-  const change = page.evaluate(async sessionId => {
-    const handle = window.__rpcReview.remote.workspaceFiles.changes(sessionId, 'watched.txt')
-    try {
-      for await (const frame of handle) {
-        if (frame.kind === 'ready') window.__rpcWatchReady = true
-        else return frame.change.absolutePath
-      }
-      throw new Error('変更通知の前に監視が終了しました')
-    } finally { handle.dispose() }
-  }, sessionId)
-  await expect.poll(() => page.evaluate(() => window.__rpcWatchReady)).toBe(true)
-  writeFileSync(join(path, 'watched.txt'), 'after')
-  expect(await change).toBe(join(path, 'watched.txt'))
-  await page.evaluate(() => { window.__rpcWatchReady = false })
-  const directory = page.evaluate(async sessionId => {
-    const remote = window.__rpcReview.remote.workspaceFiles
-    const handle = remote.changes(sessionId, '.')
-    try {
-      for await (const frame of handle) {
-        if (frame.kind === 'ready') window.__rpcWatchReady = true
-        else return frame.change
-      }
-      throw new Error('フォルダの変更通知の前に監視が終了しました')
-    } finally { handle.dispose() }
-  }, sessionId)
-  await expect.poll(() => page.evaluate(() => window.__rpcWatchReady)).toBe(true)
-  writeFileSync(join(path, 'new-child.txt'), 'new file')
-  const observed = await directory
-  const stat = statSync(path, { bigint: true })
-  expect(observed).toEqual({ absolutePath: path, version: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` })
+  await expectWatchedChange(page, sessionId, 'watched.txt', join(path, 'watched.txt'), () => {
+    writeFileSync(join(path, 'watched.txt'), 'after')
+  })
+  await expectWatchedChange(page, sessionId, '.', path, () => {
+    writeFileSync(join(path, 'new-child.txt'), 'new file')
+  })
 })
 
 test('S5 隔離した DSH の提供元に偽の API キーを登録して削除する', async ({ page, integration }, info) => {
