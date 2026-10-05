@@ -16,6 +16,28 @@
 > [!NOTE]
 > 这是个人项目，并非 DeepSeek 官方产品。项目仍在开发中，可能存在缺陷，请谨慎使用。
 
+## 快速开始
+
+请在运行 DSH 的机器上执行：
+
+```bash
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+```
+
+M3E 未发布到 npm registry，因此不能只用名称执行 `add dsh-webui-m3e` 来安装。
+
+`web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
+
+仅支持 **DSH 0.2.0-rc.2**。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。
+
+验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
+
+M3E 无需另外安装运行时依赖包，也无需获取 M3E 源码、手动构建或安装开发依赖。
+
+添加后，先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。更新或回退后必须重启该配置档案的 Host，以切换 Host 代码的版本。
+
+Desktop 有[上游关于内置 pnpm 的说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)。本版本尚未在此环境中验证 Desktop，普通 CLI 的验证结果不代表 Desktop 已验证。
+
 ## 功能
 
 - **会话**：在手机屏幕上阅读与 AI 的对话、工具执行结果和思考内容，也可以切换到按时间顺序排列记录的「トレース」（追踪）视图。
@@ -28,27 +50,39 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.0-rc.2**（已使用真实的 DSH 和模拟的 LLM 验证启动、发送、停止、审批、提问、重新连接等）
+- DeepSeek Harness **0.2.0-rc.2**
   - 已移除对 0.1.5 系列的支持。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
-- 用于构建的 Node.js 22 或更高版本，以及 pnpm
+- 满足 DSH 和 pnpm 要求的 Node.js，以及 PATH 中的 pnpm（普通 CLI）。版本要求见上面的 Quick Start。
 
-## 安装
+## 更新、版本确认与卸载
 
-```bash
-git clone https://github.com/AliceSaikawa/dsh-webui-m3e.git
-```
+查看 JSON 输出中的 `dependencies.dsh-webui-m3e.version` 确认已安装版本，`resolved` 则显示来源。
 
 ```bash
-cd dsh-webui-m3e && pnpm install && pnpm build && pnpm pack
+dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-将生成的 `dsh-webui-m3e-<version>.tgz` 安装到 DSH，然后重启 DSH。请通过 `--profile` 指定运行 DSH Web 界面的配置档案。
+更新时，从[发布列表](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)选择兼容版本，用其 tgz 附件的 URL 重新添加。URL 格式为 `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`。下面是迁移到 0.0.8 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
+
+```bash
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+```
+
+从未来的新版本回退时，从发布列表选择已验证的兼容版本的 URL，重新添加并重启 Host。回到 0.0.8 可使用同一命令。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-重新安装时，请先提高 `package.json` 中的 `version`，再重新构建。若版本号不变，旧文件可能会继续被使用。
+卸载前，请打开 `http://<host>/?ui=classic`。卸载后 `/m3e/` 返回 404，请使用该标准界面：
+
+```bash
+dsh plugin --profile web remove dsh-webui-m3e
+```
+
+下载时遇到 404，请在发布列表检查标签、附件名称和 URL；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
+
+从源码构建请参阅[开发与分发指南](docs/development.md#配布)（日文）。
 
 ## 使用方法
 
@@ -70,7 +104,8 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 
 - 界面文字仅提供日语。
 - 插件随附 DSH 的内部库（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`），因此可能无法在某些 DSH 版本上运行。
-- 界面测试主要使用模拟数据。与 DSH 的连接使用与生产环境隔离的真实 DSH 和模拟的 LLM 进行验证。本次迁移尚未使用真实 LLM 或 iPhone 验证。开发方法和工作原理见 [docs/development.md](docs/development.md)。
+- 界面测试主要使用模拟数据，与 DSH 的连接则通过隔离的真实 DSH 和模拟 LLM 验证。对于此支持的 DSH 版本，尚未验证真实 LLM、iPhone Safari 以及添加到主屏幕的 Web 应用中的运行情况（详细验证范围见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)）。
+- 开发方法、工作原理和验证记录见 [docs/development.md](docs/development.md)。
 
 ## 许可证
 
