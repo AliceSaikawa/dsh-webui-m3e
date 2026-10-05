@@ -118,6 +118,170 @@
 
 （実装した担当が書き足します）
 
+### 2026-10-05：Issue #16 カスタムプロバイダーの契約と実装
+
+対象は **0.2.0-rc.2 のみ**。第1回の画面案を基に、追加・編集の専用フォームを実装した。過去のメモの未確認事項は、この節で確認できた範囲を更新する。Issue #18 を通常のマージで取り込み、その配布用設定や scripts は変更していない。キーの RPC を呼ぶ既存関数を再利用し、保護対象のパッケージは読んでいない。
+
+#### 配布物で確かめた契約
+
+以下の `P/` は、リポジトリ内の `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/` を指す。5 パッケージを個別に指定して読んだ。上流 master の内容をそのまま契約としない。
+
+| 事実 | 実物のパスと行 |
+|---|---|
+| 設定先は `llm-pi-ai` の `providers[ID]` | `P/dsh-llm-pi-ai/lib/index.js:1017–1051, 2513–2535` |
+| 標準画面の追加は開いた revision を付けた `settings.mutate`。設定成功後にキーを別保存 | `P/dsh-client-ui-settings-models/lib/client.js:1210–1277` |
+| 標準画面の編集は変更箇所の `set/unset` と revision。ID は固定 | 同 `client.js:1455–1489, 1511–1524, 1586–1626` |
+| `update` は再帰マージ、配列は置換。`mutate` は保存済みの層への path 操作 | `P/dsh-settings/lib/index.js:190–218, 276–291, 470–499` |
+| revision は名前空間・Host プロセス単位。異なる値は `settings/conflict`、検証拒否は `settings/rejected` | `P/dsh-settings/lib/index.js:500–514`、`P/dsh-api-settings-controller/lib/index.js:391–423, 451–504` |
+| providers の `sKey` は string、pattern なし。標準画面の小文字英字・ハイフン制限は UI 独自 | `P/dsh-llm-pi-ai/lib/index.js:1051`、`P/dsh-client-ui-settings-models/lib/client.js:1186–1204` |
+| プロトコルは schema の `api` の const union。別の候補 RPC は不要 | 同 `client.js:938–958`、`P/dsh-llm-pi-ai/lib/index.js:802–816, 1020` |
+| カスタムの判定は directory の `declared: true` と設定先。稼働中かどうかではない | `P/dsh-llm-pi-ai/lib/index.js:2506–2529` |
+| スキーマ以外にもモデル ID の重複、カタログ外の必須項目などを解決時に検査 | 同 `index.js:638–711, 1085–1154` |
+| volatile 設定の更新で adapter、directory、catalog が変わる | 同 `index.js:2537–2561, 2588–2597, 2616–2637` |
+| adapter の登録変更で `llm/adapters-updated`、設定変更で `(ns, revision)` の `settings/document-updated` | `P/dsh-llm/lib/index.js:1879–1893, 1910–1963`、`P/dsh-settings/lib/index.js:413–461` |
+| `apiKeyEnv` はキーの参照名。導出式は ID を大文字化し英数字以外の連続を `_` にして `_API_KEY` を付ける | `P/dsh-client-ui-settings-models/lib/client.js:938–940`、`web/src/features/settings/providers.ts:47` |
+| キーの RPC は参照名の検査、状態の照会、登録・削除を別々に扱う | 呼出し側の `P/dsh-api-settings-controller/lib/index.js:62–70, 161–216`。保存実装の保護対象パッケージは対象外 |
+| 伏せる処理はスキーマの role に従う。pi-ai の `apiKeyEnv`、`headers` は自動的に伏せられる項目ではない | `P/dsh-settings/lib/index.js:22–84`、`P/dsh-llm-pi-ai/lib/index.js:1017–1051` |
+
+Issue の版表記は 0.2.0-rc.2 に読み替えた。master を根拠とする保存契約はこの版でも成立した。一方、ID の pattern、HTTP URL の強制、未知項目の一律拒否は Host の条件ではなかった。
+
+#### フォームが扱うスキーマ
+
+根拠は `P/dsh-llm-pi-ai/lib/index.js:1001–1051` と `lib/types/config.d.ts:51–161`。スキーマの任意と、カタログ外の提供元で必要になる条件を区別する。
+
+| 項目 | 型と条件 |
+|---|---|
+| ID（辞書キー） | string。空文字は解決時に拒否。sKey の pattern はない |
+| `displayName` | 任意 string。指定した空文字は拒否。フォームの空欄は省略／既存上書きの unset |
+| `baseURL` | 任意 string だがカスタムでは非空が必須。URL の pattern はなく、HTTP の制限もない |
+| `api` | 任意 const union だがカスタムでは必須。`openai-completions` / `openai-responses` / `anthropic-messages`。フォームは応答から列挙する |
+| `models` | 配列。カタログ外で解決できるモデルが 0 件なら拒否 |
+| モデル `id` | 必須 string、非空、同じ一覧内で一意。空白だけの文字列は Host で受理 |
+| モデル `name` | 任意 string |
+| `contextWindow`, `maxTokens` | 任意 number、1 以上の整数。`maxTokens <= contextWindow` という制約はない |
+| `input` | `text` / `image` の配列。省略・空配列は継承。フォームの「提供元の既定値を使う」で省略する |
+| `apiKeyEnv` | 任意の参照名。キー本体を設定へ入れない |
+
+フォームの対象外は `headers`、`modelOverrides`、`compat`、`reasoningEfforts`、`thinkingBudgets`、各種既定値、timeout、transport、retryPolicy 等。モデルの `reasoningEfforts` は false または off/minimal/low/medium/high/xhigh/max をキー、string/null を値とする辞書。未知の項目と合わせて保持する。スキーマの詳細を高度なフォームへ展開することはしない。
+
+#### 隔離した実 DSH への追加実入力
+
+`tmp/issue16-observe/contract.spec.ts` を既存 e2e-dsh の fixture で実行した。HOME と DSH_HOME は tmp、loopback の Host、偽 LLM を使用。設定 RPC のみで **35 入力**を観測し、受理した入力は毎回 unset で復帰、拒否した入力は保存済みの層が変わらないことを確認した。結果は `tmp/issue16-observed.json`。一時 spec はコミットしない。
+
+| 入力 | 結果 |
+|---|---|
+| キー参照なしの有効なカスタム | 受理 |
+| ID：大文字、下線、点、数字始まり、空白を含む、スラッシュ、空白のみ | すべて受理 |
+| ID：`constructor`, `prototype` | 受理。既存 M3E の安全な path アクセスが拒否する予約名なので、この画面では編集対象外 |
+| ID：空文字、`__proto__` | `settings/rejected` |
+| URL：`not a url`、FTP、空白のみ | 受理。保存可能という結果であり、通信に使えることの確認ではない |
+| URL：空文字、省略 | `settings/rejected` |
+| models：空配列、省略 | `settings/rejected` |
+| モデル ID：空文字、欠落、重複 | `settings/rejected` |
+| モデル ID：空白のみ | 受理 |
+| contextWindow 0、maxTokens 1.5 / 1.000000001 | `settings/rejected` |
+| input：空配列、image のみ | 受理 |
+| input：audio | `settings/rejected` |
+| api：未知値、省略 | `settings/rejected` |
+| 未知の提供元項目、未知のモデル項目 | 受理し保持 |
+| displayName：空文字 | `settings/rejected` |
+| 表示名、モデル名、context 4096、maxTokens 8192、text/image | 受理 |
+
+既存 `tests/support/settings-write-cases.ts` と `e2e-dsh/rpc.spec.ts:183–202` の 37 入力には、pi-ai の表示名の成功と空文字拒否、defaultInput 空配列拒否、未知項目受理、旧フィールド拒否、reasoningEfforts のキー検証がある。これは設定 RPC の確認で、今回の追加・編集フォームとは分けて扱う。
+
+追加直後の `llm.listProviders`、`listConfigurableProviders`、`session.modelCatalog` に新しい ID とモデルが現れた。作成時は adapter 通知 2 回と設定通知、モデル名だけの編集では設定通知だけを観測した。モデル変更でも adapter 通知が必ず来るとは扱わない。編集後のカタログとページ再読み込み後の値も一致し、再起動なしで反映した。Host 再起動を挟む永続性と実際の外部提供元への接続は未検証。
+
+#### 下書き、差分、キーの別保存
+
+追加は次の形で、**フォームを開いて取得した revision** を送る。
+
+```ts
+settings.mutate('llm-pi-ai', [
+  { op: 'set', path: ['providers', id], value: { api, baseURL, models /* 任意の表示名・キー参照 */ } },
+], openedRevision)
+```
+
+編集は `['providers', id, 'displayName' | 'baseURL' | 'api']` の変更項目だけを `set/unset`。モデル一覧は元の各行全体を deep clone し、既知の編集項目だけを変更する。変化があった場合だけ `['providers', id, 'models']` を配列で set する。名前空間全体とプロフィール全体の置換、未変更の配列の再送はしない。伏せた値のパス、disabled、password role と対象が交差するならその欄を変更不可とし、安全な他の欄だけの編集を許可する。
+
+キー入力があれば、参照未指定のときだけ `apiKeyEnv` を設定差分へ追加し、設定成功後に既存 `createProviderStore` の `load` と `save(row, input)` を呼ぶ。参照と登録可能状態を再確認し、キー RPC へ参照名と今回の入力だけを送る。キー空欄では登録済みキーを維持し、キー RPC を呼ばない。標準画面と同じ保存順。登録済みの値を取得・表示する経路は作らない。
+
+`custom-provider-store.ts` は loading / blocked / editing / savingSettings / savingKey / keyFailed / stale / unknown / saved を区別する。同期的な busy で二重送信を止め、revision を通知で勝手に進めない。外部変更・競合では再読込と確認を求める。設定成功後は ID と保存応答を確定し、keyFailed の再試行はキー保存だけ。再作成はしない。応答を失った場合、または明確な拒否コード以外のエラー応答の場合は追加を再送せず、「保存結果を確認」で対象を取得し、既存なら編集へ切り替える。
+
+`createKeyDraft` の送信開始時消去・表示状態初期化・dispose を再利用する。再読込時の `clear` は購読を保って入力だけを消す。キャンセル、Escape、ルート離脱で入力と未送信キーを破棄する。処理は閉じた後も送信済み設定の完了まで追跡し、完了後に一覧を更新するが、閉じたフォームからキーを続けて送らない。接続世代と取得 ticket で古い応答を無効化する。
+
+#### ファイル、偽データ、判断
+
+- 新規：`CustomProviderSheet.tsx`（共通フォーム）、`custom-provider.ts`（下書き・検証・差分）、`custom-provider-store.ts`（保存制御）、`mock-custom.ts`（失敗シナリオ）。いずれも `web/src/features/settings/`。
+- 変更：同フォルダの `ProvidersPanel.tsx`、`providers.ts`、`settings.css`、`mock.ts`、`mock-models.ts`、`mock-validation.ts`。schema の復号、valueAt、既存キー操作、field-access、openFullSheet を再利用。ルーターと共有 overlay は変更しない。
+- 試験：`tests/08-custom-provider.test.ts`、`e2e/settings-custom-provider.spec.ts`、`e2e-dsh/custom-provider.spec.ts`。既存 M5 の入力へ実 Host で必須の api/baseURL を足し、directory の declared を明示した。期待を緩めた修正ではない。`tests/18-pack.test.ts` の偽モジュール一覧に mock-custom を追加。
+- 偽データ：既存 settings-readonly と、新規 custom-no-namespace / custom-unavailable / custom-rejected / custom-conflict / custom-response-lost / custom-slow。custom-partial は設定保存後のキー拒否を 1 回だけ起こす設計だが、既存キー RPC への接続 1 箇所は保護フックで停止。`tmp/handoff-issue16-01.md` の前後ブロックを指示役が適用するまで、対応 e2e は成功しない。
+- 全画面シートを採用。専用ルートは不要な履歴と復元を増やすため採用しない。共通シートを開くだけでは初期高さが半分になることを実測したため、このフォームを持つシートだけに動的画面高を CSS 指定した。ほかのシートを変更しない。
+- 終了経路を統一できる破棄確認の仕組みが共有 overlay にないため、今回も破棄確認なし。送信開始後は取消できないことを表示する。
+- モデルの index ごとの操作より、変更時だけ配列を送る案を採用。継承と削除後の index 移動を避け、元の未知項目を保持する。保護された子がある配列は置換しない。
+- 最新の作業指示に合わせ、標準画面独自の ID 正規表現は採用しない。URL は HTTP/HTTPS として検査し、非該当なら注意を出すが、Host が受理する非空文字列の保存は妨げない。空白を勝手に trim しない。例外は既存の M3E path 基盤が拒否する 3 予約名。キーを新規入力するときは、導出した参照名が他の提供元と重なる場合も止める。
+
+#### 受け入れ条件と検証の対応
+
+| 条件 | 単体 | 偽データ e2e | 実 DSH e2e |
+|---|---|---|---|
+| 1 追加・編集 | I16 ops | UI lifecycle | real lifecycle、キーあり・なし |
+| 2 値と未編集設定の保持 | I16 ops | UI lifecycle、モデル選択不変 | real lifecycle、再読込・他提供元・未知項目・既定値 |
+| 3 入力検査 | I16 validation | UI lifecycle、欄エラーとフォーカス | 一時 spec の 35 入力 |
+| 4 キーの維持・消去 | I16 partial / close / unknown | UI dismiss / refused / late | real lifecycle / failures |
+| 5 保存失敗の分類 | I16 refusals / partial / unknown | UI blocked / refused / lost。partial は引き継ぎ待ち | real failures、別ページ競合と設定だけ成功 |
+| 6 取消・連打・終了 | I16 partial / close | UI dismiss / late、4 終了経路 | real failures の閉じて再編集 |
+| 7 狭い画面と回帰 | 既存キー・モデル試験 | 390px と 375×420px、実寸の全画面高と横幅 | 新モデルの選択候補。iOS のキーボード実機は未確認 |
+| 8 品質 | typecheck / test | 全偽データ e2e | build、全実 DSH e2e を 2 回 |
+
+追加・変更した各試験は次の故障注入で確認した。表の試験名は先頭の識別子。各回で対象だけを実行し、追跡ファイルへの変更は `git restore` で戻した。一時 spec の準備値は元の値へ戻して再実行した。ブラウザーの短い viewport をソフトウェアキーボード実機確認の代用とはしない。
+
+| 試験 | 一時的な故障（本体または偽データ） | 結果 |
+|---|---|---|
+| I16 ops | custom-provider のモデル変換を既知キーだけに制限 | 未知の extra が消えて失敗 |
+| I16 validation | 検証が常に空のエラーを返す | 空 ID のエラーがなく失敗 |
+| I16 partial | 保存済みフラグと編集モードを消して再作成 | 設定書込み 2 回になり失敗 |
+| I16 partial（入力消去） | createKeyDraft の送信時 draft/visible 初期化を削除 | 入力が残って失敗 |
+| I16 refusals | 競合時に同じ mutate を自動再送 | 書込み 2 回になり失敗 |
+| I16 close | dispose を空にする | 閉じた後も保存が成功扱いになって失敗 |
+| I16 unknown | 再取得後も新規扱いにする | 編集へ切り替わらず失敗 |
+| I16 unknown（エラー応答） | 不明なエラーコードの分類を削除 | unknown でなく editing になって失敗 |
+| I16 partial（参照重複） | 導出参照名の重複検査を削除 | 他の提供元と同じキーを保存できてしまい失敗 |
+| 既存 M5 | mock-models の declared を false にする | directory の厳密一致で失敗 |
+| pack の全偽モジュール検査 | 偽の chunk 入力の mock-custom を命名規則外の custom-provider に変える | 規則外のファイルが検出されず失敗。scripts 本体は変更しない |
+| UI lifecycle | 入力検証を無効化 | ID 重複エラーが表示されず失敗 |
+| UI dismiss | 終了処理で submit も呼ぶ | キャンセル時の書込みが 0 → 1 となり失敗 |
+| UI blocked | 名前空間なしの準備を削除 | 追加ボタンが有効になって失敗 |
+| UI refused | 競合時に自動再送 | 書込み 2 回になり失敗 |
+| UI lost | 再取得後も新規扱い | 保存済み ID の欄が空になって失敗 |
+| UI late | dispose を空にする | 閉じた後にキーが登録済みとなり失敗 |
+| UI lifecycle / dismiss / refused / lost / late（初期フォーカス） | シートが開いた後の見出しへの focus を削除 | 5 件とも見出しのフォーカス検査で失敗 |
+| UI partial | 引き継ぎ差分の適用待ち | 正常系自体が未成功のため故障注入は未実施。通常の失敗を変異検出の成功に数えない |
+| real lifecycle | モデルの未知フィールドと reasoningEfforts を落とす | 保存・再読込後の配列の厳密一致で失敗 |
+| real failures | 外部設定通知の処理を無効化 | 別ページ変更後の競合案内がなく失敗 |
+| 一時 spec | 有効入力のモデル準備を空配列に変える | valid-no-key が拒否となり失敗 |
+
+#### 最終検証（2026-10-05）
+
+故障注入を戻した最終コードで実行した。結果を緑にするための skip、期待失敗への変更、アサーションの緩和は行っていない。
+
+| 実行 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test` | 1,052 件成功、失敗・skip 0 |
+| `pnpm build` | 成功。配布側の本番偽モジュール混入検査も通過 |
+| 全偽データ e2e | 165 成功、1 失敗、skip/flaky 0、482.0 秒。既存ポートを避け、一時設定で 5216 を使用 |
+| 全実 DSH e2e 1 回目 | 36 件が想定どおり、unexpected/skip/flaky 0、286.7 秒 |
+| 全実 DSH e2e 2 回目 | 同じく 36 件が想定どおり、unexpected/skip/flaky 0、207.1 秒 |
+| 追加実測の一時 spec | 1 件成功、35 入力（受理 19、拒否 16）と反映・通知・再読込、62.4 秒 |
+
+実 DSH の各 36 件には、変更していない既存の期待失敗（Host が止まったままの場合の切断表示）1 件を含む。通常成功は各 35 件。LLM とキーは架空のもので、外部提供元への実通信ではない。
+
+偽データの失敗は `e2e/settings-custom-provider.spec.ts:140` の `I16 UI partial: 設定だけ成功したらキーだけ再試行する` だけ。保護フックで止まった `web/src/features/settings/mock.ts` の接続差分によりキーが拒否されず、部分成功の案内が現れない。`tmp/handoff-issue16-01.md` にファイルごとの変更前後と置換印の凡例を残した。指示役の適用後、この試験とその故障注入、および全体検証を行う必要がある。本体の部分成功は単体と実 DSH の画面試験で通過した。
+
+受け入れ条件 1・2・3・4・6 は達成。5 は上記の偽データ差分待ち、7 は 390px と 375×420px・既存機能の回帰まで確認し iOS 実機のソフトウェアキーボードは未確認、8 は型・単体・ビルド・実 DSH が成功したが全偽データ e2e の 1 件が未達。最終レポートは `tmp/handoff-issue16-implementation.md`、実行結果は `tmp/issue16-mock-final.json`、`tmp/issue16-real-run1.json`、`tmp/issue16-real-run2.json` に保存した。
+
+範囲外：カタログの提供元追加、提供元削除・ID 変更、OAuth、モデル自動取得、接続試験、高度な設定、他の DSH 版。保護対象パッケージを読むことと、利用者の DSH を操作することは実施していない。
+
 ### 2026-09-25：設定タブの実装と、認証操作の保留
 
 - 作業ブランチは `feat/08-settings`。土台 `25e3b2d` を元にした worktree 内だけで作業し、main の変更、merge、rebase はしていない。
