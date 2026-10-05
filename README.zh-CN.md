@@ -16,6 +16,22 @@
 > [!NOTE]
 > 这是个人项目，并非 DeepSeek 官方产品。项目仍在开发中，可能存在缺陷，请谨慎使用。
 
+## 快速开始
+
+**0.0.8 正在准备发布。发布前，按名称安装会返回 npm 404。** 发布后，请在运行 DSH 的机器上执行：
+
+```bash
+dsh plugin --profile web add dsh-webui-m3e
+```
+
+`web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
+
+仅支持 **DSH 0.2.0-rc.2**，运行环境要求 Node.js 22 或更高版本。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**（验证环境：macOS 27.2、Node.js 26.7.0、pnpm 11.17.0）。无需获取 M3E 源码、手动构建或安装开发依赖。
+
+添加后，请重启该配置档案的 Host。先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。无需重启即可生效的范围尚未验证，因此此流程包含重启。
+
+Desktop 有[上游关于内置 pnpm 的说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)。本版本尚未在此环境中验证 Desktop，普通 CLI 的验证结果不代表 Desktop 已验证。
+
 ## 功能
 
 - **会话**：在手机屏幕上阅读与 AI 的对话、工具执行结果和思考内容，也可以切换到按时间顺序排列记录的「トレース」（追踪）视图。
@@ -30,25 +46,37 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 - DeepSeek Harness **0.2.0-rc.2**（已使用真实的 DSH 和模拟的 LLM 验证启动、发送、停止、审批、提问、重新连接等）
   - 已移除对 0.1.5 系列的支持。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
-- 用于构建的 Node.js 22 或更高版本，以及 pnpm
+- Node.js 22 或更高版本，以及 PATH 中的 pnpm（普通 CLI）。无需构建 M3E。
 
-## 安装
+## 更新、版本确认与卸载
 
-```bash
-git clone https://github.com/AliceSaikawa/dsh-webui-m3e.git
-```
+查看 JSON 输出中的 `dependencies.dsh-webui-m3e.version`。普通列表可能只显示 `file:` 引用。
 
 ```bash
-cd dsh-webui-m3e && pnpm install && pnpm build && pnpm pack
+dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-将生成的 `dsh-webui-m3e-<version>.tgz` 安装到 DSH，然后重启 DSH。请通过 `--profile` 指定运行 DSH Web 界面的配置档案。
+更新时，用明确指定的已发布兼容版本重新添加同名软件包。下面是迁移到首个 registry 版本的示例（发布后执行）。已通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
+
+```bash
+dsh plugin --profile web add dsh-webui-m3e@0.0.8
+```
+
+从未来的新版本回退时，同样指定已验证的兼容版本重新添加，再重启。回到 0.0.8 可使用同一命令。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-重新安装时，请先提高 `package.json` 中的 `version`，再重新构建。若版本号不变，旧文件可能会继续被使用。
+卸载前，请打开 `http://<host>/?ui=classic`。卸载后重启 Host，再回到该标准界面：
+
+```bash
+dsh plugin --profile web remove dsh-webui-m3e
+```
+
+已验证本地 tgz 的版本切换和卸载。通过 registry 迁移、更新与回退，以及操作前后保留设置、其他插件和会话数据，仍需验证。遇到 404 请检查发布状态和版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
+
+从源码构建请参阅[开发与分发指南](docs/development.md#配布)（日文）。
 
 ## 使用方法
 
