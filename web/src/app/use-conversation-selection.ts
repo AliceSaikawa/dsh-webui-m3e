@@ -16,14 +16,21 @@ export function useConversationSelection(pathname: string): void {
   const sessionId = conversationSessionId(pathname)
   const owner = conversationSelection(sessions)
   const visit = useMemo(() => createConversationVisitTracker(resetDeferred), [sessions])
+  // A failed open can settle before StrictMode replays the layout effect.
+  // Report once per route visit; reentry or a page reload starts a new visit.
+  const diagnostic = useMemo(() => ({ reported: false }), [owner, sessionId])
   useLayoutEffect(() => { visit(sessionId) }, [visit, sessionId])
   useLayoutEffect(() => {
     if (sessionId !== undefined && (list.phase !== 'ready' || workspaceList.phase !== 'ready')) return
+    let active = true
     void owner.select(sessionId).catch(error => {
-      if (owner.state.getSnapshot().sessionId !== sessionId) return
+      if (!active || owner.state.getSnapshot().sessionId !== sessionId || diagnostic.reported) return
+      diagnostic.reported = true
+      console.error(`会話を選択できませんでした: ${sessionId}`, error)
       showSnackbar(remoteErrorMessage(error, '会話を開けませんでした。もう一度お試しください。'))
     })
-  }, [owner, sessionId, list.phase, workspaceList.phase])
+    return () => { active = false }
+  }, [owner, sessionId, list.phase, workspaceList.phase, diagnostic])
 }
 
 export function ConversationSelection({ pathname }: { pathname: string }): null {

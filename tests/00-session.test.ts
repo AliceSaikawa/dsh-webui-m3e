@@ -231,6 +231,22 @@ test('gateway の入力不備と内部エラーは包まれた RPC エラーも�
   }
 })
 
+for (const [code, message] of [
+  ['session/writer-held', 'この会話はほかの処理が操作中です。処理が終わってから、もう一度お試しください。'],
+  ['session/attachment-invalid', '添付ファイルを送れません。内容やサイズを確認してください。'],
+] as const) test(`${code} は直接・controller例外・失敗結果とも理由と次の操作を日本語で案内する`, () => {
+  const failure = { code, message: 'English diagnostic', details: {} }
+  for (const error of [failure, { rpcError: failure }, { ok: false, error: failure }]) {
+    assert.equal(remoteErrorMessage(error), message)
+  }
+  assert.throws(() => unwrapRemoteResult({ ok: false, error: failure }), (error: unknown) => {
+    assert.ok(error instanceof Error)
+    assert.equal(error.message, message)
+    assert.equal(remoteErrorMessage(error), message)
+    return true
+  })
+})
+
 test('consecutive transient appends fold only the new chunks and match a full fold', () => {
   const entries: SessionEventLikeEntry[] = [durable(1)]
   let reads = 0

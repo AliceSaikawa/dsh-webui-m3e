@@ -45,7 +45,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissionValue = projection<PermissionSelection>('permissions')
-  const permissionCatalog = usePermissionCatalog()
+  const { catalog: permissionCatalog } = usePermissionCatalog()
   const permissions = permissionValue && permissionCatalog ? { ...permissionValue, options: permissionCatalog.options } : undefined
   const { connected } = useConnection()
   const subscribe = useCallback((listener: () => void) => subscribeDraft(draftKey, listener), [draftKey])
@@ -72,6 +72,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const restoreRetryFocus = useRef(false)
   const mounted = useRef(true)
   const closeSheet = useRef<(() => void) | undefined>(undefined)
+  const openingPermissions = useRef(false)
   const latestModelContext = useRef({ api, services, target, sessionId, face, snapshot })
   latestModelContext.current = { api, services, target, sessionId, face, snapshot }
   const inputId = useId()
@@ -258,15 +259,20 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       initialCatalog={catalog} loadCatalog={loadCatalog} applyModel={applyModel} />, { label: 'モデルの選択' })
   }
   async function openPermissions() {
+    // Keep the chip unchanged while one invocation fetches and opens the sheet.
+    if (openingPermissions.current) return
+    openingPermissions.current = true
     try {
-      const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions() : undefined)
+      const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions()
+        : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
       if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
       if (!mounted.current) return
       closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
         else if (face) { requireMatched(await face.command(`/permission ${value}`)); update({ permission: undefined }) }
       }} />, { label: '権限の選び直し' })
-    } catch (error) { setAuxError(errorText(error)) }
+    } catch (error) { if (mounted.current) setAuxError(errorText(error)) }
+    finally { openingPermissions.current = false }
   }
   function openPlus() {
     setSuggesting(false)

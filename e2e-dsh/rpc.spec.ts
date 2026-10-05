@@ -180,7 +180,7 @@ test('S5 設定一覧とシェル設定を実 DSH に保存し再読込できる
   } finally { await setValue(page, 'bash-sandbox', ['timeoutMs']) }
 })
 
-test('S5 設定の31入力と辞書キー2入力を実DSHへ書き込み受理と拒否を確認する', async ({ page, integration }, info) => {
+test('S5 設定の35入力と辞書キー2入力を実DSHへ書き込み受理と拒否を確認する', async ({ page, integration }, info) => {
   await setup(page, integration.host)
   const api: SettingsApi = {
     describe: () => page.evaluate(() => window.__rpcReview.remote.settings.describe()),

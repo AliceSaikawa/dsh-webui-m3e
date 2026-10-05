@@ -2,7 +2,7 @@ import type { SettingObject } from '../../web/src/features/settings/schema.ts'
 
 export interface SettingWriteCase { id: string; ns: string; patch: SettingObject; ok: boolean }
 
-/** The auditor's 31 inputs, with outcomes independently verified against DSH. */
+/** The auditor's 35 inputs, with outcomes independently verified against DSH. */
 export const settingsWriteCases: SettingWriteCase[] = [
   { id: 'W33', ns: 'llm-pi-ai', patch: { providers: { openai: { maxRetries: 2 } } }, ok: false },
   { id: 'W34', ns: 'llm-pi-ai', patch: { providers: { openai: { provider: 'openai' } } }, ok: false },

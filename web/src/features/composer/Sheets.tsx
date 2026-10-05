@@ -177,8 +177,12 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
 export function PermissionSheet({ permissions, defaults = false, apply, close }: {
   permissions: PermissionProjection; defaults?: boolean; apply(value: string): Promise<void>; close(): void
 }) {
-  const catalog = usePermissionCatalog()
-  const options = (defaults ? catalog?.defaultOptions : catalog?.options) ?? []
+  const catalogState = usePermissionCatalog()
+  const { catalog } = catalogState
+  // The caller already loaded these rows. Keep the pre-migration sheet while
+  // refreshing; an actual failed read invalidates them and uses the alert.
+  const options = catalogState.status === 'error' ? []
+    : (defaults ? catalog?.defaultOptions : catalog?.options) ?? permissions.options
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function choose(value: string) {
@@ -188,8 +192,7 @@ export function PermissionSheet({ permissions, defaults = false, apply, close }:
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
     {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
-    {!catalog && <p role="status">権限の候補を取得できませんでした。</p>}
-    {error && <p role="alert">{error}</p>}
+    {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error) : '')}</p>}
   </div>
 }
 

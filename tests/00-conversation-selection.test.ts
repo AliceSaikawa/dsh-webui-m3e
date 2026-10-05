@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canSelectConversation, conversationSessionId, conversationSelection, MAIN_VIEW_SOURCE } from '../web/src/dsh/conversation-selection.ts'
+import { conversationSessionId, conversationSelection, MAIN_VIEW_SOURCE } from '../web/src/dsh/conversation-selection.ts'
 import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
@@ -233,11 +233,16 @@ test('未読の会話が再開すると印を消し、次の完了で再び未�
   assert.equal(status.getSnapshot().byId[a]?.completionUnread, true)
 })
 
-test('選択可能性はscopeではなく一覧または取得済みカタログで判断する', t => {
+test('選択可能性はscopeではなく一覧または取得済みカタログで判断する', async t => {
   const ctx = createMockContext(); t.after(() => ctx.dispose())
-  assert.equal(canSelectConversation(ctx.sessions, a), true)
+  const owner = conversationSelection(ctx.sessions)
+  assert.equal(await owner.select(a), true)
+  owner.clear()
   const reference = ctx.sessions.retain(a, { source: 'm3e.test' })
   ctx.mock.updateList(state => ({ ...state, ids: [], byId: {} }))
-  assert.equal(canSelectConversation(ctx.sessions, a), false)
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  await assert.rejects(owner.select(a), /見つかりません/)
+  assert.equal(retain.mock.callCount(), 0)
+  assert.equal(ctx.sessions.retainInfo(a).getSnapshot().referenceCount, 1)
   reference.release()
 })
