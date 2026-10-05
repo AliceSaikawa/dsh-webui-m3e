@@ -1,9 +1,21 @@
 {
   "name": "dsh-webui-m3e",
-  "version": "0.0.7",
-  "private": true,
+  "version": "0.0.8",
   "description": "Material 3 Expressive mobile Web UI for DeepSeek Harness, served beside the stock UI and switched per device.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AliceSaikawa/dsh-webui-m3e.git"
+  },
+  "homepage": "https://github.com/AliceSaikawa/dsh-webui-m3e#readme",
+  "bugs": {
+    "url": "https://github.com/AliceSaikawa/dsh-webui-m3e/issues"
+  },
+  "keywords": ["deepseek", "dsh", "plugin", "webui", "material-design", "mobile"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -26,6 +38,8 @@
     "build": "pnpm run build:web && pnpm run build:plugin",
     "build:web": "vite build",
     "build:plugin": "node scripts/build-plugin.ts",
+    "prepack": "pnpm run build && pnpm run check:pack",
+    "check:pack": "node scripts/check-pack.ts",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.host.json --noEmit"
   },
@@ -49,9 +63,6 @@
     "remark-gfm": "4.0.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.12"
-  },
-  "engines": {
-    "node": ">=22"
   },
   "dsh": {
     "bundle": {

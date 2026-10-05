@@ -16,6 +16,26 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 > [!NOTE]
 > This is a personal project and is not an official DeepSeek product. It is under development and may contain bugs. Please use it with care.
 
+## Quick Start
+
+Run this on the machine running DSH:
+
+```bash
+dsh plugin --profile web add dsh-webui-m3e
+```
+
+`web` is an example: select the profile that actually serves your Web UI. A misspelled name can create a new profile without an error, so a successful installation alone does not confirm the target.
+
+Only **DSH 0.2.0-rc.2** is supported. The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
+
+The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
+
+M3E has no additional runtime packages to install. You do not need M3E's source, a local build, or its development dependencies.
+
+After adding the plugin, sign in through the standard interface (`http://<host>/?ui=classic`), then open `http://<host>/m3e/`. Always restart that profile's Host after an update or rollback so the Host code switches versions.
+
+Desktop has an [upstream bundled-pnpm path](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime). Desktop has not been verified for this release in this environment; the regular CLI results do not establish Desktop support.
+
 ## Features
 
 - **Conversations:** Read AI responses, tool results, and reasoning on a phone-sized screen. You can also switch to a chronological trace view.
@@ -28,27 +48,39 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness **0.2.0-rc.2** (startup, sending, stopping, approvals, questions, reconnecting and more are verified against a real DSH with a fake LLM)
+- DeepSeek Harness **0.2.0-rc.2**
   - Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
-- Node.js 22 or later and pnpm for building
+- Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (regular CLI). See Quick Start above for version requirements.
 
-## Installation
+## Updates, installed version, and removal
 
-```bash
-git clone https://github.com/AliceSaikawa/dsh-webui-m3e.git
-```
+Read `dependencies.dsh-webui-m3e.version` in the JSON output. The ordinary list may show only a `file:` reference.
 
 ```bash
-cd dsh-webui-m3e && pnpm install && pnpm build && pnpm pack
+dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-Install the resulting `dsh-webui-m3e-<version>.tgz` in DSH, then restart DSH. Set `--profile` to the profile running the DSH Web UI.
+To update, add the same package with an explicitly chosen, published compatible version. This example migrates to 0.0.8. Local-tgz users use the same command in the same profile, restart the Host, and check the installed version above. No manual version editing is needed.
+
+```bash
+dsh plugin --profile web add dsh-webui-m3e@0.0.8
+```
+
+To roll back from a future release, add a verified compatible version and restart. The same command returns to 0.0.8. Do not use the previously distributed 0.0.7 as a rollback target with DSH 0.2.0-rc.2. A saved compatible tarball can also be selected:
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-When reinstalling, increment `version` in `package.json` before rebuilding the package. Otherwise, DSH may continue to use the old files.
+Before removing M3E, visit `http://<host>/?ui=classic`. After removal, `/m3e/` returns 404, so use that standard interface:
+
+```bash
+dsh plugin --profile web remove dsh-webui-m3e
+```
+
+For a download returning 404, check the package name and published version; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
+
+For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
 
 ## Usage
 
@@ -70,7 +102,8 @@ If either interface fails to load, open `http://<host>/?ui=classic` to return to
 
 - The UI text is Japanese only.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
-- UI tests mostly use mock data. The connection to DSH is checked against a real DSH, isolated from production, with a fake LLM. This migration has not been tested with a real LLM or on iPhone. See [docs/development.md](docs/development.md) for the development workflow and architecture.
+- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Real LLMs and operation in iPhone Safari or as a Web app added to the Home Screen have not been verified for this supported DSH version (see [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope).
+- See [docs/development.md](docs/development.md) for architecture, development instructions and verification records.
 
 ## License
 
