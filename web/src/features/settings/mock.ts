@@ -105,7 +105,7 @@ export function extendMock(kit: MockKit): void {
     },
   }
   kit.addRemote('settings', remote)
-  installCustomScenarios(kit, remote, namespaces)
+  const custom = installCustomScenarios(kit, remote, namespaces)
   registerMockModelWriter(kit, async selection => {
     const result = checkWrite('agent-default-model')
     if (!result.ok) return result
@@ -127,7 +127,7 @@ export function extendMock(kit: MockKit): void {
       if (!validRef(ref) || typeof value !== 'string' || !value.length) {
         return failure('gateway/bad-request', '参照名と値を確認してください。')
       }
-      if (!writable || !keysWritable || rejectWrites || !value.trim()) return failure('credential/rejected', 'キーを登録できません。')
+      if (!writable || !keysWritable || rejectWrites || custom.rejectKeyOnce() || !value.trim()) return failure('credential/rejected', 'キーを登録できません。')
       registeredKeys.add(ref)
       await kit.emit('credentials/reference-updated', ref)
       await kit.emit('credentials/record-updated', undefined)
