@@ -96,9 +96,11 @@ DSH に入れる手順は README の「Quick Start」にあります。
 
 ## 配布
 
-公開名は `dsh-webui-m3e`、準備中の版は **0.0.8**、対応する DSH は **0.2.0-rc.2 のみ**です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開・タグ・GitHub Releases・CI の追加は今回行っていません。
+当面は **GitHub Releases の添付 tgz の URL** で配ります。パッケージ名は `dsh-webui-m3e`、版は **0.0.8**、対応する DSH は **0.2.0-rc.2 のみ**です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開・タグ・GitHub Releases・CI の追加は今回行っていません。
 
-**0.0.8 は未公開。マージと公開は続けて行います。公開までは、名前だけでの追加は 404 になります。** README は npm に掲載する公開後の利用手順として書いています。公開状況と検証記録はこの文書、`dsh-compatibility.md`、`handoff.md` で管理します。
+**0.0.8 はまだリリースしていません。マージとリリースは続けて行います。** README はリリース後の利用手順です。npm レジストリには未公開なので、名前だけでの追加はできません。Issue #18 の主経路である npm は満たしていませんが、指定された代替経路で、利用者のソース取得・ビルド・version の手編集が不要になることを目指します。公開状況と検証記録はこの文書、`dsh-compatibility.md`、`handoff.md` で管理します。
+
+将来 npm にも出せるよう、`private` を外した状態、`publishConfig`、`prepack`、`check:pack`、本番モジュール検査をそのまま残しています。GitHub Releases の tgz を作る際も同じ build・pack・検査を使います。
 
 配布判定の単体試験は受け直しで 28 件になりました。前回は監査の 35 変異と追加の 11 変異をすべて検出し、今回は再監査で生存した N02・N13 も検出しました。別の新しいセッションでの当て直しでも、N02・N13 と近い変異 4 個を検出しました。patch の名前の行末の空白の扱いをゆるめる変異 1 個は試験を通りましたが、取り出される名前が変わらない（結果が同じになる）変異と判断しています。指示役の最後の検証（`08c6cd2`）は、型検査とビルド成功、単体 1,039 件、`check:pack`、偽データ e2e 159 件、実 DSH 2 回（各回、通常 33 件の成功と既知の差の期待失敗 1 件）です。稼働中の追加・更新・旧版復帰・削除とデータ保持は、前回の隔離環境での手動確認を引き継ぎます。`e2e-dsh/dsh-host.ts` の単独パッチと、代替の `e2e-dsh/plugin-cli.ts` の追加は前回、それぞれ 1 回試して保護フックに拒否されました。同じ変更を別手段で再試行していません。作業の指示で決めておいた代替手順に従い、導入ライフサイクルの自動の試験は無いまま、下記の手動結果を残しています。公開権限・2 要素認証は公開する人の環境で確認が必要です。
 
@@ -195,7 +197,7 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 
 全段階で標準画面の HTTP 200 を確認しました。更新・復帰の前後と再起動後に同じ会話の本文・返答を表示でき、シェルの待機時間 61000 も保持しました。削除中は profile の patch に同じ値が残り、再追加後も設定画面で 61000 を確認しています。workspace も標準画面の一覧と M3E に残りました。**この環境では追加・削除は再起動なしで反映され、更新・旧版復帰は Host コードを切り替えるため再起動が必要でした。** 判定記録は `tmp/issue18-lifecycle/evidence.json`、削除後の標準画面は `removed-classic.png` です。手動操作中のセレクター不一致と URL の `#` 重複は修正して再確認し、失敗した操作を成功には数えていません。
 
-この導入ライフサイクルの自動の試験はありません。第三者プラグイン、長期利用の既存データ、本物の LLM、Desktop は未検証です。公開後は registry 経由でも下の手順を実行します。
+この導入ライフサイクルの自動の試験はありません。第三者プラグイン、長期利用の既存データ、本物の LLM、Desktop は未検証です。リリース後は GitHub URL 経由でも下の手順で保持を確認します。npm の経路は将来 npm に公開する場合に別途確認します。
 
 #### 比較用 tgz を再現する
 
@@ -289,9 +291,58 @@ await host.stop()
 await llm.close()
 ```
 
+### URL 配布の実測（2026-10-05）
+
+DSH 0.2.0-rc.2、Node 26.7.0、pnpm 11.17.0、macOS 27.2 で、`tmp/issue18-url/home` と `dsh-home` に隔離しました。一時 HTTP サーバーは `127.0.0.1:56252`、偽 LLM は `127.0.0.1:56251`。HTTP と偽 LLM は 15 分で自動終了する補助を使い、確認後は補助の終了処理で先に終了しました。Host は空き loopback ポートで起動し、再起動・終了は端末の Ctrl+C で行いました。kill コマンドは使っていません。
+
+基準 tgz は `pnpm pack --pack-destination tmp/issue18-url/base` で作りました。比較用は上の「比較用 tgz を再現する」と同じ手順を `tmp/issue18-url/` で実行し、コピーだけを 0.0.10 にして HTML meta と Host ヘッダーを付けています。リポジトリの版は 0.0.8 のままです。次の関数と同じ環境で実物の CLI を呼びました（ポートは今回の記録値です）。
+
+```bash
+dsh_url() {
+  env HOME="$PWD/tmp/issue18-url/home" DSH_HOME="$PWD/tmp/issue18-url/dsh-home" DEEPSEEK_API_KEY=fake-key-for-m3e-integration DEEPSEEK_BASE_URL=http://127.0.0.1:56251 SSH_CONNECTION=m3e-integration "$PWD/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/.bin/dsh" "$@"
+}
+dsh_url plugin --profile web add http://127.0.0.1:56252/v0.0.8.tgz
+dsh_url plugin --profile web list dsh-webui-m3e --depth 0 --json
+dsh_url web --no-open --host 127.0.0.1 --port 0
+```
+
+標準画面のログイン URL を開いて認証した Chromium から `/m3e/` と `/?ui=classic` を確認しました。次の操作は別端末から、上と同じ関数で 1 段階ずつ実行しています。各段階の `list dsh-webui-m3e --depth 0 --json` で版と `resolved` を読みました。
+
+```bash
+dsh_url plugin --profile web add http://127.0.0.1:56252/v0.0.10.tgz
+# 画面を確認し、Host を Ctrl+C → 同じ web コマンドで再起動して再確認
+dsh_url plugin --profile web add http://127.0.0.1:56252/v0.0.8.tgz
+# 同様に再起動の前後を確認
+cp tmp/issue18-url/base/dsh-webui-m3e-0.0.8.tgz tmp/issue18-url/same.tgz
+dsh_url plugin --profile web add http://127.0.0.1:56252/same.tgz
+cp tmp/issue18-url/next/package/dsh-webui-m3e-0.0.10.tgz tmp/issue18-url/same.tgz
+dsh_url plugin --profile web add http://127.0.0.1:56252/same.tgz
+dsh_url plugin --profile web add http://127.0.0.1:56252/redirect.tgz
+dsh_url plugin --profile web add http://127.0.0.1:56252/missing.tgz
+# 標準画面へ切り替えてから削除
+dsh_url plugin --profile web remove dsh-webui-m3e
+```
+
+サーバーは版別の URL を各 tgz へ、`same.tgz` を差し替え対象のファイルへ対応させました。`redirect.tgz` は HTTP 302 と `Location: /v0.0.10.tgz`、`missing.tgz` は 404 を返します。応答に Cache-Control・ETag は付けていません。サーバー・CLI 呼出し・画面確認の補助と、全コマンドのログは `tmp/issue18-url/` に保存しています。公開用の補助や自動試験として追加したものではありません。
+
+| 確認 | 結果 |
+|---|---|
+| 0.0.8 の URL を追加 | exit 0。list の version は 0.0.8、resolved と profile の dependencies は同じ URL。M3E の bundle 登録あり。利用者側の build は無し |
+| Host を起動 | `/m3e/` 200、標準画面 200。M3E の見出しをブラウザで確認 |
+| 別 URL の 0.0.10 へ更新 | exit 0、list は 0.0.10。再起動前は HTML のみ新版、再起動後に Host ヘッダーも 0.0.10 |
+| 前の URL の 0.0.8 へ戻す | exit 0、list は 0.0.8。再起動前は新版 Host ヘッダーが残り、再起動後に消える。標準画面も 200 |
+| 同じ URL の中身を 0.0.8 → 0.0.10 に差し替えて再追加 | exit 0、`downloaded 1`、list は 0.0.10、HTML も新版。サーバーの GET と応答 SHA-256 の変化を確認。今回の環境では古いキャッシュを使わず新しい中身を取得した |
+| 302 を返す URL を追加 | exit 0、list は 0.0.10、resolved は転送元 URL。サーバーに 302 と転送先 200 の記録。再起動後に新版 HTML・Host ヘッダーと `/m3e/` 200 を確認 |
+| 存在しない URL を追加 | exit 1、`ERR_PNPM_FETCH_404`、`GET …/missing.tgz: Not Found - 404`、`dsh: plugin command failed; diagnostics: …/pnpm.log`。既存の転送元 URL の依存・bundle 登録は残った |
+| 削除 | exit 0、list から M3E が消える。稼働中の `/m3e/` は 404、標準画面は 200 |
+
+**同じ URL が同じ版・内容を表す保証を失うため、リリースの添付ファイルを同じ名前で差し替えません。** この実測は「常に古いキャッシュが使われる」という根拠ではありません。GitHub/CDN・別の pnpm・別利用者のキャッシュ挙動は未検証です。直すときは版を上げ、別のタグ・リリース・ファイル名・URL にします。1 つのパッケージ版に対してタグ `v<版>` とリリースを 1 つずつ対応させます。
+
+GitHub の添付 URL はまだリリースが無いため未検証です。ローカルの 302 成功は GitHub 上の HTTPS・転送・取得成功を証明しません。設定・会話・別プラグインの保持は上記の file: による前回の手動確認を引き継ぎ、URL 経由の保持はリリース後に確かめます。
+
 ### 今回の検証結果
 
-受け直しでは typecheck・test・build・check:pack を再実行しました。以下の e2e と pnpm/npm の prepack の行は前回（`868487b`）時点の記録です。本体の動作を変えない今回の e2e は、利用者の指示どおり再実行していません。
+URL 配布への切り替えでも typecheck・test・build・check:pack を再実行しました。以下の e2e と pnpm/npm の prepack の行は前回（`868487b`）時点の記録です。本体の動作を変えない今回の e2e 一式は、利用者の指示どおり指示役へ引き継ぎます。URL 導入後の実 DSH の手動確認は、下記の独立した記録です。
 
 | 確かめ方 | 結果 |
 |---|---|
@@ -393,23 +444,25 @@ await llm.close()
 | JS/CSS/woff2 の 7・9・10 文字ハッシュを `unexpected` で拒否 | 再監査 N02: pack-contract.ts:14 の `[\w-]{8}` を `[\w-]{8,10}` にする | 対象試験が失敗、復元済み |
 | patch の `name:` と値の間の改行を名前不一致で拒否 | 再監査 N13: pack-contract.ts:58 の `name:[ \t]*` を `name:\s*` にする | 対象試験が失敗、復元済み |
 
-Issue の受け入れ条件は次の状態です。
+#### 受け入れ条件の判定
 
-| 項目 | 判定 |
-|---|---|
-| 1. 公開名・権限・対応版と配布検査 | 満たせない（公開権限のみ）。名前・対応版・配布物の検査・単体 28 件、前回の 46 変異と受け直しの 2 変異、偽モジュール混入によるビルド失敗は確認済み。公開アカウントへの認証確認は範囲外なので、権限は公開する人が確認する |
-| 2. クリーン環境で名前だけの導入 | 公開のあとでないと確かめられない。現在は 404。file: と `/m3e/` は確認済み |
-| 3. pnpm と Desktop の前提・環境記録 | 満たした。通常 CLI・commander・pnpm の宣言と実測環境を区別し、Node 下限の保証を撤回。Desktop は上流リンクと未検証を明記 |
-| 4. tgz からの移行・公開版の更新 | 公開のあとでないと確かめられない。ローカル tgz の版切替は成功。registry への参照切替、公開旧版→新版を追加確認する |
-| 5. 設定・他プラグイン・会話の保持 | 満たした（隔離したローカル tgz の手動確認範囲）。1 workspace・1 会話と返答・別の組込みプラグインの設定を追加／更新／復帰／削除の前後で保持。第三者プラグインと長期利用データは未検証。registry 経由でも公開後に確認する |
-| 6. 前提不足・誤プロファイル・取得失敗の案内 | 満たした。PATH 不足 127、404、無効名、打ち間違いによる別 profile 作成を再現し、確認先を記載 |
-| 7. 旧版への復帰・削除・標準画面 | 満たした（ローカル tgz）。復帰は再起動後に旧 Host コードへ戻る。削除の前後と再起動後に標準画面と同じ会話を確認し、手順を 3 言語で更新。公開された旧版への復帰は公開後に追加確認する |
+Issue の主経路は npm レジストリですが、今回は利用者の指示により GitHub Releases の代替経路を選びます。npm で満たしたという判定にはせず、同じ目的を URL で満たす準備と、その実証範囲を分けます。
 
-### 公開する人の手順
+| 項目 | npm の主経路 | GitHub Releases の代替経路 |
+|---|---|---|
+| 1. 名前・権限・対応版・配布検査 | 未充足。npm アカウントが無く、公開権限未確認。公開用の設定は維持 | 準備済み。名前・0.0.8・DSH 0.2.0-rc.2 と配布検査 28 件は確認済み。リリース作成権限と実際の公開は指示役が確認する |
+| 2. クリーン環境からビルド無しで導入 | 未充足。名前だけでは取得できない | リリース後に最終確認。ローカル HTTP と 302 の URL 追加・実 DSH の /m3e/ は成功。GitHub URL だけでソース取得・ビルド無しに導入する手順を用意 |
+| 3. pnpm・Desktop・環境の案内 | 配布先に依存しない案内は充足 | 充足。通常 CLI の PATH 上の pnpm、Node の宣言と実測環境、Desktop 未検証を維持 |
+| 4. ローカル tgz 移行・公開版同士の更新 | 未充足。registry への移行・更新は未実施 | リリース後に最終確認。別 URL の 0.0.8 → 0.0.10 → 0.0.8 は成功、利用者の version 編集不要。file: → GitHub URL と公開された互換版同士の更新は残る |
+| 5. 設定・他プラグイン・会話の保持 | registry 経由は未検証 | file: の手動確認範囲では充足。1 workspace・1 会話と返答・別の組込みプラグイン設定を保持。URL 経由の保持、第三者プラグイン、長期データはリリース後に確認 |
+| 6. 前提不足・誤 profile・取得失敗の案内 | 未公開の名前追加が 404 になることを案内 | 確認した失敗経路は充足。PATH 不足、誤 profile と別 profile 作成、URL の 404 と診断ログを案内。GitHub 側の取得成功はリリース後に確認 |
+| 7. 旧版復帰・削除・標準画面 | 公開 npm 版での確認は未実施 | ローカル URL の範囲で充足。旧 URL へ復帰して再起動すると旧 Host コード、削除後は /m3e/ 404・標準画面 200。GitHub URL でもリリース後に確認 |
 
-順番は **PR をマージ → main の先頭で下記の確認 → 公開者が npm publish → 公開後の確認 → 結果を文書へ記録**です。マージと公開は続けて行います。この作業ではマージ・認証・公開を行っていません。
+### リリースする人の手順
 
-公開者は npm のアカウント画面で公開に使うアカウントを確認し、[スコープ無しパッケージの公開手順](https://docs.npmjs.com/creating-and-publishing-unscoped-public-packages/)に沿って準備します。`npm view dsh-webui-m3e versions --json` で名前と公開済みの版を再確認し、既に名前が存在する場合は自分に公開権限があることも確認します。404 は名前が未登録であるという結果であり、権限の証明にはなりません。対話的な公開に備え、[2 要素認証の設定と公開時の確認](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)を公開者自身の環境で済ませてください。
+順番は **PR をマージ → main の先頭で下記の確認 → pnpm pack と tgz の検査 → main の確認済みコミットにタグを付けて GitHub Release と添付 tgz を公開 → リリース後の確認 → 結果を文書へ記録**です。マージとリリースは続けて行います。指示役が利用者の了承後に実行する手順であり、この作業ではマージ・タグ・リリース・push は行っていません。
+
+GitHub の対象リポジトリへリリースを作成できるアカウントと権限を実行者が確認します。この経路に npm アカウントは要りません。リリースとタグ `v<版>`、package.json の版を 1 対 1 に対応させ、添付名は `dsh-webui-m3e-<版>.tgz` にします。既存のタグ・リリース・添付は使い直さず、修正時は新しい版にします。
 
 PR をマージした後、新しく clone した main または更新済み main のルートで実行します。`git branch --show-current` が main、`git status --short` が空であることを確認し、`git rev-parse HEAD` と `git ls-remote origin refs/heads/main` のハッシュを照合します。異なる場合は公開せず、main の先頭を用意し直します。
 
@@ -445,28 +498,47 @@ export default {
 
 この場合だけ、確認の列の偽データ e2e を `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` に置き換えます。新規 clone の既定手順は管理済みの設定だけで実行できます。
 
-すべてを確認した公開者だけが、リポジトリのルートで次を実行します。この作業では実行していません。
+すべての確認後、題名は `M3E v<版>` とします。説明は `tmp/release-notes.md` に次の形で保存します。版と URL は対象の版に揃え、作者名・メール・ローカルパス・操作ログなどの個人情報は書きません。
 
-```bash
-npm publish
+```markdown
+DSH 0.2.0-rc.2 向けのビルド済み Web UI プラグインです。
+
+- ソース取得・ビルド・version の手編集は不要です。
+- 導入: `dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz`
+- 更新・旧版への復帰後は、対象プロファイルの Host を再起動してください。
+- 本物の LLM と iPhone Safari・ホーム画面の Web アプリ、Desktop での動作は未確認です。
+- 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v0.0.8/README.md
 ```
 
-続けて次節の名前だけでの追加・版確認・`/m3e/`・削除と標準画面を確認します。完了したら README 以外の次の場所へ、公開日、版、main のハッシュ、実行環境、コマンド、結果、残る未検証事項を記録します。
+次は **了承後の指示役だけ**が実行します。`read M3E_RELEASE_COMMIT` に、検査した main の先頭の完全な SHA を入力します。リリース直前にも HEAD とリモート main が同じであることを照合し、違う場合は停止して更新後の main で確認し直します。既存の `v0.0.8` が表示された場合も停止し、再利用しません。
+
+```bash
+git branch --show-current
+git status --short
+git rev-parse HEAD
+git ls-remote origin refs/heads/main
+git ls-remote --tags origin refs/tags/v0.0.8
+read M3E_RELEASE_COMMIT
+node scripts/check-pack.ts tmp/release/dsh-webui-m3e-0.0.8.tgz
+gh release create v0.0.8 tmp/release/dsh-webui-m3e-0.0.8.tgz --repo AliceSaikawa/dsh-webui-m3e --target "$M3E_RELEASE_COMMIT" --title 'M3E v0.0.8' --notes-file tmp/release-notes.md
+```
+
+`--target` にコミットを指定すると、存在しないタグをそのコミットに作る契約は [GitHub CLI の説明](https://cli.github.com/manual/gh_release_create)と実物の `gh release create --help` で確認しました。コマンドの作成動作は今回実行していません。将来の版では package.json を上げ、上の版・タグ・添付名・説明をすべて一致させます。添付するのは検査済みの pnpm の tgz であり、GitHub が自動生成する Source code の archive ではありません。
+
+続けて次節の GitHub URL だけでの追加・版確認・`/m3e/`・削除と標準画面を確認します。完了したら README 以外の次の場所へ、リリース日、版、タグ、main のハッシュ、実行環境、コマンド、結果、残る未検証事項を記録します。
 
 | 更新する場所 | 更新する内容 |
 |---|---|
-| この文書の「配布」「今回の検証結果」「受け入れ条件」「公開のあとに確かめること」 | 未公開の注意を公開済みの事実へ更新し、公開後の結果と判定を追記。2026-10-05 の 404 は過去の実測として残す |
-| `docs/dsh-compatibility.md` の「npm 配布版 0.0.8 の準備」 | 公開版の導入・更新・復帰で確認できた範囲と残件を更新 |
-| `docs/handoff.md` の「npm 配布の準備」 | 公開日・版・検証結果と次に渡すことを更新 |
+| この文書の「配布」「今回の検証結果」「受け入れ条件の判定」「リリースのあとに確かめること」 | 未リリースの注意を公開済みの事実へ更新し、GitHub URL の結果と判定を追記。npm 未公開は別の状態として残す |
+| `docs/dsh-compatibility.md` の「GitHub Releases 配布版 0.0.8 の準備」 | GitHub URL の導入・更新・復帰で確認できた範囲と残件を更新 |
+| `docs/handoff.md` の「GitHub Releases 配布の準備」 | リリース日・版・検証結果と次に渡すことを更新 |
 
-公開後に問題があれば、基本は版を上げて修正します。[npm の取り消しポリシー](https://docs.npmjs.com/policies/unpublish/)では、新規パッケージの公開から 72 時間以内でも、他の公開パッケージから依存されていないことが条件です。それ以後は、依存されていないことに加え、直近 1 週間のダウンロード数が 300 未満、所有者／管理者が 1 人という条件があります。取り消しても同じ名前と版の組合せは再利用できず、取り消し自体も戻せません。すべての版を取り消した場合は、そのパッケージの新しい版も 24 時間は公開できません。取り消せない場合の非推奨化も含め、公開者が公式の条件を確認して判断します。
+### リリースのあとに確かめること
 
-### 公開のあとに確かめること
-
-以下は公開後の実行手順であり、成功済みの記録ではありません。DSH 0.2.0-rc.2 が上記 tmp にある開発環境で、未使用の `tmp/npm-smoke/` を用意します。既に存在する場合は新しい名前を選びます。既存の利用者環境をコピーしません。
+以下はリリース後の実行手順であり、GitHub URL の成功済みの記録ではありません。DSH 0.2.0-rc.2 が上記 tmp にある開発環境で、未使用の `tmp/release-smoke/` を用意します。既に存在する場合は新しい名前を選びます。既存の利用者環境をコピーしません。
 
 ```bash
-mkdir -p tmp/npm-smoke/home tmp/npm-smoke/dsh-home
+mkdir -p tmp/release-smoke/home tmp/release-smoke/dsh-home
 ```
 
 一つ目の端末で偽 LLM を起動し、表示された loopback URL を控えます。完了後は Ctrl+C で終了します。
@@ -475,34 +547,44 @@ mkdir -p tmp/npm-smoke/home tmp/npm-smoke/dsh-home
 node --input-type=module -e 'const {startFakeLlm}=await import("./e2e-dsh/fake-llm.ts"); const llm=await startFakeLlm(); console.log(llm.url); process.on("SIGINT",async()=>{await llm.close(); process.exit(0)})'
 ```
 
-二つ目の端末で `read` にその URL を入力し、隔離した CLI を定義します。初回追加は版も file: も付けず、名前だけで行います。
+二つ目の端末で `read` にその URL を入力し、隔離した CLI を定義します。初回追加はローカル tgz を経由せず、GitHub の添付 URL だけで行います。
 
 ```bash
 read M3E_FAKE_URL
 dsh_smoke() {
-  env HOME="$PWD/tmp/npm-smoke/home" DSH_HOME="$PWD/tmp/npm-smoke/dsh-home" DEEPSEEK_API_KEY=fake-key-for-m3e-integration DEEPSEEK_BASE_URL="$M3E_FAKE_URL" SSH_CONNECTION=m3e-integration "$PWD/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/.bin/dsh" "$@"
+  env HOME="$PWD/tmp/release-smoke/home" DSH_HOME="$PWD/tmp/release-smoke/dsh-home" DEEPSEEK_API_KEY=fake-key-for-m3e-integration DEEPSEEK_BASE_URL="$M3E_FAKE_URL" SSH_CONNECTION=m3e-integration "$PWD/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/.bin/dsh" "$@"
 }
-dsh_smoke plugin --profile web add dsh-webui-m3e
+dsh_smoke plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 dsh_smoke web --no-open --host 127.0.0.1 --port 0
 ```
 
-表示された標準画面のログイン URL をブラウザで開いてから同じ origin の `/m3e/` を開きます。workspace を一つ追加し、会話を一つ作って偽 LLM の返答まで保存します。別プラグインの設定も一つ保存し、その値・workspace・会話の本文を控えます。Host を Ctrl+C で正常終了してから、次の操作を一段階ずつ行い、その都度上の web コマンドで再起動して同じ内容が残ることを確認します。
+list の `version` が 0.0.8、`resolved` が指定した GitHub URL であることを確認します。表示された標準画面のログイン URL をブラウザで開いてから同じ origin の `/m3e/` を開きます。workspace を一つ追加し、会話を一つ作って偽 LLM の返答まで保存します。別プラグインの設定も一つ保存し、その値・workspace・会話の本文を控えます。
+
+初回のリリースでも、まず削除まで確かめます。標準画面 `/?ui=classic` へ切り替え、Host を Ctrl+C で正常終了してから実行します。
 
 ```bash
-# ローカル tgz から registry への移行：手元の互換版 tgz を使う
+dsh_smoke plugin --profile web remove dsh-webui-m3e
+dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
+dsh_smoke web --no-open --host 127.0.0.1 --port 0
+```
+
+標準画面にログインして、同じ workspace・会話・設定が残ることと `/m3e/` が 404 になることを確認し、Host を Ctrl+C で終了します。続いて次の移行を 1 段階ずつ行い、その都度上の web コマンドで再起動して同じ内容を確認します。初回リリースでは file: → GitHub URL の移行までを確認し、2 版間の更新・復帰は互換版が 2 つリリースされてから行います。
+
+```bash
+# ローカル tgz から GitHub URL への移行：手元の互換版 tgz を使う
 dsh_smoke plugin --profile web add "file:$PWD/tmp/release/dsh-webui-m3e-0.0.8.tgz"
-dsh_smoke plugin --profile web add dsh-webui-m3e@0.0.8
+dsh_smoke plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 
-# 2 つ以上の互換版が公開された後、旧版と新版を入力する
+# 2 つ以上の互換版がリリースされた後、旧版と新版を入力する（先頭の v は付けない）
 read M3E_PREVIOUS_VERSION
 read M3E_NEW_VERSION
-dsh_smoke plugin --profile web add "dsh-webui-m3e@$M3E_PREVIOUS_VERSION"
-dsh_smoke plugin --profile web add "dsh-webui-m3e@$M3E_NEW_VERSION"
+dsh_smoke plugin --profile web add "https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v$M3E_PREVIOUS_VERSION/dsh-webui-m3e-$M3E_PREVIOUS_VERSION.tgz"
+dsh_smoke plugin --profile web add "https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v$M3E_NEW_VERSION/dsh-webui-m3e-$M3E_NEW_VERSION.tgz"
 dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 # 旧版へ戻す
-dsh_smoke plugin --profile web add "dsh-webui-m3e@$M3E_PREVIOUS_VERSION"
+dsh_smoke plugin --profile web add "https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v$M3E_PREVIOUS_VERSION/dsh-webui-m3e-$M3E_PREVIOUS_VERSION.tgz"
 dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 # 標準画面へ切り替えてから終了・削除
 dsh_smoke plugin --profile web remove dsh-webui-m3e
@@ -510,4 +592,26 @@ dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 dsh_smoke web --no-open --host 127.0.0.1 --port 0
 ```
 
-削除後は新しく表示された URL で標準画面にログインし、`/?ui=classic` で同じ workspace・会話・設定を確認します。第三者プラグインの依存と動作、長期利用データも別途検証してください。初回の 0.0.8 公開だけでは「公開された旧版から新版」の検証は完了しません。以前配布した別内容の 0.0.7 を、0.2.0-rc.2 の互換旧版と見なしてはいけません。
+削除後は新しく表示された URL で標準画面にログインし、`/?ui=classic` で同じ workspace・会話・設定を確認します。第三者プラグインの依存と動作、長期利用データも別途検証してください。初回の 0.0.8 リリースだけでは「公開された旧版から新版」の検証は完了しません。以前配布した別内容の 0.0.7 を、0.2.0-rc.2 の互換旧版と見なしてはいけません。
+
+### あとで npm にも出す場合
+
+**npm アカウントとパッケージの公開権限が必要です。** 現在は npm に公開していません。公開者が [npm の公開手順](https://docs.npmjs.com/creating-and-publishing-unscoped-public-packages/)と [2 要素認証](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)に沿って、自分の環境で準備します。`npm view dsh-webui-m3e versions --json` で名前・版を確認し、404 を権限の証明にはしません。
+
+npm に公開する版では、**公開前に** 3 言語 README を npm の名前による導入案内へ更新し、npm 未公開の文を外します。配布内容が変わるので新しい版に上げ、同じ版の GitHub tgz と内容を揃えます。上の main の確認列を通し、公開者がソースのルートから `npm publish` を実行します。`prepack` の build・検査は止めません。公開後は新しい隔離 HOME / DSH_HOME を用意し、上の `dsh_smoke` をその環境に向けて、次を確認します。
+
+```bash
+dsh_smoke plugin --profile web add dsh-webui-m3e
+dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
+dsh_smoke web --no-open --host 127.0.0.1 --port 0
+# /m3e/ を確認して Host を正常終了し、公開された互換版を指定して更新・復帰も確認
+read M3E_NEW_VERSION
+read M3E_PREVIOUS_VERSION
+dsh_smoke plugin --profile web add "dsh-webui-m3e@$M3E_NEW_VERSION"
+dsh_smoke plugin --profile web add "dsh-webui-m3e@$M3E_PREVIOUS_VERSION"
+dsh_smoke plugin --profile web remove dsh-webui-m3e
+```
+
+版の変数は公開済みの互換版を `read` で入力します。file:／GitHub URL から npm への移行も、同じ profile で名前と版を指定して追加し直し、各段階で Host の再起動、設定・会話保持、削除後の標準画面を確認します。成功後に development.md・dsh-compatibility.md・handoff.md の公開状況と判定を更新します。
+
+問題があれば原則として新しい版で修正します。[npm の取り消しポリシー](https://docs.npmjs.com/policies/unpublish/)では、新規公開から 72 時間以内でも他の公開パッケージから依存されていないことが条件です。それ以後は、依存無しに加え、直近 1 週間のダウンロード数が 300 未満、所有者／管理者が 1 人という条件があります。取り消しても同名同版は再利用できず、全版を取り消すと新しい版も 24 時間は公開できません。公開者が公式の条件を確認して判断します。

@@ -21,8 +21,10 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 Run this on the machine running DSH:
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
+
+M3E is not published to the npm registry, so installing by name with `add dsh-webui-m3e` is unavailable.
 
 `web` is an example: select the profile that actually serves your Web UI. A misspelled name can create a new profile without an error, so a successful installation alone does not confirm the target.
 
@@ -54,19 +56,19 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Updates, installed version, and removal
 
-Read `dependencies.dsh-webui-m3e.version` in the JSON output. The ordinary list may show only a `file:` reference.
+Read `dependencies.dsh-webui-m3e.version` in the JSON output for the installed version and `resolved` for its source.
 
 ```bash
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-To update, add the same package with an explicitly chosen, published compatible version. This example migrates to 0.0.8. Local-tgz users use the same command in the same profile, restart the Host, and check the installed version above. No manual version editing is needed.
+To update, choose a compatible version from the [release list](https://github.com/AliceSaikawa/dsh-webui-m3e/releases) and add its attached tgz URL. URLs follow `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`. This example migrates to 0.0.8. Local-tgz users use the same command in the same profile, restart the Host, and check the installed version above. No manual version editing is needed.
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e@0.0.8
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
 
-To roll back from a future release, add a verified compatible version and restart. The same command returns to 0.0.8. Do not use the previously distributed 0.0.7 as a rollback target with DSH 0.2.0-rc.2. A saved compatible tarball can also be selected:
+To roll back from a future release, choose a verified compatible version's URL from the release list, add it again, and restart the Host. The same command returns to 0.0.8. Do not use the previously distributed 0.0.7 as a rollback target with DSH 0.2.0-rc.2. A saved compatible tarball can also be selected:
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
@@ -78,7 +80,7 @@ Before removing M3E, visit `http://<host>/?ui=classic`. After removal, `/m3e/` r
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-For a download returning 404, check the package name and published version; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
+For a download returning 404, check the tag, asset filename and URL in the release list; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
 

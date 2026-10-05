@@ -19,8 +19,10 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 DSH が動いている端末で実行します。
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
+
+npm レジストリには公開していないため、名前だけの `add dsh-webui-m3e` では導入できません。
 
 `web` は例です。実際に Web 画面を動かしているプロファイルを指定してください。間違った名前でも新しいプロファイルが作られるため、追加成功だけでは接続先が正しいとは限りません。
 
@@ -52,19 +54,19 @@ Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github
 
 ## 更新・版の確認・削除
 
-入っている版は JSON の `dependencies.dsh-webui-m3e.version` で確認します。通常の一覧では `file:` の参照しか表示されない場合があります。
+入っている版は JSON の `dependencies.dsh-webui-m3e.version`、取得元は `resolved` で確認します。
 
 ```bash
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新は、対応する公開済みの版を指定して同じ名前で追加し直します。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も、同じプロファイルでこのコマンドを実行し、Host を再起動して上の一覧を確認してください。利用者による版番号の手編集は不要です。
+更新は、[リリースの一覧](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)から対応する版を選び、その添付 tgz の URL で追加し直します。URL の形は `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz` です。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も、同じプロファイルで実行し、Host を再起動して上の一覧を確認してください。利用者による版番号の手編集は不要です。
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e@0.0.8
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
 
-将来の新版から戻す場合も、確認済みの互換版を指定して追加し直し、再起動します。0.0.8 に戻す場合は同じコマンドです。以前配布した 0.0.7 と DSH 0.2.0-rc.2 の組合せは復帰先にしないでください。手元に保管した互換版の tgz に戻す形は次のとおりです。
+将来の新版から戻す場合も、リリースの一覧から確認済みの互換版の URL を選んで追加し直し、Host を再起動します。0.0.8 に戻す場合は同じコマンドです。以前配布した 0.0.7 と DSH 0.2.0-rc.2 の組合せは復帰先にしないでください。手元に保管した互換版の tgz に戻す形は次のとおりです。
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
@@ -76,7 +78,7 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-取得時に 404 ならパッケージ名と公開された版、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
+取得時に 404 ならリリースの一覧でタグ・添付ファイル名・URL、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
 
 ソースからビルドする場合は [開発・配布の手順](docs/development.md#配布)を参照してください。
 
