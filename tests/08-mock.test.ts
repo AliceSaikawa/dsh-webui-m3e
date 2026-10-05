@@ -5,6 +5,7 @@ import { extendMock, type SettingsMockRemote } from '../web/src/features/setting
 import { groupNamespaces, pageSummary, schemaFields, selectFieldState, type SettingsNamespace, type SettingField, type SettingObject } from '../web/src/features/settings/schema.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 import { mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
+import type { ProviderRemote } from '../web/src/features/settings/providers.ts'
 
 function setup(scenario?: string) {
   const ctx = createMockContext({ extensions: [{ extendMock }], scenario })
@@ -171,4 +172,19 @@ test('拒否シナリオは理由を返して値を保ち、不正な復元指�
     assert.equal(result.ok, false)
     assert.deepEqual(await namespace(normal.remote), initial)
   } finally { normal.ctx.dispose() }
+})
+
+// DSH 0.2.0-rc.2 dsh-api-settings-controller/lib/index.js:55-57 (MAX_DESCRIBE_REFS = 64, gateway/bad-request).
+test('I16 lookup limit: 偽のキーの状態の照会も 64 件を受理し 65 件を拒否する', async () => {
+  const { ctx } = setup()
+  try {
+    const credentials = (ctx.remote as unknown as ProviderRemote).credentials
+    const refs = Array.from({ length: 65 }, (_, i) => `LIMIT_${i}`)
+    const accepted = await credentials.describe(refs.slice(0, 64))
+    assert.equal(accepted.ok, true)
+    if (accepted.ok) assert.deepEqual(Object.keys(accepted.value), refs.slice(0, 64))
+    const rejected = await credentials.describe(refs)
+    assert.equal(rejected.ok, false)
+    if (!rejected.ok) assert.equal(rejected.error.code, 'gateway/bad-request')
+  } finally { ctx.dispose() }
 })
