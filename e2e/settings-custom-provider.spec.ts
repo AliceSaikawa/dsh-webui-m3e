@@ -243,7 +243,6 @@ test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの�
     const ns = (await settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-pi-ai')
     const result = await settings.mutate(ns.ns, [
       { op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' },
-      { op: 'set', path: ['providers', 'LOCAL-API', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' },
     ], ns.revision)
     if (!result.ok) throw new Error('設定できません')
   })
@@ -251,7 +250,7 @@ test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの�
   await expect(row(page)).toContainText('登録状況を確認できません')
   await expect(row(page).getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
   await row(page).getByRole('button', { name: '編集', exact: true }).click()
-  await expect(form(page)).toContainText('この画面ではキーを登録・削除できません。')
+  await expect(form(page)).toContainText('この提供元には新しいキーの参照先を設定できません。')
   await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-reopened-collision')
   const before = await writes(page)
   await button(page, '保存').click()
@@ -261,7 +260,10 @@ test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの�
   await page.evaluate(async () => {
     const settings = (window as any).__i16.remote.settings
     const ns = (await settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-pi-ai')
-    if (!(await settings.mutate(ns.ns, [{ op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'PI_AI_API_KEY' }], ns.revision)).ok) throw new Error('設定できません')
+    if (!(await settings.mutate(ns.ns, [
+      { op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'PI_AI_API_KEY' },
+      { op: 'set', path: ['providers', 'LOCAL-API', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' },
+    ], ns.revision)).ok) throw new Error('設定できません')
   })
   await expect(row(page)).toContainText('キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。')
   await row(page).getByRole('button', { name: '編集', exact: true }).click()

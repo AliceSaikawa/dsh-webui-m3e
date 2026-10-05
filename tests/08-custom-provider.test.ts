@@ -266,9 +266,10 @@ test('I16 reference recheck: 保存の再照会で新たな参照先の共有を
     store.input.input('fake-must-not-share')
     assert.equal(await store.submit(), false)
     assert.equal(store.getSnapshot().phase, 'keyFailed')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'unknown')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'unknown')
-    assert.match(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.keyUnavailableReason!, /参照名が重なります/)
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'missing')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'missing')
+    assert.match(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.keyNotice!, /参照先だけ/)
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.writable, true)
     store.dispose()
   } finally { ctx.dispose() }
 })

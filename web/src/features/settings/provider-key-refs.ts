@@ -22,7 +22,7 @@ const families: [string, string[]][] = [
   ['AWS_', ['amazon-bedrock']], ['GOOGLE_', ['google-vertex']], ['GCLOUD_', ['google-vertex']],
   ['CLOUDFLARE_', ['cloudflare-workers-ai', 'cloudflare-ai-gateway']],
 ]
-export const sharedKeyReferenceMessage = '別の提供元とキーの参照名が重なります。この画面ではキーを登録・削除できません。'
+export const sharedKeyReferenceMessage = '別の提供元とキーの参照名が重なります。この提供元には新しいキーの参照先を設定できません。'
 export const pendingKeyReferenceMessage = 'キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。'
 export interface KeyDestination { id: string; ref?: string; usedRefs?: string[] }
 const defaultRefs = (id: string): string[] => Object.hasOwn(defaults, id) ? defaults[id]! : []

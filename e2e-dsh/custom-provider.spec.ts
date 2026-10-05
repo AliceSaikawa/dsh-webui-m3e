@@ -22,7 +22,7 @@ async function instrument(page: Page) {
               const subscribe = prototype.$on, invoke = prototype.invoke
               prototype.$on = function(event: string, listener: (...args: any[]) => unknown) {
                 return subscribe.call(this, event, (...args: any[]) => {
-                  if (event === 'settings/document-updated' && w.__holdSettings) w.__heldSettings.push(() => listener(...args))
+                  if ((event === 'settings/document-updated' && w.__holdSettings) || (w.__holdProviders && event.endsWith('-updated'))) w.__heldSettings.push(() => listener(...args))
                   else return listener(...args)
                 })
               }
@@ -46,14 +46,14 @@ async function instrument(page: Page) {
 }
 const form = (page: Page) => page.locator('.custom-provider-form')
 const row = (page: Page, id: string) => page.getByRole('group', { name: id, exact: true })
-async function create(page: Page, id: string, withKey: boolean) {
+async function create(page: Page, id: string, withKey: boolean, status = withKey ? 'API キー：登録済み' : 'API キー：未登録') {
   await button(page, 'カスタムプロバイダーを追加').click()
   await page.getByLabel('プロバイダー ID', { exact: true }).fill(id)
   await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
   await page.getByLabel('モデル ID', { exact: true }).fill(`${id}-model`)
   if (withKey) await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-integration-only')
   await button(page, '保存').click(); await expect(form(page)).toBeHidden()
-  await expect(row(page, id)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未登録')
+  await expect(row(page, id)).toContainText(status)
 }
 async function snapshot(page: Page) {
   return page.evaluate(async () => {
@@ -64,6 +64,95 @@ async function snapshot(page: Page) {
     return { providers: ns.value.providers, revision: ns.revision, default: (await remote.session.modelCatalog()).value.default }
   })
 }
+
+async function namedReference(page: Page, id: string, ref?: string) {
+  const result = await page.evaluate(async ({ id, ref }) => {
+    const remote = (window as any).__customRemote
+    const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-pi-ai')
+    return remote.settings.mutate(ns.ns, [ref === undefined
+      ? { op: 'unset', path: ['providers', id, 'apiKeyEnv'] }
+      : { op: 'set', path: ['providers', id, 'apiKeyEnv'], value: ref }], ns.revision)
+  }, { id, ref })
+  expect(result.ok).toBe(true)
+}
+
+test('I16 real notification: 別ページの通知だけで編集中の保存を無効にする', async ({ page, context, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  await create(page, 'i16-notification', false)
+  const second = await context.newPage(); await instrument(second)
+  await second.goto(`${integration.host.origin}/m3e/#/settings/providers`)
+  await expect(row(second, 'i16-notification')).toBeVisible()
+  await row(page, 'i16-notification').getByRole('button', { name: '編集', exact: true }).click()
+  await page.getByLabel('表示名（任意）', { exact: true }).fill('通知前の下書き')
+  await page.evaluate(() => { (window as any).__settingsWrites = [] })
+  await namedReference(second, 'i16-notification', 'I16_NOTIFICATION_API_KEY')
+  const foreign = await snapshot(second)
+  // No save click: this assertion must depend on the update notification.
+  await expect(form(page).getByRole('alert')).toHaveText('ほかの場所で設定が変わりました。再読み込みして、変更内容を確認してください。')
+  await expect(button(page, '保存')).toBeDisabled()
+  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual([])
+  expect(await snapshot(page)).toEqual(foreign)
+  await second.close()
+})
+
+test('I16 real destinations: 追加と一覧後付けの衝突で既存の登録状態を変えない', async ({ page, context, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  await create(page, 'i16-reserved-owner', false)
+  await namedReference(page, 'i16-reserved-owner', 'I16_RESERVED_API_KEY')
+  const second = await context.newPage(); await instrument(second)
+  await second.goto(`${integration.host.origin}/m3e/#/settings/providers`)
+  await expect(row(second, 'i16-reserved-owner')).toContainText('API キー：未登録')
+  await button(page, 'カスタムプロバイダーを追加').click()
+  await page.getByLabel('プロバイダー ID', { exact: true }).fill('i16-reserved')
+  await page.getByLabel('ベース URL', { exact: true }).fill('http://localhost:12345')
+  await page.getByLabel('モデル ID', { exact: true }).fill('collision-model')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-must-not-register-owner')
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toContainText('別の提供元とキーの参照名が重なります')
+  expect((await snapshot(second)).providers['i16-reserved']).toBeUndefined()
+  await second.reload(); await expect(row(second, 'i16-reserved-owner')).toContainText('API キー：未登録')
+  await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+  await create(page, 'i16-reserved', false, '登録状況を確認できません')
+  // The colliding new row is unknown; its existing owner still has main behavior.
+  await expect(row(page, 'i16-reserved')).toContainText('登録状況を確認できません')
+  await expect(row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await expect(row(page, 'i16-reserved-owner').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
+  await namedReference(second, 'i16-reserved-owner')
+  await expect(row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
+  await row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true }).click()
+  await page.getByLabel('API キー', { exact: true }).fill('fake-list-must-not-register-owner')
+  // Keep the open entry's view old; saving must re-read the actual Host itself.
+  await page.evaluate(() => { (window as any).__holdProviders = true })
+  await namedReference(second, 'i16-reserved-owner', 'I16_RESERVED_API_KEY')
+  const foreign = await snapshot(second)
+  await button(page, '保存').click()
+  await expect(page.locator('.settings-sheet').getByRole('alert')).toContainText('参照名が重なります')
+  expect(await snapshot(second)).toEqual(foreign)
+  await second.reload(); await expect(row(second, 'i16-reserved-owner')).toContainText('API キー：未登録')
+  await expect(row(second, 'i16-reserved-owner').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
+  expect((await snapshot(second)).providers['i16-reserved'].apiKeyEnv).toBeUndefined()
+  await second.close()
+})
+
+test('I16 real case N09: 大小文字だけ違う明示参照の登録を分離する', async ({ page, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  await create(page, 'i16-case-lower', false); await create(page, 'i16-case-upper', false)
+  await namedReference(page, 'i16-case-lower', 'i16_case_api_key')
+  await namedReference(page, 'i16-case-upper', 'I16_CASE_API_KEY')
+  for (const id of ['i16-case-lower', 'i16-case-upper']) {
+    await row(page, id).getByRole('button', { name: 'API キー', exact: true }).click()
+    await page.getByLabel('API キー', { exact: true }).fill('fake-case-only')
+    await button(page, '保存').click()
+    await expect(page.locator('.settings-sheet')).toBeHidden()
+    await expect(row(page, id)).toContainText('API キー：登録済み')
+    if (id === 'i16-case-lower') await expect(row(page, 'i16-case-upper')).toContainText('API キー：未登録')
+  }
+  await row(page, 'i16-case-lower').getByRole('button', { name: 'API キー', exact: true }).click()
+  await button(page, '登録を消す').click()
+  await button(page, '登録を消す').click()
+  await expect(row(page, 'i16-case-lower')).toContainText('API キー：未登録')
+  await expect(row(page, 'i16-case-upper')).toContainText('API キー：登録済み')
+})
 
 test('I16 real lifecycle: キーあり・なしの作成と編集を再読込し未知項目と既定値を保持する', async ({ page, integration }) => {
   await instrument(page); await openM3e(page, integration.host, '/settings/providers')

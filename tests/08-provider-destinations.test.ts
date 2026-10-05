@@ -38,7 +38,7 @@ test('I16 destinations list: あと付け登録と削除は他の提供元の明
   } finally { ctx.dispose() }
 })
 
-test('I16 destinations reopen: 設定に参照名だけ残っても開き直しで共有を許さない', async () => {
+test('I16 destinations reopen: 明示済みの共有は開き直してもmainと同じく操作できる', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const remote = ctx.remote as unknown as ProviderRemote
@@ -48,11 +48,14 @@ test('I16 destinations reopen: 設定に参照名だけ残っても開き直し�
       const keys = createProviderStore(remote)
       const editor = createCustomProviderStore(remote, keys, 'local-api')
       await editor.load(); editor.input.input('fake-reopened')
-      assert.equal(await editor.submit(), false)
-      assert.match(editor.getSnapshot().errors.key!, /参照名が重なります/)
+      assert.equal(await editor.submit(), true)
+      assert.equal(editor.getSnapshot().errors.key, undefined)
       const target = keys.getSnapshot().rows.find(row => row.id === 'local-api')!
-      assert.equal((await keys.save(target, 'fake-list-retry')).ok, false)
-      assert.equal((await keys.remove(target)).ok, false)
+      assert.equal(target.status, 'registered')
+      assert.equal((await keys.save(target, 'fake-list-retry')).ok, true)
+      assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'registered')
+      assert.equal((await keys.remove(target)).ok, true)
+      assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'missing')
       editor.dispose()
     }
   } finally { ctx.dispose() }

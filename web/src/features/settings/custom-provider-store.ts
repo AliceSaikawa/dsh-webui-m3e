@@ -22,6 +22,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
   let pendingKey: string | undefined
   let saving = false
   let committed = false
+  let attachingReference = false
   let references: ProviderRow[] = []
   let changedDuringSave = false
   const listeners = new Set<() => void>()
@@ -48,6 +49,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       const taken = [...new Set([...registered.value.map(row => row.id), ...directory.value.map(row => row.provider), ...Object.keys(objectValue(namespace.value.providers) ? namespace.value.providers : {})])]
       references = providerRows(registered.value, directory.value, description.value)
       committed = false
+      attachingReference = false
       publish({ namespace, initial: structuredClone(draft), draft, editing, protocols, taken,
         writable: description.value.writable, phase: description.value.writable && protocols.length ? 'editing' : 'blocked',
         message: !description.value.writable ? 'この DSH では設定を変更できません' : !protocols.length ? 'API プロトコルの選択肢を取得できません。' : null })
@@ -68,7 +70,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const hasReference = objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
     const ref = hasReference ? profile.apiKeyEnv as string : providerRef(state.draft?.id ?? '')
     if (key && !validKeyReference(ref)) errors.key = invalidKeyReferenceMessage
-    else if (key && state.draft && keyReferenceConflict(references, state.draft.id, ref)) errors.key = state.editing
+    else if (key && (!hasReference || attachingReference) && state.draft && keyReferenceConflict(references, state.draft.id, ref)) errors.key = state.editing
       ? '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。'
       : '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
     const displayed = field ? { ...state.errors } : errors
@@ -88,6 +90,8 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const { namespace, initial, draft, editing } = state
     if (!committed) {
       target = editing ? initial.id : draft.id
+      const profile = valueAt(namespace.value, ['providers', target])
+      attachingReference = Boolean(pendingKey) && !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)
     }
     try {
       if (!committed) {
@@ -120,7 +124,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
         const row = keys.getSnapshot().rows.find(row => row.id === target && row.ref === ref)
         const value = pendingKey
         pendingKey = undefined
-        const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch }) : { ok: false, message: partialMessage }
+        const outcome = row ? await keys.save(row, value, { newReference: attachingReference, canSend: () => active && connected && generation === epoch }) : { ok: false, message: partialMessage }
         if (!active || generation !== epoch) return { ok: false, message: unknownMessage }
         if (!outcome.ok) { publish({ phase: 'keyFailed', message: partialMessage }); return { ok: false, message: partialMessage } }
       }

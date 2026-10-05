@@ -47,7 +47,7 @@ export interface ProviderState {
   customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
-export interface KeySaveOptions { canSend?(): boolean }
+export interface KeySaveOptions { canSend?(): boolean; newReference?: boolean }
 export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
 export const invalidKeyReferenceMessage = 'キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。'
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -82,7 +82,7 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
       status: native ? 'unnecessary' : 'unknown', writable: false,
     }
   })
-  return rows.map(row => row.ref && keyReferenceConflict(rows, row.id, row.ref)
+  return rows.map(row => row.custom && row.needsReference && row.ref && keyReferenceConflict(rows, row.id, row.ref)
     ? { ...row, keyUnavailableReason: sharedKeyReferenceMessage } : row)
 }
 
@@ -169,7 +169,8 @@ export function createProviderStore(remote: ProviderRemote) {
       } while (validatedVersion !== refreshVersion)
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const row = state.rows.find(item => item.id === target.id)
-      if (row?.ref && keyReferenceConflict(state.rows, row.id, row.ref)) return { ok: false, message: sharedKeyReferenceMessage }
+      const newReference = options.newReference || row?.custom && row.needsReference
+      if (newReference && row?.ref && keyReferenceConflict(state.rows, row.id, row.ref)) return { ok: false, message: sharedKeyReferenceMessage }
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
       }
@@ -179,6 +180,19 @@ export function createProviderStore(remote: ProviderRemote) {
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)
         if (!named.ok || generation !== epoch) return { ok: false, message: '参照先を設定できませんでした。提供元の設定を読み直してください。' }
         referenceWritten = true
+        // A successful reference write does not reserve its destination. Another
+        // page may have changed the settings while its response was in flight.
+        do {
+          validatedVersion = refreshVersion
+          if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
+        } while (validatedVersion !== refreshVersion)
+        const current = state.rows.find(item => item.id === target.id)
+        if (!current?.writable || current.ref !== row.ref || current.ns !== row.ns || JSON.stringify(current.path) !== JSON.stringify(row.path)) {
+          return { ok: false, message: '参照先を設定しましたが、設定が変わったためキーは保存しませんでした。提供元の設定を確認してください。' }
+        }
+        if (newReference && keyReferenceConflict(state.rows, current.id, current.ref!)) {
+          return { ok: false, message: '参照先を設定しましたが、ほかの提供元と重なったためキーは保存しませんでした。提供元の設定を確認してください。' }
+        }
       }
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
