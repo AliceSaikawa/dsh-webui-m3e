@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { allowedPackPath, validatePack } from './pack-contract.ts'
+import { allowedPackPath, parsePackEntries, validatePack } from './pack-contract.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 let tarball = process.argv[2] && resolve(process.argv[2])
@@ -21,12 +21,13 @@ if (!tarball) {
   tarball = join(destination, result[0].filename)
 }
 const names = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8', timeout: 30_000 }).trim().split('\n')
-const files = names.filter(name => !name.endsWith('/')).map(name => {
-  const path = name.replace(/^package\//, '')
+const parsed = parsePackEntries(names)
+if (parsed.errors.length) throw new Error(`Invalid release tarball:\n${parsed.errors.join('\n')}`)
+const files = parsed.entries.map(({ name, path }) => {
   // Unexpected entries are rejected by name, without reading their contents.
-  const readable = name.startsWith('package/') && allowedPackPath(path) && !/\.(?:png|woff2)$/.test(path)
+  const readable = allowedPackPath(path) && !/\.(?:png|woff2)$/.test(path)
   return {
-    path: name.startsWith('package/') ? path : name,
+    path,
     ...(readable ? { text: execFileSync('tar', ['-xOzf', tarball!, name], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 30_000 }) } : {}),
   }
 })

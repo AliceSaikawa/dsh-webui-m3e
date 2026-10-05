@@ -1,12 +1,13 @@
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { productionModuleGuard } from './scripts/production-modules.ts'
 
 export default defineConfig({
   root: 'web',
   // Served by the Host half under /m3e (src/host/index.ts MOUNT).
   base: '/m3e/',
-  plugins: [react()],
+  plugins: [react(), productionModuleGuard()],
   resolve: {
     alias: {
       // cordis-plugin-loader imports createRequire for its Node path; the
@@ -24,5 +25,13 @@ export default defineConfig({
     outDir: '../dist',
     emptyOutDir: true,
     target: 'es2022',
+    // Keep the release allowlist's name + 8-character hash contract explicit.
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash:8].js',
+        chunkFileNames: 'assets/[name]-[hash:8].js',
+        assetFileNames: 'assets/[name]-[hash:8][extname]',
+      },
+    },
   },
 })

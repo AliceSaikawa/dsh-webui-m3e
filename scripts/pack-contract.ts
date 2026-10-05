@@ -10,7 +10,19 @@ const staticFiles = new Set([...required,
   'dist/apple-touch-icon.png', 'dist/icon-192.png', 'dist/icon-512.png', 'dist/icon-maskable-512.png',
 ])
 export function allowedPackPath(path: string): boolean {
-  return staticFiles.has(path) || /^dist\/assets\/[\w-]+(?:\.[\w-]+)*\.(?:js|css|woff2)$/.test(path)
+  // Vite's explicit [name]-[hash:8] output in vite.config.ts. No source-style dots.
+  return staticFiles.has(path) || /^dist\/assets\/[\w-]+-[\w-]{8}\.(?:js|css|woff2)$/.test(path)
+}
+
+/** Validate raw tar names before removing the npm package root or reading content. */
+export function parsePackEntries(names: readonly string[]): { entries: { name: string; path: string }[]; errors: string[] } {
+  const entries: { name: string; path: string }[] = []
+  const errors: string[] = []
+  for (const name of names) {
+    if (!name.startsWith('package/')) { errors.push(`invalid archive root: ${name}`); continue }
+    if (!name.endsWith('/')) entries.push({ name, path: name.slice('package/'.length) })
+  }
+  return { entries, errors }
 }
 
 // Stable fixture IDs and test hooks, traced to main.tsx's DEV-only import,
@@ -29,7 +41,7 @@ export function validatePack(files: readonly PackFile[]): string[] {
   for (const file of files) {
     if (!allowedPackPath(file.path)) errors.push(`unexpected: ${file.path}`)
     if (file.text !== undefined) {
-      if (/(?<![\w./-])(?:\/Users\/|\/home\/)|[A-Za-z]:[\\/]+Users[\\/]+/.test(file.text)) errors.push(`absolute home path: ${file.path}`)
+      if (/(?<![\w./-])(?:\/Users\/|\/home\/)|file:\/\/\/(?:Users|home)\/|[A-Za-z]:[\\/]+Users[\\/]+/i.test(file.text)) errors.push(`absolute home path: ${file.path}`)
       if (/\.(?:js|css)$/.test(file.path) && /sourceMappingURL\s*=/.test(file.text)) errors.push(`source map reference: ${file.path}`)
       if (file.path.endsWith('.js') && mockMarkers.some(marker => file.text!.includes(marker))) errors.push(`mock code: ${file.path}`)
     }
@@ -43,7 +55,7 @@ export function validatePack(files: readonly PackFile[]): string[] {
   } catch { errors.push('invalid package.json'); return errors }
 
   if (manifest.private === true) errors.push('private package')
-  const patchNames = [...(byPath.get('cordis.patch.yml')?.text ?? '').matchAll(/^\s+name:\s*([\w@/.-]+)\s*$/gm)].map(match => match[1])
+  const patchNames = [...(byPath.get('cordis.patch.yml')?.text ?? '').matchAll(/^[ \t]+name:[ \t]*([\w@/.-]+)[ \t]*$/gm)].map(match => match[1])
   if (typeof manifest.name !== 'string' || patchNames.length !== 1 || patchNames[0] !== manifest.name) errors.push('package/patch name mismatch')
   for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
     if (manifest[field] !== undefined && (!object(manifest[field]) || Object.keys(manifest[field]).length !== 0)) errors.push(`runtime dependencies: ${field}`)
