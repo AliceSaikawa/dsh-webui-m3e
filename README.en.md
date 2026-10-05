@@ -28,7 +28,7 @@ dsh plugin --profile web add dsh-webui-m3e
 
 Only **DSH 0.2.0-rc.2** is supported, with Node.js 22 or later. The regular npm-installed DSH CLI uses **pnpm on PATH** (checked on macOS 27.2, Node.js 26.7.0, pnpm 11.17.0). You do not need M3E's source, a local build, or its development dependencies.
 
-Restart that profile's Host after adding the plugin. Sign in through the standard interface (`http://<host>/?ui=classic`), then open `http://<host>/m3e/`. Application without a restart remains unverified, so these instructions include a restart.
+After adding the plugin, sign in through the standard interface (`http://<host>/?ui=classic`), then open `http://<host>/m3e/`. In the isolated regular CLI environment, adding M3E when absent took effect without restarting the Host. Updates and rollbacks changed the UI files first while the Host code stayed on the previous version until restart, so always restart that profile's Host after an update or rollback.
 
 Desktop has an [upstream bundled-pnpm path](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime). Desktop has not been verified for this release in this environment; the regular CLI results do not establish Desktop support.
 
@@ -68,13 +68,13 @@ To roll back from a future release, add a verified compatible version and restar
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-Before removing M3E, visit `http://<host>/?ui=classic`. Remove the package, restart the Host, and return to that standard interface:
+Before removing M3E, visit `http://<host>/?ui=classic`. That standard interface remains available after removal. In the checked environment, removal took effect without a restart and `/m3e/` returned 404. The standard interface and the saved conversation also remained available after restarting:
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-Local tarball version switching and removal are verified. Registry migration, updates and rollback, and preservation of settings, other plugins and conversations across those operations still require verification. For 404, check publication and version; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
+Adding, updating, rolling back and removing local tarballs were checked manually in isolation: one workspace, one conversation and another built-in plugin's shell setting were preserved. There is no automated test for this lifecycle. Registry operations, third-party plugins and existing long-term user data remain unverified. For 404, check publication and version; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
 

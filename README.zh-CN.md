@@ -28,7 +28,7 @@ dsh plugin --profile web add dsh-webui-m3e
 
 仅支持 **DSH 0.2.0-rc.2**，运行环境要求 Node.js 22 或更高版本。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**（验证环境：macOS 27.2、Node.js 26.7.0、pnpm 11.17.0）。无需获取 M3E 源码、手动构建或安装开发依赖。
 
-添加后，请重启该配置档案的 Host。先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。无需重启即可生效的范围尚未验证，因此此流程包含重启。
+添加后，先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。在隔离的普通 CLI 环境中，从未安装状态添加 M3E 无需重启 Host 即可生效。更新和回退时，界面文件先发生变化，Host 代码在重启前仍是原来的版本，因此更新或回退后必须重启该配置档案的 Host。
 
 Desktop 有[上游关于内置 pnpm 的说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)。本版本尚未在此环境中验证 Desktop，普通 CLI 的验证结果不代表 Desktop 已验证。
 
@@ -68,13 +68,13 @@ dsh plugin --profile web add dsh-webui-m3e@0.0.8
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-卸载前，请打开 `http://<host>/?ui=classic`。卸载后重启 Host，再回到该标准界面：
+卸载前，请打开 `http://<host>/?ui=classic`，卸载后仍可使用该标准界面。在验证环境中，卸载无需重启即可生效，`/m3e/` 返回 404。重启后也确认了标准界面和已保存的会话仍可访问：
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-已验证本地 tgz 的版本切换和卸载。通过 registry 迁移、更新与回退，以及操作前后保留设置、其他插件和会话数据，仍需验证。遇到 404 请检查发布状态和版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
+已在隔离环境中手动验证本地 tgz 的添加、更新、回退和卸载：一个工作区、一段会话以及另一个内置插件的 Shell 设置均得到保留。这一完整流程没有自动化测试。通过 registry 操作、第三方插件和长期使用的既有数据仍未验证。遇到 404 请检查发布状态和版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
 
 从源码构建请参阅[开发与分发指南](docs/development.md#配布)（日文）。
 

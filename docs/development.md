@@ -59,7 +59,7 @@ pnpm exec playwright test -c tmp/e2e-alt-port.config.ts
 |---|---|
 | `M3E_DSH_VERSION` | 試す DSH の版。省略時は `src/shared/dsh-compat.ts` の対応版 |
 | `M3E_DSH_DIR` | 入れ済みの DSH のディレクトリ（`node_modules/.bin/dsh` を含む場所） |
-| `M3E_SKIP_BUILD=1` | 同じコードを直前にビルドした場合に限り、ビルドを省く指定。pack は行います |
+| `M3E_SKIP_BUILD=1` | 既存の明示的 build だけを省きます。pack と、その prepack の build・検査は必ず行います |
 | `M3E_CHROMIUM_PATH` | Chromium の実行ファイル。偽データ e2e と実 DSH の両方で使えます |
 
 環境変数は `env M3E_DSH_VERSION=… pnpm exec …` の形で渡します。試験用 Host の `DEEPSEEK_BASE_URL`、架空の API キー、`SSH_CONNECTION` は `e2e-dsh/dsh-host.ts` が設定します。
@@ -98,7 +98,7 @@ DSH に入れる手順は README の「Quick Start」にあります。
 
 公開名は `dsh-webui-m3e`、準備中の版は **0.0.8**、対応する DSH は **0.2.0-rc.2 のみ**です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開・タグ・GitHub Releases・CI の追加は今回行っていません。
 
-**まだ公開準備の完了ではありません。** 配布判定の単体試験と `e2e-dsh/dsh-host.ts` の補助処理を含むパッチが保護フックに拒否され、適用していません。追加試験の変異検証、稼働中の追加・更新・削除と会話の保持、削除後の標準画面の表示確認を完了してから公開してください。引き継ぎは作業環境の `tmp/handoff-issue18-tests.md` にあります。公開権限・2 要素認証も公開する人の環境で確認が必要です。
+配布判定の単体試験 16 件と各試験の変異検証を追加し、稼働中の追加・更新・旧版復帰・削除とデータ保持を隔離環境で手動確認しました。`e2e-dsh/dsh-host.ts` の単独パッチと、代替の `e2e-dsh/plugin-cli.ts` の追加は、それぞれ 1 回試して保護フックに拒否されました。同じ変更を別手段で再試行していません。利用者の指定した代替手順に従い、導入ライフサイクルの自動の試験は無いまま、下記の手動結果を残しています。公開権限・2 要素認証は公開する人の環境で確認が必要です。
 
 ### ソースからのビルドと配布物の検査
 
@@ -114,15 +114,15 @@ node scripts/check-pack.ts tmp/release/dsh-webui-m3e-0.0.8.tgz
 
 Node.js・pnpm・npm と `tar` が必要です。開発では TypeScript ファイルを Node で直接実行するため、その実行に対応した Node を使います（今回の実行版は 26.7.0）。配布する JavaScript の最低 Node は従来どおり 22 です。最低版での追加検証はしていません。
 
-`prepack` が build → check:pack の順に実行します。`pnpm pack` と `npm pack` の両方で実際に発火を確認します。`npm publish` も同じ prepack を使うことは [npm の lifecycle の説明](https://docs.npmjs.com/cli/v11/using-npm/scripts/#life-cycle-operation-order)に基づきます。公開コマンド自体は実行していません。公開はソースのルートから行い、`--ignore-scripts` でこの仕組みを無効化しないでください。作成済み tgz をそのまま publish する経路には、再ビルドの保証はありません。
+`prepack` が build → check:pack の順に実行します。`pnpm pack` と `npm pack` の両方で実際に発火を確認しました。`npm publish` も同じ prepack を使うことは [npm の lifecycle の説明](https://docs.npmjs.com/cli/v11/using-npm/scripts/#life-cycle-operation-order)に基づきます。公開コマンド自体は実行していません。公開はソースのルートから行い、`--ignore-scripts` でこの仕組みを無効化しないでください。作成済み tgz をそのまま publish する経路には、再ビルドの保証はありません。
 
 `check:pack` は実際に `npm pack --ignore-scripts --json` で `tmp/pack-check/run-*/` に tgz を作り、tar の一覧と許可したテキストの内容を調べます。内側だけ scripts を止めて prepack の再帰を避けています。引数で既存 tgz を渡せば、pnpm が作った実物にも同じ検査を行えます。判定は副作用のない `scripts/pack-contract.ts` の `validatePack` です。外側の pack は必ずビルドし、内側の check 単独は現在のビルド成果物を検査します。
 
 検査対象は、package.json、Host/client の JS、HTML、JS/CSS assets、patch、LICENSE、3 言語 README の存在です。配布先の main/exports、package と patch の名前、bundle 宣言、実行時依存が空であること、利用者側の preinstall/install/postinstall/prepare が無いことも調べます。許可するファイルの一覧にないソース・試験・docs・tmp・設定・マップなどは拒否します。JS/CSS の sourceMappingURL と、配布テキストの利用者ホームの絶対パスも拒否します。
 
-偽データは `web/src/main.tsx:12-13` の DEV 分岐からのみ読み、`web/src/dsh/mock/index.ts` が feature の mock を登録します。検査は `readme-review`、`approval-sheet`、`__m3eTest`、`createMockContext`、`mock/open-failed`、`/mock/` を成果物 JS の目印とします。本番のエラー案内にもある `?mock` という文字だけは拒否しません。Vite と build-plugin はソースマップを有効にしておらず、実際の 19 ファイルにもマップはありません。既存試験には配布 tgz の検査が無かったため、専用の単体試験が必要です（現在は上記の拒否で未追加）。
+偽データは `web/src/main.tsx:12-13` の DEV 分岐からのみ読み、`web/src/dsh/mock/index.ts` が feature の mock を登録します。検査は `readme-review`、`approval-sheet`、`__m3eTest`、`createMockContext`、`mock/open-failed`、`/mock/` を成果物 JS の目印とします。本番のエラー案内にもある `?mock` という文字だけは拒否しません。Vite と build-plugin はソースマップを有効にしておらず、実際の 19 ファイルにもマップはありません。`tests/18-pack.test.ts` の 16 件が正常系と具体的なエラー文字列を確認します。通常の `pnpm test` に含まれます。
 
-`e2e-dsh` の明示的 build と prepack の build が重なる状態です。既存の試験はそのまま通りますが、二重ビルドの解消パッチは未適用です。`M3E_SKIP_BUILD=1` を使っても prepack のビルドは省かれません。
+`e2e-dsh` の明示的 build と prepack の build が重なる状態です。解消パッチが拒否されたため、利用者の指定どおり二重ビルドを残しました。結果は変わらず、実行時間だけが増えます。`M3E_SKIP_BUILD=1` は既存の明示的 build を省く指定で、prepack のビルドと検査は省かれません。
 
 ### 版の上げ方
 
@@ -164,7 +164,7 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 | `dsh-plugin-manager/lib/types/operations.d.ts:13-26` | 実行コマンド・引数・環境を渡せる型。既定は PATH の pnpm |
 | 同 `operations.js:43-72,246-275,325-331,444-536` | bundle の追加・削除、profile cwd、同梱コードの書換えではなく profile の依存を管理 |
 | `dsh-app-boot/lib/index.js:524-587` | profile 名の検査、テンプレート、新規 profile の初期化 |
-| `dsh-hmr/lib/index.js:353-376` | manifest は bundle の名前の列が変わらないと refresh を省く。版だけの更新を再起動不要と案内できない |
+| `dsh-hmr/lib/index.js:353-376` | manifest は bundle の名前の列が変わらないと refresh を省く。手動確認でも、版だけの更新・復帰では Host コードの反映に再起動が必要だった |
 
 [上流 CLI reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md#plugin-management)の PATH 上の pnpm・引数転送は実物と一致します。ただし master の「update で bundle 宣言を得た依存も有効になる」という説明と、実物の reconcile が既存の beforeDeps を skip する点は一致しません。M3E は最初から bundle 宣言を持ちます。[配布ガイド](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md)の省略形 `dsh plugin add` には実物で必須の `--profile` を補います。Issue の 0.1.5 の記述は今回 0.2.0-rc.2 に読み替えています。Desktop の同梱経路は[上流の説明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)への参照だけで、実物は未検証です。
 
@@ -172,25 +172,88 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 
 隔離 CLI で、home の cordis.patch.yml に別の組込みプラグイン `time-context` の `timeZone: Asia/Tokyo`、profile の cordis.patch.yml に確認用内容、profile の package.json に無関係な独自フィールドを置きました。追加 → 新版 tgz への入れ直し → 削除の各直後に、両 patch の完全一致と独自フィールドの保持を確認しました。これはファイル保持の確認で、当該設定を使う Host の実行や別の第三者プラグインの動作確認ではありません。
 
-全体 e2e は、workspace と会話の作成、読み直し、Host 再起動後の履歴と送信を確認します。ただし同じ会話を持つ環境で M3E の追加・更新・削除を通す試験は未追加です。削除後に標準画面へ戻れること、初回追加で再起動が必要か、更新時に新しいコードが稼働中 Host に反映されるかも未検証です。README は安全側の手順として再起動を案内し、その根拠の限界を明記しています。
+追加の手動確認では、既存の `startDsh` と偽 LLM を使い、新しい HOME と DSH_HOME（`tmp/dsh-integration/run-1791174147190/` 以下）で Host を loopback 起動しました。画面から workspace `home`、会話「Issue18 データ保持の確認」と偽 LLM の返答を作り、別の組込みプラグイン `@deepseek-ai/dsh-bash-sandbox` の `timeoutMs` を 61000 に変更して保存・再読み込みしました。利用者の環境は使っていません。
+
+0.0.8 の実 tgz を基に、`tmp/issue18-lifecycle/next/package/` に版だけ 0.0.9 と HTML の目印を付けたコピー、`next10/package/` に版 0.0.10 と HTML の目印、Host の応答ヘッダー `x-issue18-host-version: 0.0.10` を付けたコピーを作りました。コピー内で `npm pack --ignore-scripts` を行い、リポジトリの版は 0.0.8 のままです。HTML の変化だけでは Host コードの更新を証明できないため、判定には後者のヘッダーを使いました。
+
+| 操作（Host を動かしたまま実行） | 再起動前 | 再起動後 |
+|---|---|---|
+| 新版の tgz を `add file:` で再追加 | `/m3e/` 200、HTML は新版、Host の識別ヘッダーは無し（旧コード） | 200、HTML・Host のヘッダーとも新版 |
+| 元の 0.0.8 tgz を再追加 | 200、HTML は元に戻るが、新版の Host ヘッダーが残る | 200、新版ヘッダーが消え、元の Host コードへ戻る |
+| `remove dsh-webui-m3e` | `/m3e/` 404、標準画面 200。標準画面で同じ会話と返答を表示 | 404、標準画面 200。同じ会話と返答を表示 |
+| 削除して再起動した未導入状態から新版 tgz を追加 | 200、新版 HTML と Host ヘッダー。会話と設定を表示 | 200、同じ内容を表示 |
+
+全段階で標準画面の HTTP 200 を確認しました。更新・復帰の前後と再起動後に同じ会話の本文・返答を表示でき、シェルの待機時間 61000 も保持しました。削除中は profile の patch に同じ値が残り、再追加後も設定画面で 61000 を確認しています。workspace も標準画面の一覧と M3E に残りました。**この環境では追加・削除は再起動なしで反映され、更新・旧版復帰は Host コードを切り替えるため再起動が必要でした。** 判定記録は `tmp/issue18-lifecycle/evidence.json`、削除後の標準画面は `removed-classic.png` です。手動操作中のセレクター不一致と URL の `#` 重複は修正して再確認し、失敗した操作を成功には数えていません。
+
+この導入ライフサイクルの自動の試験はありません。第三者プラグイン、長期利用の既存データ、本物の LLM、Desktop は未検証です。公開後は registry 経由でも下の手順を実行します。
+
+手動確認で使うコマンドの形は次のとおりです。既存補助を Node REPL で起動し、表示された隔離 HOME を別端末の `read` に入力します（全体 e2e とは同時に動かさないでください。全体 e2e は古い `run-*` を片付けます）。
+
+```bash
+node --experimental-repl-await
+```
+
+```js
+var { startFakeLlm } = await import('./e2e-dsh/fake-llm.ts')
+var { startDsh } = await import('./e2e-dsh/dsh-host.ts')
+var llm = await startFakeLlm()
+var host = await startDsh(llm.url)
+console.log(host.workspace)
+var { chromium, expect } = await import('@playwright/test')
+var { openM3e } = await import('./e2e-dsh/fixtures.ts')
+var browser = await chromium.launch({ headless: false })
+var page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+await openM3e(page, host)
+```
+
+画面から上記の workspace・会話・設定を作ります。次は実際に使ったコピーのパスです。再実行時は同じ構成の作業用コピーを用意してください。
+
+```bash
+read M3E_TEST_HOME
+dsh_lifecycle() {
+  env HOME="$M3E_TEST_HOME" DSH_HOME="$M3E_TEST_HOME/../dsh-home" "$PWD/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/.bin/dsh" "$@"
+}
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/next10/package/dsh-webui-m3e-0.0.10.tgz"
+dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
+# 画面とヘッダーを確認し、REPL の await host.restart() 後にも確認
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/dsh-webui-m3e-0.0.8.tgz"
+dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
+# 前後を確認。削除前には標準画面 /?ui=classic を開く
+dsh_lifecycle plugin --profile web remove dsh-webui-m3e
+dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
+# 削除後と再起動後を確認してから、未導入状態へ再追加
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/next10/package/dsh-webui-m3e-0.0.10.tgz"
+```
+
+REPL で HTTP の結果を確認する例です。標準画面は削除前後に実際に開き、workspace と会話を選んで本文を確かめます。再起動は各段階の確認後に `await host.restart()`、認証と M3E の再表示は `await openM3e(page, host)` で行います。
+
+```js
+var response = await page.request.get(host.origin + '/m3e/')
+console.log(response.status(), response.headers()['x-issue18-host-version'] ?? null)
+await page.goto(host.origin + '/?ui=classic')
+// すべて確認した後、既存補助の終了処理を待つ
+await browser.close()
+await host.stop()
+await llm.close()
+```
 
 ### 今回の検証結果
 
 | 確かめ方 | 結果 |
 |---|---|
 | `pnpm typecheck` | 成功 |
-| `pnpm test` | 1,011 件成功、skip なし。新規の配布検査の単体試験は未追加 |
+| `pnpm test` | 1,027 件成功、skip なし。配布検査の新規 16 件を含む |
 | `pnpm build` | 成功。既存のチャンクサイズ警告は残る |
-| `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` | 偽データ 159 件成功（約 4.4 分）、skip なし |
-| `env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000` を 2 回 | 各 34 件が想定どおり。各回とも通常成功 33 件＋既知の差の期待失敗 1 件、予期しない失敗・skip なし（約 2.4 分／2.1 分） |
+| `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` | 偽データ 159 件成功（約 4.3 分）、skip なし |
+| `env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000` を 2 回 | 各 34 件が想定どおり。各回とも通常成功 33 件＋既知の差の期待失敗 1 件、予期しない失敗・skip なし（約 2.1 分／2.0 分） |
 | `pnpm run check:pack`、pnpm と npm の実 tgz に `node scripts/check-pack.ts <tgz>` | 19 ファイルで成功 |
 | `pnpm pack` と `npm pack` | 両方 prepack の build → check を実行。npm では `lib/index.js` を一時的な古い印に置き換えても、tgz には再ビルド済みのコードが入ることを確認 |
 | `npm pack` の tgz を隔離 DSH に file: で追加 | exit 0、追加されたパッケージは M3E 1 個。利用側のビルドは走らない |
 | 検査スクリプト 2 ファイルへの追加の TypeScript 検査 | 成功（既存の typecheck の対象外なので個別に確認） |
 
-実 DSH の結果は `tmp/issue18-cli/real-run-1.json` と `real-run-2.json` に保存しています。`e2e-dsh` の成功は file: 導入後の `/m3e/` と通信の根拠です。npm レジストリの名前だけの成功や、導入ライフサイクルのデータ保持まで含めません。
+実 DSH の初回作業の結果は `tmp/issue18-cli/real-run-1.json` と `real-run-2.json`、今回の追加確認の結果は `tmp/issue18-lifecycle/real-run-1.json` と `real-run-2.json` に保存しています。`e2e-dsh` の成功は file: 導入後の `/m3e/` と通信の根拠です。npm レジストリの名前だけの成功や、導入ライフサイクルのデータ保持まで含めません。後者は上記の手動確認と区別しています。
 
-次は **tmp 内の実 tgz を壊して配布検査を直接実行した結果**です。すべて exit 1 で該当する理由を表示しました。これは追加する予定だった単体試験の変異検証の代わりには数えません。その試験群は拒否されて未追加なので、試験 1 件ずつの本体変異・失敗・復元の表は未完成です。
+次は初回作業で **tmp 内の実 tgz を壊して配布検査を直接実行した結果**です。すべて exit 1 で該当する理由を表示しました。これとは別に、追加した単体試験ごとの本体変異も下表のとおり確認しました。
 
 | 壊したコピーの場所・内容 | 検出結果 |
 |---|---|
@@ -207,21 +270,44 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 
 破損コピーと結果は `tmp/issue18-cli/mutant-*/` に残しました。本体への破損変更は残していません。
 
+`tests/18-pack.test.ts` の 16 件について、1 件ずつ `scripts/pack-contract.ts` の該当判定を一時的に外し、`node --experimental-strip-types --test --test-name-pattern='<対象試験名>' tests/18-pack.test.ts` が **AssertionError、exit 1** になることを確認しました。各回に本体を復元し、最後に元の内容との完全一致と 16 件すべての成功を確認しています。判定を外したのに成功する試験はありませんでした。
+
+| 試験 | 一時的に壊した判定（pack-contract.ts の行） | 結果 |
+|---|---|---|
+| 正常な配布物と公開者側 prepack を許可 | 13: 必須ファイルを許可する分岐を無効化 | 落ちた・復元済み |
+| 必須ファイル・3 言語 README | 25: 必須ファイルの欠落検査を外す | 落ちた・復元済み |
+| JS と CSS assets | 27: assets の存在検査を外す | 落ちた・復元済み |
+| 開発用ファイル・設定・マップ・不正パス | 30: 許可一覧の検査を外す | 落ちた・復元済み |
+| sourceMappingURL | 33: マップ参照検査を外す | 落ちた・復元済み |
+| 偽データの目印 | 34: mock 検査を外す | 落ちた・復元済み |
+| 利用者の絶対パス | 32: ホームパス検査を外す | 落ちた・復元済み |
+| 重複 | 37: 重複検査を外す | 落ちた・復元済み |
+| 不正な manifest | 43: parse エラーの記録を外す | 落ちた・復元済み |
+| private | 45: private 検査を外す | 落ちた・復元済み |
+| package と patch の名前 | 47: 名前の照合を外す | 落ちた・復元済み |
+| 実行時の依存 | 49: 依存検査を外す | 落ちた・復元済み |
+| 利用者側 lifecycle | 52: lifecycle 検査を外す | 落ちた・復元済み |
+| main | 56: main の参照先検査を外す | 落ちた・復元済み |
+| exports | 61: exports の参照先検査を外す | 落ちた・復元済み |
+| bundle の patch 宣言 | 64: bundle 宣言検査を外す | 落ちた・復元済み |
+
+結果と各回のログは `tmp/issue18-mutations/report.json` と `1.txt`〜`16.txt` にあります。単体試験だけのパッチは通りました。Host 補助の単独パッチは `M3E_SKIP_BUILD` を含む環境変数参照行、代替補助は環境変数を展開する行が保護対象文字列に見えた可能性があります。フックは理由を「protected path or sensitive filename pattern」としか示さず、原因文字列は特定できていません。変異確認の最初の長いシェル呼び出しも形式を理由に拒否されましたが、共通の決まりで許可されたコマンド形式の修正だけを行い、tmp の作業スクリプトを直接実行しました。
+
 Issue の受け入れ条件は次の状態です。
 
 | 項目 | 判定 |
 |---|---|
-| 1. 公開名・権限・対応版と配布検査 | 満たせない（この実行時点）。名前・対応版・実 tgz の検査は確認済みだが、公開権限は未確認で、単体試験の追加も拒否された |
+| 1. 公開名・権限・対応版と配布検査 | 満たせない（公開権限のみ）。名前・対応版・配布物の検査・単体 16 件と変異検証は完了。公開アカウントへの認証確認は範囲外なので、権限は公開する人が確認する |
 | 2. クリーン環境で名前だけの導入 | 公開のあとでないと確かめられない。現在は 404。file: と `/m3e/` は確認済み |
 | 3. pnpm と Desktop の前提・環境記録 | 満たした。通常 CLI の実物と環境を記録し、Desktop は上流リンクと未検証を明記 |
 | 4. tgz からの移行・公開版の更新 | 公開のあとでないと確かめられない。ローカル tgz の版切替は成功。registry への参照切替、公開旧版→新版を追加確認する |
-| 5. 設定・他プラグイン・会話の保持 | 満たせない（この実行時点）。CLI 前後の patch と無関係フィールドは保持したが、同じ会話を持つ導入ライフサイクルの検証は未完了 |
+| 5. 設定・他プラグイン・会話の保持 | 満たした（隔離したローカル tgz の手動確認範囲）。1 workspace・1 会話と返答・別の組込みプラグインの設定を追加／更新／復帰／削除の前後で保持。第三者プラグインと長期利用データは未検証。registry 経由でも公開後に確認する |
 | 6. 前提不足・誤プロファイル・取得失敗の案内 | 満たした。PATH 不足 127、404、無効名、打ち間違いによる別 profile 作成を再現し、確認先を記載 |
-| 7. 旧版への復帰・削除・標準画面 | 満たせない（この実行時点）。ローカル tgz の参照を戻す操作と削除は確認。削除後の標準画面の表示・会話の保持は未検証 |
+| 7. 旧版への復帰・削除・標準画面 | 満たした（ローカル tgz）。復帰は再起動後に旧 Host コードへ戻る。削除の前後と再起動後に標準画面と同じ会話を確認し、手順を 3 言語で更新。公開された旧版への復帰は公開後に追加確認する |
 
 ### 公開する人の手順
 
-まず上記の未完了の単体・変異・ライフサイクル試験を仕上げ、結果をこの文書へ追記してください。公開名が未登録だったことは公開権限の証明にはなりません。アカウント、名前を取得できること、アクセス権、2 要素認証は公開する人が自分の環境で確認します。ここではログイン・認証確認も実行していません。
+公開名が未登録だったことは公開権限の証明にはなりません。アカウント、名前を取得できること、アクセス権、2 要素認証は公開する人が自分の環境で確認します。ここではログイン・認証確認も実行していません。上記の手動確認範囲と残る未検証事項を確認し、次の検査を済ませてから公開します。
 
 ```bash
 pnpm install --frozen-lockfile

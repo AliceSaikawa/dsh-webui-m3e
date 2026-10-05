@@ -26,7 +26,7 @@ dsh plugin --profile web add dsh-webui-m3e
 
 対応版は **DSH 0.2.0-rc.2 のみ**、実行環境は Node.js 22 以上です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います（確認環境：macOS 27.2、Node.js 26.7.0、pnpm 11.17.0）。M3E のソース取得・ビルド・開発依存の導入は不要です。
 
-追加後は、そのプロファイルの Host を再起動してください。いつもの標準画面（`http://<host>/?ui=classic`）でログインしてから、`http://<host>/m3e/` を開きます。再起動せずに反映される範囲は未検証なので、再起動を含む手順にしています。
+追加後、いつもの標準画面（`http://<host>/?ui=classic`）でログインしてから、`http://<host>/m3e/` を開きます。隔離した通常 CLI 環境では、未導入状態からの追加は Host の再起動なしで反映されました。更新・旧版への復帰では画面のファイルだけが先に変わり、Host のコードは再起動まで旧版のままだったため、必ずそのプロファイルの Host を再起動してください。
 
 Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)があります。Desktop はこの版・この環境では確かめていません。通常 CLI の確認結果と区別してください。
 
@@ -66,13 +66,13 @@ dsh plugin --profile web add dsh-webui-m3e@0.0.8
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-削除する前に `http://<host>/?ui=classic` を開きます。削除後、Host を再起動して同じ標準画面へ戻ります。
+削除する前に `http://<host>/?ui=classic` を開きます。削除後も同じ標準画面を使えます。確認環境では再起動なしで削除が反映され、`/m3e/` は 404 になりました。再起動後にも標準画面と保存済みの会話を確認しています。
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-ローカル tgz の版の切替・削除は確認済みです。レジストリからの移行・更新・復帰と、操作前後の設定・ほかのプラグイン・会話の保持は、まだ検証が残っています。404 なら公開状況と版、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
+隔離環境でローカル tgz の追加・更新・復帰・削除を手動で確認し、1 件のワークスペースと会話、別の組込みプラグインのシェル設定が保持されました。この一連の操作の自動試験はありません。レジストリ経由の操作、第三者プラグイン、既存の長期利用データは未検証です。404 なら公開状況と版、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
 
 ソースからビルドする場合は [開発・配布の手順](docs/development.md#配布)を参照してください。
 
