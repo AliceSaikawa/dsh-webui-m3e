@@ -58,6 +58,9 @@ test('I16 R3 post-reference race: 参照の応答待ちに他の所有者が増�
     const remote = ctx.remote as unknown as ProviderRemote
     await put(remote, { 'race-ref': profile })
     const keys = createProviderStore(remote); await keys.load()
+    let writes = 0
+    const set = remote.credentials.set
+    remote.credentials.set = async (...args) => { writes++; return set(...args) }
     let started!: () => void, release!: () => void
     const observed = new Promise<void>(resolve => { started = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
@@ -69,6 +72,7 @@ test('I16 R3 post-reference race: 参照の応答待ちに他の所有者が増�
     await put(remote, { owner: { ...profile, apiKeyEnv: 'RACE_REF_API_KEY' } })
     release()
     assert.equal((await pending).ok, false)
+    assert.equal(writes, 0)
     await keys.load()
     assert.equal(row(keys, 'owner').status, 'missing')
     assert.equal(row(keys, 'race-ref').status, 'missing')
@@ -113,6 +117,42 @@ test('I16 R3 batches: 64件に分け失敗した回だけを不明にする', as
     assert.deepEqual(answer.REF_0, { configured: true, writable: true })
     assert.equal(answer.REF_64, undefined)
     assert.deepEqual(answer.REF_129, { configured: true, writable: true })
+  }
+})
+
+test('I16 R3 lookup limit: 偽の照会も64件を受理し65件を拒否する', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = ctx.remote as unknown as ProviderRemote
+    const refs = Array.from({ length: 65 }, (_, i) => `LIMIT_${i}`)
+    assert.equal((await remote.credentials.describe(refs.slice(0, 64))).ok, true)
+    assert.equal((await remote.credentials.describe(refs)).ok, false)
+  } finally { ctx.dispose() }
+})
+
+test('I16 R3 partial lookup: 失敗した照会の行だけを不明にして既存の操作を保つ', async () => {
+  for (const mode of ['reject', 'throw']) {
+    const ctx = createMockContext({ extensions: [{ extendMock }] })
+    try {
+      const remote = ctx.remote as unknown as ProviderRemote
+      await put(remote, Object.fromEntries(Array.from({ length: 70 }, (_, i) => [`many-${i}`, profile])))
+      const describe = remote.credentials.describe
+      remote.credentials.describe = async refs => {
+        if (refs.includes('MANY_69_API_KEY')) {
+          if (mode === 'throw') throw new Error('offline')
+          return { ok: false, error: { code: 'unavailable', message: '', details: {} } }
+        }
+        return describe(refs)
+      }
+      const keys = createProviderStore(remote); await keys.load()
+      assert.equal(row(keys, 'deepseek').status, 'registered')
+      assert.equal(row(keys, 'many-69').status, 'unknown')
+      assert.equal(row(keys, 'many-69').writable, false)
+      assert.match(keys.getSnapshot().error!, /一部/)
+      assert.equal((await keys.save(row(keys, 'cloud'), 'fake-partial')).ok, true)
+      assert.equal((await keys.remove(row(keys, 'cloud'))).ok, true)
+      assert.equal((await keys.save(row(keys, 'many-69'), 'fake-blocked')).ok, false)
+    } finally { ctx.dispose() }
   }
 })
 

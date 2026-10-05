@@ -2,6 +2,7 @@ import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
+import { describeKeyBatches } from './provider-key-info.ts'
 import { derivedKeyRef, usedKeyReferences, keyReferenceConflict, sharedKeyReferenceMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
@@ -114,9 +115,8 @@ export function createProviderStore(remote: ProviderRemote) {
       if (request !== sequence || generation !== epoch) return false
       const rows = providerRows(registered.value, directory.value, settings.value, accountAvailable)
       const refs = [...new Set(rows.flatMap(row => row.ref && validKeyReference(row.ref) ? [row.ref] : []))]
-      const answer = refs.length ? await remote.credentials.describe(refs) : { ok: true as const, value: {} as Record<string, unknown> }
+      const info = await describeKeyBatches(refs, batch => remote.credentials.describe(batch))
       if (request !== sequence || generation !== epoch) return false
-      const info = answer.ok ? answer.value : {}
       const resolved = rows.map(row => {
         if (!row.ref || row.keyUnavailableReason) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
