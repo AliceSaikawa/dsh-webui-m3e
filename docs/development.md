@@ -158,7 +158,7 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 | `list dsh-webui-m3e --depth 0 --json` | dependencies の version と解決先を表示。導入前・削除後は dependencies が無い |
 | `add file:<baseline/0.0.7.tgz>` → `add file:<copy/0.0.8.tgz>` → baseline を再追加 | すべて exit 0。一覧の version は 0.0.7 → 0.0.8 → 0.0.7。profile の直接参照が新しい tgz を向く |
 | `remove dsh-webui-m3e` | exit 0。dependency と dsh.profile.bundles の M3E が消え、base と web-app は残る |
-| `add dsh-webui-m3e` / `add dsh-webui-m3e@0.0.8` | exit 1、`ERR_PNPM_FETCH_404`、registry.npmjs.org の Not Found。成功は公開後の確認 |
+| `add dsh-webui-m3e` / `add dsh-webui-m3e@0.0.8` | exit 1、`ERR_PNPM_FETCH_404`、registry.npmjs.org の Not Found。成功は、将来 npm に公開した場合に確認 |
 | `--profile web-typo add file:<tgz>` | exit 0。base と M3E だけの別 profile が作られる。web-app は入らない。打ち間違いは自動検出されない |
 | `--profile ../wrong list` | exit 1、invalid profile name とスタックトレース |
 | 1 コマンドだけ `env PATH=/usr/bin:/bin … /absolute/node …/dsh/lib/bin.js plugin --profile web list` | exit 127、`pnpm was not found; install pnpm and make it available on PATH.`。環境設定は変更していない |
@@ -559,7 +559,7 @@ dsh_smoke plugin --profile web list dsh-webui-m3e --depth 0 --json
 dsh_smoke web --no-open --host 127.0.0.1 --port 0
 ```
 
-list の `version` が 0.0.8、`resolved` が指定した GitHub URL であることを確認します。表示された標準画面のログイン URL をブラウザで開いてから同じ origin の `/m3e/` を開きます。workspace を一つ追加し、会話を一つ作って偽 LLM の返答まで保存します。別プラグインの設定も一つ保存し、その値・workspace・会話の本文を控えます。
+list の `version` が 0.0.8 であることと、プロファイルの `package.json` の `dependencies["dsh-webui-m3e"]` が指定した GitHub の URL であることを確認します。list の `resolved` は、pnpm が転送先の URL を記録する場合があるので、指定した URL と違っていても失敗とは扱わず、実際の値を記録します。表示された標準画面のログイン URL をブラウザで開いてから同じ origin の `/m3e/` を開きます。workspace を一つ追加し、会話を一つ作って偽 LLM の返答まで保存します。別プラグインの設定も一つ保存し、その値・workspace・会話の本文を控えます。
 
 初回のリリースでも、まず削除まで確かめます。標準画面 `/?ui=classic` へ切り替え、Host を Ctrl+C で正常終了してから実行します。
 
