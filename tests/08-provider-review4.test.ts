@@ -31,6 +31,31 @@ async function setup(withCustom: boolean) {
 }
 const row = (keys: ProviderStore, id: string) => keys.getSnapshot().rows.find(row => row.id === id)!
 
+test('I16 R4 lookup failures: 拒否・不正応答・例外のphaseと戻り値と文言をmainに合わせる', async () => {
+  for (const withCustom of [false, true]) for (const mode of ['rejected', 'malformed', 'thrown']) {
+    const { ctx, remote, keys } = await setup(withCustom)
+    try {
+      remote.credentials.describe = async () => {
+        if (mode === 'thrown') throw new Error('private-input-not-for-display')
+        return mode === 'rejected' ? { ok: false, error: { code: 'unavailable', message: '', details: {} } }
+          : { ok: true, value: { OWNER_API_KEY: { configured: 'false', writable: true } } }
+      }
+      let writes = 0
+      remote.credentials.set = remote.credentials.unset = async () => { writes++; return { ok: true, value: {} } }
+      assert.equal(await keys.load(), mode !== 'thrown')
+      assert.equal(keys.getSnapshot().phase, mode === 'thrown' ? 'error' : 'ready')
+      const message = mode === 'thrown' ? '提供元と API キーの登録状況を読み込めませんでした。もう一度お試しください。'
+        : '一部の API キーの登録状況を確認できません。再読み込みしてください。'
+      assert.equal(keys.getSnapshot().error, message)
+      assert.equal(keys.getSnapshot().rows.some(row => row.writable || row.status === 'registered' || row.status === 'missing'), false)
+      const target = row(keys, 'owner') ?? { id: 'owner' } as any
+      assert.equal((await keys.save(target, 'fake-no-write')).ok, false)
+      assert.equal((await keys.remove(target)).ok, false)
+      assert.equal(writes, 0)
+    } finally { ctx.dispose() }
+  }
+})
+
 test('I16 R4 main parity: 全種類の既存行は70件の参照先なしカスタムの有無で変わらない', async () => {
   for (const withCustom of [false, true]) {
     const { ctx, remote, keys } = await setup(withCustom)

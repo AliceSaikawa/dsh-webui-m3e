@@ -1,9 +1,11 @@
-import type { ProviderRemote, KeyInfo } from './providers.ts'
+import { keyInfo, type ProviderRemote, type KeyInfo } from './providers.ts'
 
 export type KeyReferenceReader = (ref: string) => Promise<KeyInfo | undefined>
 
 /** Failure to verify a new destination must never authorize an overwrite. */
-export async function inspectCustomKey(_remote: Pick<ProviderRemote, 'settings' | 'llm'>, _ref: string): Promise<KeyInfo | undefined> {
-  // The RPC binding is awaiting handoff-issue16-07.md. Fail closed until applied.
-  return undefined
+export async function inspectCustomKey(remote: Pick<ProviderRemote, 'settings' | 'llm'>, ref: string): Promise<KeyInfo | undefined> {
+  try {
+    const answer = await (remote as ProviderRemote).credentials.describe([ref])
+    return answer.ok && Object.hasOwn(answer.value, ref) ? keyInfo(answer.value[ref]) : undefined
+  } catch { return undefined }
 }
