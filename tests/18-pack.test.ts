@@ -146,7 +146,7 @@ test('pack: rejects raw entries outside the npm package root', () => {
 const mockModules = [
   ...['kit', 'session-validation', 'index', 'fork', 'questions', 'jobs', 'context', 'images', 'record', 'search', 'fixtures'].map(name => `web/src/dsh/mock/${name}.ts`),
   ...['pwa/mock', 'search/mock', 'trace/trace-fixtures', 'trace/mock', 'interactions/mock', 'home/directory-mock', 'home/mock',
-    'settings/mock-mutations', 'settings/mock-fixtures', 'settings/mock-models', 'settings/mock-validation', 'settings/mock', 'chat/mock',
+    'settings/mock-mutations', 'settings/mock-fixtures', 'settings/mock-models', 'settings/mock-validation', 'settings/mock-custom', 'settings/mock', 'chat/mock',
     'session-tools/mock-goals', 'session-tools/mock-files', 'session-tools/mock', 'inbox/mock', 'composer/mock-permission-catalog', 'composer/mock',
   ].map(name => `web/src/features/${name}.ts`),
 ]

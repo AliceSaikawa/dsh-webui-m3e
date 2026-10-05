@@ -5,6 +5,7 @@ import { validMockOperations, validMockPatch, validMockValue } from './mock-vali
 import { settingsFixtures } from './mock-fixtures.ts'
 import { applyMockOperations, mockSettingsChanged } from './mock-mutations.ts'
 import { mockProviderRegistry, registerMockModelWriter } from './mock-models.ts'
+import { installCustomScenarios } from './mock-custom.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -104,6 +105,7 @@ export function extendMock(kit: MockKit): void {
     },
   }
   kit.addRemote('settings', remote)
+  installCustomScenarios(kit, remote, namespaces)
   registerMockModelWriter(kit, async selection => {
     const result = checkWrite('agent-default-model')
     if (!result.ok) return result

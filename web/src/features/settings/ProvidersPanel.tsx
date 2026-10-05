@@ -1,10 +1,12 @@
-import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eFormField } from '@m3e/react/form-field'
 import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { openDialog, openSheet, showSnackbar } from '../../app/overlay/index.ts'
+import { openDialog, openFullSheet, openSheet, showSnackbar } from '../../app/overlay/index.ts'
+import { CustomProviderSheet } from './CustomProviderSheet.tsx'
+import { createCustomProviderStore, type CustomProviderStore } from './custom-provider-store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import { createKeyDraft, createProviderStore, PROVIDER_EVENTS, type ProviderRemote, type ProviderRow, type ProviderStore } from './providers.ts'
@@ -80,23 +82,53 @@ export function ProvidersPanel() {
   const { remote, connection } = useDsh()
   const store = useMemo(() => createProviderStore(remote as unknown as ProviderRemote), [remote])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  const editors = useRef(new Set<CustomProviderStore>())
+  const [editorBusy, setEditorBusy] = useState(false)
+  const editorSequence = useRef(0)
+  function editCustom(id?: string) {
+    if ([...editors.current].some(editor => editor.isSaving())) return
+    const controller = createCustomProviderStore(remote as unknown as ProviderRemote, store, id, () => {
+      if (!controller.isActive()) editors.current.delete(controller)
+      setEditorBusy(false)
+      void store.load()
+    })
+    editors.current.add(controller)
+    const overlayKey = `custom-provider-${++editorSequence.current}`
+    const release = () => { if (!controller.isSaving()) editors.current.delete(controller) }
+    openFullSheet(close => <CustomProviderSheet controller={controller} keys={store} close={close} overlayKey={overlayKey} released={release} />,
+      { label: id ? 'カスタムプロバイダーを編集' : 'カスタムプロバイダーを追加', interactionKey: overlayKey })
+    controller.subscribe(() => setEditorBusy(controller.isSaving()))
+  }
   useEffect(() => {
     let active = true
     const read = () => { if (active) void store.load() }
-    const changed = () => store.connectionChanged(connection.state.getSnapshot() === 'connected')
+    const changed = () => {
+      const connected = connection.state.getSnapshot() === 'connected'
+      store.connectionChanged(connected)
+      editors.current.forEach(editor => editor.connectionChanged(connected))
+    }
     const offConnection = connection.state.subscribe(changed)
     changed()
     const stops = PROVIDER_EVENTS.map(event => onRemoteEvent(remote, event, read))
+    const offSettings = onRemoteEvent(remote, 'settings/document-updated', (ns, revision) => editors.current.forEach(editor => editor.updated(ns, revision)))
     read()
-    return () => { active = false; offConnection(); stops.forEach(stop => stop()); store.connectionChanged(false) }
+    return () => { active = false; offConnection(); offSettings(); stops.forEach(stop => stop()); editors.current.forEach(editor => editor.dispose()); editors.current.clear(); store.connectionChanged(false) }
   }, [remote, connection, store])
   return <section className="settings-section" aria-labelledby="settings-providers">
     <h2 id="settings-providers">提供元と登録状況</h2>
+    <M3eButton variant="outlined" disabled={state.phase !== 'ready' || state.settingsWritable !== true || !state.customAvailable || editorBusy}
+      onClick={() => editCustom()}>カスタムプロバイダーを追加</M3eButton>
+    {state.phase === 'ready' && state.settingsWritable === false && <p>この DSH では設定を変更できません</p>}
+    {state.phase === 'ready' && !state.customAvailable && <p>この DSH ではカスタムプロバイダーを設定できません。</p>}
     {state.phase === 'loading' && <p role="status">登録状況を読み込んでいます…</p>}
     {state.error && <div className="settings-notice"><p role="alert">{state.error}</p><M3eButton onClick={() => { void store.load() }}>再読み込み</M3eButton></div>}
     {state.phase === 'ready' && state.rows.length === 0 && <p>提供元が登録されていません。</p>}
     <M3eActionList className="settings-card">
-      {state.rows.map(row => <M3eListAction key={row.id} disabled={!row.writable || state.busy}
+      {state.rows.map(row => row.custom ? <div className="custom-provider-row" role="group" aria-label={row.name} key={row.id}>
+        <div><strong>{row.name}</strong><span>{row.id}</span><span>{statusLabels[row.status]}</span></div>
+        <div className="custom-row-actions"><M3eButton variant="text" disabled={state.phase !== 'ready' || !state.settingsWritable || editorBusy} onClick={() => editCustom(row.id)}>編集</M3eButton>
+          <M3eButton variant="text" disabled={!row.writable || state.busy || editorBusy} onClick={() => openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` })}>API キー</M3eButton></div>
+      </div> : <M3eListAction key={row.id} disabled={!row.writable || state.busy}
         onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>
         <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'dns' : 'key'} /></span>{row.name}
         <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>

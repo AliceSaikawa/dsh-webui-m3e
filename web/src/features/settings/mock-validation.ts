@@ -49,6 +49,23 @@ function validProfileValues(row: SettingsNamespace, value: Record<string, unknow
     && !['provider', 'maxRetries', 'maxRetryDelayMs'].some(key => Object.hasOwn(profile, key))
     && (!Array.isArray(profile.defaultInput) || profile.defaultInput.length > 0))
 }
+/** The measured custom-route resolver rules, beyond the public scalar schema. */
+function validCustomModels(row: SettingsNamespace, value: Record<string, unknown>): boolean {
+  if (row.ns !== 'llm-pi-ai' || !object(value.providers)) return true
+  return Object.entries(value.providers).every(([id, profile]) => {
+    if (!object(profile)) return false
+    // These two fixture routes stand in for installed catalog providers.
+    if (['cloud', 'openai'].includes(id)) return true
+    if (typeof profile.baseURL !== 'string' || !profile.baseURL.length || typeof profile.api !== 'string') return false
+    if (!Array.isArray(profile.models) || profile.models.length === 0) return false
+    const ids = new Set<string>()
+    return profile.models.every(model => {
+      if (!object(model) || typeof model.id !== 'string' || !model.id.length || ids.has(model.id)) return false
+      ids.add(model.id)
+      return true
+    })
+  })
+}
 export function validMockPatch(row: SettingsNamespace, patch: Record<string, SettingValue>): boolean {
   // Published roots are volatile. Unknown children below them are accepted by
   // settings' path gate and schemastery's object parser, unlike unknown roots.
@@ -56,7 +73,7 @@ export function validMockPatch(row: SettingsNamespace, patch: Record<string, Set
 }
 /** Validate the merged document too: a partial patch can introduce a new object. */
 export function validMockValue(row: SettingsNamespace, value: Record<string, SettingValue>): boolean {
-  return accepts(decodeSchema(row.schema), value, false, row.ns !== 'example-extension', true) && validProfileValues(row, value)
+  return accepts(decodeSchema(row.schema), value, false, row.ns !== 'example-extension', true) && validProfileValues(row, value) && validCustomModels(row, value)
 }
 export function validMockOperations(row: SettingsNamespace, operations: readonly SettingsOperation[]): boolean {
   try { applyMockOperations(row, operations) } catch { return false }

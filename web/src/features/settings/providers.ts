@@ -7,7 +7,7 @@ import type { ModelCatalog } from '../composer/api.ts'
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
 
 export interface ProviderEntry { id: string; name: string }
-export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[] }
+export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[]; declared?: boolean }
 export interface KeyInfo { configured: boolean; writable: boolean }
 export interface ProviderRemote {
   session?: { modelCatalog(): Promise<RemoteResult<ModelCatalog>> }
@@ -25,6 +25,7 @@ export interface ProviderRemote {
 export interface ProviderRow {
   id: string
   name: string
+  custom?: boolean
   ns: string
   path: string[]
   revision?: number
@@ -38,6 +39,8 @@ export interface ProviderState {
   rows: ProviderRow[]
   error: string | null
   busy: boolean
+  settingsWritable?: boolean
+  customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -61,9 +64,10 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     const named = object(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : undefined
     // The existing UI treats active routes without a named reference as using
     // provider-native authentication (including local gateways).
-    const native = entry.provider === 'deepseek-account' || !named && live.has(entry.provider)
+    const custom = entry.declared === true && entry.settingsNs === 'llm-pi-ai'
+    const native = entry.provider === 'deepseek-account' || !custom && !named && live.has(entry.provider)
     return {
-      id: entry.provider, name: entry.displayName, ns: entry.settingsNs, path: [...entry.settingsPath],
+      id: entry.provider, name: entry.displayName, custom, ns: entry.settingsNs, path: [...entry.settingsPath],
       revision: namespace?.revision, ref: native ? undefined : named ?? derivedRef(entry.provider),
       needsReference: !named && !native,
       status: native ? 'unnecessary' : 'unknown', writable: false,
@@ -111,7 +115,9 @@ export function createProviderStore(remote: ProviderRemote) {
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
       })
       const incomplete = resolved.some(row => row.status === 'unknown')
-      publish({ phase: 'ready', rows: resolved, error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
+      publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
+        customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
+        error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
       return true
     } catch {
       if (request === sequence && generation === epoch) publish({ phase: 'error', error: unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
@@ -197,6 +203,7 @@ export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>) {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     activate() { active = true },
+    clear() { epoch++; publish({ draft: '', visible: false, busy: false, error: null }) },
     input(draft: string) { if (active && !state.busy) publish({ draft, error: null }) },
     toggle() { if (active && !state.busy) publish({ visible: !state.visible }) },
     async submit(): Promise<boolean> {
