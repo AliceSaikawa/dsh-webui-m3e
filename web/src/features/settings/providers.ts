@@ -2,7 +2,7 @@ import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
-import { pendingKeyReferenceMessage } from './provider-key-refs.ts'
+import { keyRegisteredMeanwhileMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
@@ -116,7 +116,7 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
-          ...(status && !status.configured && !row.needsReference ? { keyNotice: pendingKeyReferenceMessage } : {}),
+          ...(row.custom && status && !status.configured ? { keyNotice: pendingKeyReferenceMessage } : {}),
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
@@ -175,7 +175,7 @@ export function createProviderStore(remote: ProviderRemote) {
         referenceWritten = true
       }
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
-      if (options.requireMissing && row.status !== 'missing') return { ok: false, message: '設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。' }
+      if (options.requireMissing && row.status !== 'missing') return { ok: false, message: keyRegisteredMeanwhileMessage }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
       if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }

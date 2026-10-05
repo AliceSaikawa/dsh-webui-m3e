@@ -306,21 +306,39 @@ test('I16 UI late registration: 設定の保存中に別の名前空間で登録
     if (!(await remote.credentials.set('LATE_API_API_KEY', 'fake-other-owner')).ok) throw new Error('登録できません')
     ;(window as any).__i16.mock.remoteOf('customProviderTest').releaseSaves()
   })
-  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。'
+  // The form takes the name it assigned back out; in this scenario that write is held as well.
+  await expect.poll(() => page.evaluate(() => (window as any).__i16.mock.remoteOf('customProviderTest').pendingSaves())).toBe(1)
+  expect(await writes(page)).toBe(2)
+  await page.evaluate(() => (window as any).__i16.mock.remoteOf('customProviderTest').releaseSaves())
+  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。 この保存で付けた参照名を、この提供元の設定から外しました。登録済みのキーは、この提供元には使われません。この提供元の API キーは未設定です。キーを使うには、ほかと重ならない ID で追加し直してください。'
   await expect(form(page).getByRole('alert')).toHaveText(message)
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeDisabled()
+  await expect(form(page).getByRole('button', { name: '保存', exact: true })).toBeDisabled()
   expect(await page.evaluate(() => (window as any).__i16keys)).toEqual(['LATE_API_API_KEY=fake-other-owner'])
-  expect(await writes(page)).toBe(1)
-  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-form-retry')
-  await button(page, 'API キーを保存').click()
-  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
-  await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeEnabled()
-  await expect(form(page).getByRole('alert')).toHaveText(message)
-  expect(await page.evaluate(() => (window as any).__i16keys)).toEqual(['LATE_API_API_KEY=fake-other-owner'])
-  expect(await writes(page)).toBe(1)
+  expect(await page.evaluate(() => (window as any).__i16writes.at(-1).slice(0, 2))).toEqual(['llm-pi-ai', [{ op: 'unset', path: ['providers', 'late-api', 'apiKeyEnv'] }]])
   await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
-  await expect(row(page)).toContainText('API キー：登録済み')
+  await expect(row(page)).toContainText('API キー：未設定')
+  await expect(row(page)).toContainText('API キーは「編集」から登録できます。')
+  await expect(row(page).getByRole('button', { name: 'API キー', exact: true })).toHaveCount(0)
   await expect(page.locator('m3e-list-action').filter({ hasText: 'ディープシーク' })).toContainText('API キー：登録済み')
+  // Reopened, the name is now another provider's: stopped before any write.
+  await row(page).getByRole('button', { name: '編集', exact: true }).click()
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-reopened')
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toContainText('参照名が重なります')
+  expect(await writes(page)).toBe(2)
+  expect(await page.evaluate(() => (window as any).__i16keys)).toEqual(['LATE_API_API_KEY=fake-other-owner'])
+})
+
+test('I16 UI standard notice G1: 前からある種類の行はmainと同じ補足だけを出す', async ({ page }) => {
+  await expose(page); await visit(page, '/settings/providers')
+  const deepseek = page.locator('m3e-list-action').filter({ hasText: 'ディープシーク' }).locator('span[slot="supporting-text"]')
+  await expect(deepseek).toHaveText('API キー：登録済み')
+  await page.evaluate(async () => {
+    if (!(await (window as any).__i16.remote.credentials.unset('DEEPSEEK_API_KEY')).ok) throw new Error('削除できません')
+  })
+  await expect(deepseek).toHaveText('API キー：未登録')
 })
 
 test('I16 UI fixed key: キーを変更できないカスタム行は理由を補い編集は残す', async ({ page }) => {

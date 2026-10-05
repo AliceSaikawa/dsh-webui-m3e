@@ -132,7 +132,7 @@ export function ProvidersPanel() {
       </div> : <M3eListAction key={row.id} disabled={!row.writable || state.busy}
         onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>
         <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'dns' : 'key'} /></span>{row.name}
-        <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}{row.keyNotice}</span>
+        <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>
         {row.writable && <span slot="trailing"><Icon name="chevron_right" /></span>}
       </M3eListAction>)}
     </M3eActionList>

@@ -288,6 +288,8 @@ test('I16 real numeric ID: 数字始まりをキーなしで追加した後も�
   })
   try {
     await expect(existing).toContainText('API キー：未登録')
+    // G1: a standard row naming its reference shows exactly what main shows.
+    await expect(existing.locator('span[slot="supporting-text"]')).toHaveText('API キー：未登録')
     await expect(existing).toHaveJSProperty('disabled', false)
     await existing.click()
     await page.getByLabel('API キー', { exact: true }).fill('synthetic-existing-after-numeric')
@@ -321,7 +323,7 @@ test('I16 real late registration: 設定の保存中に別の名前空間で登�
     return answer.value.I16_LATE_API_KEY.configured
   })
   const keySends = () => page.evaluate(() => (window as any).__keySends)
-  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。'
+  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。 この保存で付けた参照名を、この提供元の設定から外しました。登録済みのキーは、この提供元には使われません。この提供元の API キーは未設定です。キーを使うには、ほかと重ならない ID で追加し直してください。'
   await button(page, 'カスタムプロバイダーを追加').click()
   await page.getByLabel('プロバイダー ID', { exact: true }).fill('i16-late')
   await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
@@ -347,22 +349,24 @@ test('I16 real late registration: 設定の保存中に別の名前空間で登�
     await page.evaluate(() => (window as any).__releaseWrite())
     await expect(form(page).getByRole('alert')).toHaveText(message)
     expect(await keySends()).toBe(0)
-    expect((await snapshot(second)).providers['i16-late'].apiKeyEnv).toBe('I16_LATE_API_KEY')
-    await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-form-retry')
-    await button(page, 'API キーを保存').click()
-    await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
-    await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeEnabled()
-    await expect(form(page).getByRole('alert')).toHaveText(message)
+    // The form took the name it assigned back out on the real Host.
+    expect((await snapshot(second)).providers['i16-late'].apiKeyEnv).toBeUndefined()
+    expect((await snapshot(second)).providers['i16-late'].baseURL).toBe('http://127.0.0.1:12345/v1')
+    expect(await registered()).toBe(true)
+    expect(await second.evaluate(async () => (await (window as any).__customRemote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-deepseek').value.apiKeyEnv)).toBe('I16_LATE_API_KEY')
+    await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeDisabled()
+    await expect(form(page).getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+    await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+    await expect(row(page, 'i16-late')).toContainText('API キー：未設定')
+    await expect(row(page, 'i16-late').getByRole('button', { name: 'API キー', exact: true })).toHaveCount(0)
+    // Reopened, the name belongs to the other provider: stopped before any write.
+    await row(page, 'i16-late').getByRole('button', { name: '編集', exact: true }).click()
+    await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-form-reopened')
+    await button(page, '保存').click()
+    await expect(form(page).getByRole('alert')).toContainText('参照名が重なります')
     expect(await keySends()).toBe(0)
     expect(await registered()).toBe(true)
     await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
-    // From the list no option is given: an explicit reference is registered as on main.
-    await expect(row(page, 'i16-late')).toContainText('API キー：登録済み')
-    await row(page, 'i16-late').getByRole('button', { name: 'API キー', exact: true }).click()
-    await page.getByLabel('API キー', { exact: true }).fill('synthetic-list-key')
-    await button(page, '保存').click()
-    await expect(page.locator('.settings-sheet')).toBeHidden()
-    expect(await keySends()).toBe(1)
   } finally {
     expect(await second.evaluate(async previous => {
       const remote = (window as any).__customRemote
@@ -373,4 +377,25 @@ test('I16 real late registration: 設定の保存中に別の名前空間で登�
     }, previous)).toBe(true)
   }
   await second.close()
+})
+
+test('I16 real list destination G3: 一覧が導出名を使う標準の行と重なる名前を新しく付けない', async ({ page, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  // On main the list derives OPENAI_CODEX_API_KEY for the inactive catalog route openai-codex.
+  const standard = page.locator('m3e-list-action').filter({ hasText: 'openai-codex' })
+  await expect(standard).toContainText('API キー：未登録')
+  const before = await snapshot(page)
+  await button(page, 'カスタムプロバイダーを追加').click()
+  await page.getByLabel('プロバイダー ID', { exact: true }).fill('OpenAI-Codex')
+  await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
+  await page.getByLabel('モデル ID', { exact: true }).fill('codex-model')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-collision')
+  await page.evaluate(() => { (window as any).__keySends = 0; (window as any).__settingsWrites = [] })
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toContainText('参照名「OPENAI_CODEX_API_KEY」：別の提供元とキーの参照名が重なります。')
+  expect(await page.evaluate(() => (window as any).__keySends)).toBe(0)
+  expect(await page.evaluate(() => (window as any).__settingsWrites.length)).toBe(0)
+  expect((await snapshot(page)).providers).toEqual(before.providers)
+  await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+  await expect(standard).toContainText('API キー：未登録')
 })

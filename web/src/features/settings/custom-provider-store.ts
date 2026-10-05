@@ -1,7 +1,7 @@
-import { createKeyDraft, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
+import { createKeyDraft, providerRows, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
 import { CUSTOM_NS, customDraft, customOperations, objectValue, protocolChoices, providerRef, validateCustom, type CustomDraft, type CustomErrors } from './custom-provider.ts'
 import { valueAt, type SettingsNamespace } from './schema.ts'
-import { validKeyReference, invalidKeyReferenceMessage, keyReferenceReason, keyReferenceError } from './provider-key-refs.ts'
+import { validKeyReference, invalidKeyReferenceMessage, keyReferenceReason, keyReferenceError, keyRegisteredMeanwhileMessage } from './provider-key-refs.ts'
 import { inspectCustomKey, type KeyReferenceReader } from './custom-provider-key.ts'
 
 type Phase = 'loading' | 'editing' | 'blocked' | 'savingSettings' | 'savingKey' | 'keyFailed' | 'stale' | 'unknown' | 'saved'
@@ -12,6 +12,14 @@ export interface CustomState {
 const conflictMessage = 'ほかの場所で設定が変わりました。再読み込みして、変更内容を確認してください。'
 const unknownMessage = '接続が切れました。保存できたか確認してから、もう一度お試しください。'
 const partialMessage = '提供元の設定は保存しましたが、API キーを保存できませんでした。'
+// After the key check refused a reference this form had assigned: the outcome
+// of taking that name back out of this provider's settings.
+const detachMessages = {
+  saved: 'この保存で付けた参照名を、この提供元の設定から外しました。登録済みのキーは、この提供元には使われません。この提供元の API キーは未設定です。キーを使うには、ほかと重ならない ID で追加し直してください。',
+  stale: 'この保存で付けた参照名を外せませんでした。ほかの場所で設定が変わっています。この提供元が、登録済みの別のキーを参照したままの可能性があります。再読み込みして、一覧でこの提供元が「API キー：未設定」になっていなければ、DSH の標準の設定でこの提供元の参照名を外すか変えてください。',
+  keyFailed: '参照名を外す変更が拒否されました。この提供元は、登録済みの別のキーを参照しています。使う前に、DSH の標準の設定でこの提供元の参照名を外すか変えてください。',
+  unknown: '参照名を外せたか確認できません。この提供元が、登録済みの別のキーを参照したままの可能性があります。「保存結果を確認」で読み直して、一覧でこの提供元が「API キー：未設定」になっていなければ、DSH の標準の設定でこの提供元の参照名を外すか変えてください。',
+} as const
 export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings' | 'llm'>,
   keys: Pick<ProviderStore, 'load' | 'save' | 'getSnapshot'>, id?: string, settled: () => void = () => {},
   inspectReference: KeyReferenceReader = ref => inspectCustomKey(remote, ref)) {
@@ -60,6 +68,9 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       for (const value of Object.values(objectValue(namespace.value.providers) ? namespace.value.providers : {})) {
         if (objectValue(value) && typeof value.apiKeyEnv === 'string') references.push(value.apiKeyEnv)
       }
+      // The list (as on main) reads and writes a derived name for a standard
+      // row without one. Reserve every destination a non-custom row resolves to.
+      for (const row of providerRows(registered.value, directory.value, description.value)) if (!row.custom && row.ref) references.push(row.ref)
       committed = false
       publish({ namespace, initial: structuredClone(draft), draft, editing, protocols, taken,
         writable: description.value.writable, phase: description.value.writable && protocols.length ? 'editing' : 'blocked',
@@ -89,6 +100,31 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     if (field) { delete displayed[field]; if (errors[field]) displayed[field] = errors[field] }
     publish({ errors: displayed })
     return errors
+  }
+  /**
+   * Take the name this form assigned back out, with a revision read now, and
+   * only while the value is still that name (DSH 0.2.0-rc.2 dsh-llm-pi-ai:
+   * a named route resolves exactly that credential; an unnamed declared route
+   * sends no key). Never retried automatically.
+   */
+  async function detach(ref: string, generation: number): Promise<keyof typeof detachMessages> {
+    try {
+      const description = await remote.settings.describe()
+      if (!active || generation !== epoch || !connected) return 'unknown'
+      const namespace = description.ok ? description.value.namespaces.find(row => row.ns === CUSTOM_NS) : undefined
+      if (!namespace) return 'unknown'
+      const profile = valueAt(namespace.value, ['providers', target!])
+      if (!objectValue(profile) || profile.apiKeyEnv !== ref) return 'stale'
+      const result = await remote.settings.mutate(CUSTOM_NS, [{ op: 'unset', path: ['providers', target!, 'apiKeyEnv'] }], namespace.revision)
+      if (generation !== epoch) return 'unknown'
+      if (!result.ok) return result.error.code === 'settings/conflict' ? 'stale'
+        : ['settings/rejected', 'gateway/bad-request'].includes(result.error.code) ? 'keyFailed' : 'unknown'
+      assignedReference = undefined
+      references.push(ref)
+      const saved = customDraft(result.value, target)
+      publish({ namespace: result.value, initial: structuredClone(saved), draft: saved })
+      return 'saved'
+    } catch { return 'unknown' }
   }
   async function save(keyValue?: string): Promise<KeyOutcome> {
     if (!active || !connected || saving || !state.writable || !['editing', 'keyFailed'].includes(state.phase) || !state.namespace || !state.initial || !state.draft) return { ok: false, message: '接続と処理中の操作を確認してください。' }
@@ -156,6 +192,12 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
         pendingKey = undefined
         const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch, requireMissing: ref === assignedReference }) : { ok: false, message: '提供元の参照先が変わりました。設定を確認してください。' }
         if (!active || generation !== epoch) return { ok: false, message: unknownMessage }
+        if (!outcome.ok && outcome.message === keyRegisteredMeanwhileMessage && ref === assignedReference) {
+          const phase = await detach(ref, generation)
+          const message = `${partialMessage} ${outcome.message} ${detachMessages[phase]}`
+          if (active && generation === epoch) publish({ phase, message })
+          return { ok: false, message }
+        }
         if (!outcome.ok) {
           const message = `${partialMessage} ${outcome.message}`
           publish({ phase: 'keyFailed', message }); return { ok: false, message }
