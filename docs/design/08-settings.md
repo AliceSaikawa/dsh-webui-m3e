@@ -292,7 +292,7 @@ settings.mutate('llm-pi-ai', [
 |---|---|
 | 1 明示された参照名との衝突 | `custom-provider-store.ts` は directory と全名前空間から `providerRows` で実際の参照先を取得し、新規とキーなし提供元へのあと付けの両方を検査する。`providers.ts` の再照会でも、初めて参照を付ける保存では他の行と同じ保存先を使わない。部分成功後の再試行もこの条件を保持する |
 | 2 数字始まり ID が一括照会を壊す | Host の参照名検証を `validKeyReference` へ写し、不正な名前を照会から除外する。当該行だけを変更不可とし、理由を行とフォームへ出す。キー付きの保存は設定送信前の欄エラーで止める。既存提供元の状態・登録・削除は単体と実 DSH の画面で確認 |
-| 3 閉じた後に再照会からキーを送る | 既存 `ProviderStore.save` に省略可能な `canSend` を追加。カスタムフォームは active・接続・接続世代を渡し、再照会の完了後とキー送信直前の両方で判定する。オプションを渡さない既存の登録経路は維持。RPC 送信回数を数える専用試験の追加は保護フックに拒否され、`tmp/handoff-issue16-02.md` へ回した |
+| 3 閉じた後に再照会からキーを送る | 既存 `ProviderStore.save` に省略可能な `canSend` を追加。カスタムフォームは active・接続・接続世代を渡し、再照会の完了後とキー送信直前の両方で判定する。オプションを渡さない既存の登録経路は維持。専用試験は `tmp/handoff-issue16-02.md` へ回し、その後 `e9f4e3a` で適用済み。今回、正常実行と `canSend` を常に true にする変異の検出を確認 |
 | 4 URL と ID の形式 | URL は HTTP/HTTPS のみ。前後の空白を除いて検証・保存する。ID は非空・重複・予約名を検査し、英字始まりを推奨。数字始まりなどはキーなしで許可する。キーの参照名を別に検査する |
 | 5 固定 800ms の待ち | `mock-custom.ts` に試験用の保留・解放を設けた。UI late は開始件数 1、保存中表示、閉じてフォームが消えたことと行が未作成なことを確認してから解放する |
 | 6 古い適用待ちの記述 | UI 仕様とこのメモを `ad192ba` で適用済みに更新。第2回の失敗結果は当時の記録と明示し、今回の結果と区別する |
@@ -322,7 +322,7 @@ URL は Issue の明示要件を優先する。`http://` / `https://` のプレ�
 | I16 UI partial（新規再作成） | 保存済みフラグを消し editing を false に戻す | 設定書込みが 2 回となり失敗 |
 | I16 UI partial（キー未送信） | keyFailed からの再試行でキー保存の分岐を通らない | 登録済みでなく未登録のままで失敗 |
 | I16 UI partial（拒否なし） | mock-custom の rejectKeyOnce が常に false | 部分成功の案内が出ず失敗 |
-| I16 key recheck close | 試験差分自体が保護フックで停止 | `tmp/handoff-issue16-02.md` の適用後に正常実行と故障注入が必要。未実施 |
+| I16 key recheck close | 前回は試験差分自体が保護フックで停止 | `tmp/handoff-issue16-02.md` は指示役が `e9f4e3a` で適用済み。正常実行も成功。今回の M47（参照先書込み待ち）とは別の待機境界 |
 
 すべての実施した故障を `git restore` で戻し、本体・試験には故障を残していない。今回追加・期待変更した試験は上表に 1 件ずつ載せた。I16 UI partial は既存試験の条件を変更せず、指定の 4 種類の故障を個別に検出した。
 
@@ -339,7 +339,7 @@ URL は Issue の明示要件を優先する。`http://` / `https://` のプレ�
 
 結果は `tmp/issue16-review-mock-final.json`、`tmp/issue16-review-real-run1.json`、`tmp/issue16-review-real-run2.json`。実 DSH は隔離した 0.2.0-rc.2、LLM とキーは架空値。未適用の試験を skip で除いた結果ではなく、追跡中の試験を全件実行した結果である。
 
-| 受け入れ条件 | 最新の判定 |
+| 受け入れ条件 | 前回終了時（handoff 02 適用前）の判定 |
 |---|---|
 | 1 追加・編集 | 達成。数字始まりのキーなし作成も実 DSH で確認 |
 | 2 再表示・他設定・モデル選択の保持 | 達成。明示参照との衝突を新規・あと付けで検査 |
@@ -350,9 +350,98 @@ URL は Issue の明示要件を優先する。`http://` / `https://` のプレ�
 | 7 狭い画面・キーボード・既存機能の回帰 | 390px、375×420px、既存キー・モデル操作は確認。実機キーボードは未確認 |
 | 8 試験追加・品質 | 型・単体・ビルド・配布・全 e2e は成功。追加できなかった専用試験 1 件とその故障注入は未完了 |
 
-指摘 3 の試験追加は、キー RPC のメンバー名を含む通常の apply_patch を 1 回だけ試して保護フックに拒否された。言い換えて再適用せず、`tmp/handoff-issue16-02.md` に変更前後と置換印の凡例を残した。置換対象が現在のファイルに 1 箇所だけ一致することも確認済み。指示役が適用後、正常実行と canSend を外す故障注入を行う必要がある。未適用の試験を確認済みとは扱わない。
+指摘 3 の試験追加は、前回の保護フック拒否後に `tmp/handoff-issue16-02.md` へ回し、指示役が `e9f4e3a` で適用済み。上記の件数と受け入れ表は適用前の履歴であり、最新の残りは次の再レビュー対応を参照する。
 
 今回の詳細報告は `tmp/handoff-issue16-review-fixes.md`。iOS 実機のキーボード、今回追加した設定の Host 再起動を挟む保持、外部提供元との実通信は引き続き未検証。検索コマンドの引用符なし glob が形式で拒否された 1 回は、対象ファイルを明示して読み直した。保護対象のパスと禁止された操作には触れていない。
+
+### 2026-10-05：Issue #16 再レビュー・変異監査への対応
+
+`e9f4e3a` から開始し、`git fetch origin` 後、`origin/main`（`23e8ec6`、v0.0.8）を通常のマージ `739606e` で取り込んだ。文書に衝突はなく、main の配布・リリースの記述を保持した。
+
+#### 参照先の所有と衝突の契約
+
+`P` は `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai`、`L` は同じ node_modules の `@earendil-works/pi-ai/dist`。
+
+- `P/dsh-llm-pi-ai/lib/index.js:727–730,840–859`：標準のカタログ提供元は標準の認証探索を保持する。独自提供元の認証と区別する。
+- `P/dsh-llm-pi-ai/lib/index.js:2088–2096`：標準の認証探索が環境名を要求すると、DSH の保存済みキーを先に探す。設定に明示名がないことは、保存先がないことを意味しない。
+- `L/providers/openai.js:6–10`：標準 `openai` の既定名は `OPENAI_API_KEY`。`L/providers/google.js:6–10` は `GEMINI_API_KEY`、`L/providers/azure-openai-responses.js:6–9` は `AZURE_OPENAI_API_KEY`。
+- `L/env-api-keys.js:67–121`：標準の環境名の対応表。Anthropic の 3 名、Copilot、Moonshot の共通名、Qwen/Opencode の共通名など、単なる ID 導出では得られない名前がある。ここから既定名を固定の契約データとして `provider-key-refs.ts` に保持する。実行時にライブラリを UI へ追加しない。
+- `L/providers/amazon-bedrock.js:50–78`、`L/providers/google-vertex.js:61–82`：API キー以外の補助環境名も参照する。すべての SDK の探索先まで読んだとは断定せず、`AWS_`、`GOOGLE_`、`GCLOUD_`、`CLOUDFLARE_` の名前群を対応する標準提供元以外から予約する。保護対象パッケージ・設定ファイルは読まない。
+- `L/providers/cloudflare-auth.js:1–3,20–24`：Cloudflare のキーに加え、account/gateway の補助名を使う。上の予約群の根拠に含める。
+- `P/dsh-llm-pi-ai/lib/index.js:818–826`：明示名にキーがなければ認証探索へ戻らず要求が失敗する場合がある。そのため参照先だけの状態を一覧・フォームで案内する。
+
+`ref` は登録状態の照会先、`usedRefs` は衝突防止用の集合と分けた。後者は明示名・導出名・既定名を含む。標準候補が未稼働でも既定名を予約する。既定名の所有者自身、および公開定義で同じ既定名を使う標準提供元どうしは使用できる。カスタムなど別の所有者との共有は止める。DSH の標準 DeepSeek の ID `deepseek-official` も `DEEPSEEK_API_KEY` の所有者とする（実 DSH の既存キー操作試験で確認）。`P/dsh-llm-pi-ai/lib/index.js:2506–2529` が全カタログを directory に含めるため、稼働していない標準 `deepseek` と公式提供元が同時に一覧に現れることを考慮した。
+
+共通のキー保存・削除は毎回最新の行を読み、保存先の衝突を検査する。呼び出し側の `exclusive` オプションは廃止した。フォームの事前検査も同じ判定を使う。明示済み・設定だけ成功・開き直しという履歴に依存しない。衝突中は状態を unknown、変更不可とし、他人のキーを登録済みとして見せない。
+
+補助名の予約は、確認済みの標準 ID 自身の導出名だけは除外する（`google` → `GOOGLE_API_KEY`）。標準の登録経路を妨げず、他の行の実際の参照先との照合は残す。`GOOGLE` のような別 ID や `GOOGLE_CLOUD_PROJECT` のような任意の補助名はこの除外に入らない。対応表は own property だけを読み、Host に `constructor` などの ID が存在しても一覧の取得を壊さない。
+
+選ばなかった案：既存の明示共有だけを許す／未稼働の標準名を予約しない。前者は自動で付いた明示名を識別できず再オープンで迂回でき、後者は認証前の標準提供元を保護できない。安全側の予約は、未使用の標準名や補助名でもカスタムから登録できなくなる制約を持つ。キーなしの設定作成・編集は妨げない。
+
+#### 試験の補強と引き継ぎ
+
+一覧からの後付け登録、明示名が残った状態の再オープン、標準 OpenAI/Google/Moonshot の既定名との衝突は、先に現行本体で落ちる試験 3 件を作成した（全 3 件が誤った保存成功で失敗）。修正後は成功した。M08/M22/M24/M39 は保存要求の revision、欄エラーと送信 0 件、Host 成功値の確定、設定・キーの各待機中の無効ボタンを直接検査する。
+
+実 DSH の競合試験はクライアントへの設定通知を保留し、旧 revision の要求を実 Host へ送る。応答が `settings/conflict`、書込みが 1 回、Host の revision・全提供元の値が別ページの変更のままであることを検査する。部分成功の再試行は Host の値に加え、設定 RPC の要求列が増えないことを検査する。同値の no-op 再送も検出する。RPC 本体や Host は置き換えていない。キー失敗用の参照には、この試験で渡す読み取り専用環境名 `M3E_DSH_VERSION` を使う（他の提供元のキーと共有させない）。
+
+M47 は通常の apply_patch を 1 回だけ試し、キー送信回数を数える行で保護チェックに拒否された。`tmp/handoff-issue16-03.md` に `tests/08-provider-reference-close.test.ts` の全文と適用後の変異手順を引き継ぐ。これは未実行。前回の `handoff-issue16-02.md` は適用済みであり、今回の未適用分と混同しない。
+
+追加・変更ファイル：`provider-key-refs.ts`（標準名と衝突の純粋な判定）、`providers.ts`、`custom-provider-store.ts`、両フォーム/一覧、単体 2 ファイルと両 e2e、UI 仕様とこのメモ。新しい偽データモジュールはない。配布用のファイルは取り込み以外で変更しない。
+
+#### 壊して確かめた表（今回）
+
+M08/M22/M24/M39 と M09 は監査の置換と同じ。M25 は廃止した `exclusive` 引数だけを除き、監査と同じ条件・同じ no-op の設定書込みを挿入した。試験ごとに正常通過を確かめてから適用し、終了後は対象の本体を `git restore` で戻した。今回の 4 生存変異はすべて検出。M47 は下記の引き継ぎ待ち。
+
+| 試験 | 故障 | 検出した結果 |
+|---|---|---|
+| I16 opened revision M08 | 開いた版を describe の最新 revision へ差し替え | 保存が成功してしまい、競合を期待する検査で失敗 |
+| I16 input M22 | 明示する入力種別の検査を除去 | 空配列が保存され、送信しない期待で失敗 |
+| I16 UI input M22 | 同上 | 欄エラーが表示されず失敗 |
+| I16 committed state M24 | 成功応答を編集状態・初期値へ確定する publish を除去 | editing が false のままで失敗。正常時は部分成功も含め ID・revision・Host 整形値を確認 |
+| I16 UI saving M39 | 監査と同じく保存中の phase を保存可能に追加 | 設定待ちの保存ボタンが有効となり失敗 |
+| I16 UI saving M39（キー待ち） | savingKey のときだけ保存を有効化 | キー待ちの保存ボタンが有効となり失敗 |
+| I16 destinations list | 衝突判定を常に false | 一覧からの後付け登録が成功して失敗 |
+| I16 destinations reopen | 同上 | 明示名が残ったフォームでキー保存が成功して失敗 |
+| I16 destinations native | 同上 | 標準の保存先を使うカスタムの作成が成功して失敗 |
+| I16 destinations owners | 同上 | 標準以外の ID の予約が解除されて失敗。継承名の検査追加前には constructor 参照が例外になることも確認し修正 |
+| I16 destinations owners（本人の導出名） | 補助名の予約で標準 ID 自身も除外しない | google 自身の登録まで拒否して失敗。修正前にも同じ検査で失敗を確認 |
+| I16 reference recheck | 同上 | 保存直前に他の行の参照が変わっても成功し失敗 |
+| I16 UI destinations | 同上 | 衝突中の案内が表示されず失敗 |
+| I16 UI destinations（参照先だけ） | keyNotice の付与を除去 | 未登録の参照先に必要な案内が表示されず失敗 |
+| I16 real failures / M09 | RPC 競合後に最新 revision で自動再送 | Host の表示名と revision が別ページの状態から変わり失敗 |
+| I16 real failures / M25 | 部分成功後の再試行で同じ api を mutate | Host の値が同じでも設定要求が 2 件から 3 件になり失敗 |
+| I16 UI partial / M25 | 同上 | 設定要求が 1 件から 2 件になり失敗 |
+| I16 key recheck close（適用済み 02） | canSend を常に true | 閉じた後のキー送信が 0 件でなく 1 件になり失敗 |
+| I16 reference write close / M47 | 参照先書込み後の 2 回目の canSend を除去 | 未実行。試験自体を `tmp/handoff-issue16-03.md` に引き継ぎ |
+
+画面と実 DSH の変異の結果は `tmp/issue16-review2-M22.json`、`M39.json`、`M39-key.json`、`destinations.json`、`reference-notice.json`、`M09-real.json`、`M25-real-final.json`、`M25-ui.json`（いずれも先頭は `issue16-review2-`）。失敗を期待した実行は全体の成功件数に含めない。
+
+#### 今回の全体検証と受け入れ判定
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：1,063 件成功、失敗・skip 0。
+- `pnpm build`：成功。既存の 500 kB 超の chunk 警告あり。
+- `pnpm check:pack`：19 ファイルで成功。
+- 偽データ全体 e2e：170 件成功、予期しない失敗・skip・flaky 0。
+- 実 DSH 全体 1 回目：通常成功 36 件、既知の差の期待失敗 1 件、予期しない失敗・skip・flaky 0。
+- 実 DSH 全体 2 回目：通常成功 36 件、既知の差の期待失敗 1 件、予期しない失敗・skip・flaky 0。
+
+全体 e2e は共通のコマンドに `--global-timeout=900000` を付けて実行した。実 DSH は 0.2.0-rc.2 の隔離プロファイルと偽 LLM。既知の期待失敗は、Host が停止したままでも切断済み表示へ変わらない従来の 1 件である。最初の試行では再試行後のボタンが有効になるという試験の誤りを検出した。入力消去後はボタンが無効になることが正しいため、入力欄の再有効化で完了を待ち、ボタンは無効と検査するよう修正した。修正後の正常動作と M25 の検出をやり直した。
+
+| 受け入れ条件 | 現在の判定 |
+|---|---|
+| 1 追加・編集の入口とフォーム | 達成。UI / real lifecycle |
+| 2 保存値・他の提供元・未知項目・選択モデルの保持 | 達成。path operation 単体、real lifecycle、M24、実 Host の競合後の全値 |
+| 3 入力検査と欄エラー | 達成。単体、UI lifecycle / URL / input M22、実 Host の設定書込み |
+| 4 キーの非表示・空欄で保持・入力消去 | 実装と適用済み試験は成功。M47 の特定の待機境界の送信 0 件は未検証 |
+| 5 各失敗と部分成功 | 達成。UI blocked / refused / lost / partial、real failures。M09/M25 の変異も検出 |
+| 6 キャンセル・二重送信・戻る・閉じる | 通常の終了経路は成功。UI dismiss / late / saving M39。参照先書込み待ちの M47 は未検証 |
+| 7 375–390px と既存操作の回帰 | 自動試験の範囲で達成。既存のモデル・キー操作と real numeric ID。iOS 実機のキーボードは未検証 |
+| 8 単体・e2e・型・ビルド | 適用済みコードは上記で検証。M47 の追加試験・故障検出を引き継ぐ |
+
+結果は `tmp/issue16-review2-mock-final.json`、`tmp/issue16-review2-real-final-1.json`、`tmp/issue16-review2-real-final-2.json`。最初の試行の結果は `tmp/issue16-review2-real-trial.json` に分けた。詳細報告は `tmp/handoff-issue16-review2-fixes.md`。M47 は専用試験が未適用のため成功に数えず、03 の適用後に正常・変異の両方を確かめる。
+
+本番の利用者の DSH や実キーには触れず、実提供元への認証・推論はしていない。保護対象のパッケージは読まなかった。試験のパッチ以外には、検索引数に保護対象語を含む操作 2 回が停止し、共通の決まりが認める安全な単一ファイル指定へ直した。担当外の追加変更・依存追加・push はない。
 
 ### 2026-09-25：設定タブの実装と、認証操作の保留
 
