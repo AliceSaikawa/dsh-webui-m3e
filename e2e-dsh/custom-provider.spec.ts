@@ -152,6 +152,14 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
   await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-retry')
   await button(page, 'API キーを保存').click()
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+  // Observe either completion or a forbidden settings request, including a
+  // no-op request whose Host response has not arrived yet.
+  await expect.poll(async () => (await page.evaluate(() => (window as any).__settingsWrites.length)) > writesBeforeRetry.length
+    || await page.getByLabel('API キー（任意）', { exact: true }).isEnabled()).toBe(true)
+  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
+  await expect(button(page, 'API キーを保存')).toBeVisible()
+  await expect(button(page, 'API キーを保存')).toBeDisabled()
   await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
   expect((await snapshot(page)).revision).toBe(saved.revision)
   expect(await snapshot(page)).toEqual(saved)

@@ -31,8 +31,9 @@ export function usedKeyReferences(id: string, explicit?: string): string[] {
 }
 export function keyReferenceConflict(rows: KeyDestination[], id: string, ref: string): boolean {
   const builtinOwner = defaultRefs(id).includes(ref)
+  const ownDerived = Object.hasOwn(defaults, id) && ref === derivedKeyRef(id)
   return rows.some(row => row.id !== id && !(builtinOwner && defaultRefs(row.id).includes(ref))
       && (row.usedRefs ?? usedKeyReferences(row.id, row.ref)).includes(ref))
     || (!builtinOwner && Object.entries(defaults).some(([owner, refs]) => owner !== id && refs.includes(ref)))
-    || families.some(([prefix, owners]) => ref.startsWith(prefix) && !owners.includes(id))
+    || families.some(([prefix, owners]) => ref.startsWith(prefix) && !owners.includes(id) && !ownDerived)
 }
