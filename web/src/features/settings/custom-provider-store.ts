@@ -1,7 +1,7 @@
 import { createKeyDraft, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
 import { CUSTOM_NS, customDraft, customOperations, objectValue, protocolChoices, providerRef, validateCustom, type CustomDraft, type CustomErrors } from './custom-provider.ts'
 import { valueAt, type SettingsNamespace } from './schema.ts'
-import { validKeyReference, invalidKeyReferenceMessage, keyReferenceReason, keyReferenceError, type KeyDestination } from './provider-key-refs.ts'
+import { validKeyReference, invalidKeyReferenceMessage, keyReferenceReason, keyReferenceError } from './provider-key-refs.ts'
 import { inspectCustomKey, type KeyReferenceReader } from './custom-provider-key.ts'
 
 type Phase = 'loading' | 'editing' | 'blocked' | 'savingSettings' | 'savingKey' | 'keyFailed' | 'stale' | 'unknown' | 'saved'
@@ -24,7 +24,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
   let pendingKey: string | undefined
   let saving = false
   let committed = false
-  let references: KeyDestination[] = []
+  let references: string[] = []
   let changedDuringSave = false
   const listeners = new Set<() => void>()
   const publish = (patch: Partial<CustomState>) => { state = { ...state, ...patch }; if (active) listeners.forEach(fn => fn()) }
@@ -51,11 +51,10 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       references = directory.value.flatMap(entry => {
         const ns = description.value.namespaces.find(row => row.ns === entry.settingsNs)
         const value = ns && valueAt(ns.value, entry.settingsPath)
-        return objectValue(value) && typeof value.apiKeyEnv === 'string'
-          ? [{ id: entry.settingsNs === CUSTOM_NS ? entry.provider : `${entry.settingsNs}/${entry.provider}`, ref: value.apiKeyEnv }] : []
+        return objectValue(value) && typeof value.apiKeyEnv === 'string' ? [value.apiKeyEnv] : []
       })
-      for (const [provider, value] of Object.entries(objectValue(namespace.value.providers) ? namespace.value.providers : {})) {
-        if (objectValue(value) && typeof value.apiKeyEnv === 'string') references.push({ id: provider, ref: value.apiKeyEnv })
+      for (const value of Object.values(objectValue(namespace.value.providers) ? namespace.value.providers : {})) {
+        if (objectValue(value) && typeof value.apiKeyEnv === 'string') references.push(value.apiKeyEnv)
       }
       committed = false
       publish({ namespace, initial: structuredClone(draft), draft, editing, protocols, taken,
@@ -79,7 +78,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const ref = hasReference ? profile.apiKeyEnv as string : providerRef(state.draft?.id ?? '')
     if (key && !validKeyReference(ref)) errors.key = invalidKeyReferenceMessage
     else if (key && !hasReference && state.draft) {
-      const reason = keyReferenceReason(references, state.draft.id, ref)
+      const reason = keyReferenceReason(references, ref)
       if (reason) errors.key = keyReferenceError(state.draft.id, ref, reason)
     }
     const displayed = field ? { ...state.errors } : errors

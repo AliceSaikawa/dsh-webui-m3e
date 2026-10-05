@@ -22,15 +22,20 @@ const defaults: Record<string, string[]> = {
 // conservatively; status lookup still uses only the configured reference.
 const families = ['AWS_', 'GOOGLE_', 'GCLOUD_', 'CLOUDFLARE_']
 export const pendingKeyReferenceMessage = 'キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。'
-export interface KeyDestination { id: string; ref?: string }
-export function keyReferenceReason(rows: KeyDestination[], id: string, ref: string): string | undefined {
-  if (rows.some(row => row.id !== id && row.ref === ref)) return '別の提供元とキーの参照名が重なります。'
+/**
+ * `named` holds every reference name that a provider states in the settings.
+ * Only a provider without a reference asks, so it never names `ref` itself and
+ * no owner is excluded: an owner identity that could equal a custom ID (which
+ * may contain "/") would hide a real collision.
+ */
+export function keyReferenceReason(named: readonly string[], ref: string): string | undefined {
+  if (named.includes(ref)) return '別の提供元とキーの参照名が重なります。'
   if (Object.values(defaults).some(refs => refs.includes(ref))) return '標準の提供元が使う名前として予約されています。'
   const family = families.find(prefix => ref.startsWith(prefix))
   if (family) return `${family} で始まる名前は標準の提供元の補助設定として予約されています。`
 }
-export function keyReferenceConflict(rows: KeyDestination[], id: string, ref: string): boolean {
-  return keyReferenceReason(rows, id, ref) !== undefined
+export function keyReferenceConflict(named: readonly string[], ref: string): boolean {
+  return keyReferenceReason(named, ref) !== undefined
 }
 export function keyReferenceError(id: string, ref: string, reason: string): string {
   return `参照名「${ref}」：${reason} キーを空欄にするか、ほかと重ならない接頭辞を付けた ID（例：my-${id}）で追加してください。`

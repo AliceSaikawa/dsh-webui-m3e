@@ -91,21 +91,56 @@ test('I16 destinations native: 明示参照のない標準の保存先と別名�
 })
 
 test('I16 destinations owners: 新規参照は明示名と標準名だけを予約しキーなしIDは予約しない', () => {
-  assert.equal(keyReferenceConflict([], 'constructor', 'CONSTRUCTOR_API_KEY'), false)
-  assert.equal(keyReferenceConflict([], 'google', 'GOOGLE_API_KEY'), true)
-  assert.equal(keyReferenceConflict([], 'google', 'GOOGLE_CLOUD_PROJECT'), true)
-  assert.equal(keyReferenceConflict([], 'GOOGLE', 'GOOGLE_API_KEY'), true)
-  for (const [id, ref] of [['deepseek-official', 'DEEPSEEK_API_KEY'], ['google', 'GEMINI_API_KEY'], ['moonshotai-cn', 'MOONSHOT_API_KEY']]) {
-    assert.equal(keyReferenceConflict([], id!, ref!), true)
-    assert.equal(keyReferenceConflict([{ id: id === 'deepseek-official' ? 'deepseek' : id!, ref }], id!, ref!), true)
-    assert.equal(keyReferenceConflict([], id!.toUpperCase(), ref!), true)
+  assert.equal(keyReferenceConflict([], 'CONSTRUCTOR_API_KEY'), false)
+  assert.equal(keyReferenceConflict([], 'GOOGLE_API_KEY'), true)
+  assert.equal(keyReferenceConflict([], 'GOOGLE_CLOUD_PROJECT'), true)
+  for (const ref of ['DEEPSEEK_API_KEY', 'GEMINI_API_KEY', 'MOONSHOT_API_KEY']) {
+    assert.equal(keyReferenceConflict([], ref), true)
+    assert.equal(keyReferenceConflict([ref], ref), true)
   }
   for (const ref of ['AWS_SESSION_TOKEN', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT', 'CLOUDFLARE_ACCOUNT_ID']) {
-    assert.equal(keyReferenceConflict([], 'local-api', ref), true)
+    assert.equal(keyReferenceConflict([], ref), true)
   }
-  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'LOCAL_API_API_KEY' }], 'local-api', 'LOCAL_API_API_KEY'), true)
-  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'DEEPSEEK_API_KEY' }], 'deepseek-official', 'DEEPSEEK_API_KEY'), true)
-  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'DIFFERENT_API_KEY' }], 'OTHER', 'OTHER_API_KEY'), false)
-  assert.equal(keyReferenceConflict([{ id: 'other' }], 'OTHER', 'OTHER_API_KEY'), false)
-  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'local_api_api_key' }], 'local-api', 'LOCAL_API_API_KEY'), false)
+  assert.equal(keyReferenceConflict(['LOCAL_API_API_KEY'], 'LOCAL_API_API_KEY'), true)
+  assert.equal(keyReferenceConflict(['DIFFERENT_API_KEY'], 'OTHER_API_KEY'), false)
+  assert.equal(keyReferenceConflict([], 'OTHER_API_KEY'), false)
+  assert.equal(keyReferenceConflict(['local_api_api_key'], 'LOCAL_API_API_KEY'), false)
+})
+
+test('I16 R5 foreign owner: 別の名前空間の明示参照と/を含むIDの導出名が同じなら止める', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = ctx.remote as unknown as ProviderRemote
+    let keyWrites = 0
+    const set = remote.credentials.set
+    remote.credentials.set = async (...args) => { keyWrites++; return set(...args) }
+    // The existing owner is llm-deepseek / deepseek. "llm-deepseek/deepseek" is
+    // also a valid custom ID, and both derive the same reference name.
+    const description = await remote.settings.describe(); assert.ok(description.ok)
+    const foreign = description.value.namespaces.find(row => row.ns === 'llm-deepseek')!
+    assert.ok((await remote.settings.update(foreign.ns, { apiKeyEnv: 'LLM_DEEPSEEK_DEEPSEEK_API_KEY' }, foreign.revision)).ok)
+    const before = await remote.settings.describe()
+    const keys = createProviderStore(remote)
+    const form = createCustomProviderStore(remote, keys)
+    await form.load()
+    form.change(draft => ({ ...draft, id: 'llm-deepseek/deepseek', baseURL: profile.baseURL, models: [modelDraft({ id: 'one' })] }))
+    form.input.input('fake-foreign-owner')
+    assert.equal(await form.submit(), false)
+    assert.match(form.getSnapshot().errors.key!, /LLM_DEEPSEEK_DEEPSEEK_API_KEY.*別の提供元とキーの参照名が重なります/)
+    assert.deepEqual(await remote.settings.describe(), before)
+    assert.equal(keyWrites, 0)
+    // Without a key the same ID stays available, and adding the key later
+    // through the edit form is stopped the same way.
+    form.input.clear(); assert.equal(await form.submit(), true); form.dispose()
+    const saved = await remote.settings.describe()
+    const edit = createCustomProviderStore(remote, keys, 'llm-deepseek/deepseek')
+    await edit.load(); assert.equal(edit.getSnapshot().editing, true)
+    edit.input.input('fake-foreign-owner-edit')
+    assert.equal(await edit.submit(), false)
+    assert.match(edit.getSnapshot().errors.key!, /LLM_DEEPSEEK_DEEPSEEK_API_KEY.*別の提供元とキーの参照名が重なります/)
+    assert.deepEqual(await remote.settings.describe(), saved)
+    assert.equal(keyWrites, 0)
+    await keys.load(); assert.equal(keys.getSnapshot().rows.find(row => row.id === 'deepseek')!.status, 'missing')
+    edit.dispose()
+  } finally { ctx.dispose() }
 })
