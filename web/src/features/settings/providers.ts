@@ -2,6 +2,7 @@ import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
+import { derivedKeyRef, usedKeyReferences, keyReferenceConflict, sharedKeyReferenceMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
@@ -30,7 +31,9 @@ export interface ProviderRow {
   path: string[]
   revision?: number
   ref?: string
+  usedRefs?: string[]
   keyUnavailableReason?: string
+  keyNotice?: string
   needsReference: boolean
   status: 'registered' | 'missing' | 'unnecessary' | 'unknown'
   writable: boolean
@@ -44,11 +47,11 @@ export interface ProviderState {
   customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
-export interface KeySaveOptions { canSend?(): boolean; exclusive?: boolean }
+export interface KeySaveOptions { canSend?(): boolean }
 export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
 export const invalidKeyReferenceMessage = 'キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。'
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-const derivedRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
+const derivedRef = derivedKeyRef
 
 /** Keep only the two documented booleans; never propagate a server value. */
 export function keyInfo(value: unknown): KeyInfo | undefined {
@@ -62,7 +65,7 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
   for (const provider of registered) if (!entries.some(entry => entry.provider === provider.id)) {
     entries.push({ provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [] })
   }
-  return entries.filter(entry => entry.provider !== 'deepseek-account' || accountAvailable).map(entry => {
+  const rows: ProviderRow[] = entries.filter(entry => entry.provider !== 'deepseek-account' || accountAvailable).map(entry => {
     const namespace = settings.namespaces.find(item => item.ns === entry.settingsNs)
     const profile = namespace && valueAt(namespace.value, entry.settingsPath)
     const named = object(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : undefined
@@ -73,12 +76,14 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     const ref = native ? undefined : named ?? derivedRef(entry.provider)
     return {
       id: entry.provider, name: entry.displayName, custom, ns: entry.settingsNs, path: [...entry.settingsPath],
-      revision: namespace?.revision, ref,
+      revision: namespace?.revision, ref, usedRefs: usedKeyReferences(entry.provider, named),
       ...(ref && !validKeyReference(ref) ? { keyUnavailableReason: invalidKeyReferenceMessage } : {}),
       needsReference: !named && !native,
       status: native ? 'unnecessary' : 'unknown', writable: false,
     }
   })
+  return rows.map(row => row.ref && keyReferenceConflict(rows, row.id, row.ref)
+    ? { ...row, keyUnavailableReason: sharedKeyReferenceMessage } : row)
 }
 
 export function createProviderStore(remote: ProviderRemote) {
@@ -116,6 +121,7 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!row.ref || row.keyUnavailableReason) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
+          ...(status && !status.configured && !row.needsReference ? { keyNotice: pendingKeyReferenceMessage } : {}),
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
@@ -163,13 +169,11 @@ export function createProviderStore(remote: ProviderRemote) {
       } while (validatedVersion !== refreshVersion)
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const row = state.rows.find(item => item.id === target.id)
+      if (row?.ref && keyReferenceConflict(state.rows, row.id, row.ref)) return { ok: false, message: sharedKeyReferenceMessage }
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
       }
       if (value !== undefined && !value.trim()) return { ok: false, message: 'API キーを入力してください。' }
-      if (value !== undefined && options.exclusive && state.rows.some(other => other.id !== row.id && other.ref === row.ref)) {
-        return { ok: false, message: '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。' }
-      }
       if (value !== undefined && row.needsReference) {
         if (row.revision === undefined) return { ok: false, message: '提供元の設定を読み直してください。' }
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)

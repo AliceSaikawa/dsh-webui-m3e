@@ -67,6 +67,7 @@ function harness() {
   const keyWrites: string[] = []
   let rejected = false, throwWrite = false, lostResult = false, writable = true, missing = false, keyFails = false
   let gate: Promise<void> | undefined
+  let normalize: (() => void) | undefined
   const remote: Pick<ProviderRemote, 'settings' | 'llm'> = {
     settings: {
       async describe() { return { ok: true, value: { writable, namespaces: missing ? [] : [structuredClone(row)] } } },
@@ -74,8 +75,9 @@ function harness() {
       async mutate(_ns, ops, revision) {
         writes.push({ ops: structuredClone(ops), revision })
         if (gate) await gate
-        if (rejected) return { ok: false, error: { code: 'settings/conflict', message: '', details: {} } }
+        if (rejected || revision !== row.revision) return { ok: false, error: { code: 'settings/conflict', message: '', details: {} } }
         row.user = applyMockOperations(row, ops); row.value = structuredClone(row.user); row.revision++
+        normalize?.()
         if (throwWrite) throw new Error('応答が失われた')
         if (lostResult) return { ok: false, error: { code: 'gateway/internal', message: '', details: {} } }
         return { ok: true, value: structuredClone(row) }
@@ -93,7 +95,7 @@ function harness() {
   }
   const store = createCustomProviderStore(remote, keys)
   const load = async () => { await store.load(); store.change(() => good(row)) }
-  return { store, load, row, writes, keyWrites, keys,
+  return { store, load, row, writes, keyWrites, keys, normalize: (fn: () => void) => { normalize = fn },
     controls: { conflict: () => { rejected = true }, lost: () => { throwWrite = true }, lostResult: () => { lostResult = true }, readonly: () => { writable = false }, missing: () => { missing = true }, keyFails: (next: boolean) => { keyFails = next }, gate: (next: Promise<void>) => { gate = next } } }
 }
 
@@ -264,8 +266,75 @@ test('I16 reference recheck: 保存の再照会で新たな参照先の共有を
     store.input.input('fake-must-not-share')
     assert.equal(await store.submit(), false)
     assert.equal(store.getSnapshot().phase, 'keyFailed')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'missing')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'missing')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'unknown')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'unknown')
+    assert.match(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.keyUnavailableReason!, /参照名が重なります/)
     store.dispose()
   } finally { ctx.dispose() }
+})
+
+test('I16 opened revision M08: 通知前でも開いた版で保存して競合し他の変更を保つ', async () => {
+  const h = harness(); await h.load()
+  const opened = h.store.getSnapshot().namespace!.revision
+  h.row.revision++
+  h.row.value = { providers: { foreign: { retained: true } } }
+  h.row.user = structuredClone(h.row.value)
+  const foreign = structuredClone(h.row)
+  assert.equal(await h.store.submit(), false)
+  assert.equal(h.store.getSnapshot().phase, 'stale')
+  assert.equal(h.writes.length, 1)
+  assert.equal(h.writes[0]!.revision, opened)
+  assert.deepEqual(h.row, foreign)
+  assert.equal(await h.store.submit(), false)
+  assert.equal(h.writes.length, 1)
+})
+
+test('I16 input M22: 継承なしの空配列と未知の入力種別は欄エラーで送信しない', async () => {
+  for (const input of [[], ['audio']]) {
+    const h = harness(); await h.load()
+    h.store.change(draft => ({ ...draft, models: draft.models.map(model => ({ ...model, inheritedInput: false, input })) }))
+    assert.equal(await h.store.submit(), false)
+    const model = h.store.getSnapshot().draft!.models[0]!
+    assert.equal(h.store.getSnapshot().errors[`${model.row}.input`], '入力種別を 1 つ以上選んでください。')
+    assert.equal(h.writes.length, 0)
+    assert.equal(h.keyWrites.length, 0)
+  }
+  for (const [inheritedInput, input] of [[true, []], [false, ['text']], [false, ['image']]] as const) {
+    const h = harness(); await h.load()
+    h.store.change(draft => ({ ...draft, models: draft.models.map(model => ({ ...model, inheritedInput, input: [...input] })) }))
+    assert.equal(await h.store.submit(), true)
+  }
+})
+
+test('I16 committed state M24: 成功応答の版と整形済み値を編集の初期値に確定する', async () => {
+  for (const partial of [false, true]) {
+    const h = harness(); await h.load()
+    const opened = h.store.getSnapshot().namespace!.revision
+    h.normalize(() => {
+      h.row.revision += 4
+      const profile = (h.row.value.providers as any)['local-api']
+      profile.displayName = 'Host が整えた表示名'
+      profile.models[0].input = ['text']
+      profile.models[0].compat = { retained: true }
+    })
+    if (partial) { h.controls.keyFails(true); h.store.input.input('fake-partial') }
+    assert.equal(await h.store.submit(), !partial)
+    const saved = h.store.getSnapshot()
+    assert.equal(saved.phase, partial ? 'keyFailed' : 'saved')
+    assert.equal(saved.editing, true)
+    assert.equal(saved.draft!.id, 'local-api')
+    assert.equal(saved.namespace!.revision, opened + 5)
+    assert.deepEqual(saved.namespace, h.row)
+    const expected = customDraft(h.row, 'local-api')
+    // Row identities are local; compare all persisted fields independently.
+    expected.models[0]!.row = saved.draft!.models[0]!.row
+    assert.deepEqual(saved.draft, expected)
+    assert.deepEqual(saved.initial, saved.draft)
+    if (partial) {
+      h.controls.keyFails(false); h.store.input.input('fake-retry')
+      assert.equal(await h.store.submit(), true)
+      assert.equal(h.writes.length, 1)
+      assert.equal(h.store.getSnapshot().namespace!.revision, opened + 5)
+    }
+  }
 })

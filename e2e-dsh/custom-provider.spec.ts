@@ -13,7 +13,30 @@ async function instrument(page: Page) {
         const observe = (plugin: any) => plugin.id !== '@deepseek-ai/dsh-api-session-controller' ? load(plugin) : load({
           ...plugin, factory(require: any) {
             const exported = plugin.factory(require), apply = exported.apply
-            return { ...exported, apply(ctx: any) { const result = apply(ctx); (window as any).__customRemote = ctx.root.remote; return result } }
+            return { ...exported, apply(ctx: any) {
+              const result = apply(ctx), w = window as any
+              w.__customRemote = ctx.root.remote
+              w.__settingsWrites = []
+              w.__heldSettings = []
+              const prototype = Object.getPrototypeOf(ctx.root.remote)
+              const subscribe = prototype.$on, invoke = prototype.invoke
+              prototype.$on = function(event: string, listener: (...args: any[]) => unknown) {
+                return subscribe.call(this, event, (...args: any[]) => {
+                  if (event === 'settings/document-updated' && w.__holdSettings) w.__heldSettings.push(() => listener(...args))
+                  else return listener(...args)
+                })
+              }
+              prototype.invoke = async function(...args: any[]) {
+                const descriptor = args[0]
+                const write = descriptor.namespace === 'settings' && ['mutate', 'update'].includes(descriptor.method)
+                  ? { method: descriptor.method, revision: args[4][2], ops: args[4][1], code: 'pending' } : undefined
+                if (write) w.__settingsWrites.push(write)
+                const answer = await invoke.apply(this, args)
+                if (write) write.code = answer.ok ? 'ok' : answer.error.code
+                return answer
+              }
+              return result
+            } }
           },
         })
         Object.defineProperty(value, 'load', { configurable: true, get: () => observe, set: next => { load = next.bind(value) } })
@@ -93,6 +116,8 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await create(page, 'i16-conflict', false)
   await row(page, 'i16-conflict').getByRole('button', { name: '編集', exact: true }).click()
   await page.getByLabel('表示名（任意）', { exact: true }).fill('送らない下書き')
+  const opened = await snapshot(page)
+  await page.evaluate(() => { (window as any).__holdSettings = true; (window as any).__settingsWrites = [] })
   const second = await context.newPage(); await instrument(second)
   await second.goto(`${integration.host.origin}/m3e/#/settings/providers`)
   await expect(row(second, 'i16-conflict')).toBeVisible()
@@ -100,12 +125,20 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
     const remote = (window as any).__customRemote
     const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-pi-ai')
     return remote.settings.mutate(ns.ns, [{ op: 'set', path: ['providers', 'i16-conflict', 'baseURL'], value: 'http://localhost:4567/v1' },
-      { op: 'set', path: ['providers', 'i16-conflict', 'apiKeyEnv'], value: 'DEEPSEEK_API_KEY' }], ns.revision)
+      { op: 'set', path: ['providers', 'i16-conflict', 'apiKeyEnv'], value: 'M3E_DSH_VERSION' }], ns.revision)
   })
   expect(result.ok).toBe(true)
+  const foreign = await snapshot(second)
+  await expect.poll(() => page.evaluate(() => (window as any).__heldSettings.length)).toBeGreaterThan(0)
+  await button(page, '保存').click()
   await expect(form(page).getByRole('alert')).toHaveText('ほかの場所で設定が変わりました。再読み込みして、変更内容を確認してください。')
   await expect(button(page, '保存')).toBeDisabled()
-  expect((await snapshot(page)).providers['i16-conflict'].displayName).toBeUndefined()
+  expect(await snapshot(page)).toEqual(foreign)
+  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual([{
+    method: 'mutate', revision: opened.revision, code: 'settings/conflict',
+    ops: [{ op: 'set', path: ['providers', 'i16-conflict', 'displayName'], value: '送らない下書き' }],
+  }])
+  await page.evaluate(() => { const w = window as any; w.__holdSettings = false; w.__heldSettings.splice(0).forEach((deliver: () => void) => deliver()) })
   await button(page, '再読み込み').click()
   await expect(page.getByLabel('ベース URL', { exact: true })).toHaveValue('http://localhost:4567/v1')
   await page.getByLabel('表示名（任意）', { exact: true }).fill('設定だけ成功')
@@ -113,12 +146,16 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await button(page, '保存').click()
   await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
   const saved = await snapshot(page)
+  const writesBeforeRetry = await page.evaluate(() => (window as any).__settingsWrites)
+  expect(writesBeforeRetry).toHaveLength(2)
   expect(saved.providers['i16-conflict'].displayName).toBe('設定だけ成功')
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
   await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-retry')
   await button(page, 'API キーを保存').click()
   await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
   expect((await snapshot(page)).revision).toBe(saved.revision)
+  expect(await snapshot(page)).toEqual(saved)
+  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
   await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
   await row(page, '設定だけ成功').getByRole('button', { name: '編集', exact: true }).click()
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')

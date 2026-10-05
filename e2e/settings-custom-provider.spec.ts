@@ -184,3 +184,90 @@ test('I16 UI URL: HTTP以外を欄エラーで止めIPv6と前後空白を扱う
   await row(page).getByRole('button', { name: '編集', exact: true }).click()
   await expect(url).toHaveValue('https://[::1]:1234/v1')
 })
+
+test('I16 UI saving M39: 設定とキーを待つ間は保存ボタンを無効にする', async ({ page }) => {
+  await expose(page)
+  for (const withKey of [false, true]) {
+    await page.goto('about:blank')
+    await visit(page, '/settings/providers', 'custom-slow'); await fill(page)
+    if (withKey) {
+      await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-pending-key')
+      await page.evaluate(() => {
+        const w = window as any, settings = w.__i16.remote.settings
+        const mutate = settings.mutate, describe = settings.describe
+        let committed = false
+        const held = new Promise<void>(resolve => { w.__releaseKey = resolve })
+        settings.mutate = async (...args: any[]) => { const result = await mutate(...args); committed = true; return result }
+        settings.describe = async (...args: any[]) => {
+          const result = await describe(...args)
+          if (committed) { w.__keyWaiting = true; await held }
+          return result
+        }
+      })
+    }
+    await button(page, '保存').click()
+    await expect.poll(() => page.evaluate(() => (window as any).__i16.mock.remoteOf('customProviderTest').pendingSaves())).toBe(1)
+    await expect(button(page, '保存')).toBeDisabled()
+    await page.evaluate(() => (window as any).__i16.mock.remoteOf('customProviderTest').releaseSaves())
+    if (withKey) {
+      await expect.poll(() => page.evaluate(() => (window as any).__keyWaiting === true)).toBe(true)
+      await expect(page.getByText('保存しています…', { exact: true })).toBeVisible()
+      await expect(button(page, '保存')).toBeDisabled()
+      await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+      await page.evaluate(() => (window as any).__releaseKey())
+    }
+    await expect(form(page)).toBeHidden()
+    await expect(row(page)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未登録')
+    expect(await writes(page)).toBe(1)
+  }
+})
+
+test('I16 UI input M22: 継承を外して選択しなければ欄エラーで保存しない', async ({ page }) => {
+  await expose(page); await visit(page, '/settings/providers'); await fill(page)
+  await page.getByText('詳細', { exact: true }).click()
+  await page.getByLabel('提供元の既定値を使う', { exact: true }).uncheck()
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toHaveText('入力種別を 1 つ以上選んでください。')
+  await expect(page.locator('.custom-modalities')).toBeFocused()
+  expect(await writes(page)).toBe(0)
+  await page.getByLabel('画像', { exact: true }).check()
+  await button(page, '保存').click(); await expect(form(page)).toBeHidden()
+  expect(await page.evaluate(() => (window as any).__i16writes[0][1][0].value.models[0].input)).toEqual(['image'])
+})
+
+test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの状態を案内する', async ({ page }) => {
+  await expose(page); await visit(page, '/settings/providers'); await fill(page, 'LOCAL-API')
+  await button(page, '保存').click(); await expect(form(page)).toBeHidden()
+  await page.evaluate(async () => {
+    const settings = (window as any).__i16.remote.settings
+    const ns = (await settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-pi-ai')
+    const result = await settings.mutate(ns.ns, [
+      { op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' },
+      { op: 'set', path: ['providers', 'LOCAL-API', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' },
+    ], ns.revision)
+    if (!result.ok) throw new Error('設定できません')
+  })
+  await expect(row(page)).toContainText('別の提供元とキーの参照名が重なります。')
+  await expect(row(page)).toContainText('登録状況を確認できません')
+  await expect(row(page).getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await row(page).getByRole('button', { name: '編集', exact: true }).click()
+  await expect(form(page)).toContainText('この画面ではキーを登録・削除できません。')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-reopened-collision')
+  const before = await writes(page)
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toContainText('参照名が重なります')
+  expect(await writes(page)).toBe(before)
+  await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.evaluate(async () => {
+    const settings = (window as any).__i16.remote.settings
+    const ns = (await settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-pi-ai')
+    if (!(await settings.mutate(ns.ns, [{ op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'PI_AI_API_KEY' }], ns.revision)).ok) throw new Error('設定できません')
+  })
+  await expect(row(page)).toContainText('キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。')
+  await row(page).getByRole('button', { name: '編集', exact: true }).click()
+  await expect(form(page)).toContainText('キーの参照先だけが設定されています。')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-retry-after-reference')
+  await button(page, '保存').click(); await expect(form(page)).toBeHidden()
+  await expect(row(page)).toContainText('API キー：登録済み')
+  await expect(row(page)).not.toContainText('キーの参照先だけが設定されています。')
+})

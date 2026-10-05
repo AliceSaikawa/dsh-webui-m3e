@@ -125,13 +125,13 @@ export function ProvidersPanel() {
     {state.phase === 'ready' && state.rows.length === 0 && <p>提供元が登録されていません。</p>}
     <M3eActionList className="settings-card">
       {state.rows.map(row => row.custom ? <div className="custom-provider-row" role="group" aria-label={row.name} key={row.id}>
-        <div><strong>{row.name}</strong><span>{row.id}</span><span>{statusLabels[row.status]}</span>{row.keyUnavailableReason && <span>{row.keyUnavailableReason}</span>}</div>
+        <div><strong>{row.name}</strong><span>{row.id}</span><span>{statusLabels[row.status]}</span>{row.keyUnavailableReason && <span>{row.keyUnavailableReason}</span>}{row.keyNotice && <span>{row.keyNotice}</span>}</div>
         <div className="custom-row-actions"><M3eButton variant="text" disabled={state.phase !== 'ready' || editorBusy} onClick={() => editCustom(row.id)}>編集</M3eButton>
           <M3eButton variant="text" disabled={!row.writable || state.busy || editorBusy} onClick={() => openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` })}>API キー</M3eButton></div>
       </div> : <M3eListAction key={row.id} disabled={!row.writable || state.busy}
         onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>
         <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'dns' : 'key'} /></span>{row.name}
-        <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>
+        <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}{row.keyUnavailableReason ?? row.keyNotice}</span>
         {row.writable && <span slot="trailing"><Icon name="chevron_right" /></span>}
       </M3eListAction>)}
     </M3eActionList>
