@@ -1,7 +1,8 @@
-import { createKeyDraft, providerRows, validKeyReference, invalidKeyReferenceMessage, type ProviderRow, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
+import { createKeyDraft, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
 import { CUSTOM_NS, customDraft, customOperations, objectValue, protocolChoices, providerRef, validateCustom, type CustomDraft, type CustomErrors } from './custom-provider.ts'
 import { valueAt, type SettingsNamespace } from './schema.ts'
-import { keyReferenceConflict } from './provider-key-refs.ts'
+import { validKeyReference, invalidKeyReferenceMessage, keyReferenceReason, keyReferenceError, type KeyDestination } from './provider-key-refs.ts'
+import { inspectCustomKey, type KeyReferenceReader } from './custom-provider-key.ts'
 
 type Phase = 'loading' | 'editing' | 'blocked' | 'savingSettings' | 'savingKey' | 'keyFailed' | 'stale' | 'unknown' | 'saved'
 export interface CustomState {
@@ -10,9 +11,10 @@ export interface CustomState {
 }
 const conflictMessage = 'ほかの場所で設定が変わりました。再読み込みして、変更内容を確認してください。'
 const unknownMessage = '接続が切れました。保存できたか確認してから、もう一度お試しください。'
-const partialMessage = '提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。'
+const partialMessage = '提供元の設定は保存しましたが、API キーを保存できませんでした。'
 export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings' | 'llm'>,
-  keys: Pick<ProviderStore, 'load' | 'save' | 'getSnapshot'>, id?: string, settled: () => void = () => {}) {
+  keys: Pick<ProviderStore, 'load' | 'save' | 'getSnapshot'>, id?: string, settled: () => void = () => {},
+  inspectReference: KeyReferenceReader = ref => inspectCustomKey(remote, ref)) {
   let state: CustomState = { phase: 'loading', editing: id !== undefined, writable: false, taken: [], protocols: [], errors: {}, message: null }
   let target = id
   let active = true
@@ -22,8 +24,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
   let pendingKey: string | undefined
   let saving = false
   let committed = false
-  let attachingReference = false
-  let references: ProviderRow[] = []
+  let references: KeyDestination[] = []
   let changedDuringSave = false
   const listeners = new Set<() => void>()
   const publish = (patch: Partial<CustomState>) => { state = { ...state, ...patch }; if (active) listeners.forEach(fn => fn()) }
@@ -47,9 +48,16 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       const draft = customDraft(namespace, editing ? target : undefined)
       const protocols = protocolChoices(namespace)
       const taken = [...new Set([...registered.value.map(row => row.id), ...directory.value.map(row => row.provider), ...Object.keys(objectValue(namespace.value.providers) ? namespace.value.providers : {})])]
-      references = providerRows(registered.value, directory.value, description.value)
+      references = directory.value.flatMap(entry => {
+        const ns = description.value.namespaces.find(row => row.ns === entry.settingsNs)
+        const value = ns && valueAt(ns.value, entry.settingsPath)
+        return objectValue(value) && typeof value.apiKeyEnv === 'string'
+          ? [{ id: entry.settingsNs === CUSTOM_NS ? entry.provider : `${entry.settingsNs}/${entry.provider}`, ref: value.apiKeyEnv }] : []
+      })
+      for (const [provider, value] of Object.entries(objectValue(namespace.value.providers) ? namespace.value.providers : {})) {
+        if (objectValue(value) && typeof value.apiKeyEnv === 'string') references.push({ id: provider, ref: value.apiKeyEnv })
+      }
       committed = false
-      attachingReference = false
       publish({ namespace, initial: structuredClone(draft), draft, editing, protocols, taken,
         writable: description.value.writable, phase: description.value.writable && protocols.length ? 'editing' : 'blocked',
         message: !description.value.writable ? 'この DSH では設定を変更できません' : !protocols.length ? 'API プロトコルの選択肢を取得できません。' : null })
@@ -70,9 +78,10 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const hasReference = objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
     const ref = hasReference ? profile.apiKeyEnv as string : providerRef(state.draft?.id ?? '')
     if (key && !validKeyReference(ref)) errors.key = invalidKeyReferenceMessage
-    else if (key && (!hasReference || attachingReference) && state.draft && keyReferenceConflict(references, state.draft.id, ref)) errors.key = state.editing
-      ? '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。'
-      : '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
+    else if (key && !hasReference && state.draft) {
+      const reason = keyReferenceReason(references, state.draft.id, ref)
+      if (reason) errors.key = keyReferenceError(state.draft.id, ref, reason)
+    }
     const displayed = field ? { ...state.errors } : errors
     if (field) { delete displayed[field]; if (errors[field]) displayed[field] = errors[field] }
     publish({ errors: displayed })
@@ -90,13 +99,25 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const { namespace, initial, draft, editing } = state
     if (!committed) {
       target = editing ? initial.id : draft.id
-      const profile = valueAt(namespace.value, ['providers', target])
-      attachingReference = Boolean(pendingKey) && !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)
     }
     try {
       if (!committed) {
         const ops = customOperations(namespace, initial, draft, editing, Boolean(pendingKey))
         publish({ phase: 'savingSettings', message: null })
+        const profile = valueAt(namespace.value, ['providers', target!])
+        if (pendingKey && !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)) {
+          const ref = providerRef(target!)
+          const info = await inspectReference(ref)
+          if (!active || generation !== epoch || !connected) return { ok: false, message: unknownMessage }
+          const reason = !info ? '登録状況を確認できません。接続を確認して、もう一度お試しください。'
+            : info.configured ? 'この名前のキーはすでに登録されています。'
+            : !info.writable ? 'この保存先は変更できません。' : undefined
+          if (reason) {
+            const message = keyReferenceError(target!, ref, reason)
+            publish({ phase: 'editing', errors: { key: message } })
+            return { ok: false, message }
+          }
+        }
         if (ops.length) {
           const result = await remote.settings.mutate(CUSTOM_NS, ops, namespace.revision)
           if (generation !== epoch) return { ok: false, message: unknownMessage }
@@ -117,16 +138,23 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       if (!active || generation !== epoch || !connected) return { ok: false, message: unknownMessage }
       if (pendingKey) {
         publish({ phase: 'savingKey' })
-        if (!await keys.load()) throw new Error()
+        if (!await keys.load()) {
+          const message = `${partialMessage} ${keys.getSnapshot().error ?? '登録状況を読み込めませんでした。接続を確認してください。'}`
+          if (active && generation === epoch) publish({ phase: 'keyFailed', message })
+          return { ok: false, message }
+        }
         if (!active || generation !== epoch || !connected || !pendingKey) return { ok: false, message: unknownMessage }
         const profile = valueAt(state.namespace!.value, ['providers', target!])
         const ref = objectValue(profile) && typeof profile.apiKeyEnv === 'string' ? profile.apiKeyEnv : providerRef(target!)
         const row = keys.getSnapshot().rows.find(row => row.id === target && row.ref === ref)
         const value = pendingKey
         pendingKey = undefined
-        const outcome = row ? await keys.save(row, value, { newReference: attachingReference, canSend: () => active && connected && generation === epoch }) : { ok: false, message: partialMessage }
+        const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch }) : { ok: false, message: '提供元の参照先が変わりました。設定を確認してください。' }
         if (!active || generation !== epoch) return { ok: false, message: unknownMessage }
-        if (!outcome.ok) { publish({ phase: 'keyFailed', message: partialMessage }); return { ok: false, message: partialMessage } }
+        if (!outcome.ok) {
+          const message = `${partialMessage} ${outcome.message}`
+          publish({ phase: 'keyFailed', message }); return { ok: false, message }
+        }
       }
       const refreshed = await keys.load()
       if (!active || generation !== epoch) return { ok: false, message: unknownMessage }

@@ -45,7 +45,7 @@ test('I16 UI lifecycle: 追加と編集、行操作、欄エラーとモデル�
   await page.getByLabel('コンテキスト長', { exact: true }).fill('4096')
   await expect(page.getByLabel('コンテキスト長', { exact: true })).toBeVisible()
   await button(page, '保存').click(); await expect(form(page)).toBeHidden()
-  await expect(row(page)).toContainText('API キー：未登録')
+  await expect(row(page)).toContainText('API キー：未設定')
   expect(await writes(page)).toBe(1)
   await row(page).getByRole('button', { name: '編集', exact: true }).click()
   await expect(page.getByLabel('プロバイダー ID', { exact: true })).toBeDisabled()
@@ -141,7 +141,7 @@ test('I16 UI partial: 設定だけ成功したらキーだけ再試行する', a
   await expose(page); await visit(page, '/settings/providers', 'custom-partial'); await fill(page)
   await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-first')
   await button(page, '保存').click()
-  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
+  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。 API キーの変更が拒否されました。登録状況を確認してください。')
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
   expect(await writes(page)).toBe(1)
   await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-second')
@@ -217,7 +217,7 @@ test('I16 UI saving M39: 設定とキーを待つ間は保存ボタンを無効�
       await page.evaluate(() => (window as any).__releaseKey())
     }
     await expect(form(page)).toBeHidden()
-    await expect(row(page)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未登録')
+    await expect(row(page)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未設定')
     expect(await writes(page)).toBe(1)
   }
 })
@@ -235,7 +235,7 @@ test('I16 UI input M22: 継承を外して選択しなければ欄エラーで�
   expect(await page.evaluate(() => (window as any).__i16writes[0][1][0].value.models[0].input)).toEqual(['image'])
 })
 
-test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの状態を案内する', async ({ page }) => {
+test('I16 UI destinations: 参照先なしは編集から登録し衝突の理由と参照名を示す', async ({ page }) => {
   await expose(page); await visit(page, '/settings/providers'); await fill(page, 'LOCAL-API')
   await button(page, '保存').click(); await expect(form(page)).toBeHidden()
   await page.evaluate(async () => {
@@ -246,15 +246,16 @@ test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの�
     ], ns.revision)
     if (!result.ok) throw new Error('設定できません')
   })
-  await expect(row(page)).toContainText('別の提供元とキーの参照名が重なります。')
-  await expect(row(page)).toContainText('登録状況を確認できません')
-  await expect(row(page).getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await expect(row(page)).toContainText('API キー：未設定')
+  await expect(row(page)).toContainText('API キーは「編集」から登録できます。')
+  await expect(row(page).getByRole('button', { name: 'API キー', exact: true })).toHaveCount(0)
   await row(page).getByRole('button', { name: '編集', exact: true }).click()
-  await expect(form(page)).toContainText('この提供元には新しいキーの参照先を設定できません。')
   await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-reopened-collision')
   const before = await writes(page)
   await button(page, '保存').click()
   await expect(form(page).getByRole('alert')).toContainText('参照名が重なります')
+  await expect(form(page).getByRole('alert')).toContainText('LOCAL_API_API_KEY')
+  await expect(form(page).getByRole('alert')).toContainText('my-LOCAL-API')
   expect(await writes(page)).toBe(before)
   await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
   await page.evaluate(async () => {
@@ -272,4 +273,16 @@ test('I16 UI destinations: 衝突中のキー操作を止め参照先だけの�
   await button(page, '保存').click(); await expect(form(page)).toBeHidden()
   await expect(row(page)).toContainText('API キー：登録済み')
   await expect(row(page)).not.toContainText('キーの参照先だけが設定されています。')
+})
+
+test('I16 UI reserved: 予約された参照名と理由と別IDの例を欄の近くに示す', async ({ page }) => {
+  await expose(page); await visit(page, '/settings/providers'); await fill(page, 'aws-demo')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-reserved')
+  await button(page, '保存').click()
+  const error = form(page).getByRole('alert')
+  await expect(error).toContainText('AWS_DEMO_API_KEY')
+  await expect(error).toContainText('AWS_ で始まる名前は標準の提供元の補助設定として予約されています。')
+  await expect(error).toContainText('my-aws-demo')
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveAttribute('aria-invalid', 'true')
+  expect(await writes(page)).toBe(0)
 })

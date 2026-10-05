@@ -6,7 +6,8 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { showSnackbar, useOverlays } from '../../app/overlay/index.ts'
 import { customFieldWritable, customOperations, modelDraft, providerRef, type ModelInputs } from './custom-provider.ts'
 import type { CustomProviderStore } from './custom-provider-store.ts'
-import { validKeyReference, invalidKeyReferenceMessage, type ProviderStore } from './providers.ts'
+import type { ProviderStore } from './providers.ts'
+import { validKeyReference, invalidKeyReferenceMessage } from './provider-key-refs.ts'
 
 const protocolNames: Record<string, string> = { 'openai-completions': 'OpenAI チャット補完', 'openai-responses': 'OpenAI 応答', 'anthropic-messages': 'Anthropic メッセージ' }
 function Field({ label, value, onChange, disabled, error, type = 'text', inputMode, fieldKey }: {
@@ -129,9 +130,8 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
       </section>
       <Field label="API キー（任意）" fieldKey="key" value={key.draft} type={key.visible ? 'text' : 'password'} disabled={saving || !['editing', 'keyFailed'].includes(state.phase)} error={state.errors.key}
         onChange={controller.input.input} />
-      <p>API キー：{({ registered: '登録済み', missing: '未登録', unknown: '確認できません', unnecessary: '確認できません' })[providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown']}</p>
+      <p>API キー：{({ registered: '登録済み', missing: '未登録', unset: '未設定', unknown: '確認できません', unnecessary: '確認できません' })[providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown']}</p>
       {keyRefInvalid && !state.errors.key && <p className="settings-field-help">{invalidKeyReferenceMessage} キーを空欄にすると、設定だけ保存できます。</p>}
-      {!keyRefInvalid && !state.errors.key && provider?.keyUnavailableReason && <p className="settings-field-help">{provider.keyUnavailableReason}</p>}
       {provider?.keyNotice && <p className="settings-field-help">{provider.keyNotice}</p>}
       <M3eButton variant="text" disabled={saving} aria-pressed={key.visible} onClick={controller.input.toggle}>{key.visible ? '入力したキーを隠す' : '入力したキーを表示する'}</M3eButton>
       <p className="settings-field-help">保存すると、あとから表示できません。空欄なら登録済みのキーを変更しません。</p>

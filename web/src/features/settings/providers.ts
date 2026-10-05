@@ -3,7 +3,7 @@ import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
 import { describeKeyBatches } from './provider-key-info.ts'
-import { derivedKeyRef, usedKeyReferences, keyReferenceConflict, sharedKeyReferenceMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
+import { pendingKeyReferenceMessage } from './provider-key-refs.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
@@ -32,11 +32,9 @@ export interface ProviderRow {
   path: string[]
   revision?: number
   ref?: string
-  usedRefs?: string[]
-  keyUnavailableReason?: string
   keyNotice?: string
   needsReference: boolean
-  status: 'registered' | 'missing' | 'unnecessary' | 'unknown'
+  status: 'registered' | 'missing' | 'unnecessary' | 'unknown' | 'unset'
   writable: boolean
 }
 export interface ProviderState {
@@ -48,11 +46,9 @@ export interface ProviderState {
   customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
-export interface KeySaveOptions { canSend?(): boolean; newReference?: boolean }
-export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
-export const invalidKeyReferenceMessage = 'キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。'
+export interface KeySaveOptions { canSend?(): boolean }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
-const derivedRef = derivedKeyRef
+const derivedRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 
 /** Keep only the two documented booleans; never propagate a server value. */
 export function keyInfo(value: unknown): KeyInfo | undefined {
@@ -66,7 +62,7 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
   for (const provider of registered) if (!entries.some(entry => entry.provider === provider.id)) {
     entries.push({ provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [] })
   }
-  const rows: ProviderRow[] = entries.filter(entry => entry.provider !== 'deepseek-account' || accountAvailable).map(entry => {
+  return entries.filter(entry => entry.provider !== 'deepseek-account' || accountAvailable).map(entry => {
     const namespace = settings.namespaces.find(item => item.ns === entry.settingsNs)
     const profile = namespace && valueAt(namespace.value, entry.settingsPath)
     const named = object(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : undefined
@@ -74,17 +70,15 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     // provider-native authentication (including local gateways).
     const custom = entry.declared === true && entry.settingsNs === 'llm-pi-ai'
     const native = entry.provider === 'deepseek-account' || !custom && !named && live.has(entry.provider)
-    const ref = native ? undefined : named ?? derivedRef(entry.provider)
+    const withoutReference = custom && !named
+    const ref = native || withoutReference ? undefined : named ?? derivedRef(entry.provider)
     return {
       id: entry.provider, name: entry.displayName, custom, ns: entry.settingsNs, path: [...entry.settingsPath],
-      revision: namespace?.revision, ref, usedRefs: usedKeyReferences(entry.provider, named),
-      ...(ref && !validKeyReference(ref) ? { keyUnavailableReason: invalidKeyReferenceMessage } : {}),
-      needsReference: !named && !native,
-      status: native ? 'unnecessary' : 'unknown', writable: false,
+      revision: namespace?.revision, ref,
+      needsReference: !named && !native && !custom,
+      status: withoutReference ? 'unset' : native ? 'unnecessary' : 'unknown', writable: false,
     }
   })
-  return rows.map(row => row.custom && row.needsReference && row.ref && keyReferenceConflict(rows, row.id, row.ref)
-    ? { ...row, keyUnavailableReason: sharedKeyReferenceMessage } : row)
 }
 
 export function createProviderStore(remote: ProviderRemote) {
@@ -114,11 +108,11 @@ export function createProviderStore(remote: ProviderRemote) {
       }
       if (request !== sequence || generation !== epoch) return false
       const rows = providerRows(registered.value, directory.value, settings.value, accountAvailable)
-      const refs = [...new Set(rows.flatMap(row => row.ref && validKeyReference(row.ref) ? [row.ref] : []))]
+      const refs = [...new Set(rows.flatMap(row => row.ref ? [row.ref] : []))]
       const info = await describeKeyBatches(refs, batch => remote.credentials.describe(batch))
       if (request !== sequence || generation !== epoch) return false
       const resolved = rows.map(row => {
-        if (!row.ref || row.keyUnavailableReason) return row
+        if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
           ...(status && !status.configured && !row.needsReference ? { keyNotice: pendingKeyReferenceMessage } : {}),
@@ -126,7 +120,7 @@ export function createProviderStore(remote: ProviderRemote) {
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
       })
-      const incomplete = resolved.some(row => row.status === 'unknown' && !row.keyUnavailableReason)
+      const incomplete = resolved.some(row => row.status === 'unknown')
       publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
         customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
         error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
@@ -169,8 +163,6 @@ export function createProviderStore(remote: ProviderRemote) {
       } while (validatedVersion !== refreshVersion)
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const row = state.rows.find(item => item.id === target.id)
-      const newReference = options.newReference || row?.custom && row.needsReference
-      if (newReference && row?.ref && keyReferenceConflict(state.rows, row.id, row.ref)) return { ok: false, message: sharedKeyReferenceMessage }
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
       }
@@ -180,19 +172,6 @@ export function createProviderStore(remote: ProviderRemote) {
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)
         if (!named.ok || generation !== epoch) return { ok: false, message: '参照先を設定できませんでした。提供元の設定を読み直してください。' }
         referenceWritten = true
-        // A successful reference write does not reserve its destination. Another
-        // page may have changed the settings while its response was in flight.
-        do {
-          validatedVersion = refreshVersion
-          if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
-        } while (validatedVersion !== refreshVersion)
-        const current = state.rows.find(item => item.id === target.id)
-        if (!current?.writable || current.ref !== row.ref || current.ns !== row.ns || JSON.stringify(current.path) !== JSON.stringify(row.path)) {
-          return { ok: false, message: '参照先を設定しましたが、設定が変わったためキーは保存しませんでした。提供元の設定を確認してください。' }
-        }
-        if (newReference && keyReferenceConflict(state.rows, current.id, current.ref!)) {
-          return { ok: false, message: '参照先を設定しましたが、ほかの提供元と重なったためキーは保存しませんでした。提供元の設定を確認してください。' }
-        }
       }
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)

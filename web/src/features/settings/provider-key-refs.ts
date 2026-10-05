@@ -5,6 +5,8 @@ const conventional = ['ant-ling', 'qwen-token-plan', 'qwen-token-plan-cn', 'open
   'minimax-cn', 'fireworks', 'together', 'baseten', 'opencode', 'meta', 'xiaomi',
   'xiaomi-token-plan-cn', 'xiaomi-token-plan-ams', 'xiaomi-token-plan-sgp']
 export const derivedKeyRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
+export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
+export const invalidKeyReferenceMessage = 'キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。'
 const defaults: Record<string, string[]> = {
   ...Object.fromEntries(conventional.map(id => [id, [derivedKeyRef(id)]])),
   anthropic: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_OAUTH_TOKEN'],
@@ -18,22 +20,18 @@ const defaults: Record<string, string[]> = {
 }
 // Ambient discovery also reads auxiliary names. Reserve these whole families
 // conservatively; status lookup still uses only the configured reference.
-const families: [string, string[]][] = [
-  ['AWS_', ['amazon-bedrock']], ['GOOGLE_', ['google-vertex']], ['GCLOUD_', ['google-vertex']],
-  ['CLOUDFLARE_', ['cloudflare-workers-ai', 'cloudflare-ai-gateway']],
-]
-export const sharedKeyReferenceMessage = '別の提供元とキーの参照名が重なります。この提供元には新しいキーの参照先を設定できません。'
+const families = ['AWS_', 'GOOGLE_', 'GCLOUD_', 'CLOUDFLARE_']
 export const pendingKeyReferenceMessage = 'キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。'
-export interface KeyDestination { id: string; ref?: string; usedRefs?: string[] }
-const defaultRefs = (id: string): string[] => Object.hasOwn(defaults, id) ? defaults[id]! : []
-export function usedKeyReferences(id: string, explicit?: string): string[] {
-  return [...new Set([...(explicit ? [explicit] : []), derivedKeyRef(id), ...defaultRefs(id)])]
+export interface KeyDestination { id: string; ref?: string }
+export function keyReferenceReason(rows: KeyDestination[], id: string, ref: string): string | undefined {
+  if (rows.some(row => row.id !== id && row.ref === ref)) return '別の提供元とキーの参照名が重なります。'
+  if (Object.values(defaults).some(refs => refs.includes(ref))) return '標準の提供元が使う名前として予約されています。'
+  const family = families.find(prefix => ref.startsWith(prefix))
+  if (family) return `${family} で始まる名前は標準の提供元の補助設定として予約されています。`
 }
 export function keyReferenceConflict(rows: KeyDestination[], id: string, ref: string): boolean {
-  const builtinOwner = defaultRefs(id).includes(ref)
-  const ownDerived = Object.hasOwn(defaults, id) && ref === derivedKeyRef(id)
-  return rows.some(row => row.id !== id && !(builtinOwner && defaultRefs(row.id).includes(ref))
-      && (row.usedRefs ?? usedKeyReferences(row.id, row.ref)).includes(ref))
-    || (!builtinOwner && Object.entries(defaults).some(([owner, refs]) => owner !== id && refs.includes(ref)))
-    || families.some(([prefix, owners]) => ref.startsWith(prefix) && !owners.includes(id) && !ownDerived)
+  return keyReferenceReason(rows, id, ref) !== undefined
+}
+export function keyReferenceError(id: string, ref: string, reason: string): string {
+  return `参照名「${ref}」：${reason} キーを空欄にするか、ほかと重ならない接頭辞を付けた ID（例：my-${id}）で追加してください。`
 }

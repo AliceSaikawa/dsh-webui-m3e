@@ -4,7 +4,7 @@ import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock } from '../web/src/features/settings/mock.ts'
 import { createProviderStore, type ProviderRemote } from '../web/src/features/settings/providers.ts'
 
-test('I16 reference write close M47: 参照書込みの待機中に閉じたらキーを送らず再開できる', async () => {
+test('I16 reference write close M47: 標準の参照書込み中もcanSendで中止して再開できる', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const remote = ctx.remote as unknown as ProviderRemote
@@ -13,6 +13,9 @@ test('I16 reference write close M47: 参照書込みの待機中に閉じたら�
     assert.ok((await remote.settings.mutate(ns.ns, [{ op: 'set', path: ['providers', 'close-ref'], value: {
       api: 'openai-completions', baseURL: 'http://localhost', models: [{ id: 'one' }],
     } }], ns.revision)).ok)
+    const directory = remote.llm.listConfigurableProviders, live = remote.llm.listProviders
+    remote.llm.listConfigurableProviders = async () => { const result = await directory(); assert.ok(result.ok); return { ok: true, value: result.value.map(row => row.provider === 'close-ref' ? { ...row, declared: false } : row) } }
+    remote.llm.listProviders = async () => { const result = await live(); assert.ok(result.ok); return { ok: true, value: result.value.filter(row => row.id !== 'close-ref') } }
     const keys = createProviderStore(remote); await keys.load()
     const target = keys.getSnapshot().rows.find(row => row.id === 'close-ref')!
     assert.equal(target.needsReference, true)

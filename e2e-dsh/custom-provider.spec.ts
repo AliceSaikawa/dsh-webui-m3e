@@ -46,7 +46,7 @@ async function instrument(page: Page) {
 }
 const form = (page: Page) => page.locator('.custom-provider-form')
 const row = (page: Page, id: string) => page.getByRole('group', { name: id, exact: true })
-async function create(page: Page, id: string, withKey: boolean, status = withKey ? 'API キー：登録済み' : 'API キー：未登録') {
+async function create(page: Page, id: string, withKey: boolean, status = withKey ? 'API キー：登録済み' : 'API キー：未設定') {
   await button(page, 'カスタムプロバイダーを追加').click()
   await page.getByLabel('プロバイダー ID', { exact: true }).fill(id)
   await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
@@ -95,7 +95,7 @@ test('I16 real notification: 別ページの通知だけで編集中の保存を
   await second.close()
 })
 
-test('I16 real destinations: 追加と一覧後付けの衝突で既存の登録状態を変えない', async ({ page, context, integration }) => {
+test('I16 real destinations: フォームの追加と編集の衝突で既存の登録状態を変えない', async ({ page, context, integration }) => {
   await instrument(page); await openM3e(page, integration.host, '/settings/providers')
   await create(page, 'i16-reserved-owner', false)
   await namedReference(page, 'i16-reserved-owner', 'I16_RESERVED_API_KEY')
@@ -112,21 +112,17 @@ test('I16 real destinations: 追加と一覧後付けの衝突で既存の登録
   expect((await snapshot(second)).providers['i16-reserved']).toBeUndefined()
   await second.reload(); await expect(row(second, 'i16-reserved-owner')).toContainText('API キー：未登録')
   await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
-  await create(page, 'i16-reserved', false, '登録状況を確認できません')
-  // The colliding new row is unknown; its existing owner still has main behavior.
-  await expect(row(page, 'i16-reserved')).toContainText('登録状況を確認できません')
-  await expect(row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await create(page, 'i16-reserved', false)
+  await expect(row(page, 'i16-reserved')).toContainText('API キーは「編集」から登録できます。')
+  await expect(row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true })).toHaveCount(0)
   await expect(row(page, 'i16-reserved-owner').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
-  await namedReference(second, 'i16-reserved-owner')
-  await expect(row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
-  await row(page, 'i16-reserved').getByRole('button', { name: 'API キー', exact: true }).click()
-  await page.getByLabel('API キー', { exact: true }).fill('fake-list-must-not-register-owner')
-  // Keep the open entry's view old; saving must re-read the actual Host itself.
-  await page.evaluate(() => { (window as any).__holdProviders = true })
-  await namedReference(second, 'i16-reserved-owner', 'I16_RESERVED_API_KEY')
+  await row(page, 'i16-reserved').getByRole('button', { name: '編集', exact: true }).click()
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-edit-must-not-register-owner')
   const foreign = await snapshot(second)
   await button(page, '保存').click()
-  await expect(page.locator('.settings-sheet').getByRole('alert')).toContainText('参照名が重なります')
+  await expect(form(page).getByRole('alert')).toContainText('参照名が重なります')
+  await expect(form(page).getByRole('alert')).toContainText('I16_RESERVED_API_KEY')
+  await expect(form(page).getByRole('alert')).toContainText('my-i16-reserved')
   expect(await snapshot(second)).toEqual(foreign)
   await second.reload(); await expect(row(second, 'i16-reserved-owner')).toContainText('API キー：未登録')
   await expect(row(second, 'i16-reserved-owner').getByRole('button', { name: 'API キー', exact: true })).toBeEnabled()
@@ -181,7 +177,7 @@ test('I16 real lifecycle: キーあり・なしの作成と編集を再読込し
     await button(page, 'モデルを追加').click()
     await page.getByLabel('モデル ID', { exact: true }).last().fill(`${id}-second`)
     await button(page, '保存').click(); await expect(form(page)).toBeHidden()
-    await page.reload(); await expect(row(page, id)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未登録')
+    await page.reload(); await expect(row(page, id)).toContainText(withKey ? 'API キー：登録済み' : 'API キー：未設定')
     const after = await snapshot(page)
     expect(after.providers[id].models).toEqual([
       { ...enriched.value.value.providers[id].models[0], name: '編集したモデル' },
@@ -233,7 +229,7 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await page.getByLabel('表示名（任意）', { exact: true }).fill('設定だけ成功')
   await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-rejected-key')
   await button(page, '保存').click()
-  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
+  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。 設定が変わったか、このキーは変更できません。入力画面を開き直してください。')
   const saved = await snapshot(page)
   const writesBeforeRetry = await page.evaluate(() => (window as any).__settingsWrites)
   expect(writesBeforeRetry).toHaveLength(2)
@@ -249,7 +245,7 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
   await expect(button(page, 'API キーを保存')).toBeVisible()
   await expect(button(page, 'API キーを保存')).toBeDisabled()
-  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。入力し直してください。')
+  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。 設定が変わったか、このキーは変更できません。入力画面を開き直してください。')
   expect((await snapshot(page)).revision).toBe(saved.revision)
   expect(await snapshot(page)).toEqual(saved)
   expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
@@ -273,8 +269,8 @@ test('I16 real numeric ID: 数字始まりをキーなしで追加した後も�
   expect((await snapshot(page)).providers['1-i16-api']).toBeUndefined()
   await page.getByLabel('API キー（任意）', { exact: true }).fill('')
   await button(page, '保存').click(); await expect(form(page)).toBeHidden()
-  await expect(row(page, '1-i16-api')).toContainText('キーの参照名が DSH の形式に合わない')
-  await expect(row(page, '1-i16-api').getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await expect(row(page, '1-i16-api')).toContainText('API キー：未設定')
+  await expect(row(page, '1-i16-api').getByRole('button', { name: 'API キー', exact: true })).toHaveCount(0)
   await expect(existing).toContainText('API キー：登録済み')
   await page.reload(); await expect(existing).toContainText('API キー：登録済み')
   const previous = await page.evaluate(async () => {

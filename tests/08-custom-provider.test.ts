@@ -93,9 +93,10 @@ function harness() {
     getSnapshot() { return { phase: 'ready' as const, busy: false, error: null, rows: Object.keys(row.value.providers ?? {}).map(id => ({ id, name: id, ns: 'llm-pi-ai', path: ['providers', id], ref: 'LOCAL_API_API_KEY', needsReference: false, status: 'missing', writable: true } as ProviderRow)) } },
     async save(_row: ProviderRow, value: string) { keyWrites.push(value); return keyFails ? { ok: false as const, message: '拒否' } : { ok: true as const } },
   }
-  const store = createCustomProviderStore(remote, keys)
+  const lookup = { calls: [] as string[], info: { configured: false, writable: true } as { configured: boolean; writable: boolean } | undefined, gate: undefined as Promise<void> | undefined }
+  const store = createCustomProviderStore(remote, keys, undefined, undefined, async ref => { lookup.calls.push(ref); await lookup.gate; return lookup.info })
   const load = async () => { await store.load(); store.change(() => good(row)) }
-  return { store, load, row, writes, keyWrites, keys, normalize: (fn: () => void) => { normalize = fn },
+  return { store, load, row, writes, keyWrites, keys, lookup, normalize: (fn: () => void) => { normalize = fn },
     controls: { conflict: () => { rejected = true }, lost: () => { throwWrite = true }, lostResult: () => { lostResult = true }, readonly: () => { writable = false }, missing: () => { missing = true }, keyFails: (next: boolean) => { keyFails = next }, gate: (next: Promise<void>) => { gate = next } } }
 }
 
@@ -109,12 +110,13 @@ test('I16 partial: 設定成功後はキーだけ再試行し入力を消して�
   assert.equal(await h.store.submit(), false)
   wait.resolve(); assert.equal(await first, false)
   assert.equal(h.store.getSnapshot().phase, 'keyFailed')
+  assert.equal(h.store.getSnapshot().message, '提供元の設定は保存しましたが、API キーを保存できませんでした。 拒否')
   assert.equal(h.writes.length, 1); assert.equal(h.keyWrites.length, 1)
   h.controls.keyFails(false); h.store.input.input('fake-second')
   assert.equal(await h.store.submit(), true)
   assert.equal(h.writes.length, 1); assert.deepEqual(h.keyWrites, ['fake-first', 'fake-second'])
   const shared = harness()
-  shared.row.value = { providers: { 'LOCAL-API': {} } }; shared.row.user = structuredClone(shared.row.value)
+  shared.row.value = { providers: { 'LOCAL-API': { apiKeyEnv: 'LOCAL_API_API_KEY' } } }; shared.row.user = structuredClone(shared.row.value)
   await shared.load(); shared.store.input.input('fake-collision')
   assert.equal(await shared.store.submit(), false)
   assert.ok(shared.store.getSnapshot().errors.key)
@@ -136,11 +138,62 @@ test('I16 refusals: 競合とreadonlyと名前空間なしでは勝手に送信�
   }
 })
 
+test('I16 preflight: 登録済み・確認不能・readonlyの保存先を欄エラーで止める', async () => {
+  for (const info of [{ configured: true, writable: true }, undefined, { configured: false, writable: false }]) {
+    const h = harness(); await h.load(); h.lookup.info = info
+    h.store.input.input('fake-new-reference')
+    assert.equal(await h.store.submit(), false)
+    assert.match(h.store.getSnapshot().errors.key!, /LOCAL_API_API_KEY.*(すでに登録|確認できません|変更できません).*my-local-api/)
+    assert.deepEqual(h.lookup.calls, ['LOCAL_API_API_KEY'])
+    assert.equal(h.writes.length, 0); assert.equal(h.keyWrites.length, 0)
+    assert.equal(h.store.input.getSnapshot().draft, '')
+  }
+})
+
+test('I16 preflight revision: 照会中の設定変更は開いた版で競合し何も書かない', async () => {
+  const h = harness(); await h.load()
+  const opened = h.row.revision, wait = deferred<void>(); h.lookup.gate = wait.promise
+  h.store.input.input('fake-revision'); const pending = h.store.submit()
+  assert.deepEqual(h.lookup.calls, ['LOCAL_API_API_KEY'])
+  h.row.revision++; h.row.value = { providers: { other: { apiKeyEnv: 'LOCAL_API_API_KEY' } } }
+  h.row.user = structuredClone(h.row.value)
+  const foreign = structuredClone(h.row)
+  wait.resolve(); assert.equal(await pending, false)
+  assert.equal(h.writes[0]!.revision, opened)
+  assert.deepEqual(h.row, foreign); assert.equal(h.keyWrites.length, 0)
+  assert.equal(h.store.getSnapshot().phase, 'stale')
+})
+
+test('I16 preflight close: 保存先の照会中に閉じたら設定もキーも送らない', async () => {
+  const h = harness(); await h.load()
+  const wait = deferred<void>(); h.lookup.gate = wait.promise
+  h.store.input.input('fake-closed'); const pending = h.store.submit()
+  assert.equal(h.lookup.calls.length, 1)
+  h.store.dispose(); wait.resolve(); assert.equal(await pending, false)
+  assert.equal(h.writes.length, 0); assert.equal(h.keyWrites.length, 0)
+  assert.equal(h.store.input.getSnapshot().draft, '')
+})
+
+test('I16 retry sharing B04: 設定後に共有されてもキーだけを再試行して開き直せる', async () => {
+  const h = harness(); await h.load(); h.controls.keyFails(true)
+  h.store.input.input('fake-first'); assert.equal(await h.store.submit(), false)
+  h.lookup.info = { configured: true, writable: true }
+  ;(h.row.value.providers as any).other = { apiKeyEnv: 'LOCAL_API_API_KEY' }
+  h.controls.keyFails(false); h.store.input.input('fake-retry')
+  assert.equal(await h.store.submit(), true)
+  assert.equal(h.writes.length, 1); assert.equal(h.lookup.calls.length, 1)
+  await h.store.load(); h.store.input.input('fake-reopened')
+  assert.equal(await h.store.submit(), true)
+  assert.equal(h.writes.length, 1); assert.equal(h.lookup.calls.length, 1)
+  assert.deepEqual(h.keyWrites, ['fake-first', 'fake-retry', 'fake-reopened'])
+})
+
 test('I16 close: 設定送信後に閉じると未送信キーと入力を破棄する', async () => {
   const h = harness(); await h.load()
   const wait = deferred<void>(); h.controls.gate(wait.promise)
   h.store.input.input('fake-discarded')
   const saving = h.store.submit()
+  while (!h.writes.length) await new Promise(resolve => setTimeout(resolve, 0))
   h.store.dispose(); wait.resolve()
   assert.equal(await saving, false)
   assert.equal(h.writes.length, 1); assert.equal(h.keyWrites.length, 0)
@@ -179,7 +232,7 @@ test('I16 explicit reference: 明示された保存先との共有を追加と�
     h.store.input.clear(); assert.equal(await h.store.submit(), true)
     await h.store.load(); h.store.input.input('fake-later')
     assert.equal(await h.store.submit(), false)
-    assert.match(h.store.getSnapshot().errors.key!, /この画面ではキーを登録できません/)
+    assert.match(h.store.getSnapshot().errors.key!, /LOCAL_API_API_KEY.*参照名が重なります.*my-local-api/)
     assert.equal(h.writes.length, 1); assert.equal(h.keyWrites.length, 0)
   }
 })
@@ -199,7 +252,8 @@ test('I16 numeric ID: キーなしで作成しても既存の登録状況と登�
     store.input.clear(); assert.equal(await store.submit(), true)
     const current = () => keys.getSnapshot().rows
     assert.equal(current().find(row => row.id === '1-api')!.writable, false)
-    assert.match(current().find(row => row.id === '1-api')!.keyUnavailableReason!, /参照名/)
+    assert.equal(current().find(row => row.id === '1-api')!.ref, undefined)
+    assert.equal(current().find(row => row.id === '1-api')!.status, 'unset')
     assert.equal(current().find(row => row.id === 'deepseek')!.status, 'registered')
     assert.equal(current().find(row => row.id === 'cloud')!.status, 'missing')
     assert.equal(keys.getSnapshot().error, null)
@@ -216,7 +270,7 @@ test('I16 key recheck close: キー保存内部の再照会後も閉じたシー
   try {
     const remote = ctx.remote as unknown as ProviderRemote
     const keys = createProviderStore(remote)
-    const store = createCustomProviderStore(remote, keys)
+    const store = createCustomProviderStore(remote, keys, undefined, undefined, async () => ({ configured: false, writable: true }))
     await store.load(); store.change(() => good())
     const started = deferred<void>(), release = deferred<void>()
     const describe = remote.settings.describe
@@ -247,12 +301,12 @@ test('I16 key recheck close: キー保存内部の再照会後も閉じたシー
   } finally { ctx.dispose() }
 })
 
-test('I16 reference recheck: 保存の再照会で新たな参照先の共有を検出する', async () => {
+test('I16 reference recheck: 保存後に明示された共有は通常のキー登録として扱う', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const remote = ctx.remote as unknown as ProviderRemote
     const keys = createProviderStore(remote)
-    const store = createCustomProviderStore(remote, keys)
+    const store = createCustomProviderStore(remote, keys, undefined, undefined, async () => ({ configured: false, writable: true }))
     await store.load(); store.change(() => good())
     const save = keys.save
     keys.save = async (...args) => {
@@ -263,12 +317,12 @@ test('I16 reference recheck: 保存の再照会で新たな参照先の共有を
       assert.equal((await remote.settings.mutate(row.ns, [{ op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' }], row.revision)).ok, true)
       return save(...args)
     }
-    store.input.input('fake-must-not-share')
-    assert.equal(await store.submit(), false)
-    assert.equal(store.getSnapshot().phase, 'keyFailed')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'missing')
-    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'missing')
-    assert.match(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.keyNotice!, /参照先だけ/)
+    store.input.input('fake-explicit-sharing')
+    assert.equal(await store.submit(), true)
+    assert.equal(store.getSnapshot().phase, 'saved')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'registered')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'registered')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.keyNotice, undefined)
     assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.writable, true)
     store.dispose()
   } finally { ctx.dispose() }

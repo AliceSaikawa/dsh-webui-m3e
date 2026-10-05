@@ -6,7 +6,7 @@ import { createProviderStore, type ProviderRemote } from '../web/src/features/se
 import { createCustomProviderStore } from '../web/src/features/settings/custom-provider-store.ts'
 import { modelDraft } from '../web/src/features/settings/custom-provider.ts'
 import type { SettingObject } from '../web/src/features/settings/schema.ts'
-import { keyReferenceConflict, usedKeyReferences } from '../web/src/features/settings/provider-key-refs.ts'
+import { keyReferenceConflict } from '../web/src/features/settings/provider-key-refs.ts'
 
 const profile = { api: 'openai-completions', baseURL: 'http://localhost:4321', models: [{ id: 'one' }] }
 async function put(remote: ProviderRemote, id: string, value: SettingObject) {
@@ -16,7 +16,7 @@ async function put(remote: ProviderRemote, id: string, value: SettingObject) {
   assert.ok((await remote.settings.mutate(ns.ns, [{ op: 'set', path: ['providers', id], value }], ns.revision)).ok)
 }
 
-test('I16 destinations list: あと付け登録と削除は他の提供元の明示先を使わない', async () => {
+test('I16 destinations list: 参照先なしのカスタムは一覧で照会も登録削除もしない', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
     const remote = ctx.remote as unknown as ProviderRemote
@@ -29,9 +29,9 @@ test('I16 destinations list: あと付け登録と削除は他の提供元の明
     const target = keys.getSnapshot().rows.find(row => row.id === 'local-api')!
     assert.equal((await keys.save(target, 'fake-must-not-overwrite')).ok, false)
     assert.equal((await keys.remove(target)).ok, false)
-    assert.equal(target.status, 'unknown')
+    assert.equal(target.status, 'unset')
+    assert.equal(target.ref, undefined)
     assert.equal(target.writable, false)
-    assert.match(target.keyUnavailableReason!, /参照名が重なります/)
     const settings = await remote.settings.describe()
     assert.ok(settings.ok)
     assert.equal((settings.value.namespaces.find(row => row.ns === 'llm-pi-ai')!.value.providers as any)['local-api'].apiKeyEnv, undefined)
@@ -77,12 +77,12 @@ test('I16 destinations native: 明示参照のない標準の保存先と別名�
       editor.change(draft => ({ ...draft, id: id!, baseURL: profile.baseURL, models: [modelDraft({ id: 'one' })] }))
       editor.input.input('fake-native-collision')
       assert.equal(await editor.submit(), false)
-      assert.match(editor.getSnapshot().errors.key!, /参照名が重なります/)
+      assert.match(editor.getSnapshot().errors.key!, /予約されています.*my-/)
       editor.input.clear(); assert.equal(await editor.submit(), true)
       await keys.load()
       const target = keys.getSnapshot().rows.find(row => row.id === id)!
       assert.equal(target.writable, false)
-      assert.equal(target.status, 'unknown')
+      assert.equal(target.status, 'unset')
       assert.equal((await keys.save(target, 'fake-after-keyless')).ok, false)
       assert.equal(keys.getSnapshot().rows.find(row => row.id === native)!.ref, undefined)
       editor.dispose()
@@ -90,22 +90,22 @@ test('I16 destinations native: 明示参照のない標準の保存先と別名�
   }
 })
 
-test('I16 destinations owners: 標準の本人は使えるが別IDと補助設定名は予約する', () => {
-  assert.deepEqual(usedKeyReferences('constructor'), ['CONSTRUCTOR_API_KEY'])
+test('I16 destinations owners: 新規参照は明示名と標準名だけを予約しキーなしIDは予約しない', () => {
   assert.equal(keyReferenceConflict([], 'constructor', 'CONSTRUCTOR_API_KEY'), false)
-  assert.equal(keyReferenceConflict([], 'google', 'GOOGLE_API_KEY'), false)
+  assert.equal(keyReferenceConflict([], 'google', 'GOOGLE_API_KEY'), true)
   assert.equal(keyReferenceConflict([], 'google', 'GOOGLE_CLOUD_PROJECT'), true)
   assert.equal(keyReferenceConflict([], 'GOOGLE', 'GOOGLE_API_KEY'), true)
   for (const [id, ref] of [['deepseek-official', 'DEEPSEEK_API_KEY'], ['google', 'GEMINI_API_KEY'], ['moonshotai-cn', 'MOONSHOT_API_KEY']]) {
-    assert.equal(keyReferenceConflict([], id!, ref!), false)
-    assert.equal(keyReferenceConflict([{ id: id === 'deepseek-official' ? 'deepseek' : id!, ref }], id!, ref!), false)
+    assert.equal(keyReferenceConflict([], id!, ref!), true)
+    assert.equal(keyReferenceConflict([{ id: id === 'deepseek-official' ? 'deepseek' : id!, ref }], id!, ref!), true)
     assert.equal(keyReferenceConflict([], id!.toUpperCase(), ref!), true)
-    assert.ok(usedKeyReferences(id!).includes(ref!))
   }
   for (const ref of ['AWS_SESSION_TOKEN', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT', 'CLOUDFLARE_ACCOUNT_ID']) {
     assert.equal(keyReferenceConflict([], 'local-api', ref), true)
   }
   assert.equal(keyReferenceConflict([{ id: 'other', ref: 'LOCAL_API_API_KEY' }], 'local-api', 'LOCAL_API_API_KEY'), true)
   assert.equal(keyReferenceConflict([{ id: 'other', ref: 'DEEPSEEK_API_KEY' }], 'deepseek-official', 'DEEPSEEK_API_KEY'), true)
-  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'DIFFERENT_API_KEY' }], 'OTHER', 'OTHER_API_KEY'), true)
+  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'DIFFERENT_API_KEY' }], 'OTHER', 'OTHER_API_KEY'), false)
+  assert.equal(keyReferenceConflict([{ id: 'other' }], 'OTHER', 'OTHER_API_KEY'), false)
+  assert.equal(keyReferenceConflict([{ id: 'other', ref: 'local_api_api_key' }], 'local-api', 'LOCAL_API_API_KEY'), false)
 })
