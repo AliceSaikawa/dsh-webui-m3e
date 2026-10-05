@@ -105,6 +105,12 @@ test('pack: rejects nested assets and unexpected extensions', () => {
     rejects([...fixture(), { path }], `unexpected: ${path}`)
   }
 })
+test('pack: rejects asset hashes of seven, nine and ten characters', () => {
+  for (const hash of ['AbCd123', 'AbCd12345', 'AbCd123456']) for (const extension of ['js', 'css', 'woff2']) {
+    const path = `dist/assets/index-${hash}.${extension}`
+    rejects([...fixture(), { path }], `unexpected: ${path}`)
+  }
+})
 test('pack: rejects file URLs to user homes', () => {
   for (const text of ['file:///Users/example/project', 'file:///home/example/project']) rejects(content(assetJs, text), `absolute home path: ${assetJs}`)
 })
@@ -116,6 +122,11 @@ test('pack: rejects two patch names even when the first matches', () => {
 })
 test('pack: rejects an unindented patch name', () => {
   for (const text of ['name: dsh-webui-m3e\n', '\nname: dsh-webui-m3e\n']) rejects(content('cordis.patch.yml', text), 'package/patch name mismatch')
+})
+test('pack: rejects a newline between the patch name key and value', () => {
+  for (const gap of ['\n', '\r\n', ' \n', '\t\n']) {
+    rejects(content('cordis.patch.yml', `- insert:\n    - id: webui-m3e\n      name:${gap}dsh-webui-m3e\n`), 'package/patch name mismatch')
+  }
 })
 test('pack: accepts npm archive entries and directory records', () => {
   const names = ['package/', 'package/lib/', ...fixture().map(file => `package/${file.path}`)]
