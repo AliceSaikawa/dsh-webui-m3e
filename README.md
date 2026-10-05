@@ -26,8 +26,8 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 
 ## 必要なもの
 
-- DeepSeek Harness 0.1.5-rc.3（この版で、起動・送信・停止・承認・質問・再接続などを、実物の DSH と偽の LLM で確かめています）
-  - 0.1.6-alpha.2、0.1.7-rc.2、0.2.0-rc.2（npm の `latest`）では起動できません。詳しくは [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
+- DeepSeek Harness **0.2.0-rc.2**（起動・送信・停止・承認・質問・再接続などを、実物の DSH と偽の LLM で確かめています）
+  - 0.1.5 系への対応は外しました。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
 - ビルドのための Node.js 22 以上と pnpm
 
 ## 入れ方
@@ -68,7 +68,7 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<版>.tgz
 
 - 画面の文言は日本語だけです。
 - DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
-- 画面の試験は主に偽のデータで行い、DSH とのつながりは、本番から切り離した実物の DSH と偽の LLM で確かめています。本物の LLM と iPhone での確認は限られています。開発の方法と仕組みは [docs/development.md](docs/development.md) にあります。
+- 画面の試験は主に偽のデータで行い、DSH とのつながりは、本番から切り離した実物の DSH と偽の LLM で確かめています。今回の移行では、本物の LLM と iPhone での確認は未実施です。開発の方法と仕組みは [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス
 
