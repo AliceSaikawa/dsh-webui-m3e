@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { customDraft, customOperations, modelDraft, validateCustom, protocolChoices } from '../web/src/features/settings/custom-provider.ts'
+import { customDraft, customOperations, customFieldWritable, modelDraft, validateCustom, protocolChoices } from '../web/src/features/settings/custom-provider.ts'
 import { createCustomProviderStore } from '../web/src/features/settings/custom-provider-store.ts'
 import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
 import { applyMockOperations } from '../web/src/features/settings/mock-mutations.ts'
@@ -26,6 +26,15 @@ test('I16 ops: 新規と変更項目だけを送り未知のモデル情報を�
   assert.deepEqual(customOperations(row, initial, draft, true), [{ op: 'set', path: ['providers', 'custom', 'models'], value: [{ id: 'one', extra: { keep: true }, maxTokens: 8192, name: '変更後' }, { id: 'two' }] }])
   assert.deepEqual(row.value, before)
   assert.deepEqual(customOperations(row, initial, structuredClone(initial), true), [])
+  row.schema = { uid: 0, refs: {
+    0: { type: 'object', dict: { providers: 1 } }, 1: { type: 'dict', inner: 2 },
+    2: { type: 'object', dict: { models: 3 } }, 3: { type: 'array', inner: 4 },
+    4: { type: 'object', dict: { extra: 5 } }, 5: { type: 'string', meta: { role: 'password' } },
+  } }
+  assert.equal(customFieldWritable(row, 'custom', 'models'), false)
+  assert.throws(() => customOperations(row, initial, draft, true), /変更できません/)
+  assert.deepEqual(validateCustom({ ...initial, models: [] }, ['openai-responses'], [], true, row), {})
+  assert.deepEqual(customOperations(row, initial, { ...initial, displayName: 'safe' }, true), [{ op: 'set', path: ['providers', 'custom', 'displayName'], value: 'safe' }])
 })
 
 test('I16 validation: UIの明示条件と実測したHostの条件を区別する', () => {

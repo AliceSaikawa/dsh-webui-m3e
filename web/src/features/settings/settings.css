@@ -44,6 +44,8 @@
 .settings-model-option span { min-width: 0; overflow-wrap: anywhere; }
 .settings-model-option m3e-checkbox { flex: none; }
 .custom-provider-form { width: 100%; max-width: 640px; margin-inline: auto; min-width: 0; padding: var(--app-space); padding-bottom: calc(var(--app-space) + env(safe-area-inset-bottom)); box-sizing: border-box; overflow-wrap: anywhere; }
+/* Keep this long form full-height even when the native opening height is cached. */
+m3e-bottom-sheet.full-sheet:has(.custom-provider-form) { height: var(--app-height, 100dvh); top: 0; border-radius: 0; }
 .custom-provider-header { display: flex; align-items: start; gap: var(--app-space); }
 .custom-provider-header h2 { flex: 1; min-width: 0; font-size: 20px; }
 .custom-provider-header m3e-icon-button { flex: none; }

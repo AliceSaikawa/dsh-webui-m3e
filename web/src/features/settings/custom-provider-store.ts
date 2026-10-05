@@ -57,17 +57,19 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     if (state.phase !== 'editing' || !state.draft) return
     publish({ draft: update(state.draft), errors: {}, message: null })
   }
-  function validate(): CustomErrors {
-    const errors = state.draft ? validateCustom(state.draft, state.protocols, state.taken, state.editing) : {}
+  function validate(field?: string): CustomErrors {
+    const errors = state.draft ? validateCustom(state.draft, state.protocols, state.taken, state.editing, state.namespace) : {}
     const key = input.getSnapshot().draft
     if (/[\x00-\x1f\x7f]/.test(key)) errors.key = 'API キーに改行や制御文字は使えません。'
     if (key && state.draft && !state.editing && state.taken.some(id => providerRef(id) === providerRef(state.draft!.id))) errors.key = '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
-    publish({ errors })
+    const displayed = field ? { ...state.errors } : errors
+    if (field) { delete displayed[field]; if (errors[field]) displayed[field] = errors[field] }
+    publish({ errors: displayed })
     return errors
   }
   async function save(keyValue?: string): Promise<KeyOutcome> {
     if (!active || !connected || saving || !state.writable || !['editing', 'keyFailed'].includes(state.phase) || !state.namespace || !state.initial || !state.draft) return { ok: false, message: '接続と処理中の操作を確認してください。' }
-    const errors = validateCustom(state.draft, state.protocols, state.taken, state.editing)
+    const errors = validateCustom(state.draft, state.protocols, state.taken, state.editing, state.namespace)
     if (!committed && Object.keys(errors).length) { publish({ errors }); return { ok: false, message: '入力内容を確認してください。' } }
     saving = true
     pendingKey = keyValue
