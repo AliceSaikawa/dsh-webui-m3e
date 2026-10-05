@@ -21,8 +21,10 @@
 请在运行 DSH 的机器上执行：
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
+
+M3E 未发布到 npm registry，因此不能只用名称执行 `add dsh-webui-m3e` 来安装。
 
 `web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
 
@@ -54,19 +56,19 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 更新、版本确认与卸载
 
-查看 JSON 输出中的 `dependencies.dsh-webui-m3e.version`。普通列表可能只显示 `file:` 引用。
+查看 JSON 输出中的 `dependencies.dsh-webui-m3e.version` 确认已安装版本，`resolved` 则显示来源。
 
 ```bash
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新时，用明确指定的已发布兼容版本重新添加同名软件包。下面是迁移到 0.0.8 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
+更新时，从[发布列表](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)选择兼容版本，用其 tgz 附件的 URL 重新添加。URL 格式为 `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`。下面是迁移到 0.0.8 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
 
 ```bash
-dsh plugin --profile web add dsh-webui-m3e@0.0.8
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
 
-从未来的新版本回退时，同样指定已验证的兼容版本重新添加，再重启。回到 0.0.8 可使用同一命令。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
+从未来的新版本回退时，从发布列表选择已验证的兼容版本的 URL，重新添加并重启 Host。回到 0.0.8 可使用同一命令。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
@@ -78,7 +80,7 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-下载时遇到 404，请检查软件包名称和已发布的版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
+下载时遇到 404，请在发布列表检查标签、附件名称和 URL；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
 
 从源码构建请参阅[开发与分发指南](docs/development.md#配布)（日文）。
 
