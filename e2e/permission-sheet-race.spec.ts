@@ -98,3 +98,20 @@ for (const route of routes) {
     await expectOneAndClose(page)
   })
 }
+
+for (const route of routes) {
+  test(`PR4 ${route.name}の権限取得中に本文入力で再描画しても一枚だけ開き、本文を保つ`, async ({ page }) => {
+    await holdPermissions(page, route.path)
+    await pressWhilePending(page, 1)
+    const input = page.getByLabel('メッセージ入力欄')
+    const text = '権限の候補を待ちながら入力した本文'
+    await input.fill(text)
+    // Wait for React to reflect the draft change, not just the native input value.
+    await expect(page.getByRole('button', { name: '送信', exact: true })).toBeEnabled()
+    await pressWhilePending(page, 1)
+    await release(page)
+    await expect(input).toHaveValue(text)
+    await expectOneAndClose(page)
+    await expect(input).toHaveValue(text)
+  })
+}
