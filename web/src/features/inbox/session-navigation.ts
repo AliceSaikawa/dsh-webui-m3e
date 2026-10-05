@@ -1,22 +1,19 @@
 import type { ISessions, SessionListState, SessionSummary, SubagentAddress } from '../../dsh/services.ts'
 import { RemoteCallError } from '../../dsh/remote-result.ts'
+import { subagentCatalogAddress } from '../../dsh/session-navigation.ts'
+import { conversationSelection } from '../../dsh/conversation-selection.ts'
 
 function catalogAddress(list: SessionListState, row: SessionSummary): SubagentAddress | undefined {
-  if (!row.parentId) return undefined
-  const catalog = list.subagentsByParent[row.parentId]
-  if (catalog?.state !== 'ready' || !Array.isArray(catalog.entries)) return undefined
-  const entry: unknown = catalog.entries.find((value: unknown) => typeof value === 'object' && value !== null && 'id' in value && value.id === row.id)
-  if (typeof entry !== 'object' || entry === null || !('kind' in entry) || entry.kind !== 'child' || !('mode' in entry)
-    || (entry.mode !== 'one-shot' && entry.mode !== 'continuable')) return undefined
-  return { parentSessionId: row.parentId, childSessionId: row.id, mode: entry.mode }
+  return row.parentId ? subagentCatalogAddress(list, row.parentId, row.id) : undefined
 }
 
 /** Follow home/session-navigation's selection order until foundation exposes a shared entry. */
 export async function openInboxSession(
-  sessions: Pick<ISessions, 'list' | 'refreshSubagents' | 'openSubagent'>,
+  sessions: ISessions,
   sessionId: string,
   navigate: (path: string) => void,
   isActive: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!isActive()) return
   const row = sessions.list.getSnapshot().byId[sessionId]
@@ -26,10 +23,10 @@ export async function openInboxSession(
     let address = catalogAddress(sessions.list.getSnapshot(), row)
     if (!address) {
       // The controller validates the parent's catalog, not just a remembered address.
-      await sessions.refreshSubagents(row.parentId)
+      await sessions.refreshProjections(row.parentId)
       if (!isActive()) return
       const list = sessions.list.getSnapshot()
-      const failure = list.subagentsByParent[row.parentId]?.error
+      const failure = list.projectionsBySession[row.parentId]?.error
       if (failure) throw new RemoteCallError(failure)
       const current = list.byId[sessionId]
       if (!current || current.origin !== 'subagent' || current.parentId !== row.parentId) {
@@ -39,7 +36,8 @@ export async function openInboxSession(
     }
     if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
     if (!isActive()) return
-    sessions.openSubagent(address)
+    await conversationSelection(sessions).prepare(address, isActive, () => navigate(`/s/${encodeURIComponent(sessionId)}`), signal)
+    return
   }
   if (isActive()) navigate(`/s/${encodeURIComponent(sessionId)}`)
 }

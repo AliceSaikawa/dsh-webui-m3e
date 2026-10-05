@@ -65,7 +65,7 @@ test('projection updates share the latest value and preserve fields written by o
     const kit = context.mock
     const used = { provider: 'deepseek', model: 'previous' }
     const next = { provider: 'ollama', model: 'next' }
-    const projection = context.sessions.binding(sessionId)!.session.projections.faceOf('modelSelection')
+    const projection = context.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('modelSelection')
     let projectionChanges = 0
     let listChanges = 0
     const stopProjection = projection.subscribe(() => { projectionChanges++ })

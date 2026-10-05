@@ -5,7 +5,9 @@ import { buildInboxRows, countInbox, describePending, inboxStatus, relativeTime 
 import { extendMock, INBOX_MOCK_IDS } from '../web/src/features/inbox/mock.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext, type PendingInteraction } from '../web/src/dsh/interactions-store.ts'
-import type { SessionListState, SessionSummary, WorkspaceSnapshot, WorkspaceView } from '../web/src/dsh/services.ts'
+import { completionStatus, type M3eSessionList } from '../web/src/dsh/completion-status.ts'
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import type { SessionSummary, WorkspaceSnapshot, WorkspaceView } from '../web/src/dsh/services.ts'
 
 const now = Date.parse('2026-09-25T12:00:00+09:00')
 const approval: PendingInteraction = {
@@ -22,24 +24,24 @@ const plan: PendingInteraction = {
   answer: async () => {},
 }
 
-function summary(id: string, overrides: Partial<SessionSummary> = {}): SessionSummary {
-  return { id, displayTitle: `${id} の会話`, running: false, blank: false, updatedAt: now, ...overrides }
+function summary(id: string, overrides: Partial<SessionSummary & { completionUnread: boolean }> = {}): SessionSummary & { completionUnread?: boolean } {
+  return { retainedBy: {}, id, displayTitle: `${id} の会話`, running: false, blank: false, updatedAt: now, ...overrides }
 }
-function listOf(...sessions: SessionSummary[]): SessionListState {
+function listOf(...sessions: SessionSummary[]): M3eSessionList {
   return { ids: sessions.map(item => item.id), byId: Object.fromEntries(sessions.map(item => [item.id, item])),
-    current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }
+    phase: 'ready', projectionsBySession: {} }
 }
 function workspace(workspaceId: string, title: string, sessionIds: string[], path = `/mock/${workspaceId}`): WorkspaceView {
   return { workspaceId, title, sessionIds, path, createdAt: '', updatedAt: '' }
 }
 function workspaceState(items: readonly WorkspaceView[] = [], overrides: Partial<WorkspaceSnapshot> = {}): WorkspaceSnapshot {
-  return { items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null, ...overrides }
+  return { items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null, ...overrides }
 }
 
 test('返事待ちは到着順と「あとで」を保持し、完了は更新の新しい順になる', () => {
   const pending = [approval, question, plan]
-  const list = listOf(summary('old', { completed: true, updatedAt: now - 720_000 }), summary('approval'), summary('question'), summary('plan'),
-    summary('new', { completed: true, updatedAt: now - 180_000 }), summary('running', { running: true }))
+  const list = listOf(summary('old', { completionUnread: true, updatedAt: now - 720_000 }), summary('approval'), summary('question'), summary('plan'),
+    summary('new', { completionUnread: true, updatedAt: now - 180_000 }), summary('running', { running: true }))
   const originalList = structuredClone(list)
   const rows = buildInboxRows(pending, list, workspaceState(), now)
   assert.deepEqual(rows.pending.map(row => row.key), ['interaction:12', 'interaction:2', 'interaction:3'])
@@ -60,7 +62,7 @@ test('種類に応じたアイコンと文言を作り、混在した質問で�
 })
 
 test('全ワークスペースの行を含め、所属情報を作業フォルダより優先する', () => {
-  const list = listOf(summary('approval', { cwd: '/mock/second' }), summary('done', { completed: true }), summary('question', { cwd: '/mock/second' }))
+  const list = listOf(summary('approval', { cwd: '/mock/second' }), summary('done', { completionUnread: true }), summary('question', { cwd: '/mock/second' }))
   const workspaces = [workspace('first', '画面の開発', ['approval']), workspace('second', '調査ノート', ['done'])]
   const rows = buildInboxRows([approval, question], list, workspaceState(workspaces), now)
   assert.equal(rows.pending[0]?.workspaceName, '画面の開発')
@@ -86,7 +88,7 @@ test('両方空・片方だけの区分を返し、件数も表示対象と一�
   const pendingOnly = buildInboxRows([approval], listOf(), workspaceState(), now)
   assert.equal(pendingOnly.completed.length, 0)
   assert.equal(countInbox([approval], listOf(), []), 1)
-  const list = listOf(summary('done', { completed: true }), summary('idle', { completed: false }))
+  const list = listOf(summary('done', { completionUnread: true }), summary('idle', { completionUnread: false }))
   const completedOnly = buildInboxRows([], list, workspaceState(), now)
   assert.equal(completedOnly.pending.length, 0)
   assert.equal(completedOnly.completed.length, 1)
@@ -96,9 +98,9 @@ test('両方空・片方だけの区分を返し、件数も表示対象と一�
 })
 
 test('同じセッションの複数の返事待ちは個別に数え、一覧の欠損や重複は完了件数を増やさない', () => {
-  const list = listOf(summary('approval', { completed: true }))
+  const list = listOf(summary('approval', { completionUnread: true }))
   list.ids.push('approval', 'missing')
-  list.byId.stale = summary('stale', { completed: true })
+  list.byId.stale = summary('stale', { completionUnread: true })
   const pending = [approval, { ...approval, key: 'another' }]
   const rows = buildInboxRows(pending, list, workspaceState(), now)
   assert.equal(rows.completed.length, 1)
@@ -107,7 +109,7 @@ test('同じセッションの複数の返事待ちは個別に数え、一覧�
 })
 
 test('アーカイブした完了会話は行と件数から外し、返事待ちは残す', () => {
-  const list = listOf(summary('approval', { completed: true }), summary('archived', { completed: true }), summary('kept', { completed: true }))
+  const list = listOf(summary('approval', { completionUnread: true }), summary('archived', { completionUnread: true }), summary('kept', { completionUnread: true }))
   const workspaces = workspaceState([], { archivedSessionIds: ['archived', 'approval'] })
   const rows = buildInboxRows([approval], list, workspaces, now)
   assert.deepEqual(rows.completed.map(row => row.sessionId), ['kept'])
@@ -125,7 +127,7 @@ test('相対時刻は分・時間・日の境界と未来・不正な値を扱�
 })
 
 test('完了の同時刻は一覧の順を保ち、不正な時刻は最後にする', () => {
-  const list = listOf(summary('bad', { completed: true, updatedAt: Number.NaN }), summary('b', { completed: true }), summary('a', { completed: true }))
+  const list = listOf(summary('bad', { completionUnread: true, updatedAt: Number.NaN }), summary('b', { completionUnread: true }), summary('a', { completionUnread: true }))
   const rows = buildInboxRows([], list, workspaceState(), now)
   assert.deepEqual(rows.completed.map(row => row.sessionId), ['b', 'a', 'bad'])
   assert.equal(rows.completed[2]?.description, '完了 ・ 時刻不明')
@@ -137,8 +139,8 @@ test('06だけを登録した inbox シナリオで3種の要求と完了2件を
   const dispose = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
   try {
     await nextTurn()
-    const read = () => buildInboxRows(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now())
-    const count = () => countInbox(store.getSnapshot(), ctx.sessions.list.getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds)
+    const read = () => buildInboxRows(store.getSnapshot(), completionStatus(ctx).getSnapshot(), ctx.workspaces.list.getSnapshot(), Date.now())
+    const count = () => countInbox(store.getSnapshot(), completionStatus(ctx).getSnapshot(), ctx.workspaces.list.getSnapshot().archivedSessionIds)
     assert.deepEqual(read().pending.map(row => row.icon), ['terminal', 'help', 'checklist'])
     assert.deepEqual(read().completed.map(row => row.sessionId), [INBOX_MOCK_IDS.completed, INBOX_MOCK_IDS.otherCompleted])
     assert.deepEqual(read().completed.map(row => row.workspaceName), ['画面の開発', '調査ノート'])
@@ -152,12 +154,12 @@ test('06だけを登録した inbox シナリオで3種の要求と完了2件を
       else await interaction.answer({ answers: interaction.items.map(item => ({ id: item.id, selected: [item.options![0]!.label] })) })
       assert.equal(count(), 4 - index)
       assert.equal(read().pending.length, 2 - index)
-      assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
+      assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, undefined)
     }
-    ctx.sessions.open(INBOX_MOCK_IDS.completed)
+    await conversationSelection(ctx.sessions).select(INBOX_MOCK_IDS.completed)
     assert.equal(count(), 1)
     assert.deepEqual(read().completed.map(row => row.sessionId), [INBOX_MOCK_IDS.otherCompleted])
-    ctx.sessions.open(INBOX_MOCK_IDS.otherCompleted)
+    await conversationSelection(ctx.sessions).select(INBOX_MOCK_IDS.otherCompleted)
     assert.equal(count(), 0)
     assert.deepEqual(read(), { pending: [], completed: [] })
   } finally { dispose(); store.dispose(); ctx.dispose() }
@@ -169,26 +171,26 @@ test('取消イベントで行と件数が消え、会話の選択は変わら�
   const result = store.requestQuestion('question', { questions: [{ id: 'q', question: '続けますか？' }], signal: controller.signal })
   const rejected = assert.rejects(result, { code: 'ASK_ABORTED' })
   const list = listOf(summary('question'))
-  list.current = '別の会話'
+  list.byId['別の会話'] = summary('別の会話', { retainedBy: { 'm3e.mainView': 1 } })
   assert.equal(countInbox(store.getSnapshot(), list, []), 1)
   controller.abort()
   await rejected
   assert.equal(countInbox(store.getSnapshot(), list, []), 0)
   assert.deepEqual(buildInboxRows(store.getSnapshot(), list, workspaceState(), now), { pending: [], completed: [] })
-  assert.equal(list.current, '別の会話')
+  assert.equal(list.byId['別の会話']?.retainedBy['m3e.mainView'], 1)
 })
 
 test('inbox の偽データはほかのシナリオにセッションを追加しない', () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
-    for (const id of Object.values(INBOX_MOCK_IDS)) assert.equal(ctx.sessions.list.getSnapshot().byId[id], undefined)
+    for (const id of Object.values(INBOX_MOCK_IDS)) assert.equal(completionStatus(ctx).getSnapshot().byId[id], undefined)
   } finally { ctx.dispose() }
 })
 
 const workspaceFailure = { code: 'workspace/unavailable', message: '一覧を取得できません', details: {} }
 
 test('ワークスペースの初回取得失敗は未登録と区別し、pending のままでもエラーを表示する', () => {
-  const list = listOf(summary('approval'), summary('done', { completed: true }))
+  const list = listOf(summary('approval'), summary('done', { completionUnread: true }))
   const workspaces = workspaceState([], { phase: 'pending', state: 'error', error: workspaceFailure })
   const rows = buildInboxRows([approval], list, workspaces, now)
   assert.equal(rows.pending[0]?.workspaceName, 'ワークスペースを確認できません')
@@ -208,7 +210,7 @@ test('ワークスペースの初回取得失敗は未登録と区別し、pendi
 })
 
 test('取得済みの一覧を保った失敗では前回の所属と警告を表示し、所属不明を未登録にしない', () => {
-  const list = listOf(summary('approval'), summary('question'), summary('done', { completed: true, cwd: '/mock/first' }))
+  const list = listOf(summary('approval'), summary('question'), summary('done', { completionUnread: true, cwd: '/mock/first' }))
   const workspaces = workspaceState([workspace('first', '前回の所属', ['approval'])], { state: 'error', error: workspaceFailure })
   const original = structuredClone(workspaces)
   const rows = buildInboxRows([approval, question], list, workspaces, now)
@@ -257,7 +259,7 @@ test('一覧より先に届いた返事待ちは読み込み中の題名・所�
 })
 
 test('ワークスペースだけ読み込み中なら取得済みの題名を使い、所属は読み込み中と表示する', () => {
-  const list = listOf(summary('approval'), summary('done', { completed: true }))
+  const list = listOf(summary('approval'), summary('done', { completionUnread: true }))
   const workspaces = workspaceState([], { phase: 'pending', state: 'loading' })
   const rows = buildInboxRows([approval], list, workspaces, now)
   assert.equal(rows.pending[0]?.title, 'approval の会話')
@@ -269,7 +271,7 @@ test('ワークスペースだけ読み込み中なら取得済みの題名を�
 })
 
 test('再接続による読み込み中は既存の行を残し、保持した所属が更新中であることを示す', () => {
-  const list = { ...listOf(summary('approval'), summary('done', { completed: true })), phase: 'pending' as const }
+  const list = { ...listOf(summary('approval'), summary('done', { completionUnread: true })), phase: 'pending' as const }
   const workspaces = workspaceState([workspace('first', '保存済みの所属', ['approval', 'done'])], { state: 'loading' })
   const rows = buildInboxRows([approval], list, workspaces, now)
   assert.equal(rows.pending[0]?.title, 'approval の会話')

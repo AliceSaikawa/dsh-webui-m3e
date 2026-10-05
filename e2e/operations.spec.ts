@@ -53,7 +53,7 @@ test('06b 空の対応待ちを表示する', async ({ page }) => {
 })
 
 test('08h 設定の真偽・数値・選択肢・入れ子を保存する', async ({ page }) => {
-  await visit(page, '/settings/permission')
+  await visit(page, '/settings/other')
   const enabled = page.getByRole('switch', { name: '有効にする', exact: true })
   const initial = await enabled.isChecked()
   await enabled.click()
@@ -69,7 +69,7 @@ test('08h 設定の真偽・数値・選択肢・入れ子を保存する', asyn
   await expect(page.locator('.settings-saving').filter({ hasText: '保存しました' })).not.toHaveCount(0)
   await button(page, '戻る').click()
   await page.locator('m3e-nav-item').filter({ hasText: '設定' }).click()
-  await action(page, '権限').click()
+  await action(page, 'そのほか').click()
   await expect(enabled).toBeChecked({ checked: !initial })
   await expect(number).toHaveValue('24')
   await expect(nested).toHaveValue('7')

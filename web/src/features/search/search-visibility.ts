@@ -1,16 +1,17 @@
+import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
 import { selectRecentSessions } from './search-utils.ts'
+import { MAIN_VIEW_SOURCE } from '../../dsh/conversation-selection.ts'
 
-type SearchSessionList = Pick<SessionListState, 'ids' | 'byId' | 'current' | 'phase'>
+type SearchSessionList = Pick<SessionListState, 'ids' | 'byId' | 'phase'>
 type SearchWorkspaceList = Pick<WorkspaceSnapshot, 'archivedSessionIds'>
 
 function sessionVisible(
   row: SessionSummary,
-  current: string | undefined,
   archived: ReadonlySet<string>,
   showSubagents: boolean,
 ): boolean {
-  return (showSubagents || row.origin !== 'subagent') && !archived.has(row.id) && (!row.blank || row.id === current)
+  return (showSubagents || row.origin !== 'subagent') && !archived.has(row.id) && (!row.blank || (row.retainedBy[MAIN_VIEW_SOURCE] ?? 0) > 0)
 }
 
 /**
@@ -24,13 +25,13 @@ export function filterVisibleSearchItems<T extends { sessionId: string }>(
   workspaces: SearchWorkspaceList,
   showSubagents = false,
 ): T[] {
-  const currentIds = new Set(list.ids)
+  const currentIds = new Set(sessionRowIds(list))
   const archived = new Set(workspaces.archivedSessionIds)
   return items.filter(item => {
     const row = list.byId[item.sessionId]
     // Search excludes even the selected provisional blank row, like DSH's UI.
     return currentIds.has(item.sessionId) && row !== undefined && !row.blank
-      && sessionVisible(row, list.current, archived, showSubagents)
+      && sessionVisible(row, archived, showSubagents)
   })
 }
 
@@ -42,9 +43,9 @@ export function selectVisibleRecentSessions(
   showSubagents = false,
 ): SessionSummary[] {
   const archived = new Set(workspaces.archivedSessionIds)
-  const visible = list.ids.flatMap(id => {
+  const visible = sessionRowIds(list).flatMap(id => {
     const row = list.byId[id]
-    return row !== undefined && sessionVisible(row, list.current, archived, showSubagents) ? [row] : []
+    return row !== undefined && sessionVisible(row, archived, showSubagents) ? [row] : []
   })
   return selectRecentSessions(visible, limit)
 }

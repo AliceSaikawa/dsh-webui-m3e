@@ -33,7 +33,10 @@ async function instrument(page: Page) {
     ['dsh/mock/context.ts', (body: string) => {
       expect(body.match(/\breturn ctx;?/g)).toHaveLength(1)
       return body.replace(/\breturn ctx;?/, `globalThis.__robustnessContext = ctx;
-        globalThis.__robustnessMock = () => ({ models: models.size, timers: timers.size, startup: startupEvents.size, handlers: [...handlers.values()].reduce((n, set) => n + set.size, 0), handlerKeys: handlers.size, submissions: [...models.values()].reduce((n, model) => n + model.submissions.size, 0), attachments: attachments.size, records: [...models.values()].reduce((n, model) => n + model.records.length, 0) });
+        globalThis.__robustnessRetiredGenerationStores = 0;
+        const removeGeneration = generations.delete.bind(generations);
+        generations.delete = id => { const removed = removeGeneration(id); if (removed) globalThis.__robustnessRetiredGenerationStores += 2; return removed; };
+        globalThis.__robustnessMock = () => ({ models: models.size, generations: generations.size, timers: timers.size, startup: startupEvents.size, handlers: [...handlers.values()].reduce((n, set) => n + set.size, 0), handlerKeys: handlers.size, submissions: [...generations.values()].reduce((n, generation) => n + generation.client.submissions.size, 0), attachments: attachments.size, records: [...models.values()].reduce((n, model) => n + model.records.length, 0) });
         return ctx;`)
     }],
   ] as const) {
@@ -46,7 +49,7 @@ async function instrument(page: Page) {
 async function metrics(page: Page) {
   return page.evaluate(() => {
     const state = window as any
-    return { drafts: state.__robustnessDrafts(), flights: state.__robustnessFlights(), mock: state.__robustnessMock(), observable: { ...state.__robustnessObservables }, pointerdown: state.__robustnessPointerListeners.size,
+    return { drafts: state.__robustnessDrafts(), flights: state.__robustnessFlights(), mock: state.__robustnessMock(), observable: { ...state.__robustnessObservables, retiredGenerationStores: state.__robustnessRetiredGenerationStores }, pointerdown: state.__robustnessPointerListeners.size,
       storageKeys: Object.keys(localStorage).filter(key => key.startsWith('m3e:composer:')).sort() }
   })
 }
@@ -69,7 +72,11 @@ async function settled(page: Page) {
 }
 function resources(value: Awaited<ReturnType<typeof metrics>>) {
   const { records: _records, ...mock } = value.mock
-  return { ...value, mock }
+  // 0.2.0 creates two new client stores per retained generation. Keep exact
+  // conservation of allocations after accounting only for retired generations;
+  // subscriptions and the live generation count must still equal the baseline.
+  const { retiredGenerationStores, ...observable } = value.observable
+  return { ...value, mock, observable: { ...observable, created: observable.created - retiredGenerationStores } }
 }
 for (const width of [375, 390]) {
   test(`03 ${width}px 固定会話を反復し切断・再接続しても購読と保持状態が増えない`, async ({ page }, info) => {
@@ -186,16 +193,22 @@ for (const width of [375, 390]) {
     await page.evaluate(() => {
       const state = window as any, ctx = state.__robustnessContext
       state.__robustnessPrompts = []
-      for (const sessionId of ['readme-review', 'session-tools-review']) {
-        const face = ctx.sessions.sessionOf(ctx.sessions.scope(sessionId)), original = face.prompt.bind(face)
+      const retain = ctx.sessions.retain.bind(ctx.sessions), patched = new WeakSet()
+      ctx.sessions.retain = (...args: any[]) => {
+        const reference = retain(...args), sessionId = reference.sessionId
+        const face = reference.binding.session
+        if (!['readme-review', 'session-tools-review'].includes(sessionId) || patched.has(face)) return reference
+        patched.add(face)
+        const original = face.prompt.bind(face)
         face.prompt = async (...args: any[]) => {
           // Cases 0/2 hold the known synthetic response after acceptance;
-          // case 1 holds before acceptance to test explicit disconnected refusal.
+          // Case 1 holds before acceptance; a lost carrier reports uncertain delivery.
           const beforeAcceptance = state.__robustnessBeforeAcceptance
           const result = beforeAcceptance ? undefined : await original(...args)
           await new Promise(resolve => { state.__robustnessPrompts.push({ sessionId, release: resolve, released: false, phase: beforeAcceptance ? 'before-acceptance' : 'accepted-response-held' }) })
           return beforeAcceptance ? original(...args) : result
         }
+        return reference
       }
     })
     const input = page.getByLabel('メッセージ入力欄', { exact: true })
@@ -224,7 +237,8 @@ for (const width of [375, 390]) {
       if (cycle === 1) {
         await navigate(page, 'session-tools-review')
         await expect(input).toHaveValue(b)
-        await expect(page.getByRole('alert')).toContainText('接続')
+        await expect(page.getByRole('alert')).toContainText('送信結果が不明です')
+        await expect(page.getByRole('alert')).toContainText('同じ内容が重複して届く可能性があります。')
         expect(await page.evaluate(() => (window as any).__robustnessPrompts.length)).toBe(beforeCalls + 2)
         await button(page, '再接続').click()
         await expect(button(page, '送信')).toBeEnabled()
@@ -244,15 +258,32 @@ for (const width of [375, 390]) {
       }
       await page.evaluate(async () => {
         const ctx = (window as any).__robustnessContext
-        for (const id of ['readme-review', 'session-tools-review']) await ctx.sessions.sessionOf(ctx.sessions.scope(id)).cancel()
+        for (const id of ['readme-review', 'session-tools-review']) await ctx.sessions.using(id, { source: 'm3e.testStop' }, (reference: any) => reference.binding.session.cancel())
       })
       await navigate(page, '')
       const current = await settled(page)
       expect(resources(current)).toEqual(resources(baseline))
-      observations.push({ cycle, calls: (await page.evaluate(() => (window as any).__robustnessPrompts.length)) - beforeCalls, childBeforeNormal: true, phase: cycle === 1 ? 'pre-acceptance-disconnected-refusal' : 'post-acceptance-response-order', ...current })
+      observations.push({ cycle, calls: (await page.evaluate(() => (window as any).__robustnessPrompts.length)) - beforeCalls, childBeforeNormal: true, phase: cycle === 1 ? 'pre-acceptance-carrier-loss' : 'post-acceptance-response-order', ...current })
     }
     await navigate(page, 'session-tools-review')
     await shot(page, `robustness-reordered-delivery-${width}`)
     await info.attach('interleaved-flight-resources', { body: JSON.stringify({ baseline, observations }), contentType: 'application/json' })
   })
 }
+
+test('B2 購読計測は最後のreleaseで外部投影の解除漏れを隠さない', async ({ page }) => {
+  await instrument(page); await visit(page, '/')
+  const result = await page.evaluate(async () => {
+    const state = window as any, ctx = state.__robustnessContext
+    const ref = ctx.sessions.retain('readme-review', { source: 'm3e.leakProbe' })
+    const binding = await ref.ready
+    const before = state.__robustnessObservables.active
+    const stop = binding.session.projections.faceOf('permissions').subscribe(() => {})
+    const subscribed = state.__robustnessObservables.active
+    ref.release()
+    const released = state.__robustnessObservables.active
+    stop()
+    return { added: subscribed - before, explicitlyRemoved: released - state.__robustnessObservables.active }
+  })
+  expect(result).toEqual({ added: 1, explicitlyRemoved: 1 })
+})

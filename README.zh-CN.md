@@ -14,7 +14,7 @@
 这些截图展示经过翻译的模拟画面；实际应用界面仍仅提供日语。
 
 > [!NOTE]
-> 这是个人项目，并非 DeepSeek 官方产品。项目仍在开发中，尚未完成与实际 DSH 连接的验证。
+> 这是个人项目，并非 DeepSeek 官方产品。项目仍在开发中，可能存在缺陷，请谨慎使用。
 
 ## 功能
 
@@ -28,7 +28,8 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 环境要求
 
-- DeepSeek Harness 0.1.5-rc.3（已使用此版本验证启动和连接）
+- DeepSeek Harness **0.2.0-rc.2**（已使用真实的 DSH 和模拟的 LLM 验证启动、发送、停止、审批、提问、重新连接等）
+  - 已移除对 0.1.5 系列的支持。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
 - 用于构建的 Node.js 22 或更高版本，以及 pnpm
 
 ## 安装
@@ -69,7 +70,7 @@ dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 
 - 界面文字仅提供日语。
 - 插件随附 DSH 的内部库（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`），因此可能无法在某些 DSH 版本上运行。
-- 开发期间使用模拟数据代替实际 DSH 进行验证。开发方法和工作原理见 [docs/development.md](docs/development.md)。
+- 界面测试主要使用模拟数据。与 DSH 的连接使用与生产环境隔离的真实 DSH 和模拟的 LLM 进行验证。本次迁移尚未使用真实 LLM 或 iPhone 验证。开发方法和工作原理见 [docs/development.md](docs/development.md)。
 
 ## 许可证
 

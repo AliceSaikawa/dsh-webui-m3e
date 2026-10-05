@@ -69,7 +69,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
         const accepted = await store.edit(namespace.ns, latestField.path, reset ? undefined : next)
         if (!accepted) return { ok: false }
         const row = store.getSnapshot().namespaces.find(item => item.ns === namespace.ns)
-        return { ok: true, value: inputValue(latestField, row && findSettingField(row, latestField.path)?.value) }
+        return { ok: true, value: inputValue(latestField, row && findSettingField(row, latestField.path, store.getSnapshot().permissionCatalog)?.value) }
       },
     })
   })
@@ -78,7 +78,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
   const choice = editing.value
   const selection = selectFieldState(field, choice)
   const error = validation ?? state.fieldErrors[fieldKey(namespace.ns, field.path)]
-  const timing = namespace.applies === 'restart' ? 'DSH の再起動後に反映されます' : 'すぐ反映されます'
+  const timing = 'すぐ反映されます'
   useEffect(() => {
     input.receive(inputValue(field, field.value))
   }, [input, field.kind, field.value])

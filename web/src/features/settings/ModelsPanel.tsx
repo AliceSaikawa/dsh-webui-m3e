@@ -7,6 +7,9 @@ import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { useDsh } from '../../dsh/services.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
+import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { PROVIDER_EVENTS } from './providers.ts'
 import { composerApi, type ModelCatalog, type ModelSelection } from '../composer/api.ts'
 import { reasoningEffortLabel } from '../composer/helpers.ts'
 import { modelChoices, modelValue } from '../composer/model-picker.ts'
@@ -29,7 +32,8 @@ function catalogError(cause: unknown): string {
 }
 
 export function ModelsPanel({ namespaces, state, store }: PanelProps) {
-  const { remote } = useDsh()
+  const { remote, connection } = useDsh()
+  const connectionState = useSnapshot(connection.state)
   const api = useMemo(() => composerApi(remote), [remote])
   const [catalog, setCatalog] = useState<CatalogState>({ phase: 'loading' })
   const request = useRef(0)
@@ -42,7 +46,12 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
       if (ticket === request.current) setCatalog(previous => ({ ...previous, phase: 'error', error: catalogError(cause) }))
     })
   }
-  useEffect(() => { load(); return () => { request.current++ } }, [api])
+  useEffect(() => {
+    if (connectionState !== 'connected') { setCatalog(previous => ({ ...previous, phase: 'loading' })); return }
+    const stops = PROVIDER_EVENTS.map(event => onRemoteEvent(remote, event, load))
+    load()
+    return () => { request.current++; stops.forEach(stop => stop()) }
+  }, [api, remote, connectionState])
   const choices = catalog.catalog ? modelChoices(catalog.catalog) : []
   return <>
     {catalog.phase === 'loading' && <p role="status">モデル一覧を読み込み中…</p>}
@@ -68,7 +77,7 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
 
 type Choice = ReturnType<typeof modelChoices>[number]
 interface EditorProps { namespace: SettingsNamespace; state: SettingsState; store: SettingsStore; choices: Choice[]; available: boolean; loading: boolean }
-const timing = (row: SettingsNamespace) => row.applies === 'restart' ? 'DSH の再起動後に反映されます' : 'すぐ反映されます'
+const timing = (_row: SettingsNamespace) => 'すぐ反映されます'
 
 function EditStatus({ namespace, state, saving, saved, reset }: {
   namespace: SettingsNamespace; state: SettingsState; saving: boolean; saved: boolean; reset(): void
@@ -172,7 +181,7 @@ function SubagentModels({ namespace, state, store, choices, available, loading }
   function commit(ops: Parameters<SettingsStore['editModelSettings']>[1]) {
     pending.current++
     setSaving(true); setSaved(false)
-    void store.editModelSettings('subagent-model-selection', ops).then(ok => {
+    void store.editModelSettings('subagent-model-selection-settings', ops).then(ok => {
       if (ok) setSaved(true)
     }).finally(() => {
       pending.current--
@@ -205,7 +214,7 @@ function SubagentModels({ namespace, state, store, choices, available, loading }
     setDraft(subagentSelection(namespace.base ?? {}))
     pending.current++
     setSaving(true); setSaved(false)
-    void store.editModelSettings('subagent-model-selection', () => subagentResetOperations, true).then(ok => {
+    void store.editModelSettings('subagent-model-selection-settings', () => subagentResetOperations, true).then(ok => {
       if (ok) setSaved(true)
     }).finally(() => {
       pending.current--

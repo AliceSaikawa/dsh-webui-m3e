@@ -19,7 +19,7 @@ test('初期シナリオの遅延なしの承認・質問・プランが登録�
   const store = new InteractionStore()
   const stop = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
   try {
-    assert.equal(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.getSnapshot().running, true)
+    assert.equal(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.getSnapshot().running, true)
     await Promise.resolve()
     const pending = store.getSnapshot()
     assert.equal(pending.length, 3)

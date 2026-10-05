@@ -32,6 +32,10 @@ export function defer(key: string): void {
   store.defer(key)
 }
 
+export function presentQuestion(key: string): () => void {
+  return store.presentQuestion(key)
+}
+
 export function resetDeferred(sessionId: string): void {
   store.resetDeferred(sessionId)
 }

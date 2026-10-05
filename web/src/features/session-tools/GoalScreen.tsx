@@ -16,9 +16,9 @@ export function GoalScreen({ sessionId }: { sessionId: string }) {
 }
 
 function GoalContent({ sessionId }: { sessionId: string }) {
-  const { remote } = useDsh()
+  const { remote, connection } = useDsh()
   const { connected } = useConnection()
-  const { projection, snapshot } = useSession(sessionId)
+  const { projection, snapshot, face } = useSession(sessionId)
   const projected = projection<GoalProjection | null>('goal')
   const [observed, setObserved] = useState<GoalObservation>()
   const [busy, setBusy] = useState(false)
@@ -26,6 +26,7 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   const [needsRefresh, setNeedsRefresh] = useState(false)
   const [liveActivation, setLiveActivation] = useState<GoalActivationRef>()
   const [activationError, setActivationError] = useState(false)
+  const [activationReady, setActivationReady] = useState(false)
   const [activationRefresh, setActivationRefresh] = useState(0)
   const lock = useRef(false)
   const alive = useRef(true)
@@ -42,18 +43,22 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   const exhausted = primary === 'resume' && current && current.roundsStarted >= current.goal.maxGoalRounds
   const disabled = busy || !connected || !goals
   const readOnly = snapshot.subagent !== null
-  const mutationDisabled = disabled || readOnly || needsRefresh
+  const mutationDisabled = disabled || readOnly || needsRefresh || !activationReady || activation === undefined
 
   useEffect(() => {
     setActivationError(false)
-    if (!goals || !connected || !goal) return
+    setActivationReady(false)
+    if (!goals || !goal || !face) return
     const watcher = watchGoalActivation(remote, goals, sessionId, value => {
       setLiveActivation(previous => updateGoalActivation(goal, previous, value))
       setActivationError(false)
-    }, () => setActivationError(true))
+      setActivationReady(true)
+    }, () => { setActivationError(true); setActivationReady(false) }, {
+      connection: connection.state, session: face, projection: face.projections.faceOf('goal'),
+    })
     void watcher.refresh()
     return () => watcher.dispose()
-  }, [remote, goals, sessionId, goal?.id, goal?.revision, connected, snapshot.running, activationRefresh])
+  }, [remote, goals, sessionId, goal?.id, goal?.revision, connection, face, activationRefresh])
 
   async function refresh() {
     if (!goals || lock.current) return
@@ -76,7 +81,7 @@ function GoalContent({ sessionId }: { sessionId: string }) {
   }
 
   async function mutate(action: GoalAction, ref: GoalRef) {
-    if (!alive.current || !goals || lock.current || !connected || readOnly || needsRefresh) return
+    if (!alive.current || !goals || lock.current || mutationDisabled) return
     lock.current = true
     setBusy(true)
     setError('')

@@ -1,5 +1,6 @@
 import type { RemoteResult } from '../../dsh/services.ts'
-import { imageBase64 } from '../../dsh/mock/fixtures.ts'
+import { imageBase64, MOCK_IDS } from '../../dsh/mock/fixtures.ts'
+import { RemoteCallError } from '../../dsh/remote-result.ts'
 import { MAX_IMAGE_BYTES, workspaceFileErrors } from './files.ts'
 import type {
   WorkspaceDirectoryEntry, WorkspaceFileChange, WorkspaceFileWatchFrame,
@@ -11,15 +12,17 @@ const encoder = new TextEncoder()
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
 const bytesOf = (data: string) => Uint8Array.from(atob(data), (character) => character.charCodeAt(0))
-const base64Of = (bytes: Uint8Array) => btoa(Array.from(bytes, (value) => String.fromCharCode(value)).join(''))
 
 const MAX_PAGE_BYTES = 2 * 1024 * 1024
+const MAX_FILE_BYTES = 32 * 1024 * 1024
+const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const integer = (value: unknown, min: number): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min
 // Virtual files are one repeated ASCII line; no large fixture buffer is kept.
 interface MockFile { bytes: Uint8Array; revision: number; virtualSize?: number }
 const sizeOf = (file: MockFile) => file.virtualSize ?? file.bytes.length
 
 /** The RPC remains read-only; updateText is a local driver for change tests. */
-export function createWorkspaceFilesMock() {
+function createRootFilesMock(root: string) {
   const files = new Map<string, MockFile>()
   const directories = new Set(['', 'docs', 'docs/canvas'])
   const watchers = new Set<(frame: WorkspaceFileWatchFrame) => void>()
@@ -36,7 +39,7 @@ export function createWorkspaceFilesMock() {
   files.set('too-large.png', { bytes: new Uint8Array(), virtualSize: MAX_IMAGE_BYTES + 1, revision: 1 })
 
   function relativePath(input: string): string | undefined {
-    const path = input === ROOT ? '' : input.startsWith(`${ROOT}/`) ? input.slice(ROOT.length + 1) : input
+    const path = input === root ? '' : input.startsWith(`${root}/`) ? input.slice(root.length + 1) : input
     if (path.startsWith('/') || path.includes('\\')) return undefined
     const parts: string[] = []
     for (const part of path.split('/')) {
@@ -47,9 +50,9 @@ export function createWorkspaceFilesMock() {
     return parts.join('/')
   }
 
-  const absolutePath = (path: string) => path ? `${ROOT}/${path}` : ROOT
+  const absolutePath = (path: string) => path ? `${root}/${path}` : root
   const requestFailure = (input: string, signal?: AbortSignal) => signal?.aborted ? failure('rpc/aborted', '読み込みを取り消しました。')
-    : input.length === 0 ? failure('gateway/bad-request', 'パスを指定してください。') : undefined
+    : typeof input !== 'string' || input.length === 0 ? failure('gateway/bad-request', 'パスを指定してください。') : undefined
   const metadata = (path: string, file?: MockFile) => ({ absolutePath: absolutePath(path), version: `mock-${file?.revision ?? 1}`, ...(file ? { bytes: sizeOf(file) } : {}) })
 
   const remote: WorkspaceFilesRemote = {
@@ -77,8 +80,9 @@ export function createWorkspaceFilesMock() {
       if (invalid) return invalid
       const path = relativePath(input)
       if (path === undefined) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (directories.has(path)) return failure('workspace-file/not-regular-file', '通常のファイルではありません。')
       const file = files.get(path)
-      if (!file && !directories.has(path)) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+      if (!file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
       return success(metadata(path, file))
     },
     async read(_sessionId, input, options = {}, signal) {
@@ -87,8 +91,10 @@ export function createWorkspaceFilesMock() {
       const path = relativePath(input)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
-      const offset = Math.max(1, Math.trunc(options.offset ?? 1))
-      const limit = Math.max(1, Math.trunc(options.limit ?? 5000))
+      if (!object(options) || Object.keys(options).some(key => !['offset', 'limit'].includes(key))) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      const offset = options.offset === undefined ? 1 : options.offset
+      const limit = options.limit === undefined ? 5000 : options.limit
+      if (!integer(offset, 1) || !integer(limit, 1) || limit > 5000) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
       if (file.virtualSize !== undefined) {
         if (offset === 1 && file.virtualSize > MAX_PAGE_BYTES) return failure(workspaceFileErrors.tooLarge, 'ファイルが大きいため表示できません。')
         return success({ ...metadata(path, file), offset, text: '', lines: 0, eof: true })
@@ -106,25 +112,46 @@ export function createWorkspaceFilesMock() {
     async readBytes(_sessionId, input, options = {}, signal) {
       const invalid = requestFailure(input, signal)
       if (invalid) return invalid
-      const path = relativePath(input)
+      if (!object(options) || Object.keys(options).some(key => !['range', 'baseFile'].includes(key))
+        || options.range !== undefined && (!object(options.range) || Object.keys(options.range).some(key => !['offset', 'length'].includes(key)))
+        || options.baseFile !== undefined && (typeof options.baseFile !== 'string' || !options.baseFile.length)) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      let target = input
+      if (options.baseFile !== undefined) {
+        input = input.replace(/\\/g, '/')
+        const base = relativePath(options.baseFile)
+        if (base === undefined || !files.has(base)) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
+        if (input.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(input) || input.includes('\0')) return failure('gateway/bad-request', '相対パスを指定してください。')
+        const parent = base.includes('/') ? base.slice(0, base.lastIndexOf('/') + 1) : ''
+        target = parent + input
+      }
+      const path = relativePath(target)
       const file = path === undefined ? undefined : files.get(path)
       if (path === undefined || !file) return failure(workspaceFileErrors.notFound, 'ファイルが見つかりません。')
-      const offset = Math.max(0, Math.trunc(options.offset ?? 0))
-      const length = options.length ?? MAX_PAGE_BYTES
-      if (!Number.isSafeInteger(length) || length < 1) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
-      if (length > MAX_PAGE_BYTES) return failure(workspaceFileErrors.tooLarge, '読み込み範囲が大きすぎます。')
+      const offset = options.range?.offset === undefined ? 0 : options.range.offset
+      const length = options.range ? options.range.length === undefined ? MAX_PAGE_BYTES : options.range.length : sizeOf(file)
+      if (!integer(offset, 0) || !integer(length, options.range ? 1 : 0) || !Number.isSafeInteger(offset + length)) return failure('gateway/bad-request', '読み込み範囲を確認してください。')
+      if (length > (options.range ? MAX_PAGE_BYTES : MAX_FILE_BYTES)) return failure(workspaceFileErrors.tooLarge, '読み込み範囲が大きすぎます。')
       const bytes = file.virtualSize === undefined ? file.bytes.slice(offset, offset + length)
         : new Uint8Array(Math.min(length, Math.max(0, file.virtualSize - offset))).fill(65)
-      return success({ ...metadata(path, file), offset, data: base64Of(bytes), eof: offset + bytes.length >= sizeOf(file) })
+      return success({ ...metadata(path, file), offset, data: bytes, eof: offset + bytes.length >= sizeOf(file) })
     },
-    changes(_sessionId, signal) {
-      return {
-        [Symbol.asyncIterator](): AsyncIterableIterator<WorkspaceFileWatchFrame> {
+    changes(_sessionId, input, signal) {
+          const invalid = requestFailure(input)
+          const path = invalid ? undefined : relativePath(input)
+          const error = invalid && !invalid.ok ? invalid.error : path === undefined || !files.has(path) && !directories.has(path)
+            ? { code: workspaceFileErrors.notFound, message: 'ファイルが見つかりません。', details: {} } : undefined
           let closed = false
           const queue: WorkspaceFileWatchFrame[] = [{ kind: 'ready' }]
           const waiting: ((result: IteratorResult<WorkspaceFileWatchFrame>) => void)[] = []
           const push = (frame: WorkspaceFileWatchFrame) => {
             if (closed) return
+            if (frame.kind === 'change' && path !== undefined) {
+              const target = absolutePath(path)
+              const changed = frame.change.absolutePath
+              if (changed !== target && !(directories.has(path) && changed.slice(0, changed.lastIndexOf('/')) === target)) return
+              // DSH stats the watched target, even when a child triggered the watch.
+              if (directories.has(path)) frame = { kind: 'change', change: metadata(path) }
+            }
             const resolve = waiting.shift()
             if (resolve) resolve({ done: false, value: frame })
             else queue.push(frame)
@@ -138,20 +165,25 @@ export function createWorkspaceFilesMock() {
           }
           if (signal?.aborted) close()
           else {
-            watchers.add(push)
+            if (!error) watchers.add(push)
             signal?.addEventListener('abort', close, { once: true })
           }
-          return {
+          const iterator: AsyncIterableIterator<WorkspaceFileWatchFrame> = {
             [Symbol.asyncIterator]() { return this },
             next() {
               if (closed) return Promise.resolve({ done: true, value: undefined })
+              if (error) { close(); return Promise.reject(new RemoteCallError(error)) }
               const frame = queue.shift()
               if (frame) return Promise.resolve({ done: false, value: frame })
               return new Promise((resolve) => waiting.push(resolve))
             },
             async return() { close(); return { done: true, value: undefined } },
           }
-        },
+      return {
+        [Symbol.asyncIterator]() { return iterator },
+        send(_item: never) { throw new Error('この監視は入力を受け付けません。') },
+        end() {},
+        dispose: close,
       }
     },
   }
@@ -173,5 +205,49 @@ export function createWorkspaceFilesMock() {
     },
     publishChange,
     get subscriberCount() { return watchers.size },
+  }
+}
+
+/** The standalone fixture declares its test sessions; application wiring supplies
+ * the real mock header catalog. Agent availability is deliberately irrelevant. */
+export function createWorkspaceFilesMock(resolveRoot: (sessionId: string) => string | undefined =
+  id => ['s', 'session', ...Object.values(MOCK_IDS.sessions)].includes(id) ? ROOT : undefined) {
+  const roots = new Map<string, ReturnType<typeof createRootFilesMock>>()
+  const atRoot = (root: string) => {
+    let fixture = roots.get(root)
+    if (!fixture) { fixture = createRootFilesMock(root); roots.set(root, fixture) }
+    return fixture
+  }
+  const resolve = (id: string) => {
+    const root = resolveRoot(id)
+    return root === undefined ? undefined : atRoot(root)
+  }
+  const missing = () => failure('gateway/lookup-not-found', '会話が見つかりません。')
+  const remote: WorkspaceFilesRemote = {
+    async list(id, path, signal) { return resolve(id)?.remote.list(id, path, signal) ?? missing() },
+    async stat(id, path, signal) { return resolve(id)?.remote.stat(id, path, signal) ?? missing() },
+    async read(id, path, range, signal) { return resolve(id)?.remote.read(id, path, range, signal) ?? missing() },
+    async readBytes(id, path, options, signal) { return resolve(id)?.remote.readBytes(id, path, options, signal) ?? missing() },
+    changes(id, path, signal) {
+      const fixture = resolve(id)
+      if (fixture) return fixture.remote.changes(id, path, signal)
+      return {
+        async *[Symbol.asyncIterator]() {
+          const result = missing()
+          if (!result.ok) throw new RemoteCallError(result.error)
+        },
+        send() { throw new Error('この監視は入力を受け付けません。') }, end() {}, dispose() {},
+      }
+    },
+  }
+  return {
+    remote,
+    updateText(path: string, text: string, sessionId = 's') {
+      const fixture = resolve(sessionId)
+      if (!fixture) throw new Error('会話が見つかりません。')
+      fixture.updateText(path, text)
+    },
+    publishChange(change: WorkspaceFileChange) { for (const fixture of roots.values()) fixture.publishChange(change) },
+    get subscriberCount() { return [...roots.values()].reduce((total, fixture) => total + fixture.subscriberCount, 0) },
   }
 }

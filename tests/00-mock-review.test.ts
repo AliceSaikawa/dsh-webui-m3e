@@ -1,3 +1,7 @@
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
+import { queueFromInbox } from '../web/src/dsh/inbox.ts'
+import type { InboxState } from '../web/src/dsh/services.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
@@ -10,44 +14,49 @@ for (const child of [false, true]) {
     const sessionId = child ? 'completed-child' : 'completed-session'
     const parentSessionId = MOCK_IDS.sessions.readme
     try {
-      ctx.mock.addSession({ id: sessionId, displayTitle: '完了した会話', completed: true, running: false, blank: false, updatedAt: 0, ...(child ? { parentId: parentSessionId, origin: 'subagent' as const } : {}) }, [])
-      ctx.mock.addSession({ id: 'other-completed', displayTitle: '別の完了した会話', completed: true, running: false, blank: false, updatedAt: 0 }, [])
+      ctx.mock.addSession({ id: sessionId, displayTitle: '完了した会話', running: true, blank: false, updatedAt: 0, ...(child ? { parentId: parentSessionId, origin: 'subagent' as const } : {}) }, [])
+      ctx.mock.addSession({ id: 'other-completed', displayTitle: '別の完了した会話', running: true, blank: false, updatedAt: 0 }, [])
+      ctx.mock.setSessionState(sessionId, { running: false })
+      ctx.mock.setSessionState('other-completed', { running: false })
       if (child) {
+        ctx.mock.setProjection(sessionId, 'subagent', { mode: 'continuable', seq: 0 })
         ctx.mock.updateList((state) => {
-          state.subagentsByParent = { [parentSessionId]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: sessionId, mode: 'continuable', activity: 'inactive', hasChildren: false }] } }
+          state.projectionsBySession = { [parentSessionId]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'continuable', label: '子', createdAt: 0 }] } } }
         })
-        ctx.sessions.openSubagent({ parentSessionId, childSessionId: sessionId, mode: 'continuable' })
-      } else ctx.sessions.open(sessionId)
-      assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId]?.completed, false)
-      assert.equal(ctx.sessions.list.getSnapshot().byId['other-completed']?.completed, true)
-      assert.equal(ctx.sessions.list.getSnapshot().current, sessionId)
+        await conversationSelection(ctx.sessions).select({ parentSessionId, childSessionId: sessionId, mode: 'continuable' })
+      } else await conversationSelection(ctx.sessions).select(sessionId)
+      assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
+      assert.equal(completionStatus(ctx).getSnapshot().byId['other-completed']?.completionUnread, true)
+      assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, sessionId)
       ctx.mock.setProjection(sessionId, 'plan', { active: true, pending: false })
-      assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId]?.completed, false)
-      await ctx.sessions.binding(sessionId)!.session.rename('既読の会話')
-      assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId]?.completed, false)
-      ctx.sessions.clear()
-      ctx.sessions.open(sessionId)
-      assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId]?.completed, false)
+      assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
+      const renamed = await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.rename('既読の会話')
+      assert.equal(renamed.ok, !child)
+      assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
+      await conversationSelection(ctx.sessions).select(undefined)
+      await conversationSelection(ctx.sessions).select(sessionId)
+      assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId]?.completionUnread, false)
     } finally { ctx.dispose() }
   })
 
-  test(`${child ? '子' : '通常'}の会話を選択しても設定済みの open error を上書きしない`, () => {
+  test(`${child ? '子' : '通常'}の会話を選択しても設定済みの open error を上書きしない`, async () => {
     const ctx = createMockContext()
     const sessionId = child ? 'failed-child' : MOCK_IDS.sessions.readme
     const error = { code: 'mock/open-failed', message: '会話を開けません。', details: {} }
     try {
       if (child) {
-        ctx.mock.addSession({ id: sessionId, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: '子の会話', completed: true, running: false, blank: false, updatedAt: 0 }, [])
+        ctx.mock.addSession({ id: sessionId, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: '子の会話', running: true, blank: false, updatedAt: 0 }, [])
+        ctx.mock.setProjection(sessionId, 'subagent', { mode: 'one-shot', seq: 0 })
         ctx.mock.updateList((state) => {
-          state.subagentsByParent = { [MOCK_IDS.sessions.readme]: { state: 'ready', error: null, parentAvailable: true, entries: [{ kind: 'child', id: sessionId, mode: 'one-shot', activity: 'inactive', hasChildren: false }] } }
+          state.projectionsBySession = { [MOCK_IDS.sessions.readme]: { state: 'ready', error: null, values: { subagentCatalog: [{ id: sessionId, mode: 'one-shot', createdAt: 0 }] } } }
         })
       }
       ctx.mock.setSessionState(sessionId, { openState: 'error', openError: error })
-      if (child) ctx.sessions.openSubagent({ parentSessionId: MOCK_IDS.sessions.readme, childSessionId: sessionId, mode: 'one-shot' })
-      else ctx.sessions.open(sessionId)
-      assert.equal(ctx.sessions.list.getSnapshot().current, sessionId)
-      assert.equal(ctx.sessions.binding(sessionId)!.session.getSnapshot().openState, 'error')
-      assert.deepEqual(ctx.sessions.binding(sessionId)!.session.getSnapshot().openError, error)
+      await assert.rejects(conversationSelection(ctx.sessions).select(child ? { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: sessionId, mode: 'one-shot' } : sessionId))
+      assert.equal(ctx.sessions.retainInfo(sessionId).getSnapshot().referenceCount, 0)
+      const binding = await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready
+      assert.equal(binding.session.getSnapshot().openState, 'error')
+      assert.deepEqual(binding.session.getSnapshot().openError, error)
     } finally { ctx.dispose() }
   })
 }
@@ -55,15 +64,15 @@ for (const child of [false, true]) {
 test('存在しない待機列項目は実物と同じエラーコードと itemId を返す', async () => {
   const ctx = createMockContext()
   try {
-    const session = ctx.sessions.binding(MOCK_IDS.sessions.approval)!.session
+    const session = ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).binding.session
     await session.prompt([{ type: 'text', text: '待機中の入力' }], 'queue')
-    const queue = session.getSnapshot().queue
+    const queue = queueFromInbox(session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined)
     const result = await session.updateQueue('missing-item', { kind: 'remove' })
     assert.equal(result.ok, false)
     if (result.ok) assert.fail('存在しない項目への操作が成功しています。')
     assert.equal(result.error.code, 'session/queue-item-not-found')
     assert.deepEqual(result.error.details, { itemId: 'missing-item' })
-    assert.equal(session.getSnapshot().queue, queue)
+    assert.deepEqual(queueFromInbox(session.projections.faceOf('inbox').getSnapshot() as InboxState | undefined), queue)
   } finally { ctx.dispose() }
 })
 
@@ -71,20 +80,20 @@ test('空白だけの題名は実物と同じエラーコードと sessionId を
   const ctx = createMockContext()
   try {
     const sessionId = MOCK_IDS.sessions.readme
-    const binding = ctx.sessions.binding(sessionId)!
-    const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+    const binding = (await ctx.sessions.retain(sessionId, { source: 'm3e.test' }).ready)
+    const summary = completionStatus(ctx).getSnapshot().byId[sessionId]
     const events = binding.eventSource.getSnapshot()
     const result = await binding.session.rename(' \n\t ')
     assert.equal(result.ok, false)
     if (result.ok) assert.fail('空の題名が受け入れられています。')
     assert.equal(result.error.code, 'session/title-invalid')
     assert.deepEqual(result.error.details, { sessionId })
-    assert.equal(ctx.sessions.list.getSnapshot().byId[sessionId], summary)
+    assert.equal(completionStatus(ctx).getSnapshot().byId[sessionId], summary)
     assert.equal(binding.eventSource.getSnapshot(), events)
   } finally { ctx.dispose() }
 })
 
-test('拡張の重複 ID はその行だけエラー表示して無視し、元データと残りの初期化を維持する', (t) => {
+test('拡張の重複 ID はその行だけエラー表示して無視し、元データと残りの初期化を維持する', async (t) => {
   const errors = t.mock.method(console, 'error', () => {})
   const workspace = sharedWorkspaces[0]!
   const session = sharedSessions[0]!
@@ -99,11 +108,11 @@ test('拡張の重複 ID はその行だけエラー表示して無視し、元�
     assert.match(String(errors.mock.calls[0]!.arguments[0]), new RegExp(workspace.workspaceId))
     assert.match(String(errors.mock.calls[1]!.arguments[0]), new RegExp(session.summary.id))
     assert.deepEqual(ctx.workspaces.list.getSnapshot().items.find((item) => item.workspaceId === workspace.workspaceId), workspace)
-    assert.equal(ctx.sessions.list.getSnapshot().byId[session.summary.id]?.displayTitle, session.summary.displayTitle)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(session.summary.id)!.eventSource.getSnapshot()).records, session.records)
+    assert.equal(completionStatus(ctx).getSnapshot().byId[session.summary.id]?.displayTitle, session.summary.displayTitle)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(session.summary.id, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, session.records)
     assert.equal(ctx.workspaces.list.getSnapshot().items.filter((item) => item.workspaceId === workspace.workspaceId).length, 1)
     assert.equal(ctx.sessions.list.getSnapshot().ids.filter((id) => id === session.summary.id).length, 1)
     assert.equal(ctx.workspaces.list.getSnapshot().items.some((item) => item.workspaceId === 'later-workspace'), true)
-    assert.ok(ctx.sessions.binding('later-session'))
+    assert.ok((await ctx.sessions.retain('later-session', { source: 'm3e.test' }).ready))
   } finally { ctx.dispose() }
 })

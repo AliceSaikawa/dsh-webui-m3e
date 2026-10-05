@@ -8,7 +8,7 @@ function workspace(workspaceId: string, sessionIds: readonly string[] = []): Wor
   return { workspaceId, title: workspaceId, path: `/home/test/${workspaceId}`, sessionIds, createdAt: '', updatedAt: '' }
 }
 function session(id: string, values: Partial<SessionSummary> = {}): SessionSummary {
-  return { id, displayTitle: id, running: false, blank: false, updatedAt: 0, ...values }
+  return { retainedBy: {}, id, displayTitle: id, running: false, blank: false, updatedAt: 0, ...values }
 }
 
 test('saved workspace survives replacement, and missing selections fall back to the first item', () => {

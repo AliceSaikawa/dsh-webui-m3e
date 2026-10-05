@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { AgentContext, ISessions } from '../web/src/dsh/services.ts'
+import type { ISessions } from '../web/src/dsh/services.ts'
 import { clearDraft, readDraft, writeDraft } from '../web/src/features/composer/drafts.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, workspaceAttachmentFrom } from '../web/src/features/composer/workspace-recovery.ts'
 
@@ -27,9 +27,9 @@ function setup(label: string) {
   let available = true
   let wait: Promise<void> | undefined
   const failure = new Error('attachment failed')
-  const sessions: Pick<ISessions, 'create' | 'scope' | 'refresh'> = {
+  const sessions: Pick<ISessions, 'create' | 'list' | 'refresh'> = {
     async create(options) { calls.push(options ?? {}); if (wait) await wait; if (fail) throw failure; return attachment.sessionId },
-    scope() { return available ? {} as AgentContext : undefined },
+    list: { subscribe: () => () => {}, getSnapshot: () => ({ phase: 'ready', ids: available ? [attachment.sessionId] : [], byId: available ? { [attachment.sessionId]: { id: attachment.sessionId, retainedBy: {}, displayTitle: attachment.sessionId, running: false, blank: true, updatedAt: 0 } } : {}, projectionsBySession: {} }) },
     async refresh() {},
   }
   const draft = { text: '保つ本文', images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true, workspaceAttachment: attachment }
@@ -79,7 +79,7 @@ test('new-screen recovery moves the latest edits to the existing draft, then rem
   assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
 })
 
-test('successful adoption without a visible scope preserves the original ID on the new screen', async () => {
+test('successful adoption without a visible catalog row preserves the original ID on the new screen', async () => {
   const h = setup('unavailable')
   h.unavailable()
   h.succeed()

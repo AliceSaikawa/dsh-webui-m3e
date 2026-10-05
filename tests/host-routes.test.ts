@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { sep } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import type { Context } from '@deepseek-ai/cordis'
-import { apply, injectUiChoice, resolveTarget, stripApplicationPreloads } from '../src/host/index.ts'
+import { apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads } from '../src/host/index.ts'
 import { uiChoiceScript } from '../src/shared/ui-choice.ts'
 
 const INDEX_PATHS = [
@@ -101,7 +101,7 @@ test('GET and HEAD authorized index spellings prevent framing and keep no-store 
     assert.equal(response.headers['cache-control'], 'no-store', path)
     assert.equal(response.headers['content-security-policy'], "frame-ancestors 'none'", path)
     assert.equal(response.headers['x-frame-options'], 'DENY', path)
-    assert.equal(response.body, '<head><script>boot()</script></head><body>M3E</body>', path)
+    assert.equal(response.body, '<head><base href="/"><script>boot()</script></head><body>M3E</body>', path)
   }
   assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length * 2)
   assert.equal(host.render.mock.callCount(), INDEX_PATHS.length * 2)
@@ -160,4 +160,26 @@ test('the UI choice script is the first thing in the head, ahead of the stock bu
     injectUiChoice(html),
     `<!doctype html><html><head lang="x"><script>${uiChoiceScript()}</script><script src="/plugins/boot.js"></script></head></html>`,
   )
+})
+
+test('DSH 0.2 relative preloads are removed while bootstrap scripts and unrelated preloads survive', () => {
+  const bootstrap = '<script src="plugins/??@deepseek-ai/dsh-client-modules/client.js&amp;rev=b"></script>'
+  const other = '<link rel="preload" as="script" href="/m3e/assets/own.js">'
+  const html = '<head><link rel="preload" as="script" href="plugins/??stock/client.js&amp;rev=a">' + bootstrap + other + '</head>'
+  assert.equal(stripApplicationPreloads(html), '<head>' + bootstrap + other + '</head>')
+})
+
+test('M3E moves its single base before the injected queue and bootstrap, resolving all Host routes at root', () => {
+  const boot = '<script>queue()</script><script src="plugins/??modules/client.js&amp;rev=b"></script>'
+  const html = `<head>${boot}<base href="/" /><link rel="manifest" href="/m3e/manifest.webmanifest"></head>`
+  const prepared = prepareM3eIndex(html)
+  assert.equal(prepared, `<head><base href="/">${boot}<link rel="manifest" href="/m3e/manifest.webmanifest"></head>`)
+  assert.equal(prepareM3eIndex(prepared), prepared)
+  const base = new URL('/', 'https://host.example/m3e/')
+  for (const path of ['plugins/??modules/client.js&rev=b', 'api/session/list', 'api/remote.mux', 'api/session/uploadFileBinary']) {
+    assert.equal(new URL(path, base).pathname, '/' + path.split('?')[0])
+  }
+  // The shared tap remains independent of M3E's base/preload postprocessing.
+  const stock = '<head><base href="./"><link rel="preload" as="script" href="plugins/??stock/client.js&amp;rev=a"></head>'
+  assert.equal(injectUiChoice(stock), `<head><script>${uiChoiceScript()}</script>${stock.slice(6)}`)
 })

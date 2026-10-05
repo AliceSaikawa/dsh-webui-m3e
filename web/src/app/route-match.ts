@@ -17,6 +17,13 @@ export interface RouteMatch {
   definition?: RouteDef
 }
 
+/** Resolve UI links against the current page, independently of the Host's base. */
+export function pageHref(href: string, currentPage: string): string {
+  try { return new URL(href, currentPage).href }
+  // A malformed Markdown destination must not become a render error.
+  catch { return href }
+}
+
 export function resolveRoute(hash: string, routes: readonly RouteDef[]): RouteMatch {
   const raw = hash.replace(/^#/, '') || '/'
   const separator = raw.indexOf('?')

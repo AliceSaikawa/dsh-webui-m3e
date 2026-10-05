@@ -25,6 +25,8 @@ export default defineConfig({
     actionTimeout: 10_000,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
+    // For hosts whose installed browser build differs from this Playwright release.
+    ...(process.env.M3E_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.M3E_CHROMIUM_PATH } } : {}),
   },
   webServer: {
     command: 'pnpm exec vite --host 127.0.0.1 --port 5191 --strictPort',

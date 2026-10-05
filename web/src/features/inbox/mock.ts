@@ -21,8 +21,10 @@ export function extendMock(kit: MockKit): void {
       { id: INBOX_MOCK_IDS.otherCompleted, displayTitle: '調査結果の整理', completed: true },
     ]
     for (const [index, session] of sessions.entries()) {
-      inbox.addSession({ ...session, cwd: session.id === INBOX_MOCK_IDS.otherCompleted ? '/mock/inbox-notes' : '/mock/inbox',
-        blank: false, running: !session.completed, updatedAt: now - (index === 4 ? 12 : 3) * 60_000 }, [])
+      const { completed, ...summary } = session
+      inbox.addSession({ ...summary, cwd: session.id === INBOX_MOCK_IDS.otherCompleted ? '/mock/inbox-notes' : '/mock/inbox',
+        blank: false, running: true, updatedAt: now - (index === 4 ? 12 : 3) * 60_000 }, [])
+      if (completed) inbox.setSessionState(session.id, { running: false })
     }
     // A zero-delay delivery lets the foundation register its handlers during boot.
     // Requests are independent of feature 05's fixtures and remain in arrival order.

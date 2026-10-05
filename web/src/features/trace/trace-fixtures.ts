@@ -32,11 +32,11 @@ function outputStream(content: readonly ContentBlock[], start: number, end: numb
 export function createTraceExampleRecords(): SessionWireEvent[] {
   const records: SessionWireEvent[] = []
   let clock = origin
-  const append = (type: string, data: unknown, advance = 0, surface?: Pick<SessionWireEvent, 'surfaceOp' | 'sourceEventSeqs'>): SessionWireEvent => {
+  const append = (type: string, data: unknown, advance = 0, surface?: Pick<SessionWireEvent, 'surfaceOp' | 'sourceEventSeqs'>, timeOffset = 0): SessionWireEvent => {
     clock += advance
     const isSurface = ['user/message', 'assistant/message', 'tool/result'].includes(type)
     const event: SessionWireEvent = {
-      type, seq: records.length, time: clock,
+      type, seq: records.length, time: clock + timeOffset,
       data: JSON.parse(JSON.stringify(data)) as JsonValue,
       ...(isSurface ? { surfaceOp: 'append' } : {}),
       ...surface,
@@ -58,8 +58,8 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   const toolResult = (turn: number, step: number, callId: string, result: string, advance: number, isError = false) => append('tool/result', {
     turn, step,
     message: {
-      id: `trace-result-${callId}`, role: 'user', source: { kind: 'tool', callId },
-      content: [{ type: 'tool-result', toolCallId: callId, content: [text(result)], isError }],
+      id: `trace-result-${callId}`, role: 'tool', source: { kind: 'tool', callId },
+      toolCallId: callId, content: [text(result)], isError,
     },
     ...(isError ? { error: { name: 'Error', code: 'EXIT_1' } } : {}),
   }, advance)
@@ -84,6 +84,7 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
     { type: 'image', attachment: imageAttachment },
     { type: 'file', attachment: { attachmentId: 'trace-checklist', name: '確認項目.txt', bytes: 128 } },
   ])
+  append('request/header', { header: { config: { provider: 'mock', model: 'mock-model' } }, reason: 'initial' })
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     const failure = { code: 'NETWORK', message: `接続を確認して、${attempt} 回目の再試行を行います。` }
     const attemptTime = clock + 100
@@ -94,7 +95,9 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
         { type: 'chunk', time: attemptTime + 200, chunk: { type: 'finish', reason: { kind: 'error', failure } } },
       ],
     }, 300)
-    append('llm/retry', { turn: 2, step: 1, retry: attempt, maxRetries: 3, mode: 'normal', delayMs: 100, failure }, 100)
+    append('llm/retry', { retryId: 'trace-retry', provider: 'mock', policyKey: 'network', turn: 2, step: 1, retry: attempt, maxRetries: 3, mode: 'normal', delayMs: 100, failure }, 100)
+    // The next attempt already includes this wait in its original timestamps.
+    append('llm/retry-started', { retryId: 'trace-retry', turn: 2, step: 1, retry: attempt }, 0, undefined, 100)
   }
   const rootCallId = 'trace-root'
   const rootArgs = JSON.stringify({ code: '確認対象のファイルを順番に調べる' })
@@ -117,13 +120,15 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
   const summary = [text('確認対象のファイルを読み込みました。残りは失敗した検証と最終確認です。')]
   append('compaction/start', { compactionId, turn: 2 }, 100)
   append('compaction/summary', {
-    compactionId, turn: 2, summary,
+    compactionId, summary,
+    shadowedRange: { start: request.seq, end: rootResult.seq },
+    shadowedSeqs: [request.seq, response.seq, rootResult.seq], shadowedTokenCount: 600,
     rawOutput: [{ type: 'reasoning', text: '確認済みの作業と残りの作業を分けて要約します。' }, ...summary],
     provider: 'mock', model: 'mock-model', maxTokens: 1024,
     usage: { inputTokens: 600, outputTokens: 80, cacheReadTokens: 120, cacheWriteTokens: 0 },
   }, 700)
   append('user/message', {
-    id: 'trace-checkpoint', role: 'user', source: { kind: 'plugin', plugin: 'compact', compactionId }, content: summary,
+    id: 'trace-checkpoint', role: 'user', source: { kind: 'compact-checkpoint', compactionId }, content: summary,
   }, 0, { surfaceOp: { op: 'replace', startSeq: request.seq, endSeq: rootResult.seq }, sourceEventSeqs: [request.seq, response.seq, rootResult.seq] })
   append('compaction/end', { compactionId, turn: 2 }, 10)
 
@@ -146,7 +151,15 @@ export function createTraceExampleRecords(): SessionWireEvent[] {
 }
 
 export const traceExampleRecords: readonly SessionWireEvent[] = createTraceExampleRecords()
+/** Same real retry chain, cut while its first wait is cancelled (no retry-started). */
+const cancelledRetry = traceExampleRecords.findIndex(event => event.type === 'llm/retry')
+export const traceRetryCancelledRecords: readonly SessionWireEvent[] = [
+  ...traceExampleRecords.slice(0, cancelledRetry + 1),
+  { seq: cancelledRetry + 1, time: traceExampleRecords[cancelledRetry]!.time + 10, type: 'step/end', data: { turn: 2, step: 1 } },
+  { seq: cancelledRetry + 2, time: traceExampleRecords[cancelledRetry]!.time + 10, type: 'turn/end', data: { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } } },
+]
 export const traceExampleSession: SessionSummary = {
+  retainedBy: {},
   id: TRACE_EXAMPLE_SESSION_ID, title: 'トレースの見本', displayTitle: 'トレースの見本',
   cwd: workspacePath, running: true, blank: false,
   updatedAt: traceExampleRecords.at(-1)!.time,
@@ -177,6 +190,7 @@ const failureRows: readonly [number, string, unknown][] = [
   [3000, 'turn/start', { turn: 4 }],
   [3010, 'step/start', { turn: 4, step: 1 }],
   [3020, 'user/message', requestMessage('trace-interrupted-input', '終了記録がない中断を確認してください。')],
+  [3300, 'step/end', { turn: 4, step: 1 }],
   [3300, 'turn/end', { turn: 4, reason: { kind: 'interrupted' } }],
   [4000, 'turn/start', { turn: 5 }],
   [4010, 'step/start', { turn: 5, step: 1 }],
@@ -195,6 +209,7 @@ export const traceFailureRecords: readonly SessionWireEvent[] = failureRows.map(
   ...(['user/message', 'assistant/message'].includes(type) ? { surfaceOp: 'append' } : {}),
 }))
 export const traceFailureSession: SessionSummary = {
+  retainedBy: {},
   id: TRACE_FAILURE_SESSION_ID, title: '失敗と中断の見本', displayTitle: '失敗と中断の見本',
   cwd: workspacePath, running: false, blank: false, updatedAt: traceFailureRecords.at(-1)!.time,
 }

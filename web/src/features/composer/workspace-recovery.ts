@@ -3,7 +3,7 @@ import { clearDraft, readDraft, writeDraft, type Draft } from './drafts.ts'
 
 export interface WorkspaceAttachment { workspaceId: string; sessionId: string }
 export interface WorkspaceRecoveryResult { sessionId?: string; sessionReady?: boolean; error?: unknown }
-type RecoverySessions = Pick<ISessions, 'create' | 'scope' | 'refresh'>
+type RecoverySessions = Pick<ISessions, 'create' | 'list' | 'refresh'>
 const recoveries = new Map<string, Promise<WorkspaceRecoveryResult>>()
 export function pendingWorkspaceAttachment(draftKey: string): Promise<WorkspaceRecoveryResult> | undefined { return recoveries.get(draftKey) }
 
@@ -25,10 +25,10 @@ export function workspaceAttachmentFrom(error: unknown, workspaceId: string): Wo
 }
 
 /** Partial create errors publish through the controller notifier, without its success-only synchronous projection. */
-export async function sessionIsAddressable(sessions: Pick<ISessions, 'scope' | 'refresh'>, sessionId: string): Promise<boolean> {
-  if (sessions.scope(sessionId)) return true
+export async function sessionIsAddressable(sessions: Pick<ISessions, 'list' | 'refresh'>, sessionId: string): Promise<boolean> {
+  if (sessions.list.getSnapshot().byId[sessionId]) return true
   try { await sessions.refresh() } catch { /* Keep the recovered identity even while list refresh is unavailable. */ }
-  return sessions.scope(sessionId) !== undefined
+  return sessions.list.getSnapshot().byId[sessionId] !== undefined
 }
 
 export function clearWorkspaceOrigin(attachment: WorkspaceAttachment, delivered: Draft): void {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { Icon } from '../../app/icons/Icon.tsx'
@@ -7,7 +7,7 @@ import { useRoute } from '../../app/router.ts'
 import { PageScaffold } from '../../app/shell/index.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
-import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileReadErrorMessage, fileSize, FileVersionChanged, imageMediaTypes, nextFilePageRequest, readImageFile, readTextFilePage, workspaceFilesOf, type FilePageRequest, type FileTextContent, type WorkspaceFileStat } from './files.ts'
 import './files.css'
 
@@ -18,7 +18,8 @@ export function FileScreen({ sessionId }: { sessionId: string }) {
 
 function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
   const { remote, connection } = useDsh()
-  const api = workspaceFilesOf(remote)
+  // Cordis returns a new traced namespace on access; keep effect dependencies stable.
+  const api = useMemo(() => workspaceFilesOf(remote), [remote])
   const connectionState = useSnapshot(connection.state)
   const kind = fileKind(path)
   const [view, setView] = useState<'rendered' | 'source'>('rendered')
@@ -88,7 +89,7 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
     setWatchError('')
     void (async () => {
       try {
-        for await (const frame of api.changes(sessionId, controller.signal)) {
+        for await (const frame of api.changes(sessionId, path, controller.signal)) {
           if (controller.signal.aborted) break
           const file = metadataRef.current
           if (!file) continue
@@ -102,8 +103,8 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
           }
         }
         if (!controller.signal.aborted) setWatchError('更新の通知が途切れました。読み直して確認できます。')
-      } catch {
-        if (!controller.signal.aborted) setWatchError('更新を確認できません。読み直して確認できます。')
+      } catch (failure) {
+        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, '更新を確認できません。読み直して確認できます。'))
       }
     })()
     return () => controller.abort()

@@ -4,6 +4,8 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
 import { usePendingInteractions } from '../../dsh/interactions.ts'
 import { useDsh, type SessionSummary } from '../../dsh/services.ts'
+import { completionStatus } from '../../dsh/completion-status.ts'
+import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { showSnackbar } from '../../app/overlay/index.ts'
 import { folderName, formatUpdatedAt, modelIcon } from './data.ts'
@@ -16,21 +18,24 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   row: SessionSummary; mode: 'normal' | 'sort' | 'select'; selected: boolean; disabled: boolean; canMutate: boolean; first: boolean; last: boolean
   onToggle(): void; onActions(): void; onArchive(): void; onMove(before?: string): void; onMoveUp(): void; onMoveDown(): void
 }) {
-  const { sessions } = useDsh()
+  const { sessions, ctx } = useDsh()
+  const status = useSnapshot(completionStatus(ctx))
   const editable = canEditHomeSession(row)
   const [opening, setOpening] = useState(false)
   const pendingOpen = useRef(false)
   const active = useRef(true)
-  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
+  const openingLifetime = useRef<AbortController | undefined>(undefined)
+  useEffect(() => { active.current = true; return () => { active.current = false; openingLifetime.current?.abort() } }, [])
   async function open() {
     if (pendingOpen.current) return
     pendingOpen.current = true; setOpening(true)
-    try { await openHomeSession(sessions, row, navigate, () => active.current) }
+    openingLifetime.current = new AbortController()
+    try { await openHomeSession(sessions, row, navigate, () => active.current, openingLifetime.current.signal) }
     catch (error) { if (active.current) showSnackbar(remoteErrorMessage(error, '子の会話を開けませんでした。読み直してお試しください。')) }
     finally { pendingOpen.current = false; if (active.current) setOpening(false) }
   }
   const pending = usePendingInteractions(row.id)
-  const state = pending.length ? '返事待ち' : row.running ? '実行中' : row.completed ? '完了・未読' : ''
+  const state = pending.length ? '返事待ち' : row.running ? '実行中' : status.byId[row.id]?.completionUnread ? '完了・未読' : ''
   const stateIcon = pending.length ? 'front_hand' : row.running ? 'progress_activity' : 'check'
   const selection = row.projectionValues?.modelSelection as { lastUsed?: unknown } | undefined
   const icon = modelIcon(selection?.lastUsed)

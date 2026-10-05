@@ -44,7 +44,7 @@ export function createDirectoryMock(options: DirectoryMockOptions = {}) {
 
   return {
     async list(path?: string, signal?: AbortSignal): Promise<RemoteResult<MockDirectoryListing>> {
-      if (signal?.aborted) return failure('rpc/aborted', 'フォルダの読み込みを取り消しました。')
+      if (signal?.aborted) return failure('gateway/cancelled', 'フォルダの読み込みを取り消しました。')
       if (options.unavailable) return unavailable()
       const current = normalize(path ?? home)
       if (!directories.has(current) || current === '/mock/unreadable') return failure('directory-picker/unreadable', 'このフォルダを読み込めません。', { path: current })
@@ -52,7 +52,7 @@ export function createDirectoryMock(options: DirectoryMockOptions = {}) {
       let ancestor = ''
       for (const part of current.split('/').filter(Boolean)) {
         ancestor += `/${part}`
-        crumbs.push(entryOf(ancestor))
+        crumbs.push({ ...entryOf(ancestor), hidden: false })
       }
       const entries = [...directories]
         .filter((directory) => directory !== '/' && parentOf(directory) === current)
@@ -61,13 +61,15 @@ export function createDirectoryMock(options: DirectoryMockOptions = {}) {
       return success({ path: current, home, crumbs, entries: entries.slice(0, 1000), truncated: entries.length > 1000 })
     },
     async createDirectory(path: string, name: string): Promise<RemoteResult<string>> {
+      if (!name.trim() || name === '.' || name === '..' || /[/\\]/.test(name)) return failure('gateway/bad-request', 'フォルダ名を確認してください。', {
+        issues: [{ code: 'custom', path: [], message: 'host.createDirectory requires a single non-blank path segment name' }],
+      })
       if (options.unavailable) return unavailable()
       const parent = normalize(path)
-      const normalizedName = name.trim()
       if (!directories.has(parent) || parent === '/mock/unreadable') return failure('directory-picker/unreadable', 'このフォルダを読み込めません。', { path: parent })
       if (parent === '/mock/read-only') return failure('directory-picker/create-failed', 'この場所にはフォルダを作れません。', { path: parent })
-      if (!normalizedName || normalizedName === '.' || normalizedName === '..' || /[/\\\u0000]/.test(normalizedName)) return failure('directory-picker/invalid-name', 'フォルダ名を確認してください。')
-      const created = `${parent === '/' ? '' : parent}/${normalizedName}`
+      const created = `${parent === '/' ? '' : parent}/${name}`
+      if (name.includes('\u0000')) return failure('directory-picker/create-failed', 'この場所にはフォルダを作れません。', { path: created })
       if (directories.has(created)) return failure('directory-picker/exists', '同じ名前のフォルダがあります。', { path: created })
       directories.add(created)
       return success(created)

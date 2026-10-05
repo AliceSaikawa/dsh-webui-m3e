@@ -9,7 +9,8 @@ import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import type { QueueAction } from '../../dsh/services.ts'
+import type { InboxState, QueueAction } from '../../dsh/services.ts'
+import { queueFromInbox } from '../../dsh/inbox.ts'
 import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
 import type { ComposerTarget } from './Composer.tsx'
 import { readDraft, subscribeDraft } from './drafts.ts'
@@ -17,6 +18,7 @@ import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
 import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue, type ModelApplyController } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 import { permissionIcon } from './presentation.ts'
+import { usePermissionCatalog } from './use-permission-catalog.ts'
 
 export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
   // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
@@ -172,25 +174,31 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
   </div>
 }
 
-export function PermissionSheet({ permissions, apply, close }: {
-  permissions: PermissionProjection; apply(value: string): Promise<void>; close(): void
+export function PermissionSheet({ permissions, defaults = false, apply, close }: {
+  permissions: PermissionProjection; defaults?: boolean; apply(value: string): Promise<void>; close(): void
 }) {
+  const catalogState = usePermissionCatalog()
+  const { catalog } = catalogState
+  // The caller already loaded these rows. Keep the pre-migration sheet while
+  // refreshing; an actual failed read invalidates them and uses the alert.
+  const options = catalogState.status === 'error' ? []
+    : (defaults ? catalog?.defaultOptions : catalog?.options) ?? permissions.options
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function choose(value: string) {
-    if (busy) return
+    if (busy || !options.some(option => option.value === value)) return
     setBusy(true); setError('')
     try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
-    {permissions.options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
-    {error && <p role="alert">{error}</p>}
+    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
+    {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error) : '')}</p>}
   </div>
 }
 
 export function QueueSheet({ sessionId, close }: { sessionId: string; close(): void }) {
-  const { face, snapshot } = useSession(sessionId)
-  const items = visibleQueue(snapshot.queue)
+  const { face, snapshot, projection } = useSession(sessionId)
+  const items = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const [selectedId, setSelectedId] = useState<string | undefined>(items.length === 1 ? items[0]?.id : undefined)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -206,7 +214,7 @@ export function QueueSheet({ sessionId, close }: { sessionId: string; close(): v
     {!selected ? items.map(item => <SheetRow key={item.id} detail={item.placement === 'steering' ? '割り込み待ち' : '順番待ち'} onClick={() => setSelectedId(item.id)}>{item.preview || item.text || '画像付きのメッセージ'}</SheetRow>) : <>
       <p className="composer-queue-preview">{selected.preview || selected.text || '画像付きのメッセージ'}</p>
       <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <TextPromptDialog {...queueEditPrompt(face, selected, done)} />, { label: '順番待ちのメッセージを編集' }) }}>編集</SheetRow>
-      <SheetRow icon="bolt" disabled={busy || !face} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
+      <SheetRow icon="bolt" disabled={busy || !face || selected.placement !== 'queued' || !snapshot.running} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
       <SheetRow icon="delete" disabled={busy || !face} onClick={() => { void act({ kind: 'remove' }) }}>取り消す</SheetRow>
       {items.length > 1 && <M3eButton onClick={() => setSelectedId(undefined)}>一覧に戻る</M3eButton>}
     </>}

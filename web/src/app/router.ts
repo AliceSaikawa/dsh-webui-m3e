@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { resolveRoute, shouldReplace, type RouteDef, type RouteMatch } from './route-match.ts'
+import { pageHref, resolveRoute, shouldReplace, type RouteDef, type RouteMatch } from './route-match.ts'
 export { resolveRoute, shouldReplace, type RouteDef, type RouteMatch, type RouteParams, type Tab } from './route-match.ts'
 
 let definitions: RouteDef[] = []
@@ -29,7 +29,8 @@ export function navigate(path: string, options: { replace?: boolean } = {}): voi
   if (readHash() === '#' + hash) return
   const replace = options.replace ?? shouldReplace(readHash(), hash)
   const state = { ...window.history.state, [stateKey]: index() + (replace ? 0 : 1) }
-  window.history[replace ? 'replaceState' : 'pushState'](state, '', '#' + hash)
+  // A bare hash uses document.baseURI, which points at the DSH Host root.
+  window.history[replace ? 'replaceState' : 'pushState'](state, '', pageHref('#' + hash, window.location.href))
   window.dispatchEvent(new Event(changeEvent))
 }
 

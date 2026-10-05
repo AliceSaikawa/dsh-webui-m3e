@@ -6,7 +6,7 @@ function sessionData(revision: number, openState: TraceSessionData['snapshot']['
   return {
     face: undefined,
     snapshot: {
-      sessionId: 'trace-example', queue: [], pendingSubmissions: [], running: true, subagent: null,
+      sessionId: 'trace-example', pendingSubmissions: [], running: true, subagent: null,
       removed: false, openState, openError: null, hasMore: revision < 3, loadingOlder: false,
       promptError: null, blank: false, lastAgentError: null, promptAttempted: true, awaitingFirstTurn: false,
     },

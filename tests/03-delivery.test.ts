@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { AgentContext, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
+import type { AgentContext, SessionBinding, SessionReference, BeginSubmissionInput, PromptContentPart, SessionFace, SessionSummary } from '../web/src/dsh/services.ts'
 import type { CommandDescriptor, ModelSelection, PlanProjection } from '../web/src/features/composer/api.ts'
 import { deliverDraft, pendingDelivery, type DeliveryOptions } from '../web/src/features/composer/delivery.ts'
 import { clearDraft, readDraft, writeDraft, type Draft } from '../web/src/features/composer/drafts.ts'
 import { RemoteCallError } from '../web/src/dsh/remote-result.ts'
 import type { PreparedImage } from '../web/src/features/composer/types.ts'
+import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { imageBase64 } from '../web/src/dsh/mock/fixtures.ts'
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 
 const image: PreparedImage = {
   id: 'picture', name: '写真.png', previewUrl: 'data:image/png;base64,aW1hZ2U=', width: 10, height: 20,
@@ -32,6 +35,8 @@ function harness(label: string) {
   let createWait: Promise<void> | undefined
   let modelWait: Promise<void> | undefined
   let commandWait: Promise<void> | undefined
+  const commandStarted = deferred<void>()
+  const modelStarted = deferred<void>()
   let commandMatches = true
   let scopeAvailable = true
   let subagent: unknown = null
@@ -42,9 +47,10 @@ function harness(label: string) {
   const face = {
     sessionId: id,
     projections: { faceOf: () => ({ getSnapshot: () => plan, subscribe: () => () => {} }) },
-    getSnapshot: () => ({ sessionId: id, subagent, removed }),
+    getSnapshot: () => ({ sessionId: id, subagent, removed, openState: 'open' }),
     async command(line: string) {
       calls.push(`command:${line}`)
+      commandStarted.resolve()
       if (commandWait) await commandWait
       if (commandMatches && line === '/plan') plan = { active: !plan.active, pending: false }
       if (commandMatches && line === '/plan off') plan = { active: false, pending: false }
@@ -63,26 +69,34 @@ function harness(label: string) {
   } as unknown as SessionFace
   const scope = {} as AgentContext
   const sessions: DeliveryOptions['sessions'] = {
-    list: { getSnapshot: () => ({ ids: [], byId: summary ? { [id]: summary } : {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined }), subscribe: () => () => {} },
+    list: { getSnapshot: () => ({ ids: [], byId: scopeAvailable ? { [id]: summary ?? { retainedBy: {}, id, displayTitle: id, running: false, blank: true, updatedAt: 0 } } : {}, phase: 'ready', projectionsBySession: {} }), subscribe: () => () => {} },
     async create(input) {
       calls.push(`create:${input?.workspaceId}`)
       if (createWait) await createWait
       if (createFailure) throw createFailure
       return id
     },
-    scope(sessionId) { calls.push(`scope:${sessionId}`); return scopeAvailable ? scope : undefined },
-    sessionOf() { return face },
+    subagentAddress() { return undefined },
+    retain(target) {
+      const sessionId = typeof target === 'string' ? target : target.childSessionId
+      calls.push(`retain:${sessionId}`)
+      if (!scopeAvailable) throw new Error('会話を準備できませんでした。')
+      const binding = { sessionId, session: face, ctx: scope } as SessionBinding
+      let released = false
+      const release = () => { if (!released) { released = true; calls.push('release') } }
+      return { sessionId, binding, ready: Promise.resolve(binding), release, [Symbol.dispose]: release }
+    },
     async refresh() { calls.push('refresh') },
   }
   const api: DeliveryOptions['api'] = {
-    async selectModel(sessionId, selection) { calls.push(`model:${sessionId}`); if (modelWait) await modelWait; return selection },
+    async selectModel(sessionId, selection) { calls.push(`model:${sessionId}`); modelStarted.resolve(); if (modelWait) await modelWait; return selection },
     async listCommands(sessionId) { calls.push(`commands:${sessionId}`); return commands },
   }
   clearDraft(key)
   clearDraft(`session:${id}`)
   const options: DeliveryOptions = { target: { kind: 'new', workspaceId: label }, draftKey: key, sessions, api, mode: 'queue' }
   return {
-    id, key, options, calls, prompts, submissions, failure,
+    id, key, options, modelStarted: modelStarted.promise, commandStarted: commandStarted.promise, calls, prompts, submissions, failure,
     put(draft: Partial<Draft>) { writeDraft(key, { text: '', images: [], ...draft }) },
     existing(mode: 'queue' | 'steer' = 'queue'): DeliveryOptions {
       return { ...options, target: { kind: 'session', sessionId: id }, draftKey: `session:${id}`, mode }
@@ -113,16 +127,39 @@ test('reading or editing a new draft does not create a session, and empty sends 
   assert.equal(readDraft(h.key).text, '   ')
 })
 
-test('first send creates exactly one session, sends image and text, and clears both drafts', async () => {
+test('first send creates exactly one session, sends image and text, and clears both drafts', async t => {
   const h = harness('first')
   h.put({ text: 'この画像を確認してください', images: [image] })
   const result = await deliverDraft(h.options)
   assert.deepEqual(result, { createdId: h.id })
-  assert.deepEqual(h.calls, ['create:first', `scope:${h.id}`, 'begin', 'prompt'])
+  assert.deepEqual(h.calls, ['create:first', `retain:${h.id}`, 'begin', 'prompt', 'release'])
   assert.deepEqual(h.submissions[0], { mode: 'queue', text: 'この画像を確認してください', attachments: [image.attachment] })
   assert.deepEqual(h.prompts[0], { content: [image.prompt, { type: 'text', text: 'この画像を確認してください' }], mode: 'queue', requestId: 'request-1' })
   assert.deepEqual(readDraft(h.key), { text: '', images: [] })
   assert.deepEqual(readDraft(`session:${h.id}`), { text: '', images: [] })
+  // The real fake controller also proves that handoff keeps the same generation alive.
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  h.put({ text: '参照を引き継ぐ', images: [{ ...image, prompt: { ...image.prompt, data: imageBase64 } }] })
+  let delivered: SessionReference | undefined
+  let adopted: SessionBinding | undefined
+  const handed = await deliverDraft({ ...h.options, sessions: ctx.sessions,
+    target: { kind: 'new', workspaceId: ctx.workspaces.list.getSnapshot().items[0]!.workspaceId },
+    handoff(reference) {
+      delivered = reference
+      adopted = reference.binding
+      assert.deepEqual(ctx.sessions.retainInfo(reference.sessionId).getSnapshot().retainedBy, { 'm3e.delivery': 1 })
+      owner.adopt(reference)
+      assert.equal(ctx.sessions.binding(reference.sessionId), adopted)
+    },
+  })
+  assert.equal(handed.error, undefined)
+  assert.ok(delivered)
+  assert.equal(handed.createdId, delivered.sessionId)
+  assert.equal(owner.state.getSnapshot().sessionId, handed.createdId)
+  assert.equal(ctx.sessions.binding(handed.createdId!), adopted)
+  assert.deepEqual(ctx.sessions.retainInfo(handed.createdId!).getSnapshot(), { referenceCount: 1, retainedBy: { 'm3e.mainView': 1 } })
+  assert.throws(() => delivered!.binding, /released/)
 })
 
 test('existing sends retain the selected steer mode and accept an image-only message', async () => {
@@ -130,7 +167,7 @@ test('existing sends retain the selected steer mode and accept an image-only mes
   writeDraft(`session:${h.id}`, { text: '', images: [image] })
   const result = await deliverDraft(h.existing('steer'))
   assert.deepEqual(result, {})
-  assert.deepEqual(h.calls, [`scope:${h.id}`, 'begin', 'prompt'])
+  assert.deepEqual(h.calls, [`retain:${h.id}`, 'begin', 'prompt', 'release'])
   assert.equal(h.submissions[0]?.mode, 'steer')
   assert.deepEqual(h.prompts[0]?.content, [image.prompt])
   assert.equal(h.prompts[0]?.mode, 'steer')
@@ -172,7 +209,7 @@ test('failed first prompt transfers the whole draft, abandons its echo, and retr
   const result = await deliverDraft(h.options)
   assert.equal(result.createdId, h.id)
   assert.ok(result.error)
-  assert.deepEqual(h.calls, ['create:first-failure', `scope:${h.id}`, `model:${h.id}`, 'command:/permission limited', 'command:/plan', 'begin', 'prompt', 'abandon'])
+  assert.deepEqual(h.calls, ['create:first-failure', `retain:${h.id}`, `model:${h.id}`, 'command:/permission limited', 'command:/plan', 'begin', 'prompt', 'abandon', 'release'])
   assert.deepEqual(readDraft(h.key), { text: '', images: [] })
   const retained = readDraft(`session:${h.id}`)
   assert.equal(retained.text, '画像を確認')
@@ -227,7 +264,7 @@ test('known commands reject simultaneous image attachments while retaining the d
   const key = `session:${h.id}`
   writeDraft(key, { text: '/plan', images: [image] })
   assert.ok((await deliverDraft(h.existing())).error)
-  assert.deepEqual(h.calls, [`scope:${h.id}`, `commands:${h.id}`])
+  assert.deepEqual(h.calls, [`retain:${h.id}`, `commands:${h.id}`, 'release'])
   assert.deepEqual(readDraft(key).images, [image])
   assert.equal(readDraft(key).text, '/plan')
 })
@@ -296,11 +333,11 @@ test('read-only and removed sessions reject sending, including a change during p
 test('verified continuable children accept queue and steer using their existing session', async () => {
   for (const mode of ['queue', 'steer'] as const) {
     const h = harness(`child-${mode}`)
-    h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
+    h.setSummary({ retainedBy: {}, id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
     h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
     writeDraft(`session:${h.id}`, { text: '続けて確認してください', images: [] })
     assert.deepEqual(await deliverDraft(h.existing(mode)), {})
-    assert.deepEqual(h.calls, [`scope:${h.id}`, 'prompt'])
+    assert.deepEqual(h.calls, [`retain:${h.id}`, 'prompt', 'release'])
     assert.equal(h.submissions.length, 0)
     assert.equal(h.prompts.length, 1)
     assert.equal(h.prompts[0]?.mode, mode)
@@ -311,7 +348,7 @@ test('verified continuable children accept queue and steer using their existing 
 test('one-shot, unverified, and mismatched child addresses preserve the draft without preparation or sending', async () => {
   for (const kind of ['one-shot', 'unknown-mode', 'wrong-parent', 'wrong-child', 'no-address', 'no-metadata'] as const) {
     const h = harness(`child-${kind}`)
-    h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: false, blank: false, updatedAt: 0 })
+    h.setSummary({ retainedBy: {}, id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: false, blank: false, updatedAt: 0 })
     if (kind !== 'no-metadata') h.setSubagent(kind === 'no-address' ? {} : { address: {
       parentSessionId: kind === 'wrong-parent' ? 'other' : 'parent',
       childSessionId: kind === 'wrong-child' ? 'other' : h.id,
@@ -319,7 +356,7 @@ test('one-shot, unverified, and mismatched child addresses preserve the draft wi
     } })
     writeDraft(`session:${h.id}`, { text: '失わない下書き', images: [], model: { provider: 'local', model: 'small' } })
     assert.ok((await deliverDraft(h.existing())).error)
-    assert.deepEqual(h.calls, [`scope:${h.id}`])
+    assert.deepEqual(h.calls, [`retain:${h.id}`, 'release'])
     assert.equal(h.prompts.length, 0)
     assert.equal(readDraft(`session:${h.id}`).text, '失わない下書き')
   }
@@ -328,13 +365,17 @@ test('one-shot, unverified, and mismatched child addresses preserve the draft wi
 test('a child becoming read-only or changing parent during preparation cannot send', async () => {
   for (const kind of ['mode', 'parent'] as const) {
     const h = harness(`child-change-${kind}`)
-    const row: SessionSummary = { id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 }
+    const row: SessionSummary = { id: h.id, retainedBy: {}, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 }
     h.setSummary(row)
     h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
     const gate = deferred<void>()
     h.waitModel(gate.promise)
     writeDraft(`session:${h.id}`, { text: '準備中に状態が変わる', images: [], model: { provider: 'local', model: 'small' } })
     const flight = deliverDraft(h.existing())
+    await h.modelStarted
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    assert.deepEqual(h.calls, [`retain:${h.id}`, `model:${h.id}`])
+    assert.equal(pendingDelivery(`session:${h.id}`), flight)
     if (kind === 'mode') h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
     else h.setSummary({ ...row, parentId: 'other' })
     gate.resolve()
@@ -347,7 +388,7 @@ test('a child becoming read-only or changing parent during preparation cannot se
 
 test('a command disappearing while a child becomes read-only cannot fall through to a prompt', async () => {
   const h = harness('child-command-became-readonly')
-  h.setSummary({ id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
+  h.setSummary({ retainedBy: {}, id: h.id, origin: 'subagent', parentId: 'parent', displayTitle: '子', running: true, blank: false, updatedAt: 0 })
   h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } })
   h.matchCommand(false)
   const gate = deferred<void>()
@@ -355,6 +396,7 @@ test('a command disappearing while a child becomes read-only cannot fall through
   writeDraft(`session:${h.id}`, { text: '/plan off', images: [] })
   const flight = deliverDraft(h.existing())
   await Promise.resolve()
+  await h.commandStarted
   assert.ok(h.calls.includes('command:/plan off'))
   h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
   gate.resolve()
@@ -479,7 +521,8 @@ test('unknown failures and missing published IDs remain creation failures withou
     assert.equal(readDraft(h.key).text, '下書きを残す')
     assert.deepEqual(readDraft(h.key).images, [image])
     assert.equal(readDraft(h.key).workspaceAttachment, undefined)
-    assert.equal(h.calls.some(call => call.startsWith('scope:')), false)
+    assert.equal(h.calls.some(call => call.startsWith('retain:')), false)
+    assert.deepEqual(h.calls, [`create:${label}`])
   }
 })
 
@@ -569,6 +612,10 @@ test('read-only or removed changes during model preparation block subsequent per
     h.waitModel(gate.promise)
     writeDraft(`session:${h.id}`, { text: '後続の変更は送らない', images: [], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true })
     const first = deliverDraft(h.existing())
+    await h.modelStarted
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    assert.deepEqual(h.calls, [`retain:${h.id}`, `model:${h.id}`])
+    assert.equal(pendingDelivery(`session:${h.id}`), first)
     if (removed) h.setRemoved(true)
     else h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
     gate.resolve()
@@ -586,6 +633,7 @@ test('a capability change while permission is awaiting blocks later plan changes
   h.waitCommand(gate.promise)
   writeDraft(`session:${h.id}`, { text: '計画は切り替えない', images: [], permission: 'limited', plan: true })
   const flight = deliverDraft(h.existing())
+  await h.commandStarted
   assert.ok(h.calls.includes('command:/permission limited'))
   h.setSubagent({ address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'one-shot' } })
   gate.resolve()
@@ -604,6 +652,7 @@ test('disappeared commands use the latest ordinary or child echo policy after th
     writeDraft(`session:${h.id}`, { text: '/plan off', images: [] })
     const flight = deliverDraft(h.existing())
     await Promise.resolve()
+    await h.commandStarted
     assert.ok(h.calls.includes('command:/plan off'))
     h.setSubagent(becomesChild ? { address: { parentSessionId: 'parent', childSessionId: h.id, mode: 'continuable' } } : null)
     gate.resolve()

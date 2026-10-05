@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { PageScaffold } from '../../app/shell/PageScaffold.tsx'
-import { useDsh } from '../../dsh/services.ts'
-import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { useSessionJobs } from '../../dsh/jobs.ts'
 import { isLiveJob, jobDurationLabel, jobKindLabel, jobStatusLabel, sortJobs } from './operations.ts'
 
 export function JobsScreen({ sessionId }: { sessionId: string }) {
-  const { sessions } = useDsh()
-  const list = useSnapshot(sessions.list)
-  const jobs = sortJobs(list.jobsBySession[sessionId] ?? [])
+  const jobs = sortJobs(useSessionJobs(sessionId))
   const live = jobs.some(isLiveJob)
   const [now, setNow] = useState(Date.now)
   useEffect(() => {

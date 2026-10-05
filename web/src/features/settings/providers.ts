@@ -1,11 +1,16 @@
 import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
+import type { ModelCatalog } from '../composer/api.ts'
+
+/** Broadcasts after which the provider list and key state must be read again. */
+export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
 
 export interface ProviderEntry { id: string; name: string }
 export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[] }
 export interface KeyInfo { configured: boolean; writable: boolean }
 export interface ProviderRemote {
+  session?: { modelCatalog(): Promise<RemoteResult<ModelCatalog>> }
   llm: {
     listProviders(): Promise<RemoteResult<ProviderEntry[]>>
     listConfigurableProviders(): Promise<RemoteResult<ProviderAddress[]>>
@@ -44,19 +49,19 @@ export function keyInfo(value: unknown): KeyInfo | undefined {
     ? { configured: value.configured, writable: value.writable } : undefined
 }
 
-export function providerRows(registered: ProviderEntry[], directory: ProviderAddress[], settings: SettingsDescription): ProviderRow[] {
+export function providerRows(registered: ProviderEntry[], directory: ProviderAddress[], settings: SettingsDescription, accountAvailable = false): ProviderRow[] {
   const live = new Set(registered.map(provider => provider.id))
   const entries = [...directory]
   for (const provider of registered) if (!entries.some(entry => entry.provider === provider.id)) {
     entries.push({ provider: provider.id, displayName: provider.name, settingsNs: '', settingsPath: [] })
   }
-  return entries.map(entry => {
+  return entries.filter(entry => entry.provider !== 'deepseek-account' || accountAvailable).map(entry => {
     const namespace = settings.namespaces.find(item => item.ns === entry.settingsNs)
     const profile = namespace && valueAt(namespace.value, entry.settingsPath)
     const named = object(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : undefined
     // The existing UI treats active routes without a named reference as using
     // provider-native authentication (including local gateways).
-    const native = !named && live.has(entry.provider)
+    const native = entry.provider === 'deepseek-account' || !named && live.has(entry.provider)
     return {
       id: entry.provider, name: entry.displayName, ns: entry.settingsNs, path: [...entry.settingsPath],
       revision: namespace?.revision, ref: native ? undefined : named ?? derivedRef(entry.provider),
@@ -86,7 +91,13 @@ export function createProviderStore(remote: ProviderRemote) {
       ])
       if (request !== sequence || generation !== epoch) return false
       if (!registered.ok || !directory.ok || !settings.ok) throw new Error('unavailable')
-      const rows = providerRows(registered.value, directory.value, settings.value)
+      let accountAvailable = false
+      if ([...registered.value.map(row => row.id), ...directory.value.map(row => row.provider)].includes('deepseek-account')) {
+        const catalog = await remote.session?.modelCatalog()
+        accountAvailable = catalog?.ok === true && catalog.value.groups.some(group => group.id === 'deepseek-account' && group.models.length > 0)
+      }
+      if (request !== sequence || generation !== epoch) return false
+      const rows = providerRows(registered.value, directory.value, settings.value, accountAvailable)
       const refs = [...new Set(rows.flatMap(row => row.ref ? [row.ref] : []))]
       const answer = refs.length ? await remote.credentials.describe(refs) : { ok: true as const, value: {} as Record<string, unknown> }
       if (request !== sequence || generation !== epoch) return false

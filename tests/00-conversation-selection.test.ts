@@ -1,323 +1,248 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canSelectConversation, conversationSessionId, syncConversationSelection } from '../web/src/dsh/conversation-selection.ts'
-import { createMockContext, type MockContext } from '../web/src/dsh/mock/context.ts'
+import { conversationSessionId, conversationSelection, MAIN_VIEW_SOURCE } from '../web/src/dsh/conversation-selection.ts'
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
+import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
+import type { SessionReference, SessionTarget, SessionRetainOptions } from '../web/src/dsh/services.ts'
 
-function syncPath(ctx: MockContext, pathname: string) {
-  const id = conversationSessionId(pathname)
-  const face = id === undefined ? undefined : ctx.sessions.binding(id)?.session
-  syncConversationSelection(ctx.sessions, id, !!face && !face.getSnapshot().removed)
+const a = MOCK_IDS.sessions.readme, b = MOCK_IDS.sessions.approval
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
 }
 
-function observeSelection(ctx: MockContext): string[] {
-  const calls: string[] = []
-  const open = ctx.sessions.open
-  const clear = ctx.sessions.clear
-  ctx.mock.patch('sessions.open', (id: string) => { calls.push(`open:${id}`); open(id) })
-  ctx.mock.patch('sessions.clear', () => { calls.push('clear'); clear() })
-  return calls
-}
-
-test('取得に失敗した有効な会話も A → B → A の再入場で選び直す', () => {
-  const ctx = createMockContext()
-  const a = MOCK_IDS.sessions.readme
-  const b = MOCK_IDS.sessions.approval
-  const opened: string[] = []
-  const originalOpen = ctx.sessions.open
-  ctx.mock.patch('sessions.open', (id: string) => { opened.push(id); originalOpen(id) })
-  const failure = { code: 'transport/disconnected', message: '接続エラー', details: {} }
-  ctx.mock.setSessionState(a, { openState: 'error', openError: failure })
-  try {
-    syncPath(ctx, `/s/${a}`)
-    assert.equal(ctx.sessions.list.getSnapshot().current, a)
-    syncPath(ctx, `/s/${b}`)
-    syncPath(ctx, `/s/${a}`)
-    assert.deepEqual(opened, [a, b, a])
-    assert.equal(ctx.sessions.list.getSnapshot().current, a)
-    // Mock errors are deliberate scenarios, not a reason to skip real selection.
-    assert.equal(ctx.sessions.binding(a)!.session.getSnapshot().openState, 'error')
-    assert.deepEqual(ctx.sessions.binding(a)!.session.getSnapshot().openError, failure)
-    syncPath(ctx, '/')
-  } finally { ctx.dispose() }
+test('URL の会話IDは補助画面・エンコードを含めて解釈する', () => {
+  for (const tail of ['', '/trace', '/files', '/file', '/jobs', '/subagents', '/goal', '/files/deeper']) assert.equal(conversationSessionId('/s/a%2Fb' + tail), 'a/b')
+  for (const path of ['/', '/search', '/inbox', '/settings', '/new', '/s/', '/s/%ZZ', '/sessions/a']) assert.equal(conversationSessionId(path), undefined)
 })
 
-test('会話から離れると選択を解除し、その後の完了は未読になる', async () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  try {
-    syncPath(ctx, `/s/${id}`)
-    const generating = ctx.mock.streamAssistant(id, '会話を離れた後に完了します', { chunkMs: 0 })
-    syncPath(ctx, '/')
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    await generating
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
-    syncPath(ctx, '/')
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
-  } finally { ctx.dispose() }
-})
-
-test('会話を選択したまま応答が完了しても未読の完了印を付けない', async () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  try {
-    syncPath(ctx, `/s/${id}`)
-    await ctx.mock.streamAssistant(id, '確認中に完了します', { chunkMs: 0 })
-    assert.equal(ctx.sessions.list.getSnapshot().current, id)
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.running, false)
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
-    syncPath(ctx, '/')
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
-  } finally { ctx.dispose() }
-})
-
-test('未読の会話が再び生成を始めると前回の完了印を解除する', async () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  try {
-    await ctx.mock.streamAssistant(id, '初回', { chunkMs: 0 })
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
-    const next = ctx.mock.streamAssistant(id, '再開', { chunkMs: 0 })
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.running, true)
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
-    await next
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.running, false)
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, true)
-  } finally { ctx.dispose() }
-})
-
-test('存在しない・削除済みの会話は選ばず、会話以外に移ってから解除する', () => {
-  const ctx = createMockContext()
-  const a = MOCK_IDS.sessions.readme
-  const b = MOCK_IDS.sessions.approval
-  try {
-    syncPath(ctx, `/s/${a}`)
-    syncPath(ctx, `/s/${b}`)
-    assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    syncPath(ctx, '/s/missing')
-    assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    ctx.mock.removeSession(a)
-    syncPath(ctx, `/s/${a}`)
-    assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    syncPath(ctx, '/inbox')
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-  } finally { ctx.dispose() }
-})
-
-test('URL の先頭の会話 ID だけを解釈し、補助画面とエンコードされた ID に対応する', () => {
-  for (const page of ['', '/trace', '/files', '/file', '/jobs', '/subagents', '/goal', '/files/deeper']) {
-    assert.equal(conversationSessionId(`/s/a%2Fb${page}`), 'a/b')
+test('StrictMode の二重通知・画面作り直し・補助画面往復でも同じ世代を保つ', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  await owner.select(a)
+  const binding = ctx.sessions.binding(a)
+  for (const path of ['/s/' + a, '/s/' + a + '/trace', '/s/' + a + '/goal']) {
+    await conversationSelection(ctx.sessions).select(conversationSessionId(path))
+    assert.equal(ctx.sessions.binding(a), binding)
   }
-  for (const path of ['/', '/search', '/inbox', '/settings', '/new', '/s/', '/s/%ZZ', '/sessions/a']) {
-    assert.equal(conversationSessionId(path), undefined)
-  }
+  assert.equal(retain.mock.callCount(), 1)
+  assert.deepEqual(ctx.sessions.retainInfo(a).getSnapshot(), { referenceCount: 1, retainedBy: { [MAIN_VIEW_SOURCE]: 1 } })
 })
 
-test('チャット・トレース・09 補助画面の往復では再選択せず、完了印を付けない', async () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  const calls = observeSelection(ctx)
-  try {
-    syncPath(ctx, `/s/${id}`)
-    const scope = ctx.sessions.scope(id)
-    const goal = ctx.sessions.binding(id)!.session.projections.faceOf('goal')
-    for (const page of ['trace', 'files', 'file', 'jobs', 'subagents', 'goal']) {
-      syncPath(ctx, `/s/${id}/${page}`)
-      assert.equal(ctx.sessions.scope(id), scope)
-      assert.equal(ctx.sessions.list.getSnapshot().current, id)
-    }
-    ctx.mock.setProjection(id, 'goal', { status: 'active' })
-    assert.deepEqual(goal.getSnapshot(), { status: 'active' })
-    await ctx.mock.streamAssistant(id, '完了', { chunkMs: 0 })
-    assert.equal(ctx.sessions.list.getSnapshot().byId[id]?.completed, false)
-    syncPath(ctx, `/s/${id}`)
-    assert.deepEqual(calls, [`open:${id}`])
-    syncPath(ctx, '/settings')
-    assert.deepEqual(calls, [`open:${id}`, 'clear'])
-  } finally { ctx.dispose() }
+for (const route of ['/', '/inbox', '/search', '/settings']) test('会話から ' + route + ' へ戻ると最後の参照を即解放する', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  await owner.select(a)
+  await owner.select(conversationSessionId(route))
+  assert.equal(ctx.sessions.scope(a), undefined)
+  assert.equal(ctx.sessions.binding(a), undefined)
+  assert.equal(ctx.sessions.retainInfo(a).getSnapshot().referenceCount, 0)
 })
 
-test('起動時に会話外で残った選択は一覧が ready になってから一度だけ解除する', () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  ctx.sessions.open(id)
-  ctx.mock.updateList((state) => { state.phase = 'pending' })
-  const calls = observeSelection(ctx)
-  try {
-    syncPath(ctx, '/')
-    assert.equal(ctx.sessions.list.getSnapshot().current, id)
-    assert.deepEqual(calls, [])
-    ctx.mock.updateList((state) => { state.phase = 'ready' })
-    syncPath(ctx, '/')
-    syncPath(ctx, '/')
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    assert.deepEqual(calls, ['clear'])
-    // A restored selection can also arrive after the first ready render.
-    ctx.sessions.open(id)
-    syncPath(ctx, '/search')
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    assert.deepEqual(calls, ['clear', `open:${id}`, 'clear'])
-  } finally { ctx.dispose() }
+test('別会話は新しい参照を取ってから古い参照を放し、戻ると新世代になる', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  await owner.select(a)
+  const old = ctx.sessions.binding(a)
+  const retain = ctx.sessions.retain
+  t.mock.method(ctx.sessions, 'retain', (target: SessionTarget, options: SessionRetainOptions) => {
+    assert.ok(ctx.sessions.binding(a), 'B の取得前に A を破棄しない')
+    return retain(target, options)
+  })
+  await owner.select(b)
+  t.mock.restoreAll()
+  assert.equal(ctx.sessions.binding(a), undefined)
+  assert.equal(ctx.sessions.retainInfo(b).getSnapshot().referenceCount, 1)
+  await owner.select(a)
+  assert.notEqual(ctx.sessions.binding(a), old)
+  assert.equal(ctx.sessions.binding(b), undefined)
 })
 
-test('openSubagent 後の移動や face の同等な入れ替えでは open を重ねない', () => {
-  const ctx = createMockContext()
-  const parentSessionId = MOCK_IDS.sessions.readme
-  const childSessionId = 'selected-child'
-  try {
-    ctx.mock.addSession({ id: childSessionId, parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: false, updatedAt: 0 }, [])
-    ctx.mock.updateList((state) => {
-      state.subagentsByParent = { [parentSessionId]: { state: 'ready', error: null, entries: [{ kind: 'child', id: childSessionId, mode: 'continuable' }] } }
-    })
-    const address = { parentSessionId, childSessionId, mode: 'continuable' } as const
-    ctx.sessions.openSubagent(address)
-    const calls = observeSelection(ctx)
-    syncPath(ctx, `/s/${childSessionId}`)
-    const face = ctx.sessions.binding(childSessionId)!.session
-    for (const replacement of [{ ...face }, { ...face }]) {
-      syncConversationSelection(ctx.sessions, childSessionId, !replacement.getSnapshot().removed)
-    }
-    syncPath(ctx, `/s/${childSessionId}/goal`)
-    assert.deepEqual(calls, [])
-    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
-  } finally { ctx.dispose() }
+for (const fail of [false, true]) test('開く途中の旧要求の' + (fail ? '失敗' : '成功') + 'は新しい選択を上書きしない', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  const gate = deferred<Awaited<SessionReference['ready']>>()
+  const retain = ctx.sessions.retain
+  let old!: SessionReference
+  t.mock.method(ctx.sessions, 'retain', (target: SessionTarget, options: SessionRetainOptions) => {
+    const reference = retain(target, options)
+    if (target !== a) return reference
+    old = reference
+    return { ...reference, ready: gate.promise }
+  })
+  const pending = owner.select(a)
+  await Promise.resolve()
+  await owner.select(b)
+  assert.equal(ctx.sessions.binding(a), undefined)
+  if (fail) gate.reject(new Error('古い失敗'))
+  else gate.resolve({} as Awaited<SessionReference['ready']>)
+  assert.equal(await pending, false)
+  assert.equal(owner.state.getSnapshot().sessionId, b)
+  assert.ok(ctx.sessions.binding(b))
+  assert.throws(() => old.binding)
 })
 
-test('補助画面への直接アクセスでも、会話が開けるようになった時点で選択する', () => {
-  const ctx = createMockContext()
-  const id = conversationSessionId(`/s/${MOCK_IDS.sessions.readme}/goal`)!
-  const calls = observeSelection(ctx)
-  try {
-    ctx.mock.updateList((state) => { state.phase = 'pending' })
-    syncConversationSelection(ctx.sessions, id, false)
-    assert.deepEqual(calls, [])
-    ctx.mock.updateList((state) => { state.phase = 'ready' })
-    syncConversationSelection(ctx.sessions, id, true)
-    syncConversationSelection(ctx.sessions, id, true)
-    assert.deepEqual(calls, [`open:${id}`])
-  } finally { ctx.dispose() }
+test('開く途中で一覧へ戻ると参照を解放し後着完了を無視する', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  const pending = owner.select(a)
+  await Promise.resolve()
+  owner.clear()
+  assert.equal(await pending, false)
+  assert.equal(ctx.sessions.retainInfo(a).getSnapshot().referenceCount, 0)
+  assert.equal(owner.state.getSnapshot().sessionId, undefined)
 })
 
-test('承認から scope だけ先に作られても基準データを待ち、ready 後に一度だけ開く', () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
+test('ready が解決しても openState error なら参照を解放し、A B A で再試行できる', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  ctx.mock.setSessionState(a, { openState: 'error', openError: { code: 'gateway/internal', message: '失敗', details: {} } })
+  await assert.rejects(owner.select(a))
+  assert.equal(ctx.sessions.scope(a), undefined)
+  assert.ok(owner.state.getSnapshot().error)
+  await owner.select(b)
+  ctx.mock.setSessionState(a, { openState: 'open', openError: null })
+  await owner.select(a)
+  assert.ok(ctx.sessions.binding(a))
+  assert.equal(ctx.sessions.binding(b), undefined)
+})
+
+test('retain 自体の例外も古い選択を解放し次の選択を妨げない', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  await owner.select(b)
+  const retain = ctx.sessions.retain
+  t.mock.method(ctx.sessions, 'retain', (target: SessionTarget, options: SessionRetainOptions) => { if (target === a) throw new Error('取得失敗'); return retain(target, options) })
+  await assert.rejects(owner.select(a), /取得失敗/)
+  assert.equal(ctx.sessions.binding(b), undefined)
+  await owner.select(b)
+  assert.ok(ctx.sessions.binding(b))
+})
+
+test('存在しない・削除されたIDでは取得せず参照を残さない', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  await owner.select(b)
+  await assert.rejects(owner.select('missing'), /見つかりません/)
+  assert.equal(ctx.sessions.binding(b), undefined)
+  ctx.mock.removeSession(a)
+  await assert.rejects(owner.select(a), /見つかりません/)
+  assert.equal(ctx.sessions.retainInfo(a).getSnapshot().referenceCount, 0)
+})
+
+test('直接URLを再読込すると一覧 pending 中は retain せず ready 後に一度開く', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
   const baseline = ctx.sessions.list.getSnapshot()
-  const calls: string[] = []
-  const open = ctx.sessions.open
-  ctx.mock.patch('sessions.open', (sessionId: string) => {
-    calls.push(sessionId)
-    if (!ctx.sessions.list.getSnapshot().byId[sessionId]) throw new Error('一覧に存在しない会話です。')
-    open(sessionId)
+  ctx.mock.updateList(state => ({ ...state, phase: 'pending', ids: [], byId: {} }))
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  const owner = conversationSelection(ctx.sessions)
+  const pending = owner.select(a)
+  assert.equal(retain.mock.callCount(), 0)
+  assert.equal(ctx.sessions.scope(a), undefined)
+  ctx.mock.updateList(() => baseline)
+  assert.equal(await pending, true)
+  assert.equal(retain.mock.callCount(), 1)
+})
+
+test('作成済みIDや承認用scopeがあっても文字列URLは pending の終了を待つ', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  ctx.mock.updateList(state => ({ ...state, phase: 'pending' }))
+  const id = await ctx.sessions.create()
+  const gateway = ctx.sessions.retain(id, { source: 'm3e.mockGateway' })
+  const owner = conversationSelection(ctx.sessions)
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  let settled = false
+  const pending = owner.select(id).then(value => { settled = true; return value })
+  for (let i = 0; i < 8; i++) await Promise.resolve()
+  assert.equal(settled, false)
+  assert.equal(retain.mock.callCount(), 0)
+  assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 1)
+  ctx.mock.updateList(state => ({ ...state, phase: 'ready' }))
+  assert.equal(await pending, true)
+  assert.equal(retain.mock.callCount(), 1)
+  assert.equal(ctx.sessions.retainInfo(id).getSnapshot().referenceCount, 2)
+  gateway.release()
+})
+
+test('一覧待機を取り消すと購読を解除し、その後の baseline で会話を開かない', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  ctx.mock.updateList(state => ({ ...state, phase: 'pending' }))
+  const owner = conversationSelection(ctx.sessions)
+  const subscribe = ctx.sessions.list.subscribe
+  const listener = t.mock.fn()
+  const unsubscribe = t.mock.fn()
+  t.mock.method(ctx.sessions.list, 'subscribe', (callback: () => void) => {
+    const off = subscribe(() => { listener(); callback() })
+    return () => { unsubscribe(); off() }
   })
-  try {
-    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
-    assert.ok(ctx.sessions.scope(id))
-    assert.equal(ctx.sessions.binding(id)!.session.getSnapshot().removed, false)
-    syncPath(ctx, `/s/${id}`)
-    syncPath(ctx, `/s/${id}/goal`)
-    assert.deepEqual(calls, [])
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    ctx.mock.updateList(() => ({ ...baseline, phase: 'ready' }))
-    syncPath(ctx, `/s/${id}`)
-    syncPath(ctx, `/s/${id}/trace`)
-    syncPath(ctx, `/s/${id}/goal`)
-    assert.deepEqual(calls, [id])
-    assert.equal(ctx.sessions.list.getSnapshot().current, id)
-  } finally { ctx.dispose() }
+  const pending = owner.select(a)
+  assert.equal(unsubscribe.mock.callCount(), 0)
+  owner.clear()
+  assert.equal(unsubscribe.mock.callCount(), 1)
+  assert.equal(await pending, false)
+  const calls = listener.mock.callCount()
+  ctx.mock.updateList(state => ({ ...state, phase: 'ready' }))
+  assert.equal(listener.mock.callCount(), calls)
+  assert.equal(ctx.sessions.scope(a), undefined)
 })
 
-test('ready 後の選択例外はログに残して外へ投げず、別の会話への移動を妨げない', (t) => {
-  const errors = t.mock.method(console, 'error', () => {})
+test('ページを離れる pagehide と明示的disposeは参照を解放する', async () => {
+  const events = new EventTarget()
+  const globals = globalThis as unknown as { window?: EventTarget }
+  const previous = globals.window
+  globals.window = events
   const ctx = createMockContext()
-  const a = MOCK_IDS.sessions.readme
-  const b = MOCK_IDS.sessions.approval
-  const failure = new Error('基準データから会話が消えました。')
-  const open = ctx.sessions.open
-  ctx.mock.patch('sessions.open', (id: string) => { if (id === a) throw failure; open(id) })
   try {
-    assert.doesNotThrow(() => syncPath(ctx, `/s/${a}`))
-    assert.equal(errors.mock.callCount(), 1)
-    assert.ok(String(errors.mock.calls[0]!.arguments[0]).includes(a))
-    assert.equal(errors.mock.calls[0]!.arguments[1], failure)
-    assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    syncPath(ctx, `/s/${b}/files`)
-    assert.equal(ctx.sessions.list.getSnapshot().current, b)
-    assert.equal(errors.mock.callCount(), 1)
-  } finally { ctx.dispose() }
+    const owner = conversationSelection(ctx.sessions)
+    await owner.select(a)
+    events.dispatchEvent(new Event('pagehide'))
+    assert.equal(ctx.sessions.binding(a), undefined)
+    await owner.select(b)
+    owner.dispose()
+    assert.equal(ctx.sessions.binding(b), undefined)
+  } finally { ctx.dispose(); globals.window = previous }
 })
 
-test('初回取得が pending のままでも、作った会話が一覧にあれば一度だけ開く', async () => {
-  const ctx = createMockContext()
-  const calls = observeSelection(ctx)
-  try {
-    ctx.mock.updateList((state) => { state.phase = 'pending' })
-    const id = await ctx.sessions.create({ sessionId: 'created-before-baseline' })
-    assert.equal(ctx.sessions.list.getSnapshot().phase, 'pending')
-    assert.ok(ctx.sessions.list.getSnapshot().byId[id])
-    syncPath(ctx, `/s/${id}`)
-    syncPath(ctx, `/s/${id}/trace`)
-    assert.deepEqual(calls, [`open:${id}`])
-    assert.equal(ctx.sessions.list.getSnapshot().current, id)
-  } finally { ctx.dispose() }
+test('会話を離れた後の完了は未読、見ている会話の完了は既読にする', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  const status = completionStatus(ctx)
+  await owner.select(a)
+  await ctx.mock.streamAssistant(a, '確認中', { chunkMs: 0 })
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, false)
+  const flight = ctx.mock.streamAssistant(a, '離れた後', { chunkMs: 0 })
+  owner.clear()
+  await flight
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, true)
+  await owner.select(a)
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, false)
 })
 
-test('phase と face が変わらなくても一覧への追加で選択可能になり、その時点で開く', () => {
-  const ctx = createMockContext()
-  const id = MOCK_IDS.sessions.readme
-  const summary = ctx.sessions.list.getSnapshot().byId[id]!
-  const face = ctx.sessions.binding(id)!.session
-  const calls = observeSelection(ctx)
-  try {
-    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
-    assert.equal(canSelectConversation(ctx.sessions, id), false)
-    syncPath(ctx, `/s/${id}`)
-    assert.deepEqual(calls, [])
-    ctx.mock.updateList((state) => { state.ids = [id]; state.byId = { [id]: summary } })
-    assert.equal(ctx.sessions.list.getSnapshot().phase, 'pending')
-    assert.equal(ctx.sessions.binding(id)!.session, face)
-    assert.equal(canSelectConversation(ctx.sessions, id), true)
-    syncPath(ctx, `/s/${id}`)
-    assert.deepEqual(calls, [`open:${id}`])
-  } finally { ctx.dispose() }
+test('未読の会話が再開すると印を消し、次の完了で再び未読にする', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const status = completionStatus(ctx)
+  await ctx.mock.streamAssistant(a, '初回', { chunkMs: 0 })
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, true)
+  const next = ctx.mock.streamAssistant(a, '次回', { chunkMs: 0 })
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, false)
+  await next
+  assert.equal(status.getSnapshot().byId[a]?.completionUnread, true)
 })
 
-test('一覧にない子も保存されたアドレスがあれば pending のまま開ける', () => {
-  const ctx = createMockContext()
-  const parentSessionId = MOCK_IDS.sessions.readme
-  const childSessionId = 'known-child-before-baseline'
-  const address = { parentSessionId, childSessionId, mode: 'continuable' as const }
-  const calls = observeSelection(ctx)
-  try {
-    ctx.mock.addSession({ id: childSessionId, parentId: parentSessionId, origin: 'subagent', displayTitle: '子の会話', running: false, blank: false, updatedAt: 0 }, [])
-    ctx.mock.updateList((state) => { state.phase = 'pending'; state.ids = []; state.byId = {} })
-    assert.equal(canSelectConversation(ctx.sessions, childSessionId), false)
-    syncPath(ctx, `/s/${childSessionId}/goal`)
-    assert.deepEqual(calls, [])
-    ctx.mock.setSessionState(childSessionId, { subagent: { address, parentAvailable: true } })
-    assert.equal(canSelectConversation(ctx.sessions, childSessionId), true)
-    assert.deepEqual(ctx.sessions.subagentAddress(childSessionId), address)
-    syncPath(ctx, `/s/${childSessionId}/goal`)
-    syncPath(ctx, `/s/${childSessionId}`)
-    assert.deepEqual(calls, [`open:${childSessionId}`])
-    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
-  } finally { ctx.dispose() }
+test('選択可能性はscopeではなく一覧または取得済みカタログで判断する', async t => {
+  const ctx = createMockContext(); t.after(() => ctx.dispose())
+  const owner = conversationSelection(ctx.sessions)
+  assert.equal(await owner.select(a), true)
+  owner.clear()
+  const reference = ctx.sessions.retain(a, { source: 'm3e.test' })
+  ctx.mock.updateList(state => ({ ...state, ids: [], byId: {} }))
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  await assert.rejects(owner.select(a), /見つかりません/)
+  assert.equal(retain.mock.callCount(), 0)
+  assert.equal(ctx.sessions.retainInfo(a).getSnapshot().referenceCount, 1)
+  reference.release()
 })
-
-for (const phase of ['pending', 'ready'] as const) {
-  test(`${phase} でも scope だけでは一覧・アドレスにない会話を open しない`, (t) => {
-    const errors = t.mock.method(console, 'error', () => {})
-    const ctx = createMockContext()
-    const id = MOCK_IDS.sessions.readme
-    const calls: string[] = []
-    ctx.mock.patch('sessions.open', (sessionId: string) => { calls.push(sessionId); throw new Error('選択できない ID です。') })
-    try {
-      ctx.mock.updateList((state) => { state.phase = phase; state.ids = []; state.byId = {} })
-      assert.ok(ctx.sessions.scope(id))
-      assert.equal(ctx.sessions.subagentAddress(id), undefined)
-      syncPath(ctx, `/s/${id}`)
-      assert.deepEqual(calls, [])
-      assert.equal(errors.mock.callCount(), 0)
-      assert.equal(ctx.sessions.list.getSnapshot().current, undefined)
-    } finally { ctx.dispose() }
-  })
-}

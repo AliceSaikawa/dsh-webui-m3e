@@ -14,7 +14,7 @@ A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). The UI 
 The screenshots show translated mock screens. The actual app UI is Japanese only.
 
 > [!NOTE]
-> This is a personal project and is not an official DeepSeek product. It is under development and has not yet been tested with a live DSH instance.
+> This is a personal project and is not an official DeepSeek product. It is under development and may contain bugs. Please use it with care.
 
 ## Features
 
@@ -28,7 +28,8 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness 0.1.5-rc.3 (startup and connection have been verified with this version)
+- DeepSeek Harness **0.2.0-rc.2** (startup, sending, stopping, approvals, questions, reconnecting and more are verified against a real DSH with a fake LLM)
+  - Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
 - Node.js 22 or later and pnpm for building
 
 ## Installation
@@ -69,7 +70,7 @@ If either interface fails to load, open `http://<host>/?ui=classic` to return to
 
 - The UI text is Japanese only.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
-- During development, the UI is checked with mock data instead of a live DSH instance. See [docs/development.md](docs/development.md) for the development workflow and architecture.
+- UI tests mostly use mock data. The connection to DSH is checked against a real DSH, isolated from production, with a fake LLM. This migration has not been tested with a real LLM or on iPhone. See [docs/development.md](docs/development.md) for the development workflow and architecture.
 
 ## License
 

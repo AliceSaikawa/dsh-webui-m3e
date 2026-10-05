@@ -11,7 +11,7 @@ test('抜粋は一致した語の前後20文字を保ち、絵文字を途中で
   assert.equal(excerptOf('本文', '  '), undefined)
 })
 
-test('偽検索は400ms待ち、承認3件・zzz0件・題名と本文を検索する', async t => {
+test('偽検索は400ms待ち、承認3件・zzz0件・本文検索と題名の除外を確認する', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
@@ -28,13 +28,18 @@ test('偽検索は400ms待ち、承認3件・zzz0件・題名と本文を検索�
     assert.equal(result.value.hasMore, false)
     assert.ok(result.value.items.every(item => item.snippet.includes('承認')))
     assert.ok(result.value.items.some(item => item.sessionId === 'search-permissions'))
-    for (const [query, expected] of [['zzz', 0], ['配色', 1], ['書き込み操作', 1], ['  ', 0]] as const) {
+    for (const [query, expected] of [['zzz', 0], ['配色', 0], ['書き込み操作', 1], ['明るい外観', 1]] as const) {
       const next = ctx.sessions.search(query, new AbortController().signal)
       t.mock.timers.tick(400)
       const found = await next
       assert.equal(found.ok, true)
       if (found.ok) assert.equal(found.value.items.length, expected, query)
     }
+    const invalid = ctx.sessions.search('  ', new AbortController().signal)
+    t.mock.timers.tick(400)
+    const invalidResult = await invalid
+    assert.equal(invalidResult.ok, false)
+    if (!invalidResult.ok) assert.equal(invalidResult.error.code, 'gateway/bad-request')
     const list = ctx.sessions.list.getSnapshot()
     assert.equal(selectRecentSessions(Object.values(list.byId)).length, 5)
   } finally { ctx.dispose() }
@@ -64,7 +69,7 @@ test('search-error は400ms後に理由付きの失敗を返す', async t => {
     const result = await pending
     assert.equal(result.ok, false)
     if (!result.ok) {
-      assert.equal(result.error.code, 'search/unavailable')
+      assert.equal(result.error.code, 'gateway/internal')
       assert.match(result.error.message, /接続できません/)
     }
   } finally { ctx.dispose() }
@@ -94,21 +99,25 @@ test('search-more は固定上限20件と hasMore を返し、絞り込みで余
   } finally { ctx.dispose() }
 })
 
-test('偽検索は現在の題名と追加履歴を読み、共有履歴は表示窓の外も探す', async t => {
+test('偽検索は題名の変更で本文検索を変えず追加履歴を読み、共有履歴は表示窓の外も探す', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const ctx = createMockContext({ pageSize: 1, extensions: [{ extendMock }] })
   try {
-    await ctx.sessions.binding('search-colors')!.session.rename('配色の最終確認')
-    ctx.mock.addSession({ id: 'search-added', displayTitle: '追加の会話', running: false, blank: false, updatedAt: 1 }, [
-      { type: 'user/message', seq: 0, time: 1, data: { content: [{ type: 'text', text: '途中で追加した本文' }] } },
+    await ctx.sessions.retain('search-colors', { source: 'm3e.test' }).binding.session.rename('配色の最終確認')
+    ctx.mock.addSession({ id: 'search-added', displayTitle: '追加の会話', cwd: '/mock/search', running: false, blank: false, updatedAt: 1 }, [
+      { type: 'user/message', seq: 0, time: 1, surfaceOp: 'append', data: { content: [{ type: 'text', text: '途中で追加した本文' }] } },
     ])
-    for (const [query, expectedId] of [['配色の最終確認', 'search-colors'], ['途中で追加した本文', 'search-added'], ['README の手順を見直して', 'readme-review']] as const) {
+    for (const [query, expectedId] of [['明るい外観', 'search-colors'], ['途中で追加した本文', 'search-added'], ['README の手順を見直して', 'readme-review']] as const) {
       const pending = ctx.sessions.search(query, new AbortController().signal)
       t.mock.timers.tick(400)
       const result = await pending
       assert.equal(result.ok, true)
       if (result.ok) assert.equal(result.value.items[0]?.sessionId, expectedId)
     }
+    assert.equal(ctx.sessions.list.getSnapshot().byId['search-colors']?.displayTitle, '配色の最終確認')
+    const titleOnly = ctx.sessions.search('配色の最終確認', new AbortController().signal)
+    t.mock.timers.tick(400)
+    assert.deepEqual(await titleOnly, { ok: true, value: { items: [], hasMore: false } })
     ctx.mock.removeSession('search-added')
     const pending = ctx.sessions.search('途中で追加した本文', new AbortController().signal)
     t.mock.timers.tick(400)

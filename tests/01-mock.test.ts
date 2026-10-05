@@ -1,3 +1,5 @@
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
@@ -10,26 +12,26 @@ import { extendMock, HOME_MOCK_IDS } from '../web/src/features/home/mock.ts'
 
 const extension = { extendMock }
 
-test('ホームの偽データは共有履歴を保ち、3 ワークスペースと状態の異なる 7 会話を用意する', () => {
+test('ホームの偽データは共有履歴を保ち、3 ワークスペースと状態の異なる 7 会話を用意する', async () => {
   const ctx = createMockContext({ extensions: [extension] })
   try {
     const workspaces = ctx.workspaces.list.getSnapshot().items
-    const list = ctx.sessions.list.getSnapshot()
+    const list = completionStatus(ctx).getSnapshot()
     assert.deepEqual(workspaces.map((workspace) => workspace.workspaceId), Object.values(MOCK_IDS.workspaces))
     assert.deepEqual(workspaces.map((workspace) => workspace.sessionIds.length), [6, 1, 0])
     assert.equal(list.ids.length, 7)
     assert.equal(list.byId[MOCK_IDS.sessions.approval]?.running, true)
-    assert.equal(list.byId[HOME_MOCK_IDS.completed]?.completed, false)
+    assert.equal(list.byId[HOME_MOCK_IDS.completed]?.completionUnread, false)
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.origin, 'subagent')
     assert.equal(list.byId[HOME_MOCK_IDS.child]?.parentId, MOCK_IDS.sessions.readme)
     for (const workspace of workspaces) for (const id of workspace.sessionIds) assert.ok(list.byId[id])
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.approval)!.eventSource.getSnapshot()).records, approvalRecords)
-    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } })
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
+    assert.deepEqual(list.byId[MOCK_IDS.sessions.readme]?.projectionValues?.modelSelection, { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } })
   } finally { ctx.dispose() }
 })
 
-test('先の拡張が追加・並べ替えしたワークスペースと会話順を保ってホームの会話を足す', () => {
+test('先の拡張が追加・並べ替えしたワークスペースと会話順を保ってホームの会話を足す', async () => {
   const prior: MockExtension = { extendMock(kit) {
     const harness = sharedWorkspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
     kit.addSession({ id: 'other-home-session', displayTitle: '別担当の作業', running: false, blank: true, updatedAt: 1 }, [])
@@ -54,65 +56,62 @@ test('先の拡張が追加・並べ替えしたワークスペースと会話�
     const harness = workspaces.find((workspace) => workspace.workspaceId === MOCK_IDS.workspaces.harness)!
     assert.equal(harness.title, '変更済みの接続先')
     assert.deepEqual(harness.sessionIds, ['other-harness-session', HOME_MOCK_IDS.harness])
-    assert.ok(ctx.sessions.binding('other-home-session'))
-    assert.ok(ctx.sessions.binding('other-harness-session'))
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.eventSource.getSnapshot()).records, readmeRecords)
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(MOCK_IDS.sessions.approval)!.eventSource.getSnapshot()).records, approvalRecords)
+    assert.ok((await ctx.sessions.retain('other-home-session', { source: 'm3e.test' }).ready))
+    assert.ok((await ctx.sessions.retain('other-harness-session', { source: 'm3e.test' }).ready))
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(MOCK_IDS.sessions.approval, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, approvalRecords)
   } finally { ctx.dispose() }
 })
 
-test('ホームの子は読み込み済みカタログに登録され、一度限りの子として開ける', () => {
+test('ホームの子は読み込み済みカタログに登録され、一度限りの子として開ける', async () => {
   const ctx = createMockContext({ extensions: [extension] })
   try {
     const parentSessionId = MOCK_IDS.sessions.readme
     const childSessionId = HOME_MOCK_IDS.child
-    const catalog = ctx.sessions.list.getSnapshot().subagentsByParent[parentSessionId]
+    await ctx.sessions.refreshProjections(parentSessionId)
+    const catalog = ctx.sessions.list.getSnapshot().projectionsBySession[parentSessionId]
     assert.equal(catalog?.state, 'ready')
     assert.equal(catalog?.error, null)
-    assert.equal(catalog?.parentAvailable, true)
-    assert.deepEqual(catalog?.entries, [{ kind: 'child', id: childSessionId, mode: 'one-shot', label: '一覧の表示をレビュー', activity: 'inactive', hasChildren: false }])
-    assert.deepEqual(ctx.sessions.binding(childSessionId)!.session.getSnapshot().subagent, {
+    assert.deepEqual(catalog?.values.subagentCatalog, [{ id: childSessionId, mode: 'one-shot', label: '一覧の表示をレビュー', createdAt: 1790296200000 }])
+    assert.deepEqual((await ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, {
       address: { parentSessionId, childSessionId, mode: 'one-shot' }, parentAvailable: true,
     })
-    ctx.sessions.open(parentSessionId)
-    const parentSelection = ctx.sessions.list.getSnapshot()
-    assert.throws(() => ctx.sessions.openSubagent({ parentSessionId, childSessionId, mode: 'continuable' }), /カタログとアドレス/)
-    assert.equal(ctx.sessions.list.getSnapshot(), parentSelection)
+    await conversationSelection(ctx.sessions).select(parentSessionId)
     const address = { parentSessionId, childSessionId, mode: 'one-shot' } as const
-    ctx.sessions.openSubagent(address)
-    assert.equal(ctx.sessions.list.getSnapshot().current, childSessionId)
-    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+    await conversationSelection(ctx.sessions).select(address)
+    assert.equal(conversationSelection(ctx.sessions).state.getSnapshot().sessionId, childSessionId)
+    assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
     assert.deepEqual(ctx.sessions.subagentAddress(childSessionId), address)
-    assert.deepEqual(ctx.sessions.binding(childSessionId)!.session.getSnapshot().subagent, { address, parentAvailable: true })
-    assert.deepEqual(foldSessionWindow(ctx.sessions.binding(parentSessionId)!.eventSource.getSnapshot()).records, readmeRecords)
+    assert.deepEqual((await ctx.sessions.retain(childSessionId, { source: 'm3e.test' }).ready).session.getSnapshot().subagent, { address, parentAvailable: true })
+    assert.deepEqual(foldSessionWindow((await ctx.sessions.retain(parentSessionId, { source: 'm3e.test' }).ready).eventSource.getSnapshot()).records, readmeRecords)
   } finally { ctx.dispose() }
 })
 
-test('子の追加は同じ親の既存の行・補助情報と別の親のカタログを保つ', () => {
-  const previousEntry = { kind: 'child', id: 'other-review-child', mode: 'continuable', label: '別担当の子', activity: 'running', hasChildren: true }
-  const diagnostic = { kind: 'diagnostic', id: 'other-diagnostic', reason: 'missing' }
-  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, parentAvailable: false, entries: [] }
+test('子の追加は同じ親の既存の行・補助情報と別の親のカタログを保つ', async () => {
+  const previousEntry = { id: 'other-review-child', mode: 'continuable' as const, label: '別担当の子', createdAt: 0 }
+  const diagnostic = { id: 'other-diagnostic', mode: 'unknown' as const, createdAt: 0 }
+  const otherParentCatalog = { state: 'error' as const, error: { code: 'other/error', message: '別担当の確認用', details: {} }, values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-reasoner' }, next: { provider: 'deepseek', model: 'deepseek-v4', reasoningEffort: 'high' } } } }
   const prior: MockExtension = { extendMock(kit) {
     kit.addSession({ id: previousEntry.id, parentId: MOCK_IDS.sessions.readme, origin: 'subagent', displayTitle: previousEntry.label, running: true, blank: true, updatedAt: 1 }, [])
+    kit.setProjection(MOCK_IDS.sessions.readme, 'subagentCatalog', [previousEntry, diagnostic])
     kit.updateList((state) => {
-      state.subagentsByParent = {
-        [MOCK_IDS.sessions.readme]: { state: 'loading', error: null, parentAvailable: false, revision: 7, entries: [previousEntry, diagnostic] },
+      state.projectionsBySession = {
+        ...state.projectionsBySession,
         [MOCK_IDS.sessions.approval]: otherParentCatalog,
       }
     })
   } }
   const ctx = createMockContext({ extensions: [prior, extension] })
   try {
-    const catalogs = ctx.sessions.list.getSnapshot().subagentsByParent
+    await ctx.sessions.refreshProjections(MOCK_IDS.sessions.readme)
+    const catalogs = ctx.sessions.list.getSnapshot().projectionsBySession
     const homeCatalog = catalogs[MOCK_IDS.sessions.readme]!
     assert.equal(homeCatalog.state, 'ready')
-    assert.equal(homeCatalog.parentAvailable, false)
-    assert.equal(homeCatalog.revision, 7)
-    assert.deepEqual(homeCatalog.entries, [previousEntry, diagnostic, { kind: 'child', id: HOME_MOCK_IDS.child, mode: 'one-shot', label: '一覧の表示をレビュー', activity: 'inactive', hasChildren: false }])
+    assert.deepEqual(homeCatalog.values.subagentCatalog, [previousEntry, diagnostic, { id: HOME_MOCK_IDS.child, mode: 'one-shot', label: '一覧の表示をレビュー', createdAt: 1790296200000 }])
     assert.deepEqual(catalogs[MOCK_IDS.sessions.approval], otherParentCatalog)
     const address = { parentSessionId: MOCK_IDS.sessions.readme, childSessionId: previousEntry.id, mode: 'continuable' } as const
-    ctx.sessions.openSubagent(address)
-    assert.deepEqual(ctx.sessions.list.getSnapshot().currentAddress, address)
+    await conversationSelection(ctx.sessions).select(address)
+    assert.deepEqual(ctx.sessions.binding(address.childSessionId)?.session.getSnapshot().subagent?.address, address)
   } finally { ctx.dispose() }
 })
 
@@ -121,7 +120,7 @@ test('homeの会話は未読完了と質問を用意し、回答で待ち状態�
   const store = new InteractionStore()
   const dispose = registerInteractionHandlers(ctx as unknown as InteractionContext, store)
   try {
-    assert.equal(ctx.sessions.list.getSnapshot().byId[HOME_MOCK_IDS.completed]?.completed, true)
+    assert.equal(completionStatus(ctx).getSnapshot().byId[HOME_MOCK_IDS.completed]?.completionUnread, true)
     assert.equal(store.getSnapshot().length, 0)
     await new Promise<void>((resolve) => {
       const unsubscribe = store.subscribe(() => {
@@ -159,14 +158,14 @@ test('フォルダはホームから階層をたどれ、隠し属性とパン�
 test('フォルダ作成は絶対パスを返し、一覧への反映と重複を確認できる', async () => {
   const picker = createDirectoryMock()
   const result = await picker.createDirectory('/mock/dev', ' 新しい作業 ')
-  assert.deepEqual(result, { ok: true, value: '/mock/dev/新しい作業' })
+  assert.deepEqual(result, { ok: true, value: '/mock/dev/ 新しい作業 ' })
   const listing = await picker.list('/mock/dev')
   if (!listing.ok) assert.fail('作成先を読み込めません。')
-  assert.ok(listing.value.entries.some((entry) => entry.path === '/mock/dev/新しい作業'))
-  const created = await picker.list('/mock/dev/新しい作業')
+  assert.ok(listing.value.entries.some((entry) => entry.path === '/mock/dev/ 新しい作業 '))
+  const created = await picker.list('/mock/dev/ 新しい作業 ')
   if (!created.ok) assert.fail('作成したフォルダを開けません。')
   assert.deepEqual(created.value.entries, [])
-  const duplicate = await picker.createDirectory('/mock/dev', '新しい作業')
+  const duplicate = await picker.createDirectory('/mock/dev', ' 新しい作業 ')
   assert.equal(duplicate.ok, false)
   if (!duplicate.ok) assert.equal(duplicate.error.code, 'directory-picker/exists')
 })
@@ -176,7 +175,10 @@ test('フォルダ名の不備・読み取り失敗・書き込み失敗を RPC 
   for (const name of ['', '.', '..', 'a/b', 'a\\b']) {
     const result = await picker.createDirectory('/mock/dev', name)
     assert.equal(result.ok, false)
-    if (!result.ok) assert.equal(result.error.code, 'directory-picker/invalid-name')
+    if (!result.ok) {
+      assert.equal(result.error.code, 'gateway/bad-request')
+      assert.deepEqual(result.error.details.issues, [{ code: 'custom', path: [], message: 'host.createDirectory requires a single non-blank path segment name' }])
+    }
   }
   for (const path of ['/mock/unreadable', '/mock/missing']) {
     const result = await picker.list(path)
@@ -188,7 +190,7 @@ test('フォルダ名の不備・読み取り失敗・書き込み失敗を RPC 
   if (!write.ok) assert.equal(write.error.code, 'directory-picker/create-failed')
   const cancelled = await picker.list('/mock', AbortSignal.abort())
   assert.equal(cancelled.ok, false)
-  if (!cancelled.ok) assert.equal(cancelled.error.code, 'rpc/aborted')
+  if (!cancelled.ok) assert.equal(cancelled.error.code, 'gateway/cancelled')
 })
 
 test('empty は会話を除き、no-workspace はワークスペースも除く', () => {
@@ -196,7 +198,7 @@ test('empty は会話を除き、no-workspace はワークスペースも除く'
     const ctx = createMockContext({ scenario, extensions: [extension] })
     try {
       assert.deepEqual(ctx.sessions.list.getSnapshot().ids, [])
-      assert.deepEqual(ctx.sessions.list.getSnapshot().byId, {})
+      assert.deepEqual(completionStatus(ctx).getSnapshot().byId, {})
       assert.ok(ctx.workspaces.list.getSnapshot().items.every((workspace) => workspace.sessionIds.length === 0))
       assert.equal(ctx.workspaces.list.getSnapshot().items.length, scenario === 'empty' ? 3 : 0)
       assert.equal(ctx.sessions.binding(HOME_MOCK_IDS.waiting), undefined)
@@ -253,8 +255,24 @@ test('偽データのコンテキスト間でフォルダとアーカイブの�
     const secondPicker = second.remote.directoryPicker as ReturnType<typeof createDirectoryMock>
     await firstPicker.createDirectory('/mock/dev', 'この画面だけ')
     await first.workspaces.archiveSession(HOME_MOCK_IDS.completed)
+    assert.equal((await firstPicker.list('/mock/dev/この画面だけ')).ok, true)
+    assert.ok(first.workspaces.list.getSnapshot().archivedSessionIds.includes(HOME_MOCK_IDS.completed))
     assert.equal((await secondPicker.list('/mock/dev/この画面だけ')).ok, false)
     assert.deepEqual(second.workspaces.list.getSnapshot().archivedSessionIds, [])
-    assert.equal(second.sessions.list.getSnapshot().byId[HOME_MOCK_IDS.completed]?.completed, true)
+    assert.equal(completionStatus(second).getSnapshot().byId[HOME_MOCK_IDS.completed]?.completionUnread, true)
   } finally { first.dispose(); second.dispose() }
+})
+
+test('B1 ホームの子はmode欠落と不一致をready後のopenErrorで拒否する', async () => {
+  const ctx = createMockContext({ extensions: [extension] })
+  try {
+    for (const mode of [undefined, 'continuable']) {
+      const reference = ctx.sessions.retain({ parentSessionId: MOCK_IDS.sessions.readme, childSessionId: HOME_MOCK_IDS.child, mode } as Parameters<typeof ctx.sessions.retain>[0], { source: 'm3e.test' })
+      const snapshot = (await reference.ready).session.getSnapshot()
+      assert.equal(snapshot.openState, 'error')
+      assert.equal(snapshot.openError?.code, 'subagent/unauthorized')
+      reference.release()
+      assert.equal(ctx.sessions.retainInfo(HOME_MOCK_IDS.child).getSnapshot().referenceCount, 0)
+    }
+  } finally { ctx.dispose() }
 })

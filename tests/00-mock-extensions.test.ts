@@ -21,7 +21,7 @@ test('拡張の例外を mock.ts の出所とともに表示し、後続拡張�
     assert.equal(errors.mock.calls[0]!.arguments[1], failure)
     assert.deepEqual(ctx.remote.beforeFailure, { available: true })
     assert.deepEqual(ctx.remote.afterFailure, { available: true })
-    assert.equal(ctx.sessions.binding(MOCK_IDS.sessions.readme)!.session.getSnapshot().lastAgentError, '後続シナリオを実行しました。')
+    assert.equal(ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).binding.session.getSnapshot().lastAgentError, '後続シナリオを実行しました。')
   } finally { ctx.dispose() }
 })
 
@@ -53,7 +53,7 @@ test('検索は実物と同じ最大 20 件を返し、21 件目があれば has
   const controller = new AbortController()
   try {
     for (let index = 0; index < 21; index++) {
-      ctx.mock.addSession({ id: `search-limit-${index}`, displayTitle: `${query} ${index}`, running: false, blank: true, updatedAt: index }, [])
+      ctx.mock.addSession({ id: `search-limit-${index}`, displayTitle: `${query} ${index}`, cwd: '/mock/search', running: false, blank: false, updatedAt: index }, [{ type: 'user/message', surfaceOp: 'append', seq: 0, time: 0, data: { content: [{ type: 'text', text: `${query} ${index}` }] } }])
     }
     const overflow = await ctx.sessions.search(query, controller.signal)
     assert.equal(overflow.ok, true)

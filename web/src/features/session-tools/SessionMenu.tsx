@@ -7,6 +7,7 @@ import { navigate } from '../../app/router.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { useSessionJobs } from '../../dsh/jobs.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { hasChildren, menuActions, runningJobCount, type MenuAction } from './presentation.ts'
 import { StatsSheet } from './StatsSheet.tsx'
@@ -26,8 +27,8 @@ export function SessionMenuButton({ sessionId }: { sessionId: string }) {
   const menu = useRef<M3eMenuElement>(null)
   const pending = useRef(false)
   const [busy, setBusy] = useState(false)
-  const count = runningJobCount(list.jobsBySession[sessionId])
-  const items = menuActions(hasChildren(sessionId, list.subagentsByParent[sessionId], list.byId), goal)
+  const count = runningJobCount(useSessionJobs(sessionId))
+  const items = menuActions(hasChildren(sessionId, list.projectionsBySession[sessionId], list.byId), goal)
 
   async function select(action: MenuAction) {
     if (pending.current) return
@@ -35,7 +36,7 @@ export function SessionMenuButton({ sessionId }: { sessionId: string }) {
     if (action === 'rename') {
       if (!face) return
       openDialog(close => <TextPromptDialog title="題名を変える" label="題名" initialValue={list.byId[sessionId]?.displayTitle ?? ''}
-        onCancel={close} onConfirm={async title => { unwrapRemoteResult(await face.rename(title)); close(); showSnackbar('題名を変更しました') }} />, { label: '題名を変える' })
+        onCancel={close} onConfirm={async title => { await sessions.using(sessionId, { source: 'm3e.rename' }, async reference => unwrapRemoteResult(await reference.binding.session.rename(title))); close(); showSnackbar('題名を変更しました') }} />, { label: '題名を変える' })
     } else if (action === 'stats') {
       openSheet(close => <StatsSheet sessionId={sessionId} close={close} />, { label: '統計' })
     } else if (action === 'archive') {

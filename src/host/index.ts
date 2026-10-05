@@ -40,7 +40,7 @@ const MIME: Record<string, string> = {
 const MISS_CODES = new Set(['ENOENT', 'EISDIR', 'ENOTDIR'])
 
 /** Advisory preload rows for the stock UI's application combos. */
-const APPLICATION_PRELOAD = /<link rel="preload" as="script" href="\/plugins\/[^"]*"[^>]*>/g
+const APPLICATION_PRELOAD = /<link rel="preload" as="script" href="\/?plugins\/[^"]*"[^>]*>/g
 
 /**
  * Remove the stock UI's application combo preloads from a rendered index.
@@ -49,6 +49,18 @@ const APPLICATION_PRELOAD = /<link rel="preload" as="script" href="\/plugins\/[^
  */
 export function stripApplicationPreloads(html: string): string {
   return html.replace(APPLICATION_PRELOAD, '')
+}
+
+/**
+ * DSH 0.2 resolves plugin bundles, RPC, streams and upload workers against the
+ * document base. Keep its native transports by resolving them at the Host root.
+ * renderIndex prepends the bootstrap, so move our template's base ahead of it.
+ * This postprocessing belongs only to /m3e; tapIndex also runs on the stock UI.
+ */
+export function prepareM3eIndex(html: string): string {
+  return stripApplicationPreloads(html)
+    .replace(/<base href="\/"\s*\/?>/g, '')
+    .replace(/<head(?:\s[^>]*)?>/i, (open) => `${open}<base href="/">`)
 }
 
 /**
@@ -77,7 +89,7 @@ export function resolveTarget(pathname: string): string | 'index' | undefined {
 
 export function apply(ctx: Context): void {
   const renderIndex = async () =>
-    stripApplicationPreloads(ctx.webServer.renderIndex(await readFile(DIST_INDEX, 'utf8')))
+    prepareM3eIndex(ctx.webServer.renderIndex(await readFile(DIST_INDEX, 'utf8')))
 
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {

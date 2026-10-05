@@ -3,9 +3,9 @@ import { flushSync } from 'react-dom'
 import { M3eButton } from '@m3e/react/button'
 import { M3eExpandableListItem, M3eList, M3eListItem, type M3eExpandableListItemElement } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
-import type { ContentBlock, ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
+import type { ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
-import { findTraceRow, formatCount, prettyJson, selectTrace, terminationLabel, type TraceRow } from './model.ts'
+import { findTraceRow, formatCount, prettyJson, selectTrace, terminationLabel, type TraceInputBlock, type TraceRow } from './model.ts'
 import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from './record-summary.ts'
 
 function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef; face: SessionFace | undefined }) {
@@ -39,14 +39,14 @@ function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef;
   </div>
 }
 
-function Content({ content, face }: { content: readonly ContentBlock[]; face: SessionFace | undefined }) {
+function Content({ content, face }: { content: readonly TraceInputBlock[]; face: SessionFace | undefined }) {
   if (!content.length) return <p className="muted">本文は記録されていません。</p>
   return <div className="trace-blocks">{content.map((block, index) => {
     switch (block.type) {
       case 'text': return <p className="trace-text" key={index}>{block.text}</p>
       case 'reasoning': return <details key={index}><summary>思考</summary><p className="trace-text">{block.text}</p></details>
       case 'tool-call': return <details key={index}><summary>ツール呼び出し：{block.name}</summary><pre>{prettyJson(block.arguments)}</pre></details>
-      case 'tool-result': return <details key={index}><summary>ツールの結果{block.isError ? '・失敗' : ''}</summary><Content content={block.content} face={face} /></details>
+      case 'tool-output': return <details key={index}><summary>ツールの結果{block.isError ? '・失敗' : ''}</summary><Content content={block.content} face={face} /></details>
       case 'image': return <ImageAttachment key={`${block.attachment.attachmentId}:${index}`} attachment={block.attachment} face={face} />
       case 'file': return <p key={index}>添付ファイル：{block.attachment.name}（{formatCount(block.attachment.bytes)} バイト）</p>
       default: return <p key={index} className="muted">この内容は表示に対応していません。</p>

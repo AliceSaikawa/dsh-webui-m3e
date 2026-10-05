@@ -1,3 +1,4 @@
+import { completionStatus } from '../web/src/dsh/completion-status.ts'
 import assert from 'node:assert/strict'
 import { existsSync, readdirSync } from 'node:fs'
 import test from 'node:test'
@@ -5,9 +6,10 @@ import { createMockContext, type MockExtension, type MockKit } from '../web/src/
 import { MOCK_IDS } from '../web/src/dsh/mock/fixtures.ts'
 import { unwrapRemoteResult } from '../web/src/dsh/remote-result.ts'
 import { composerApi } from '../web/src/features/composer/api.ts'
-import { mockPermissions } from '../web/src/features/composer/mock.ts'
+import { mockPermissions, mockPermissionCatalog } from '../web/src/features/composer/mock.ts'
 import type { SettingsMockRemote } from '../web/src/features/settings/mock.ts'
 import { INBOX_MOCK_IDS } from '../web/src/features/inbox/mock.ts'
+import { HOME_MOCK_IDS } from '../web/src/features/home/mock.ts'
 import { SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
 import { filterVisibleSearchItems } from '../web/src/features/search/search-visibility.ts'
 
@@ -78,7 +80,7 @@ test('03 の新しい会話の権限候補は、08 の設定の偽データか�
   try {
     const defaults = await composerApi(ctx.remote).defaultPermissions()
     assert.equal(defaults?.currentValue, mockPermissions.currentValue)
-    assert.deepEqual(defaults?.options.map(option => option.value), mockPermissions.options.map(option => option.value))
+    assert.deepEqual(defaults?.options.map(option => option.value), mockPermissionCatalog.defaultOptions.map(option => option.value))
   } finally { ctx.dispose() }
 })
 
@@ -103,14 +105,26 @@ test('サブエージェントの子は、親のカタログに mode 付きで�
   const { ctx } = build()
   try {
     const list = ctx.sessions.list.getSnapshot()
-    const missing = list.ids.flatMap(id => {
-      const summary = list.byId[id]
-      if (summary?.origin !== 'subagent' || !summary.parentId) return []
-      const entries = list.subagentsByParent[summary.parentId]?.entries
-      const listed = Array.isArray(entries) && entries.some((entry: { kind?: string; id?: string; mode?: string }) => entry.kind === 'child' && entry.id === id && (entry.mode === 'one-shot' || entry.mode === 'continuable'))
-      return listed ? [] : [id]
-    })
-    assert.deepEqual(missing, [])
+    const children = [
+      { id: HOME_MOCK_IDS.child, mode: 'one-shot' },
+      { id: SESSION_TOOLS_MOCK_IDS.children.review, mode: 'continuable' },
+      { id: SESSION_TOOLS_MOCK_IDS.children.tests, mode: 'one-shot' },
+    ] as const
+    assert.deepEqual(Object.values(list.byId).filter(row => row.origin === 'subagent').map(row => row.id).sort(),
+      children.map(child => child.id).sort())
+    for (const child of children) {
+      assert.ok(list.ids.includes(child.id), `${child.id}: 一覧に存在する`)
+      const summary = list.byId[child.id]
+      assert.ok(summary, `${child.id}: 子の情報が存在する`)
+      assert.equal(summary.origin, 'subagent', `${child.id}: 子のorigin`)
+      const parentId = summary.parentId
+      assert.ok(typeof parentId === 'string' && parentId.trim().length > 0, `${child.id}: 親IDが空でない`)
+      const entries = list.projectionsBySession[parentId]?.values.subagentCatalog
+      assert.ok(Array.isArray(entries), `${child.id}: 親のカタログが存在する`)
+      const entry = entries.find((entry: { id?: string }) => entry.id === child.id)
+      assert.ok(entry, `${child.id}: 親のカタログに子が存在する`)
+      assert.equal(entry.mode, child.mode, `${child.id}: カタログのmode`)
+    }
   } finally { ctx.dispose() }
 })
 
@@ -141,7 +155,7 @@ test('scenario=inbox の完了は全機能の 3 件を含み、うち 2 件が i
   const { ctx } = build('inbox')
   try {
     const list = ctx.sessions.list.getSnapshot()
-    const completed = list.ids.filter(id => list.byId[id]?.completed === true)
+    const completed = list.ids.filter(id => completionStatus(ctx).getSnapshot().byId[id]?.completionUnread === true)
     assert.deepEqual(new Set(completed), new Set([
       SESSION_TOOLS_MOCK_IDS.children.tests,
       INBOX_MOCK_IDS.completed, INBOX_MOCK_IDS.otherCompleted,

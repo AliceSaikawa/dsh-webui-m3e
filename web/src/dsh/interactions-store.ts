@@ -1,3 +1,5 @@
+import type { ISessions, RemoteResult, SessionBinding } from './services.ts'
+
 /** Browser-side copies of the DSH approval and question wire contracts. */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
@@ -9,6 +11,7 @@ export interface AskUserQuestionOption {
 export interface AskUserQuestionIntent {
   kind: 'plan-review'
   approve: string
+  callId?: string
 }
 
 export interface AskUserQuestionItem {
@@ -36,6 +39,7 @@ export interface ApprovalRequestEvent {
   toolName: string
   callId?: string
   reason?: string
+  displayReason?: { en: string; [locale: string]: string }
   signal?: AbortSignal
 }
 
@@ -43,6 +47,26 @@ export interface AskUserQuestionRequestEvent {
   agent?: unknown
   questions: AskUserQuestionItem[]
   signal?: AbortSignal
+  wait?: { callId: string; timed?: boolean }
+}
+
+export interface UserQuestionProjection {
+  active: readonly { callId: string; questions: readonly AskUserQuestionItem[]; state: 'open' | 'continued' }[]
+  settled: readonly { callId: string; answers: readonly AskUserQuestionAnswerItem[] }[]
+}
+
+export interface UserQuestionsRemote {
+  attachWait(sessionId: string, callId: string, signal?: AbortSignal): AsyncIterable<{ remainingMs: number }> & { dispose(): void }
+  answer(sessionId: string, callId: string, answer: AskUserQuestionAnswer): Promise<RemoteResult<boolean>>
+}
+
+interface QuestionCard {
+  pending: PendingQuestion
+  projectedActive?: boolean
+  live?: { answer(value: AskUserQuestionAnswer): void; cancel(): void; setVisible(visible: boolean): void }
+  visible: number
+  rpc?: (answer: AskUserQuestionAnswer) => Promise<boolean>
+  submitting: boolean
 }
 
 interface PendingBase {
@@ -63,6 +87,7 @@ export interface PendingApproval extends PendingBase {
 export interface PendingQuestion extends PendingBase {
   readonly kind: 'question'
   readonly items: AskUserQuestionItem[]
+  readonly callId?: string
   answer(answer: AskUserQuestionAnswer): Promise<void>
 }
 
@@ -86,6 +111,7 @@ export class InteractionStore {
   #listeners = new Set<() => void>()
   #cancel = new Map<string, (reason?: unknown) => void>()
   #nextKey = 0
+  #questions = new Map<string, QuestionCard>()
 
   getSnapshot = (): PendingInteraction[] => this.#pending
 
@@ -105,7 +131,8 @@ export class InteractionStore {
     )
   }
 
-  requestQuestion(sessionId: string, request: AskUserQuestionRequestEvent): Promise<AskUserQuestionAnswer> {
+  requestQuestion(sessionId: string, request: AskUserQuestionRequestEvent, remainingMs?: number): Promise<AskUserQuestionAnswer> {
+    if (request.wait?.timed) return this.#timedQuestion(sessionId, request, remainingMs)
     return this.#request<AskUserQuestionAnswer>(
       (key, answer) => ({ key, kind: 'question', sessionId, deferred: false, items: request.questions, answer }),
       request.signal,
@@ -113,7 +140,113 @@ export class InteractionStore {
     )
   }
 
+  #questionCard(sessionId: string, callId: string, questions: readonly AskUserQuestionItem[]): QuestionCard {
+    const key = `question:${JSON.stringify([sessionId, callId])}`
+    const existing = this.#questions.get(key)
+    if (existing) return existing
+    const card: QuestionCard = {
+      submitting: false, visible: 0,
+      pending: { key, kind: 'question', sessionId, callId, deferred: false, items: [...questions],
+        answer: async (value) => {
+          if (this.#questions.get(key) !== card || card.submitting) throw new Error('この要求への回答はすでに終了しています。')
+          if (card.live) { card.live.answer(value); return }
+          if (!card.rpc) throw questionAbortError()
+          card.submitting = true
+          try {
+            if (!await card.rpc(value)) throw questionAbortError()
+            // Host projections own removal, including a queued reply cancelled
+            // before this RPC returns. Its replacement can have the same key.
+          } finally { card.submitting = false }
+        },
+      },
+    }
+    this.#questions.set(key, card)
+    this.#pending = [...this.#pending, card.pending]
+    this.#notify()
+    return card
+  }
+
+  #removeQuestion(key: string): void {
+    if (!this.#questions.delete(key)) return
+    this.#pending = this.#pending.filter(pending => pending.key !== key)
+    this.#notify()
+  }
+
+  #timedQuestion(sessionId: string, request: AskUserQuestionRequestEvent, remainingMs?: number): Promise<AskUserQuestionAnswer> {
+    if (request.signal?.aborted) return Promise.reject(questionAbortError())
+    const card = this.#questionCard(sessionId, request.wait!.callId, request.questions)
+    card.live?.cancel()
+    return new Promise((resolve, reject) => {
+      let remaining = remainingMs
+      let deadline: number | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (settle: () => void) => {
+        if (card.live !== live) return
+        clearTimeout(timer)
+        request.signal?.removeEventListener('abort', live.cancel)
+        card.live = undefined
+        settle()
+      }
+      const live = {
+        setVisible: (visible: boolean) => {
+          if (visible) {
+            if (deadline !== undefined) remaining = Math.max(0, deadline - Date.now())
+            clearTimeout(timer); timer = undefined; deadline = undefined
+          } else if (remaining !== undefined && deadline === undefined) {
+            deadline = Date.now() + remaining
+            timer = setTimeout(() => finish(() => reject(Object.assign(questionAbortError(), { code: 'ASK_TIMED_OUT' }))), remaining)
+          }
+        },
+        answer: (answer: AskUserQuestionAnswer) => finish(() => resolve(answer)),
+        // The projection, not cancellation of the foreground waterfall, owns
+        // the timed card's lifetime. A timeout can still be answered via RPC.
+        cancel: () => finish(() => {
+          if (card.projectedActive === false) this.#removeQuestion(card.pending.key)
+          reject(questionAbortError())
+        }),
+      }
+      card.live = live
+      request.signal?.addEventListener('abort', live.cancel, { once: true })
+      live.setVisible(card.visible > 0)
+    })
+  }
+
+  /** The existing answer sheet is the focus seat; hidden/queued cards keep counting down. */
+  presentQuestion(key: string): () => void {
+    const card = this.#questions.get(key)
+    if (!card) return () => {}
+    card.visible++
+    card.live?.setVisible(true)
+    return () => {
+      card.visible--
+      if (card.visible === 0) card.live?.setVisible(false)
+    }
+  }
+
+  /** Mirror the same continued/queued/settled states as the stock question UI. */
+  syncQuestions(sessionId: string, projection: UserQuestionProjection | undefined, inbox: unknown,
+    answer: (callId: string, value: AskUserQuestionAnswer) => Promise<boolean>): void {
+    const queues = inbox as { 'next-step'?: { source?: { kind?: string; callId?: string } }[]; 'next-turn'?: { source?: { kind?: string; callId?: string } }[] } | undefined
+    const queued = new Set([...(queues?.['next-step'] ?? []), ...(queues?.['next-turn'] ?? [])]
+      .filter(message => message.source?.kind === 'user-question-reply').map(message => message.source?.callId))
+    const active = projection?.active.filter(row => row.state !== 'continued' || !queued.has(row.callId)) ?? []
+    for (const row of active) if (row.state === 'continued') {
+      const card = this.#questionCard(sessionId, row.callId, row.questions)
+      card.rpc = value => answer(row.callId, value)
+    }
+    for (const [key, card] of this.#questions) {
+      if (card.pending.sessionId !== sessionId) continue
+      card.projectedActive = active.some(row => row.callId === card.pending.callId)
+      if (!card.live && !card.projectedActive) this.#removeQuestion(key)
+    }
+  }
+
+  forgetQuestions(sessionId: string): void {
+    for (const [key, card] of this.#questions) if (card.pending.sessionId === sessionId && !card.live) this.#removeQuestion(key)
+  }
+
   defer(key: string): void {
+    this.#questions.get(key)?.live?.setVisible(false)
     this.#replace((pending) => pending.key === key && !pending.deferred ? { ...pending, deferred: true } : pending)
   }
 
@@ -126,6 +259,7 @@ export class InteractionStore {
 
   dispose(): void {
     for (const cancel of [...this.#cancel.values()]) cancel()
+    for (const [key, card] of this.#questions) { card.live?.cancel(); this.#removeQuestion(key) }
   }
 
   #replace(update: (pending: PendingInteraction) => PendingInteraction): void {
@@ -186,8 +320,9 @@ export type QuestionHandler = (
 
 /** The request's receiver is an Agent scope, resolved by sessions.scopeOf(this). */
 export interface InteractionContext {
-  sessions: { scopeOf(owner: unknown): string | undefined }
+  sessions: Pick<ISessions, 'scopeOf'> & Partial<Pick<ISessions, 'list' | 'binding'>>
   remote: {
+    userQuestions?: UserQuestionsRemote
     $on(event: 'approval/request', handler: ApprovalHandler): (() => void) | void
     $on(event: 'user-questions/request', handler: QuestionHandler): (() => void) | void
   }
@@ -207,11 +342,35 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
     return sessionId === undefined ? next() : store.requestApproval(sessionId, request)
   })
   let removeQuestion: (() => void) | void
+  let stopProjections: (() => void) | undefined
+  const claims = new Set<AbortController>()
   try {
-    removeQuestion = ctx.remote.$on('user-questions/request', function(request, next) {
+    removeQuestion = ctx.remote.$on('user-questions/request', async function(request, next) {
       const sessionId = ctx.sessions.scopeOf(this)
-      return sessionId === undefined ? next() : store.requestQuestion(sessionId, request)
+      if (sessionId === undefined) return next()
+      if (!request.wait?.timed) return store.requestQuestion(sessionId, request)
+      if (!ctx.remote.userQuestions) return next()
+      const lifetime = new AbortController()
+      const signal = request.signal ? AbortSignal.any([request.signal, lifetime.signal]) : lifetime.signal
+      const claim = ctx.remote.userQuestions.attachWait(sessionId, request.wait.callId, signal)
+      claims.add(lifetime)
+      let ended: Promise<never> | undefined
+      const release = () => { lifetime.abort(); claim.dispose(); claims.delete(lifetime) }
+      try {
+        const iterator = claim[Symbol.asyncIterator]()
+        const opening = await iterator.next()
+        if (opening.done) return await next()
+        ended = iterator.next().then(() => { throw questionAbortError() }).catch(error => { lifetime.abort(); throw error })
+        return await Promise.race([store.requestQuestion(sessionId, { ...request, signal }, opening.value.remainingMs), ended])
+      } finally {
+        // The answer still has to cross the waterfall transport. Releasing
+        // here races it with the Host deadline. Let Host settlement end the
+        // stream first, just as the stock UI does.
+        if (ended) void Promise.allSettled([ended]).then(release)
+        else release()
+      }
     })
+    stopProjections = observeQuestions(ctx, store)
   } catch (error) {
     removeApproval?.()
     throw error
@@ -222,9 +381,53 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
     disposed = true
     removeApproval?.()
     removeQuestion?.()
+    stopProjections?.()
+    for (const claim of claims) claim.abort()
     store.dispose()
     registrations.delete(ctx)
   }
   registrations.set(ctx, { store, dispose })
   return dispose
+}
+
+/** Only bound Sessions have live projection faces; replace subscriptions on a new generation. */
+function observeQuestions(ctx: InteractionContext, store: InteractionStore): () => void {
+  const sessions = ctx.sessions
+  const observed = new Map<string, { binding: SessionBinding; stop(): void }>()
+  const reconcile = () => {
+    const summaries = sessions.list?.getSnapshot().byId ?? {}
+    for (const pending of store.getSnapshot()) if (pending.kind === 'question' && pending.callId && !summaries[pending.sessionId]) store.forgetQuestions(pending.sessionId)
+    const answerFor = (id: string) => async (callId: string, answer: AskUserQuestionAnswer) => {
+      const result = await ctx.remote.userQuestions!.answer(id, callId, answer)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.value
+    }
+    const bound = new Map(Object.keys(summaries).flatMap(id => {
+      const binding = sessions.binding?.(id)
+      return binding ? [[id, binding] as const] : []
+    }))
+    for (const [id, entry] of observed) if (bound.get(id) !== entry.binding) {
+      entry.stop(); observed.delete(id)
+      if (!summaries[id]) store.forgetQuestions(id)
+    }
+    // The list also carries Host projections, including unbound Sessions.
+    // Keep continued cards answerable on the inbox after leaving a conversation.
+    for (const [id, summary] of Object.entries(summaries)) if (!bound.has(id)) {
+      const values = summary.projectionValues
+      store.syncQuestions(id, values?.userQuestions as UserQuestionProjection | undefined, values?.inbox, answerFor(id))
+    }
+    for (const [id, binding] of bound) {
+      if (observed.has(id)) continue
+      const questions = binding.session.projections.faceOf('userQuestions')
+      const inbox = binding.session.projections.faceOf('inbox')
+      const update = () => store.syncQuestions(id, questions.getSnapshot() as UserQuestionProjection | undefined, inbox.getSnapshot(), answerFor(id))
+      const stopQuestions = questions.subscribe(update)
+      const stopInbox = inbox.subscribe(update)
+      observed.set(id, { binding, stop: () => { stopQuestions(); stopInbox() } })
+      update()
+    }
+  }
+  reconcile()
+  const stopList = sessions.list?.subscribe(reconcile)
+  return () => { stopList?.(); for (const entry of observed.values()) entry.stop(); observed.clear() }
 }

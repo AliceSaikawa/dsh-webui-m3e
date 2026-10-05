@@ -47,7 +47,7 @@ export function SettingsScreen() {
         {settingsPages.filter(page => page.id !== 'other' || groups.other.length > 0).map(page =>
           <M3eListAction key={page.id} onClick={() => navigate(`/settings/${page.id}`)}>
             <span slot="leading"><Icon name={page.icon} /></span>{page.title}
-            <span slot="supporting-text">{page.id === 'providers' ? providers : state.phase === 'loading' ? '読み込み中…' : state.error ? '設定を確認できません' : pageSummary(page.id, groups[page.id])}</span>
+            <span slot="supporting-text">{page.id === 'providers' ? providers : state.phase === 'loading' ? '読み込み中…' : state.error ? '設定を確認できません' : pageSummary(page.id, groups[page.id], state.permissionCatalog)}</span>
             <span slot="trailing"><Icon name="chevron_right" /></span>
           </M3eListAction>)}
       </M3eActionList>
