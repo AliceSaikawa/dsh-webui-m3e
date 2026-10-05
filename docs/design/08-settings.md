@@ -214,11 +214,11 @@ settings.mutate('llm-pi-ai', [
 - 新規：`CustomProviderSheet.tsx`（共通フォーム）、`custom-provider.ts`（下書き・検証・差分）、`custom-provider-store.ts`（保存制御）、`mock-custom.ts`（失敗シナリオ）。いずれも `web/src/features/settings/`。
 - 変更：同フォルダの `ProvidersPanel.tsx`、`providers.ts`、`settings.css`、`mock.ts`、`mock-models.ts`、`mock-validation.ts`。schema の復号、valueAt、既存キー操作、field-access、openFullSheet を再利用。ルーターと共有 overlay は変更しない。
 - 試験：`tests/08-custom-provider.test.ts`、`e2e/settings-custom-provider.spec.ts`、`e2e-dsh/custom-provider.spec.ts`。既存 M5 の入力へ実 Host で必須の api/baseURL を足し、directory の declared を明示した。期待を緩めた修正ではない。`tests/18-pack.test.ts` の偽モジュール一覧に mock-custom を追加。
-- 偽データ：既存 settings-readonly と、新規 custom-no-namespace / custom-unavailable / custom-rejected / custom-conflict / custom-response-lost / custom-slow。custom-partial は設定保存後のキー拒否を 1 回だけ起こす設計だが、既存キー RPC への接続 1 箇所は保護フックで停止。`tmp/handoff-issue16-01.md` の前後ブロックを指示役が適用するまで、対応 e2e は成功しない。
+- 偽データ：既存 settings-readonly と、新規 custom-no-namespace / custom-unavailable / custom-rejected / custom-conflict / custom-response-lost / custom-slow。custom-partial のキー拒否処理への接続は一度保護フックで停止したが、`tmp/handoff-issue16-01.md` を指示役が `ad192ba` で適用済み。custom-slow はレビュー対応で固定 800ms を廃止し、試験側が開始を観測して保留応答を解放する。
 - 全画面シートを採用。専用ルートは不要な履歴と復元を増やすため採用しない。共通シートを開くだけでは初期高さが半分になることを実測したため、このフォームを持つシートだけに動的画面高を CSS 指定した。ほかのシートを変更しない。
 - 終了経路を統一できる破棄確認の仕組みが共有 overlay にないため、今回も破棄確認なし。送信開始後は取消できないことを表示する。
 - モデルの index ごとの操作より、変更時だけ配列を送る案を採用。継承と削除後の index 移動を避け、元の未知項目を保持する。保護された子がある配列は置換しない。
-- 最新の作業指示に合わせ、標準画面独自の ID 正規表現は採用しない。URL は HTTP/HTTPS として検査し、非該当なら注意を出すが、Host が受理する非空文字列の保存は妨げない。空白を勝手に trim しない。例外は既存の M3E path 基盤が拒否する 3 予約名。キーを新規入力するときは、導出した参照名が他の提供元と重なる場合も止める。
+- ID は標準画面独自の正規表現を採用せず、非空・重複・既存 M3E path が拒否する 3 予約名を検査する。ID の空白は保存どおり扱う。URL はレビューの明示指示を優先し、前後の空白を除いた HTTP/HTTPS の URL だけを保存する。Host の受理範囲を再現する偽データは変更しない。キー付きの保存には参照名の形式と、明示された名前も含む実際の保存先の重複検査を別に行う。
 
 #### 受け入れ条件と検証の対応
 
@@ -228,7 +228,7 @@ settings.mutate('llm-pi-ai', [
 | 2 値と未編集設定の保持 | I16 ops | UI lifecycle、モデル選択不変 | real lifecycle、再読込・他提供元・未知項目・既定値 |
 | 3 入力検査 | I16 validation | UI lifecycle、欄エラーとフォーカス | 一時 spec の 35 入力 |
 | 4 キーの維持・消去 | I16 partial / close / unknown | UI dismiss / refused / late | real lifecycle / failures |
-| 5 保存失敗の分類 | I16 refusals / partial / unknown | UI blocked / refused / lost。partial は引き継ぎ待ち | real failures、別ページ競合と設定だけ成功 |
+| 5 保存失敗の分類 | I16 refusals / partial / unknown | UI blocked / refused / lost / partial（接続差分は適用済み） | real failures、別ページ競合と設定だけ成功 |
 | 6 取消・連打・終了 | I16 partial / close | UI dismiss / late、4 終了経路 | real failures の閉じて再編集 |
 | 7 狭い画面と回帰 | 既存キー・モデル試験 | 390px と 375×420px、実寸の全画面高と横幅 | 新モデルの選択候補。iOS のキーボード実機は未確認 |
 | 8 品質 | typecheck / test | 全偽データ e2e | build、全実 DSH e2e を 2 回 |
@@ -255,12 +255,12 @@ settings.mutate('llm-pi-ai', [
 | UI lost | 再取得後も新規扱い | 保存済み ID の欄が空になって失敗 |
 | UI late | dispose を空にする | 閉じた後にキーが登録済みとなり失敗 |
 | UI lifecycle / dismiss / refused / lost / late（初期フォーカス） | シートが開いた後の見出しへの focus を削除 | 5 件とも見出しのフォーカス検査で失敗 |
-| UI partial | 引き継ぎ差分の適用待ち | 正常系自体が未成功のため故障注入は未実施。通常の失敗を変異検出の成功に数えない |
+| UI partial | 第2回の時点では接続差分が未適用 | `ad192ba` で適用済み。今回の故障注入の結果は下記のレビュー対応に記録 |
 | real lifecycle | モデルの未知フィールドと reasoningEfforts を落とす | 保存・再読込後の配列の厳密一致で失敗 |
 | real failures | 外部設定通知の処理を無効化 | 別ページ変更後の競合案内がなく失敗 |
 | 一時 spec | 有効入力のモデル準備を空配列に変える | valid-no-key が拒否となり失敗 |
 
-#### 最終検証（2026-10-05）
+#### 第2回の最終検証（2026-10-05、接続差分適用前）
 
 故障注入を戻した最終コードで実行した。結果を緑にするための skip、期待失敗への変更、アサーションの緩和は行っていない。
 
@@ -276,11 +276,83 @@ settings.mutate('llm-pi-ai', [
 
 実 DSH の各 36 件には、変更していない既存の期待失敗（Host が止まったままの場合の切断表示）1 件を含む。通常成功は各 35 件。LLM とキーは架空のもので、外部提供元への実通信ではない。
 
-偽データの失敗は `e2e/settings-custom-provider.spec.ts:140` の `I16 UI partial: 設定だけ成功したらキーだけ再試行する` だけ。保護フックで止まった `web/src/features/settings/mock.ts` の接続差分によりキーが拒否されず、部分成功の案内が現れない。`tmp/handoff-issue16-01.md` にファイルごとの変更前後と置換印の凡例を残した。指示役の適用後、この試験とその故障注入、および全体検証を行う必要がある。本体の部分成功は単体と実 DSH の画面試験で通過した。
+当時の偽データの失敗は `e2e/settings-custom-provider.spec.ts:140` の `I16 UI partial: 設定だけ成功したらキーだけ再試行する` だけだった。保護フックで止まった `web/src/features/settings/mock.ts` の接続差分は、`tmp/handoff-issue16-01.md` を指示役が `ad192ba` で適用して解消した。同コミットで指示役が型・単体 1,052 件・ビルド・配布検査・偽データ 166 件・実 DSH 2 回を確認済みとの引き継ぎを受けた。今回の再実行と故障注入は下記に分けて記録する。
 
-受け入れ条件 1・2・3・4・6 は達成。5 は上記の偽データ差分待ち、7 は 390px と 375×420px・既存機能の回帰まで確認し iOS 実機のソフトウェアキーボードは未確認、8 は型・単体・ビルド・実 DSH が成功したが全偽データ e2e の 1 件が未達。最終レポートは `tmp/handoff-issue16-implementation.md`、実行結果は `tmp/issue16-mock-final.json`、`tmp/issue16-real-run1.json`、`tmp/issue16-real-run2.json` に保存した。
+第2回の判定と結果は `tmp/handoff-issue16-implementation.md`、`tmp/issue16-mock-final.json`、`tmp/issue16-real-run1.json`、`tmp/issue16-real-run2.json` に保存した。その後レビューで指摘された不足と最新の判定は下記のレビュー対応を参照する。iOS 実機のソフトウェアキーボードは引き続き未確認。
 
 範囲外：カタログの提供元追加、提供元削除・ID 変更、OAuth、モデル自動取得、接続試験、高度な設定、他の DSH 版。保護対象パッケージを読むことと、利用者の DSH を操作することは実施していない。
+
+### 2026-10-05：Issue #16 レビューへの対応
+
+`ad192ba` の引き継ぎ差分を含む状態から修正した。対応パッケージの追加や、Issue #18 の配布用ファイルの変更はない。
+
+#### 指摘ごとの変更
+
+| 指摘 | 対応 |
+|---|---|
+| 1 明示された参照名との衝突 | `custom-provider-store.ts` は directory と全名前空間から `providerRows` で実際の参照先を取得し、新規とキーなし提供元へのあと付けの両方を検査する。`providers.ts` の再照会でも、初めて参照を付ける保存では他の行と同じ保存先を使わない。部分成功後の再試行もこの条件を保持する |
+| 2 数字始まり ID が一括照会を壊す | Host の参照名検証を `validKeyReference` へ写し、不正な名前を照会から除外する。当該行だけを変更不可とし、理由を行とフォームへ出す。キー付きの保存は設定送信前の欄エラーで止める。既存提供元の状態・登録・削除は単体と実 DSH の画面で確認 |
+| 3 閉じた後に再照会からキーを送る | 既存 `ProviderStore.save` に省略可能な `canSend` を追加。カスタムフォームは active・接続・接続世代を渡し、再照会の完了後とキー送信直前の両方で判定する。オプションを渡さない既存の登録経路は維持。RPC 送信回数を数える専用試験の追加は保護フックに拒否され、`tmp/handoff-issue16-02.md` へ回した |
+| 4 URL と ID の形式 | URL は HTTP/HTTPS のみ。前後の空白を除いて検証・保存する。ID は非空・重複・予約名を検査し、英字始まりを推奨。数字始まりなどはキーなしで許可する。キーの参照名を別に検査する |
+| 5 固定 800ms の待ち | `mock-custom.ts` に試験用の保留・解放を設けた。UI late は開始件数 1、保存中表示、閉じてフォームが消えたことと行が未作成なことを確認してから解放する |
+| 6 古い適用待ちの記述 | UI 仕様とこのメモを `ad192ba` で適用済みに更新。第2回の失敗結果は当時の記録と明示し、今回の結果と区別する |
+| 7 UI partial の故障注入 | 設定の再送、新規再作成、キー送信の省略、最初の拒否の無効化を個別に確認する。結果は下表 |
+| 8 新規・変更試験の故障注入 | 正常状態で通過後、各試験に対応する本体または偽データを壊して実行し、`git restore` で戻す。未適用の専用試験は成功実績に数えない |
+
+根拠：`P/dsh-api-settings-controller/lib/index.js:55–70` は参照名を `^[A-Za-z_][A-Za-z0-9_]*$` と定義し、describe の配列内にも同じ検査を適用する。設定の ID 自体の制約とは異なる。実物の保存処理を含む保護対象パッケージには触れていない。
+
+ID を標準画面の小文字英字・ハイフンだけへ制限する案は不採用。キーなしのローカル提供元や既存の大文字・数字始まりの ID を扱える契約を維持するため。画面から新規にキーを使う場合は有効な導出参照が必要で、既存提供元に有効な参照名が明示されていればそれを優先する。既に明示的に共有している参照は変更しない。
+
+URL は Issue の明示要件を優先する。`http://` / `https://` のプレフィックスと URL の解析を検査し、localhost、IPv4、IPv6、ポートを許可。前後の空白を拒否する案より、入力欄に貼り付けたときの余分な空白だけを除く案を採用した。未変更の既存フィールドを自動的に正規化して書き直すことはしない。Host が FTP や空白だけの文字列も受理するという実測と、その偽データは維持する。フォームの条件とは目的が異なる。
+
+#### レビュー対応で壊して確かめた表
+
+| 試験 | 故障の場所と内容 | 検出 |
+|---|---|---|
+| I16 ops | custom-provider の URL 保存時の trim を削除 | 差分の URL に前後空白が残り失敗 |
+| I16 validation | validBaseURL が常に true | 不正 URL の欄エラーがなく失敗 |
+| I16 explicit reference | custom-provider-store の参照比較を ID からの導出だけへ戻す | 衝突する追加が成功して失敗 |
+| I16 numeric ID | providers の照会対象から不正参照を除外しない | DeepSeek が登録済みでなく unknown となり失敗 |
+| I16 numeric ID（欄検査） | custom-provider-store の参照名の形式検査を無効化 | キー欄のエラーがなく失敗 |
+| I16 reference recheck | providers の送信前の共有検査を削除 | 共有を作るキー保存が成功して失敗 |
+| I16 UI URL | validBaseURL が常に true | 不正 URL の保存が通り、欄エラーが出ず失敗 |
+| I16 real numeric ID | providers の照会対象から不正参照を除外しない | 作成後、既存 DeepSeek の「登録済み」が「確認できません」となり失敗 |
+| I16 UI late | custom-provider-store の dispose を空にする | 閉じてから保留応答を解放するとキーが登録済みとなり失敗 |
+| I16 UI partial（設定再送） | 保存済みでも同じ URL の mutate を送る | 設定書込みが 1 回でなく 2 回となり失敗 |
+| I16 UI partial（新規再作成） | 保存済みフラグを消し editing を false に戻す | 設定書込みが 2 回となり失敗 |
+| I16 UI partial（キー未送信） | keyFailed からの再試行でキー保存の分岐を通らない | 登録済みでなく未登録のままで失敗 |
+| I16 UI partial（拒否なし） | mock-custom の rejectKeyOnce が常に false | 部分成功の案内が出ず失敗 |
+| I16 key recheck close | 試験差分自体が保護フックで停止 | `tmp/handoff-issue16-02.md` の適用後に正常実行と故障注入が必要。未実施 |
+
+すべての実施した故障を `git restore` で戻し、本体・試験には故障を残していない。今回追加・期待変更した試験は上表に 1 件ずつ載せた。I16 UI partial は既存試験の条件を変更せず、指定の 4 種類の故障を個別に検出した。
+
+#### レビュー対応後の全体検証と残り
+
+| 実行 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test` | 1,055 件成功、失敗・skip 0 |
+| `pnpm build` / `pnpm check:pack` | 成功。配布検査は 19 ファイル |
+| 全偽データ e2e | 167 件成功、unexpected/skip/flaky 0、516.8 秒 |
+| 全実 DSH e2e 1 回目 | 通常成功 36 件＋既存の期待失敗 1 件、unexpected/skip/flaky 0、296.0 秒 |
+| 全実 DSH e2e 2 回目 | 通常成功 36 件＋同じ期待失敗 1 件、unexpected/skip/flaky 0、253.5 秒 |
+
+結果は `tmp/issue16-review-mock-final.json`、`tmp/issue16-review-real-run1.json`、`tmp/issue16-review-real-run2.json`。実 DSH は隔離した 0.2.0-rc.2、LLM とキーは架空値。未適用の試験を skip で除いた結果ではなく、追跡中の試験を全件実行した結果である。
+
+| 受け入れ条件 | 最新の判定 |
+|---|---|
+| 1 追加・編集 | 達成。数字始まりのキーなし作成も実 DSH で確認 |
+| 2 再表示・他設定・モデル選択の保持 | 達成。明示参照との衝突を新規・あと付けで検査 |
+| 3 入力検査 | 達成。URL の形式と正規化、ID、キー参照名の条件を分離 |
+| 4 キー維持・伏せ字・入力破棄 | 本体は修正済み。キー保存内部の再照会待ちで送信 0 件を確かめる専用試験は引き継ぎ |
+| 5 失敗の偽データ検証 | 達成。設定だけ成功も全体実行で成功 |
+| 6 キャンセル・連打・再オープン・終了 | 設定保存待ちの終了は確認。キー内部の再照会待ちは専用試験を引き継ぎ |
+| 7 狭い画面・キーボード・既存機能の回帰 | 390px、375×420px、既存キー・モデル操作は確認。実機キーボードは未確認 |
+| 8 試験追加・品質 | 型・単体・ビルド・配布・全 e2e は成功。追加できなかった専用試験 1 件とその故障注入は未完了 |
+
+指摘 3 の試験追加は、キー RPC のメンバー名を含む通常の apply_patch を 1 回だけ試して保護フックに拒否された。言い換えて再適用せず、`tmp/handoff-issue16-02.md` に変更前後と置換印の凡例を残した。置換対象が現在のファイルに 1 箇所だけ一致することも確認済み。指示役が適用後、正常実行と canSend を外す故障注入を行う必要がある。未適用の試験を確認済みとは扱わない。
+
+今回の詳細報告は `tmp/handoff-issue16-review-fixes.md`。iOS 実機のキーボード、今回追加した設定の Host 再起動を挟む保持、外部提供元との実通信は引き続き未検証。検索コマンドの引用符なし glob が形式で拒否された 1 回は、対象ファイルを明示して読み直した。保護対象のパスと禁止された操作には触れていない。
 
 ### 2026-09-25：設定タブの実装と、認証操作の保留
 
