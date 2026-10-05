@@ -26,7 +26,9 @@ dsh plugin --profile web add dsh-webui-m3e
 
 `web` is an example: select the profile that actually serves your Web UI. A misspelled name can create a new profile without an error, so a successful installation alone does not confirm the target.
 
-Only **DSH 0.2.0-rc.2** is supported. The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements. The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
+Only **DSH 0.2.0-rc.2** is supported. The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
+
+The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
 
 M3E has no additional runtime packages to install. You do not need M3E's source, a local build, or its development dependencies.
 
@@ -100,6 +102,7 @@ If either interface fails to load, open `http://<host>/?ui=classic` to return to
 
 - The UI text is Japanese only.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
+- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Real LLMs and operation in iPhone Safari or as a Web app added to the Home Screen have not been verified for this supported DSH version (see [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope).
 - See [docs/development.md](docs/development.md) for architecture, development instructions and verification records.
 
 ## License

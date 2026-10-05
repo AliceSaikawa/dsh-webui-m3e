@@ -24,7 +24,9 @@ dsh plugin --profile web add dsh-webui-m3e
 
 `web` は例です。実際に Web 画面を動かしているプロファイルを指定してください。間違った名前でも新しいプロファイルが作られるため、追加成功だけでは接続先が正しいとは限りません。
 
-対応版は **DSH 0.2.0-rc.2 のみ**です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います。DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方の要件を満たす Node を用意してください。動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 で、依存側の下限宣言を M3E の動作保証の下限とはしていません。
+対応版は **DSH 0.2.0-rc.2 のみ**です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います。DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方の要件を満たす Node を用意してください。
+
+動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 で、依存側の下限宣言を M3E の動作保証の下限とはしていません。
 
 M3E には追加で導入する実行時の依存パッケージはありません。M3E のソース取得・ビルド・開発依存の導入は不要です。
 
@@ -98,6 +100,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 
 - 画面の文言は日本語だけです。
 - DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
+- 画面の試験は主に偽のデータで行い、DSH とのつながりは隔離した実物の DSH と偽の LLM で確かめています。この対応版では、本物の LLM と iPhone の Safari・ホーム画面に追加した Web アプリでの動作は未確認です（確認の範囲の詳細は [docs/dsh-compatibility.md](docs/dsh-compatibility.md)）。
 - 開発の方法と仕組み、検証の記録は [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス

@@ -26,7 +26,9 @@ dsh plugin --profile web add dsh-webui-m3e
 
 `web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
 
-仅支持 **DSH 0.2.0-rc.2**。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
+仅支持 **DSH 0.2.0-rc.2**。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。
+
+验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
 
 M3E 无需另外安装运行时依赖包，也无需获取 M3E 源码、手动构建或安装开发依赖。
 
@@ -100,6 +102,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 
 - 界面文字仅提供日语。
 - 插件随附 DSH 的内部库（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`），因此可能无法在某些 DSH 版本上运行。
+- 界面测试主要使用模拟数据，与 DSH 的连接则通过隔离的真实 DSH 和模拟 LLM 验证。对于此支持的 DSH 版本，尚未验证真实 LLM、iPhone Safari 以及添加到主屏幕的 Web 应用中的运行情况（详细验证范围见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)）。
 - 开发方法、工作原理和验证记录见 [docs/development.md](docs/development.md)。
 
 ## 许可证
