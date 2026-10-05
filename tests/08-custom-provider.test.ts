@@ -5,7 +5,9 @@ import { createCustomProviderStore } from '../web/src/features/settings/custom-p
 import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
 import { applyMockOperations } from '../web/src/features/settings/mock-mutations.ts'
 import { validMockValue } from '../web/src/features/settings/mock-validation.ts'
-import type { ProviderRemote, ProviderRow } from '../web/src/features/settings/providers.ts'
+import { createProviderStore, type ProviderRemote, type ProviderRow } from '../web/src/features/settings/providers.ts'
+import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { extendMock } from '../web/src/features/settings/mock.ts'
 import type { SettingsOperation } from '../web/src/features/settings/store.ts'
 import type { SettingObject } from '../web/src/features/settings/schema.ts'
 
@@ -26,6 +28,8 @@ test('I16 ops: 新規と変更項目だけを送り未知のモデル情報を�
   assert.deepEqual(customOperations(row, initial, draft, true), [{ op: 'set', path: ['providers', 'custom', 'models'], value: [{ id: 'one', extra: { keep: true }, maxTokens: 8192, name: '変更後' }, { id: 'two' }] }])
   assert.deepEqual(row.value, before)
   assert.deepEqual(customOperations(row, initial, structuredClone(initial), true), [])
+  assert.deepEqual(customOperations(row, initial, { ...initial, baseURL: '  http://localhost:4567/v1  ' }, true), [{ op: 'set', path: ['providers', 'custom', 'baseURL'], value: 'http://localhost:4567/v1' }])
+  assert.equal((customOperations(row, customDraft(row), { ...good(row), baseURL: '  https://[::1]:1234/v1  ' }, false)[0] as { value: SettingObject }).value.baseURL, 'https://[::1]:1234/v1')
   row.schema = { uid: 0, refs: {
     0: { type: 'object', dict: { providers: 1 } }, 1: { type: 'dict', inner: 2 },
     2: { type: 'object', dict: { models: 3 } }, 3: { type: 'array', inner: 4 },
@@ -46,7 +50,8 @@ test('I16 validation: UIの明示条件と実測したHostの条件を区別す�
   for (const id of ['1-api', 'UPPER', 'with_space', 'a--b', ' ', 'a/b']) assert.deepEqual(validateCustom({ ...base, id }, choices, [], false), {})
   assert.ok(validateCustom(base, choices, ['local-api'], false).id)
   assert.ok(validateCustom({ ...base, baseURL: '' }, choices, [], false).baseURL)
-  for (const baseURL of ['not a url', 'ftp://localhost', ' ', 'http://localhost:1234', 'http://127.0.0.1:1234/v1', 'https://[::1]:1234']) assert.deepEqual(validateCustom({ ...base, baseURL }, choices, [], false), {})
+  for (const baseURL of ['not a url', 'ftp://localhost', ' ', 'http://', 'https://[bad]', 'http:localhost']) assert.ok(validateCustom({ ...base, baseURL }, choices, [], false).baseURL)
+  for (const baseURL of ['http://localhost:1234', 'http://127.0.0.1:1234/v1', 'https://[::1]:1234', '  https://example.com/v1  ']) assert.deepEqual(validateCustom({ ...base, baseURL }, choices, [], false), {})
   assert.ok(validateCustom({ ...base, api: 'unknown' }, choices, [], false).api)
   for (const models of [[], [modelDraft({ id: '' })], [modelDraft({ id: 'x' }), modelDraft({ id: 'x' })], [{ ...base.models[0]!, maxTokens: '1.000000001' }], [{ ...base.models[0]!, contextWindow: '0' }]]) assert.ok(Object.keys(validateCustom({ ...base, models }, choices, [], false)).length)
   const value = (profile: SettingObject) => ({ providers: { 'test-custom': profile } })
@@ -154,4 +159,77 @@ test('I16 unknown: 結果不明の追加を読み直して編集に切り替え�
     assert.equal(h.store.input.getSnapshot().draft, '')
     assert.equal(await h.store.submit(), false)
   }
+})
+
+test('I16 explicit reference: 明示された保存先との共有を追加とあと付け登録で生まない', async () => {
+  for (const ref of ['LOCAL_API_API_KEY', 'DIFFERENT_API_KEY']) {
+    const h = harness()
+    h.row.value = { providers: { 'old-provider': { apiKeyEnv: ref } } }; h.row.user = structuredClone(h.row.value)
+    await h.load(); h.store.input.input('fake-collision')
+    if (ref === 'DIFFERENT_API_KEY') {
+      assert.equal(await h.store.submit(), true)
+      assert.deepEqual(h.keyWrites, ['fake-collision'])
+      continue
+    }
+    assert.equal(await h.store.submit(), false)
+    assert.match(h.store.getSnapshot().errors.key!, /参照名が重なります/)
+    assert.equal(h.writes.length, 0); assert.equal(h.keyWrites.length, 0)
+    h.store.input.clear(); assert.equal(await h.store.submit(), true)
+    await h.store.load(); h.store.input.input('fake-later')
+    assert.equal(await h.store.submit(), false)
+    assert.match(h.store.getSnapshot().errors.key!, /この画面ではキーを登録できません/)
+    assert.equal(h.writes.length, 1); assert.equal(h.keyWrites.length, 0)
+  }
+})
+
+test('I16 numeric ID: キーなしで作成しても既存の登録状況と登録削除を壊さない', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = ctx.remote as unknown as ProviderRemote
+    const keys = createProviderStore(remote)
+    const store = createCustomProviderStore(remote, keys)
+    await store.load(); store.change(() => ({ ...good(), id: '1-api' }))
+    store.input.input('fake-invalid-reference')
+    assert.equal(await store.submit(), false)
+    assert.match(store.getSnapshot().errors.key!, /参照名が DSH の形式に合わない/)
+    const absent = await remote.settings.describe()
+    assert.equal(absent.ok && Object.hasOwn(absent.value.namespaces.find(row => row.ns === 'llm-pi-ai')!.value.providers as object, '1-api'), false)
+    store.input.clear(); assert.equal(await store.submit(), true)
+    const current = () => keys.getSnapshot().rows
+    assert.equal(current().find(row => row.id === '1-api')!.writable, false)
+    assert.match(current().find(row => row.id === '1-api')!.keyUnavailableReason!, /参照名/)
+    assert.equal(current().find(row => row.id === 'deepseek')!.status, 'registered')
+    assert.equal(current().find(row => row.id === 'cloud')!.status, 'missing')
+    assert.equal(keys.getSnapshot().error, null)
+    assert.equal((await keys.save(current().find(row => row.id === 'cloud')!, 'fake-existing')).ok, true)
+    assert.equal(current().find(row => row.id === 'cloud')!.status, 'registered')
+    assert.equal((await keys.remove(current().find(row => row.id === 'cloud')!)).ok, true)
+    assert.equal(current().find(row => row.id === 'cloud')!.status, 'missing')
+    store.dispose()
+  } finally { ctx.dispose() }
+})
+
+test('I16 reference recheck: 保存の再照会で新たな参照先の共有を検出する', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = ctx.remote as unknown as ProviderRemote
+    const keys = createProviderStore(remote)
+    const store = createCustomProviderStore(remote, keys)
+    await store.load(); store.change(() => good())
+    const save = keys.save
+    keys.save = async (...args) => {
+      const description = await remote.settings.describe()
+      assert.equal(description.ok, true)
+      if (!description.ok) throw new Error('取得できません')
+      const row = description.value.namespaces.find(row => row.ns === 'llm-pi-ai')!
+      assert.equal((await remote.settings.mutate(row.ns, [{ op: 'set', path: ['providers', 'cloud', 'apiKeyEnv'], value: 'LOCAL_API_API_KEY' }], row.revision)).ok, true)
+      return save(...args)
+    }
+    store.input.input('fake-must-not-share')
+    assert.equal(await store.submit(), false)
+    assert.equal(store.getSnapshot().phase, 'keyFailed')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'cloud')!.status, 'missing')
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'missing')
+    store.dispose()
+  } finally { ctx.dispose() }
 })

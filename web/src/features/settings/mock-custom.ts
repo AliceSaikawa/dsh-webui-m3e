@@ -10,11 +10,16 @@ export function installCustomScenarios(kit: MockKit, remote: SettingsMockRemote,
   let partial = false
   let loseResponse = false
   let slow = false
+  const pendingSaves: (() => void)[] = []
+  kit.addRemote('customProviderTest', {
+    pendingSaves: () => pendingSaves.length,
+    releaseSaves() { pendingSaves.splice(0).forEach(resolve => resolve()) },
+  })
   const describe = remote.describe.bind(remote)
   remote.describe = async () => failRead ? { ok: false, error: { code: 'gateway/internal', message: '読み込めません。', details: {} } } : describe()
   const mutate = remote.mutate.bind(remote)
   remote.mutate = async (ns, ops, revision) => {
-    if (slow) await new Promise(resolve => setTimeout(resolve, 800))
+    if (slow) await new Promise<void>(resolve => pendingSaves.push(resolve))
     if (ns === 'llm-pi-ai' && conflict) { conflict = false; return { ok: false, error: { code: 'settings/conflict', message: '変更されました。', details: {} } } }
     if (ns === 'llm-pi-ai' && reject) return { ok: false, error: { code: 'settings/rejected', message: '拒否されました。', details: {} } }
     const result = await mutate(ns, ops, revision)

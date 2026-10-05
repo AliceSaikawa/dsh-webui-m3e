@@ -4,9 +4,9 @@ import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eFormField } from '@m3e/react/form-field'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { showSnackbar, useOverlays } from '../../app/overlay/index.ts'
-import { customFieldWritable, customOperations, modelDraft, unusualURL, type ModelInputs } from './custom-provider.ts'
+import { customFieldWritable, customOperations, modelDraft, providerRef, type ModelInputs } from './custom-provider.ts'
 import type { CustomProviderStore } from './custom-provider-store.ts'
-import type { ProviderStore } from './providers.ts'
+import { validKeyReference, invalidKeyReferenceMessage, type ProviderStore } from './providers.ts'
 
 const protocolNames: Record<string, string> = { 'openai-completions': 'OpenAI チャット補完', 'openai-responses': 'OpenAI 応答', 'anthropic-messages': 'Anthropic メッセージ' }
 function Field({ label, value, onChange, disabled, error, type = 'text', inputMode, fieldKey }: {
@@ -61,6 +61,8 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
   const saving = state.phase === 'savingSettings' || state.phase === 'savingKey'
   const disabled = state.phase !== 'editing'
   const draft = state.draft
+  const provider = providers.rows.find(row => row.id === draft?.id)
+  const keyRefInvalid = draft && !validKeyReference(provider?.ref ?? providerRef(draft.id))
   const fieldDisabled = (name: string) => disabled || Boolean(state.editing && state.namespace && !customFieldWritable(state.namespace, draft?.id ?? '', name))
   const leave = () => { controller.dispose(); close() }
   async function submit() {
@@ -93,12 +95,12 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
       <p className="muted">保存するまで変更は反映されません。閉じると入力中の内容は失われます。</p>
       <Field label="プロバイダー ID" fieldKey="id" value={draft.id} disabled={disabled || state.editing} error={state.errors.id}
         onChange={id => controller.change(current => ({ ...current, id }))} />
+      <p className="settings-field-help">英字で始まる ID を推奨します。数字で始まる ID は、キーを空欄にして作成できます。</p>
       <Field label="表示名（任意）" value={draft.displayName} disabled={fieldDisabled('displayName')} error={state.errors.displayName}
         onChange={displayName => controller.change(current => ({ ...current, displayName }))} />
       <Field label="ベース URL" fieldKey="baseURL" value={draft.baseURL} disabled={fieldDisabled('baseURL')} error={state.errors.baseURL} inputMode="url"
         onChange={baseURL => controller.change(current => ({ ...current, baseURL }))} />
-      <p className="settings-field-help">HTTP または HTTPS の URL を入力してください。URL に API キーを書かないでください。</p>
-      {unusualURL(draft.baseURL) && <p role="status">通常の HTTP / HTTPS URL ではありません。保存はできますが、接続先を確認してください。</p>}
+      <p className="settings-field-help">HTTP または HTTPS の URL を入力してください。前後の空白は保存時に除きます。URL に API キーを書かないでください。</p>
       <div className="custom-field"><label>API プロトコル<select aria-label="API プロトコル" value={draft.api} disabled={fieldDisabled('api')} aria-invalid={Boolean(state.errors.api)}
         onChange={event => controller.change(current => ({ ...current, api: event.target.value }))}>
         {!state.protocols.includes(draft.api) && <option value={draft.api}>現在の値は選択肢にありません</option>}
@@ -128,6 +130,7 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
       <Field label="API キー（任意）" fieldKey="key" value={key.draft} type={key.visible ? 'text' : 'password'} disabled={saving || !['editing', 'keyFailed'].includes(state.phase)} error={state.errors.key}
         onChange={controller.input.input} />
       <p>API キー：{({ registered: '登録済み', missing: '未登録', unknown: '確認できません', unnecessary: '確認できません' })[providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown']}</p>
+      {keyRefInvalid && !state.errors.key && <p className="settings-field-help">{invalidKeyReferenceMessage} キーを空欄にすると、設定だけ保存できます。</p>}
       <M3eButton variant="text" disabled={saving} aria-pressed={key.visible} onClick={controller.input.toggle}>{key.visible ? '入力したキーを隠す' : '入力したキーを表示する'}</M3eButton>
       <p className="settings-field-help">保存すると、あとから表示できません。空欄なら登録済みのキーを変更しません。</p>
       {saving && <p role="status">保存しています…</p>}

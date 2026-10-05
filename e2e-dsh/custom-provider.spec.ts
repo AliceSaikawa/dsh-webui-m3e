@@ -124,3 +124,53 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
   await second.close()
 })
+
+test('I16 real numeric ID: 数字始まりをキーなしで追加した後も既存のキーを登録削除できる', async ({ page, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  const existing = page.locator('m3e-list-action').filter({ hasText: /DeepSeek/ })
+  await expect(existing).toContainText('API キー：登録済み')
+  await button(page, 'カスタムプロバイダーを追加').click()
+  await page.getByLabel('プロバイダー ID', { exact: true }).fill('1-i16-api')
+  await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
+  await page.getByLabel('モデル ID', { exact: true }).fill('numeric-model')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-invalid-ref')
+  await button(page, '保存').click()
+  await expect(form(page).getByRole('alert')).toHaveText('キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。')
+  expect((await snapshot(page)).providers['1-i16-api']).toBeUndefined()
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('')
+  await button(page, '保存').click(); await expect(form(page)).toBeHidden()
+  await expect(row(page, '1-i16-api')).toContainText('キーの参照名が DSH の形式に合わない')
+  await expect(row(page, '1-i16-api').getByRole('button', { name: 'API キー', exact: true })).toBeDisabled()
+  await expect(existing).toContainText('API キー：登録済み')
+  await page.reload(); await expect(existing).toContainText('API キー：登録済み')
+  const previous = await page.evaluate(async () => {
+    const remote = (window as any).__customRemote
+    const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-deepseek')
+    const prior = ns.user?.apiKeyEnv
+    const result = await remote.settings.mutate(ns.ns, [{ op: 'set', path: ['apiKeyEnv'], value: 'I16_EXISTING_API_KEY' }], ns.revision)
+    if (!result.ok) throw new Error('設定できません')
+    return prior ?? null
+  })
+  try {
+    await expect(existing).toContainText('API キー：未登録')
+    await expect(existing).toHaveJSProperty('disabled', false)
+    await existing.click()
+    await page.getByLabel('API キー', { exact: true }).fill('synthetic-existing-after-numeric')
+    await button(page, '保存').click()
+    await expect(existing).toContainText('API キー：登録済み')
+    await existing.click()
+    await expect(page.getByLabel('API キー', { exact: true })).toHaveValue('')
+    await button(page, '登録を消す').click(); await button(page, '登録を消す').click()
+    await expect(existing).toContainText('API キー：未登録')
+    await row(page, '1-i16-api').getByRole('button', { name: '編集', exact: true }).click()
+    await expect(form(page)).toContainText('キーを空欄にすると、設定だけ保存できます。')
+    await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+    await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+  } finally {
+    expect(await page.evaluate(async previous => {
+      const remote = (window as any).__customRemote
+      const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-deepseek')
+      return (await remote.settings.mutate(ns.ns, [previous === null ? { op: 'unset', path: ['apiKeyEnv'] } : { op: 'set', path: ['apiKeyEnv'], value: previous }], ns.revision)).ok
+    }, previous)).toBe(true)
+  }
+})

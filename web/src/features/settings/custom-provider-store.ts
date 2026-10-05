@@ -1,4 +1,4 @@
-import { createKeyDraft, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
+import { createKeyDraft, providerRows, validKeyReference, invalidKeyReferenceMessage, type ProviderRow, type ProviderRemote, type ProviderStore, type KeyOutcome } from './providers.ts'
 import { CUSTOM_NS, customDraft, customOperations, objectValue, protocolChoices, providerRef, validateCustom, type CustomDraft, type CustomErrors } from './custom-provider.ts'
 import { valueAt, type SettingsNamespace } from './schema.ts'
 
@@ -21,6 +21,8 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
   let pendingKey: string | undefined
   let saving = false
   let committed = false
+  let exclusiveKey = false
+  let references: ProviderRow[] = []
   let changedDuringSave = false
   const listeners = new Set<() => void>()
   const publish = (patch: Partial<CustomState>) => { state = { ...state, ...patch }; if (active) listeners.forEach(fn => fn()) }
@@ -44,6 +46,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
       const draft = customDraft(namespace, editing ? target : undefined)
       const protocols = protocolChoices(namespace)
       const taken = [...new Set([...registered.value.map(row => row.id), ...directory.value.map(row => row.provider), ...Object.keys(objectValue(namespace.value.providers) ? namespace.value.providers : {})])]
+      references = providerRows(registered.value, directory.value, description.value)
       committed = false
       publish({ namespace, initial: structuredClone(draft), draft, editing, protocols, taken,
         writable: description.value.writable, phase: description.value.writable && protocols.length ? 'editing' : 'blocked',
@@ -63,7 +66,9 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     if (/[\x00-\x1f\x7f]/.test(key)) errors.key = 'API キーに改行や制御文字は使えません。'
     const profile = state.namespace && state.draft && valueAt(state.namespace.value, ['providers', state.draft.id])
     const hasReference = objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
-    if (key && state.draft && !hasReference && state.taken.some(id => id !== state.draft!.id && providerRef(id) === providerRef(state.draft!.id))) errors.key = state.editing
+    const ref = hasReference ? profile.apiKeyEnv as string : providerRef(state.draft?.id ?? '')
+    if (key && !validKeyReference(ref)) errors.key = invalidKeyReferenceMessage
+    else if (key && state.draft && !hasReference && references.some(row => row.id !== state.draft!.id && row.ref === ref)) errors.key = state.editing
       ? '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。'
       : '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
     const displayed = field ? { ...state.errors } : errors
@@ -81,7 +86,11 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     changedDuringSave = false
     const generation = epoch
     const { namespace, initial, draft, editing } = state
-    if (!committed) target = editing ? initial.id : draft.id
+    if (!committed) {
+      target = editing ? initial.id : draft.id
+      const profile = valueAt(namespace.value, ['providers', target])
+      exclusiveKey = !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)
+    }
     try {
       if (!committed) {
         const ops = customOperations(namespace, initial, draft, editing, Boolean(pendingKey))
@@ -113,7 +122,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
         const row = keys.getSnapshot().rows.find(row => row.id === target && row.ref === ref)
         const value = pendingKey
         pendingKey = undefined
-        const outcome = row ? await keys.save(row, value) : { ok: false, message: partialMessage }
+        const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch, exclusive: exclusiveKey }) : { ok: false, message: partialMessage }
         if (!active || generation !== epoch) return { ok: false, message: unknownMessage }
         if (!outcome.ok) { publish({ phase: 'keyFailed', message: partialMessage }); return { ok: false, message: partialMessage } }
       }

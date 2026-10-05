@@ -30,6 +30,7 @@ export interface ProviderRow {
   path: string[]
   revision?: number
   ref?: string
+  keyUnavailableReason?: string
   needsReference: boolean
   status: 'registered' | 'missing' | 'unnecessary' | 'unknown'
   writable: boolean
@@ -43,6 +44,9 @@ export interface ProviderState {
   customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
+export interface KeySaveOptions { canSend?(): boolean; exclusive?: boolean }
+export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
+export const invalidKeyReferenceMessage = 'キーの参照名が DSH の形式に合わないため、この提供元には API キーを登録できません。'
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const derivedRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 
@@ -66,9 +70,11 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     // provider-native authentication (including local gateways).
     const custom = entry.declared === true && entry.settingsNs === 'llm-pi-ai'
     const native = entry.provider === 'deepseek-account' || !custom && !named && live.has(entry.provider)
+    const ref = native ? undefined : named ?? derivedRef(entry.provider)
     return {
       id: entry.provider, name: entry.displayName, custom, ns: entry.settingsNs, path: [...entry.settingsPath],
-      revision: namespace?.revision, ref: native ? undefined : named ?? derivedRef(entry.provider),
+      revision: namespace?.revision, ref,
+      ...(ref && !validKeyReference(ref) ? { keyUnavailableReason: invalidKeyReferenceMessage } : {}),
       needsReference: !named && !native,
       status: native ? 'unnecessary' : 'unknown', writable: false,
     }
@@ -102,19 +108,19 @@ export function createProviderStore(remote: ProviderRemote) {
       }
       if (request !== sequence || generation !== epoch) return false
       const rows = providerRows(registered.value, directory.value, settings.value, accountAvailable)
-      const refs = [...new Set(rows.flatMap(row => row.ref ? [row.ref] : []))]
+      const refs = [...new Set(rows.flatMap(row => row.ref && validKeyReference(row.ref) ? [row.ref] : []))]
       const answer = refs.length ? await remote.credentials.describe(refs) : { ok: true as const, value: {} as Record<string, unknown> }
       if (request !== sequence || generation !== epoch) return false
       const info = answer.ok ? answer.value : {}
       const resolved = rows.map(row => {
-        if (!row.ref) return row
+        if (!row.ref || row.keyUnavailableReason) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
       })
-      const incomplete = resolved.some(row => row.status === 'unknown')
+      const incomplete = resolved.some(row => row.status === 'unknown' && !row.keyUnavailableReason)
       publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
         customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
         error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
@@ -141,7 +147,7 @@ export function createProviderStore(remote: ProviderRemote) {
     publish({ phase: 'loading', rows: [], error: null, busy: false })
     if (connected) void load()
   }
-  async function change(target: ProviderRow, value?: string): Promise<KeyOutcome> {
+  async function change(target: ProviderRow, value?: string, options: KeySaveOptions = {}): Promise<KeyOutcome> {
     if (state.busy || !connected) return { ok: false, message: '接続と処理中の操作を確認してください。' }
     const generation = epoch
     let finish!: () => void
@@ -155,17 +161,22 @@ export function createProviderStore(remote: ProviderRemote) {
         validatedVersion = refreshVersion
         if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
       } while (validatedVersion !== refreshVersion)
+      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const row = state.rows.find(item => item.id === target.id)
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
       }
       if (value !== undefined && !value.trim()) return { ok: false, message: 'API キーを入力してください。' }
+      if (value !== undefined && options.exclusive && state.rows.some(other => other.id !== row.id && other.ref === row.ref)) {
+        return { ok: false, message: '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。' }
+      }
       if (value !== undefined && row.needsReference) {
         if (row.revision === undefined) return { ok: false, message: '提供元の設定を読み直してください。' }
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)
         if (!named.ok || generation !== epoch) return { ok: false, message: '参照先を設定できませんでした。提供元の設定を読み直してください。' }
         referenceWritten = true
       }
+      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
       if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
@@ -186,7 +197,7 @@ export function createProviderStore(remote: ProviderRemote) {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     load, connectionChanged,
-    save: (row: ProviderRow, value: string) => change(row, value),
+    save: (row: ProviderRow, value: string, options?: KeySaveOptions) => change(row, value, options),
     remove: (row: ProviderRow) => change(row),
   }
 }

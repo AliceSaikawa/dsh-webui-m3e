@@ -13,9 +13,10 @@ export interface ModelInputs { id: string; name: string; contextWindow: string; 
 export interface ModelDraft extends ModelInputs { row: string; original: SettingObject; initial: ModelInputs }
 export interface CustomDraft { id: string; displayName: string; baseURL: string; api: string; models: ModelDraft[] }
 export type CustomErrors = Record<string, string>
-export function unusualURL(value: string): boolean {
-  if (!value) return false
-  try { return !['http:', 'https:'].includes(new URL(value).protocol) } catch { return true }
+export function validBaseURL(value: string): boolean {
+  const url = value.trim()
+  if (!/^https?:\/\//i.test(url)) return false
+  try { return ['http:', 'https:'].includes(new URL(url).protocol) && Boolean(new URL(url).hostname) } catch { return false }
 }
 
 export function protocolChoices(namespace: SettingsNamespace): string[] {
@@ -58,7 +59,8 @@ export function validateCustom(draft: CustomDraft, choices: readonly string[], t
     else if (['__proto__', 'constructor', 'prototype'].includes(id)) errors.id = 'この ID はこの画面では使えません。別の ID を入力してください。'
     else if (taken.includes(id)) errors.id = 'このプロバイダー ID は使われています。別の ID を入力してください。'
   }
-  if (!draft.baseURL) errors.baseURL = 'ベース URL を入力してください。'
+  if (!draft.baseURL.trim()) errors.baseURL = 'ベース URL を入力してください。'
+  else if (!validBaseURL(draft.baseURL)) errors.baseURL = 'http:// または https:// で始まる URL を入力してください。'
   if (!choices.includes(draft.api)) errors.api = 'API プロトコルを選んでください。'
   if (!draft.models.length) errors.models = 'モデルを 1 件以上追加してください。'
   const ids = new Set<string>()
@@ -104,7 +106,7 @@ export function customOperations(namespace: SettingsNamespace, initial: CustomDr
   const reference = objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv ? profile.apiKeyEnv : undefined
   if (!editing) return [{ op: 'set', path, value: {
     ...(draft.displayName ? { displayName: draft.displayName } : {}),
-    api: draft.api, baseURL: draft.baseURL, models: draft.models.map(modelValue),
+    api: draft.api, baseURL: draft.baseURL.trim(), models: draft.models.map(modelValue),
     ...(withKey ? { apiKeyEnv: providerRef(id) } : {}),
   } }]
   const ops: SettingsOperation[] = []
@@ -113,7 +115,7 @@ export function customOperations(namespace: SettingsNamespace, initial: CustomDr
     ops.push(value === undefined ? { op: 'unset', path: [...path, key] } : { op: 'set', path: [...path, key], value })
   }
   for (const key of ['displayName', 'baseURL', 'api'] as const) {
-    if (draft[key] !== initial[key]) put(key, draft[key] || undefined)
+    if (draft[key] !== initial[key]) put(key, (key === 'baseURL' ? draft[key].trim() : draft[key]) || undefined)
   }
   const models = draft.models.map(modelValue)
   if (!equal(models, initial.models.map(modelValue))) put('models', models)
