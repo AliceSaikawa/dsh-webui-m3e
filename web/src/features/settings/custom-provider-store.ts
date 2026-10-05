@@ -61,7 +61,11 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
     const errors = state.draft ? validateCustom(state.draft, state.protocols, state.taken, state.editing, state.namespace) : {}
     const key = input.getSnapshot().draft
     if (/[\x00-\x1f\x7f]/.test(key)) errors.key = 'API キーに改行や制御文字は使えません。'
-    if (key && state.draft && !state.editing && state.taken.some(id => providerRef(id) === providerRef(state.draft!.id))) errors.key = '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
+    const profile = state.namespace && state.draft && valueAt(state.namespace.value, ['providers', state.draft.id])
+    const hasReference = objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
+    if (key && state.draft && !hasReference && state.taken.some(id => id !== state.draft!.id && providerRef(id) === providerRef(state.draft!.id))) errors.key = state.editing
+      ? '別の提供元とキーの参照名が重なります。この画面ではキーを登録できません。'
+      : '別の提供元とキーの参照名が重なります。プロバイダー ID を変更してください。'
     const displayed = field ? { ...state.errors } : errors
     if (field) { delete displayed[field]; if (errors[field]) displayed[field] = errors[field] }
     publish({ errors: displayed })
@@ -87,6 +91,10 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
           if (generation !== epoch) return { ok: false, message: unknownMessage }
           if (!result.ok) {
             const conflict = result.error.code === 'settings/conflict'
+            if (!conflict && !['settings/rejected', 'gateway/bad-request'].includes(result.error.code)) {
+              publish({ phase: 'unknown', message: unknownMessage })
+              return { ok: false, message: unknownMessage }
+            }
             publish({ phase: conflict ? 'stale' : 'editing', message: conflict ? conflictMessage : 'この変更は保存できませんでした。入力内容を確認してください。' })
             return { ok: false, message: state.message! }
           }

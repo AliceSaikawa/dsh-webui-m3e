@@ -126,7 +126,7 @@ export function ProvidersPanel() {
     <M3eActionList className="settings-card">
       {state.rows.map(row => row.custom ? <div className="custom-provider-row" role="group" aria-label={row.name} key={row.id}>
         <div><strong>{row.name}</strong><span>{row.id}</span><span>{statusLabels[row.status]}</span></div>
-        <div className="custom-row-actions"><M3eButton variant="text" disabled={state.phase !== 'ready' || !state.settingsWritable || editorBusy} onClick={() => editCustom(row.id)}>編集</M3eButton>
+        <div className="custom-row-actions"><M3eButton variant="text" disabled={state.phase !== 'ready' || editorBusy} onClick={() => editCustom(row.id)}>編集</M3eButton>
           <M3eButton variant="text" disabled={!row.writable || state.busy || editorBusy} onClick={() => openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` })}>API キー</M3eButton></div>
       </div> : <M3eListAction key={row.id} disabled={!row.writable || state.busy}
         onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>

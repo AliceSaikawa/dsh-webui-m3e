@@ -32,10 +32,32 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
   const present = entries.some(entry => entry.interactionKey === overlayKey)
   useEffect(() => {
     controller.activate(); void controller.load()
-    root.current?.querySelector('h2')?.focus()
-    return () => { controller.dispose() }
+    const sheet = root.current?.closest('m3e-bottom-sheet')
+    let frame = 0
+    const focusHeading = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        if (!controller.isActive() || !sheet?.matches(':popover-open')) return
+        const active = document.activeElement
+        if (active && root.current?.contains(active)) return
+        root.current?.querySelector('h2')?.focus({ preventScroll: true })
+      })
+    }
+    sheet?.addEventListener('opened', focusHeading)
+    sheet?.addEventListener('toggle', focusHeading)
+    focusHeading()
+    return () => {
+      cancelAnimationFrame(frame); sheet?.removeEventListener('opened', focusHeading); sheet?.removeEventListener('toggle', focusHeading)
+      controller.dispose()
+    }
   }, [controller])
   useLayoutEffect(() => { if (!present) { controller.dispose(); released() } }, [present, controller])
+  useLayoutEffect(() => {
+    root.current?.querySelectorAll<HTMLElement>('[aria-invalid="true"]').forEach(field => {
+      const details = field.closest('details')
+      if (details) details.open = true
+    })
+  }, [state.errors])
   const saving = state.phase === 'savingSettings' || state.phase === 'savingKey'
   const disabled = state.phase !== 'editing'
   const draft = state.draft
@@ -53,8 +75,13 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
   const changed = !state.editing || Boolean(state.namespace && state.initial && draft && customOperations(state.namespace, state.initial, draft, true).length)
   const changeModel = (row: string, patch: Partial<ModelInputs>) => controller.change(current => ({ ...current, models: current.models.map(model => model.row === row ? { ...model, ...patch } : model) }))
   return <form ref={root} className="custom-provider-form" onSubmit={event => event.preventDefault()}
-    onBlur={event => { const field = (event.target as HTMLElement).dataset.customField; if (field && state.phase === 'editing') controller.validate(field) }}>
-    <header className="custom-provider-header"><h2 tabIndex={-1}>{state.editing ? 'カスタムプロバイダーを編集' : 'カスタムプロバイダーを追加'}</h2>
+    onBlur={event => {
+      // Inserting an error during pointer-down can move the action before click.
+      if ((event.relatedTarget as Element | null)?.closest('m3e-button, m3e-icon-button')) return
+      const field = (event.target as HTMLElement).dataset.customField
+      if (field && state.phase === 'editing') controller.validate(field)
+    }}>
+    <header className="custom-provider-header"><h2 ref={heading => { heading?.setAttribute('autofocus', '') }} tabIndex={-1}>{state.editing ? 'カスタムプロバイダーを編集' : 'カスタムプロバイダーを追加'}</h2>
       <M3eIconButton aria-label="閉じる" onClick={leave}><Icon name="close" /></M3eIconButton></header>
     {state.phase === 'loading' && <p role="status">設定を読み込んでいます…</p>}
     {state.message && <div className="settings-notice"><p role="alert">{state.message}</p>
@@ -77,17 +104,17 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
         {!state.protocols.includes(draft.api) && <option value={draft.api}>現在の値は選択肢にありません</option>}
         {state.protocols.map(api => <option key={api} value={api}>{protocolNames[api] ?? api}</option>)}
       </select></label>{state.errors.api && <p role="alert" className="settings-error">{state.errors.api}</p>}</div>
-      <section aria-label="モデル" className="custom-models"><h3>モデル</h3>
+      <section aria-label="モデル" className="custom-models" tabIndex={-1} aria-invalid={Boolean(state.errors.models)}><h3>モデル</h3>
         {fieldDisabled('models') && state.phase === 'editing' && <p>このモデル一覧には保護された項目があるため変更できません。</p>}
         {draft.models.map((model, index) => <fieldset key={model.row} className="custom-model-row" disabled={fieldDisabled('models')}>
           <legend>モデル {index + 1}</legend>
           <Field label="モデル ID" fieldKey={`${model.row}.id`} value={model.id} disabled={fieldDisabled('models')} error={state.errors[`${model.row}.id`]} onChange={id => changeModel(model.row, { id })} />
           <Field label="モデル表示名（任意）" value={model.name} disabled={fieldDisabled('models')} onChange={name => changeModel(model.row, { name })} />
-          <details open={Boolean(state.errors[`${model.row}.contextWindow`] || state.errors[`${model.row}.maxTokens`] || state.errors[`${model.row}.input`]) || undefined}><summary>詳細</summary>
+          <details><summary>詳細</summary>
             <Field label="コンテキスト長" fieldKey={`${model.row}.contextWindow`} value={model.contextWindow} disabled={fieldDisabled('models')} inputMode="numeric" error={state.errors[`${model.row}.contextWindow`]} onChange={contextWindow => changeModel(model.row, { contextWindow })} />
             <Field label="最大出力トークン数" fieldKey={`${model.row}.maxTokens`} value={model.maxTokens} disabled={fieldDisabled('models')} inputMode="numeric" error={state.errors[`${model.row}.maxTokens`]} onChange={maxTokens => changeModel(model.row, { maxTokens })} />
             <p className="settings-field-help">空欄なら提供元の既定値を使います。</p>
-            <div className="custom-modalities"><p>入力種別</p><label><input type="checkbox" checked={model.inheritedInput} onChange={e => changeModel(model.row, { inheritedInput: e.target.checked })} />提供元の既定値を使う</label>
+            <div className="custom-modalities" tabIndex={-1} aria-invalid={Boolean(state.errors[`${model.row}.input`])}><p>入力種別</p><label><input type="checkbox" checked={model.inheritedInput} onChange={e => changeModel(model.row, { inheritedInput: e.target.checked })} />提供元の既定値を使う</label>
               {!model.inheritedInput && ['text', 'image'].map(value => <label key={value}><input type="checkbox" checked={model.input.includes(value)}
                 onChange={e => changeModel(model.row, { input: e.target.checked ? [...model.input, value] : model.input.filter(v => v !== value) })} />{value === 'text' ? 'テキスト' : '画像'}</label>)}
               {state.errors[`${model.row}.input`] && <p role="alert" className="settings-error">{state.errors[`${model.row}.input`]}</p>}

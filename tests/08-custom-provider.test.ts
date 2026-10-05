@@ -60,7 +60,7 @@ function harness() {
   row.value = { providers: {} }; row.base = { providers: {} }; row.user = {}
   const writes: { ops: SettingsOperation[]; revision: number }[] = []
   const keyWrites: string[] = []
-  let rejected = false, throwWrite = false, writable = true, missing = false, keyFails = false
+  let rejected = false, throwWrite = false, lostResult = false, writable = true, missing = false, keyFails = false
   let gate: Promise<void> | undefined
   const remote: Pick<ProviderRemote, 'settings' | 'llm'> = {
     settings: {
@@ -72,6 +72,7 @@ function harness() {
         if (rejected) return { ok: false, error: { code: 'settings/conflict', message: '', details: {} } }
         row.user = applyMockOperations(row, ops); row.value = structuredClone(row.user); row.revision++
         if (throwWrite) throw new Error('応答が失われた')
+        if (lostResult) return { ok: false, error: { code: 'gateway/internal', message: '', details: {} } }
         return { ok: true, value: structuredClone(row) }
       },
     },
@@ -88,7 +89,7 @@ function harness() {
   const store = createCustomProviderStore(remote, keys)
   const load = async () => { await store.load(); store.change(() => good(row)) }
   return { store, load, row, writes, keyWrites, keys,
-    controls: { conflict: () => { rejected = true }, lost: () => { throwWrite = true }, readonly: () => { writable = false }, missing: () => { missing = true }, keyFails: (next: boolean) => { keyFails = next }, gate: (next: Promise<void>) => { gate = next } } }
+    controls: { conflict: () => { rejected = true }, lost: () => { throwWrite = true }, lostResult: () => { lostResult = true }, readonly: () => { writable = false }, missing: () => { missing = true }, keyFails: (next: boolean) => { keyFails = next }, gate: (next: Promise<void>) => { gate = next } } }
 }
 
 test('I16 partial: 設定成功後はキーだけ再試行し入力を消して二重送信を防ぐ', async () => {
@@ -105,6 +106,16 @@ test('I16 partial: 設定成功後はキーだけ再試行し入力を消して�
   h.controls.keyFails(false); h.store.input.input('fake-second')
   assert.equal(await h.store.submit(), true)
   assert.equal(h.writes.length, 1); assert.deepEqual(h.keyWrites, ['fake-first', 'fake-second'])
+  const shared = harness()
+  shared.row.value = { providers: { 'LOCAL-API': {} } }; shared.row.user = structuredClone(shared.row.value)
+  await shared.load(); shared.store.input.input('fake-collision')
+  assert.equal(await shared.store.submit(), false)
+  assert.ok(shared.store.getSnapshot().errors.key)
+  assert.equal(shared.writes.length, 0)
+  shared.store.input.clear(); assert.equal(await shared.store.submit(), true)
+  await shared.store.load(); shared.store.input.input('fake-later-collision')
+  assert.equal(await shared.store.submit(), false)
+  assert.equal(shared.writes.length, 1); assert.equal(shared.keyWrites.length, 0)
 })
 
 test('I16 refusals: 競合とreadonlyと名前空間なしでは勝手に送信しない', async () => {
@@ -130,15 +141,17 @@ test('I16 close: 設定送信後に閉じると未送信キーと入力を破棄
 })
 
 test('I16 unknown: 結果不明の追加を読み直して編集に切り替え自動再送しない', async () => {
-  const h = harness(); await h.load(); h.controls.lost()
-  assert.equal(await h.store.submit(), false)
-  assert.equal(h.store.getSnapshot().phase, 'unknown')
-  assert.equal(await h.store.submit(), false); assert.equal(h.writes.length, 1)
-  await h.store.load()
-  assert.equal(h.store.getSnapshot().editing, true)
-  assert.equal(h.store.getSnapshot().draft!.id, 'local-api')
-  assert.equal(h.writes.length, 1)
-  h.store.input.input('fake-pending'); h.store.connectionChanged(false)
-  assert.equal(h.store.input.getSnapshot().draft, '')
-  assert.equal(await h.store.submit(), false)
+  for (const mode of ['lost', 'lostResult'] as const) {
+    const h = harness(); await h.load(); h.controls[mode]()
+    assert.equal(await h.store.submit(), false)
+    assert.equal(h.store.getSnapshot().phase, 'unknown')
+    assert.equal(await h.store.submit(), false); assert.equal(h.writes.length, 1)
+    await h.store.load()
+    assert.equal(h.store.getSnapshot().editing, true)
+    assert.equal(h.store.getSnapshot().draft!.id, 'local-api')
+    assert.equal(h.writes.length, 1)
+    h.store.input.input('fake-pending'); h.store.connectionChanged(false)
+    assert.equal(h.store.input.getSnapshot().draft, '')
+    assert.equal(await h.store.submit(), false)
+  }
 })
