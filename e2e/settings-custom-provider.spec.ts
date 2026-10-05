@@ -322,3 +322,28 @@ test('I16 UI late registration: 設定の保存中に別の名前空間で登録
   await expect(row(page)).toContainText('API キー：登録済み')
   await expect(page.locator('m3e-list-action').filter({ hasText: 'ディープシーク' })).toContainText('API キー：登録済み')
 })
+
+test('I16 UI fixed key: キーを変更できないカスタム行は理由を補い編集は残す', async ({ page }) => {
+  await expose(page)
+  for (const scenario of [undefined, 'settings-keys-readonly']) {
+    await visit(page, '/settings/providers', scenario)
+    await page.evaluate(async () => {
+      const settings = (window as any).__i16.remote.settings
+      const ns = (await settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-pi-ai')
+      if (!(await settings.mutate(ns.ns, [{ op: 'set', path: ['providers', 'fixed-key'], value: {
+        displayName: '試験提供元', api: 'openai-completions', baseURL: 'http://localhost:4321/v1', models: [{ id: 'one' }], apiKeyEnv: 'FIXED_KEY_API_KEY',
+      } }], ns.revision)).ok) throw new Error('設定できません')
+    })
+    const key = row(page).getByRole('button', { name: 'API キー', exact: true })
+    await expect(row(page).getByRole('button', { name: '編集', exact: true })).toBeEnabled()
+    if (scenario) {
+      await expect(row(page)).toContainText('API キー：未登録（変更できません）')
+      await expect(key).toBeDisabled()
+      await shot(page, 'i16-fixed-key')
+    } else {
+      await expect(row(page)).toContainText('API キー：未登録')
+      await expect(row(page)).not.toContainText('（変更できません）')
+      await expect(key).toBeEnabled()
+    }
+  }
+})
