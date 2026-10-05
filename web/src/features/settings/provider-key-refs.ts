@@ -25,13 +25,14 @@ const families: [string, string[]][] = [
 export const sharedKeyReferenceMessage = '別の提供元とキーの参照名が重なります。この画面ではキーを登録・削除できません。'
 export const pendingKeyReferenceMessage = 'キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。'
 export interface KeyDestination { id: string; ref?: string; usedRefs?: string[] }
+const defaultRefs = (id: string): string[] => Object.hasOwn(defaults, id) ? defaults[id]! : []
 export function usedKeyReferences(id: string, explicit?: string): string[] {
-  return [...new Set([...(explicit ? [explicit] : []), derivedKeyRef(id), ...(defaults[id] ?? [])])]
+  return [...new Set([...(explicit ? [explicit] : []), derivedKeyRef(id), ...defaultRefs(id)])]
 }
 export function keyReferenceConflict(rows: KeyDestination[], id: string, ref: string): boolean {
-  const builtinOwner = defaults[id]?.includes(ref) === true
-  return rows.some(row => row.id !== id && !(builtinOwner && defaults[row.id]?.includes(ref))
+  const builtinOwner = defaultRefs(id).includes(ref)
+  return rows.some(row => row.id !== id && !(builtinOwner && defaultRefs(row.id).includes(ref))
       && (row.usedRefs ?? usedKeyReferences(row.id, row.ref)).includes(ref))
-    || (!defaults[id]?.includes(ref) && Object.entries(defaults).some(([owner, refs]) => owner !== id && refs.includes(ref)))
+    || (!builtinOwner && Object.entries(defaults).some(([owner, refs]) => owner !== id && refs.includes(ref)))
     || families.some(([prefix, owners]) => ref.startsWith(prefix) && !owners.includes(id))
 }

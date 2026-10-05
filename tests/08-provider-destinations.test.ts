@@ -88,6 +88,8 @@ test('I16 destinations native: 明示参照のない標準の保存先と別名�
 })
 
 test('I16 destinations owners: 標準の本人は使えるが別IDと補助設定名は予約する', () => {
+  assert.deepEqual(usedKeyReferences('constructor'), ['CONSTRUCTOR_API_KEY'])
+  assert.equal(keyReferenceConflict([], 'constructor', 'CONSTRUCTOR_API_KEY'), false)
   for (const [id, ref] of [['deepseek-official', 'DEEPSEEK_API_KEY'], ['google', 'GEMINI_API_KEY'], ['moonshotai-cn', 'MOONSHOT_API_KEY']]) {
     assert.equal(keyReferenceConflict([], id!, ref!), false)
     assert.equal(keyReferenceConflict([{ id: id === 'deepseek-official' ? 'deepseek' : id!, ref }], id!, ref!), false)
