@@ -73,13 +73,22 @@ test('02f 処理エラーの表示', async ({ page }) => {
   await shot(page, '02-agent-error')
 })
 
-test('02g 読込エラーの再試行・一覧への復帰', async ({ page }) => {
+test('02g 読込エラーの再試行・一覧への復帰', async ({ page, browserErrors }) => {
+  async function expectSelectionDiagnostic() {
+    await expect.poll(() => browserErrors.length).toBe(1)
+    expect(browserErrors[0]).toMatch(/^会話を選択できませんでした: chat-open-error RemoteCallError: 会話が見つかりません。(?:\n|$)/)
+    // Consume only this verified diagnostic. The automatic fixture continues
+    // to reject all other console errors and unhandled exceptions.
+    browserErrors.shift()
+  }
   await visit(page, '/s/chat-open-error', 'open-error')
   await expect(page.getByRole('alert')).toBeVisible()
   await expect(page.getByLabel('メッセージ入力欄')).toHaveCount(0)
+  await expectSelectionDiagnostic()
   await shot(page, '02-open-error')
   await button(page, 'もう一度開く').click()
   await expect(page.getByRole('alert')).toBeVisible()
+  await expectSelectionDiagnostic()
   await button(page, '戻る').last().click()
   await expect(page).toHaveURL(/#\/$/)
 })
