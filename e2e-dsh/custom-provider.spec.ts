@@ -18,6 +18,7 @@ async function instrument(page: Page) {
               w.__customRemote = ctx.root.remote
               w.__settingsWrites = []
               w.__heldSettings = []
+              w.__keySends = 0
               const prototype = Object.getPrototypeOf(ctx.root.remote)
               const subscribe = prototype.$on, invoke = prototype.invoke
               prototype.$on = function(event: string, listener: (...args: any[]) => unknown) {
@@ -31,8 +32,12 @@ async function instrument(page: Page) {
                 const write = descriptor.namespace === 'settings' && ['mutate', 'update'].includes(descriptor.method)
                   ? { method: descriptor.method, revision: args[4][2], ops: args[4][1], code: 'pending' } : undefined
                 if (write) w.__settingsWrites.push(write)
+                // Count only; the submitted value is never recorded.
+                if (descriptor.namespace === 'credentials' && descriptor.method === 'set') w.__keySends++
                 const answer = await invoke.apply(this, args)
                 if (write) write.code = answer.ok ? 'ok' : answer.error.code
+                // The Host has applied the write; only this page's response waits.
+                if (write && w.__holdWriteResponse) { w.__holdWriteResponse = false; await new Promise<void>(resolve => { w.__releaseWrite = resolve }) }
                 return answer
               }
               return result
@@ -303,4 +308,69 @@ test('I16 real numeric ID: 数字始まりをキーなしで追加した後も�
       return (await remote.settings.mutate(ns.ns, [previous === null ? { op: 'unset', path: ['apiKeyEnv'] } : { op: 'set', path: ['apiKeyEnv'], value: previous }], ns.revision)).ok
     }, previous)).toBe(true)
   }
+})
+
+test('I16 real late registration: 設定の保存中に別の名前空間で登録された名前へキーを送らない', async ({ page, context, integration }) => {
+  await instrument(page); await openM3e(page, integration.host, '/settings/providers')
+  const second = await context.newPage(); await instrument(second)
+  await second.goto(`${integration.host.origin}/m3e/#/settings/providers`)
+  await expect(second.locator('m3e-list-action').filter({ hasText: /DeepSeek/ })).toBeVisible()
+  const registered = () => second.evaluate(async () => {
+    const answer = await (window as any).__customRemote.credentials.describe(['I16_LATE_API_KEY'])
+    if (!answer.ok) throw new Error('照会できません')
+    return answer.value.I16_LATE_API_KEY.configured
+  })
+  const keySends = () => page.evaluate(() => (window as any).__keySends)
+  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。'
+  await button(page, 'カスタムプロバイダーを追加').click()
+  await page.getByLabel('プロバイダー ID', { exact: true }).fill('i16-late')
+  await page.getByLabel('ベース URL', { exact: true }).fill('http://127.0.0.1:12345/v1')
+  await page.getByLabel('モデル ID', { exact: true }).fill('late-model')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-form-key')
+  expect(await registered()).toBe(false)
+  await page.evaluate(() => { const w = window as any; w.__holdWriteResponse = true; w.__keySends = 0 })
+  await button(page, '保存').click()
+  await expect.poll(() => page.evaluate(() => typeof (window as any).__releaseWrite)).toBe('function')
+  // The first page found the destination unregistered and its settings write is
+  // applied. Another namespace's provider names the same reference and
+  // registers its own key before the first page sends one.
+  const previous = await second.evaluate(async () => {
+    const remote = (window as any).__customRemote
+    const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-deepseek')
+    const prior = ns.user?.apiKeyEnv
+    if (!(await remote.settings.mutate(ns.ns, [{ op: 'set', path: ['apiKeyEnv'], value: 'I16_LATE_API_KEY' }], ns.revision)).ok) throw new Error('設定できません')
+    if (!(await remote.credentials.set('I16_LATE_API_KEY', 'synthetic-other-owner')).ok) throw new Error('登録できません')
+    return prior ?? null
+  })
+  try {
+    expect(await registered()).toBe(true)
+    await page.evaluate(() => (window as any).__releaseWrite())
+    await expect(form(page).getByRole('alert')).toHaveText(message)
+    expect(await keySends()).toBe(0)
+    expect((await snapshot(second)).providers['i16-late'].apiKeyEnv).toBe('I16_LATE_API_KEY')
+    await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-form-retry')
+    await button(page, 'API キーを保存').click()
+    await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+    await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeEnabled()
+    await expect(form(page).getByRole('alert')).toHaveText(message)
+    expect(await keySends()).toBe(0)
+    expect(await registered()).toBe(true)
+    await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+    // From the list no option is given: an explicit reference is registered as on main.
+    await expect(row(page, 'i16-late')).toContainText('API キー：登録済み')
+    await row(page, 'i16-late').getByRole('button', { name: 'API キー', exact: true }).click()
+    await page.getByLabel('API キー', { exact: true }).fill('synthetic-list-key')
+    await button(page, '保存').click()
+    await expect(page.locator('.settings-sheet')).toBeHidden()
+    expect(await keySends()).toBe(1)
+  } finally {
+    expect(await second.evaluate(async previous => {
+      const remote = (window as any).__customRemote
+      const removed = await remote.credentials.unset('I16_LATE_API_KEY')
+      const ns = (await remote.settings.describe()).value.namespaces.find((n: any) => n.ns === 'llm-deepseek')
+      const restored = await remote.settings.mutate(ns.ns, [previous === null ? { op: 'unset', path: ['apiKeyEnv'] } : { op: 'set', path: ['apiKeyEnv'], value: previous }], ns.revision)
+      return removed.ok && restored.ok
+    }, previous)).toBe(true)
+  }
+  await second.close()
 })

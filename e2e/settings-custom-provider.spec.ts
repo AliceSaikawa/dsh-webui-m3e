@@ -286,3 +286,39 @@ test('I16 UI reserved: 予約された参照名と理由と別IDの例を欄の�
   await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveAttribute('aria-invalid', 'true')
   expect(await writes(page)).toBe(0)
 })
+
+test('I16 UI late registration: 設定の保存中に別の名前空間で登録された名前へキーを送らず理由を出す', async ({ page }) => {
+  await expose(page); await visit(page, '/settings/providers', 'custom-slow'); await fill(page, 'late-api')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-form-key')
+  await page.evaluate(() => {
+    const w = window as any, credentials = w.__i16.remote.credentials, set = credentials.set
+    w.__i16keys = []
+    credentials.set = (ref: string, value: string) => { w.__i16keys.push(`${ref}=${value}`); return set(ref, value) }
+  })
+  await button(page, '保存').click()
+  await expect.poll(() => page.evaluate(() => (window as any).__i16.mock.remoteOf('customProviderTest').pendingSaves())).toBe(1)
+  // The form already found the destination unregistered. Another namespace's
+  // provider now names it and registers a key; llm-pi-ai's revision is unchanged.
+  await page.evaluate(async () => {
+    const remote = (window as any).__i16.remote
+    const ns = (await remote.settings.describe()).value.namespaces.find((row: any) => row.ns === 'llm-deepseek')
+    if (!(await remote.settings.update(ns.ns, { apiKeyEnv: 'LATE_API_API_KEY' }, ns.revision)).ok) throw new Error('設定できません')
+    if (!(await remote.credentials.set('LATE_API_API_KEY', 'fake-other-owner')).ok) throw new Error('登録できません')
+    ;(window as any).__i16.mock.remoteOf('customProviderTest').releaseSaves()
+  })
+  const message = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。'
+  await expect(form(page).getByRole('alert')).toHaveText(message)
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+  expect(await page.evaluate(() => (window as any).__i16keys)).toEqual(['LATE_API_API_KEY=fake-other-owner'])
+  expect(await writes(page)).toBe(1)
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-form-retry')
+  await button(page, 'API キーを保存').click()
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+  await expect(page.getByLabel('API キー（任意）', { exact: true })).toBeEnabled()
+  await expect(form(page).getByRole('alert')).toHaveText(message)
+  expect(await page.evaluate(() => (window as any).__i16keys)).toEqual(['LATE_API_API_KEY=fake-other-owner'])
+  expect(await writes(page)).toBe(1)
+  await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
+  await expect(row(page)).toContainText('API キー：登録済み')
+  await expect(page.locator('m3e-list-action').filter({ hasText: 'ディープシーク' })).toContainText('API キー：登録済み')
+})

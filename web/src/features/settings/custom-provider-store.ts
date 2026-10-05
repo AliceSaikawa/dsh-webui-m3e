@@ -24,6 +24,10 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
   let pendingKey: string | undefined
   let saving = false
   let committed = false
+  // The reference name this form assigned (or tried to assign) in its own save.
+  // Kept for the lifetime of the form: until its key is sent, a key found under
+  // that name was registered by someone else and must not be overwritten.
+  let assignedReference: string | undefined
   let references: string[] = []
   let changedDuringSave = false
   const listeners = new Set<() => void>()
@@ -104,7 +108,8 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
         const ops = customOperations(namespace, initial, draft, editing, Boolean(pendingKey))
         publish({ phase: 'savingSettings', message: null })
         const profile = valueAt(namespace.value, ['providers', target!])
-        if (pendingKey && !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)) {
+        const assigning = Boolean(pendingKey) && !(objectValue(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)
+        if (assigning) {
           const ref = providerRef(target!)
           const info = await inspectReference(ref)
           if (!active || generation !== epoch || !connected) return { ok: false, message: unknownMessage }
@@ -116,6 +121,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
             publish({ phase: 'editing', errors: { key: message } })
             return { ok: false, message }
           }
+          assignedReference = ref
         }
         if (ops.length) {
           const result = await remote.settings.mutate(CUSTOM_NS, ops, namespace.revision)
@@ -148,7 +154,7 @@ export function createCustomProviderStore(remote: Pick<ProviderRemote, 'settings
         const row = keys.getSnapshot().rows.find(row => row.id === target && row.ref === ref)
         const value = pendingKey
         pendingKey = undefined
-        const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch }) : { ok: false, message: '提供元の参照先が変わりました。設定を確認してください。' }
+        const outcome = row ? await keys.save(row, value, { canSend: () => active && connected && generation === epoch, requireMissing: ref === assignedReference }) : { ok: false, message: '提供元の参照先が変わりました。設定を確認してください。' }
         if (!active || generation !== epoch) return { ok: false, message: unknownMessage }
         if (!outcome.ok) {
           const message = `${partialMessage} ${outcome.message}`

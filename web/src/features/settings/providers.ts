@@ -45,7 +45,8 @@ export interface ProviderState {
   customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
-export interface KeySaveOptions { canSend?(): boolean }
+/** `requireMissing`: the caller has just assigned this reference name, so a key registered meanwhile is someone else's. */
+export interface KeySaveOptions { canSend?(): boolean; requireMissing?: boolean }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const derivedRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 
@@ -174,6 +175,7 @@ export function createProviderStore(remote: ProviderRemote) {
         referenceWritten = true
       }
       if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
+      if (options.requireMissing && row.status !== 'missing') return { ok: false, message: '設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。' }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
       if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
