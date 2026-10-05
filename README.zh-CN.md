@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-**0.0.8 正在准备发布。发布前，按名称安装会返回 npm 404。** 发布后，请在运行 DSH 的机器上执行：
+请在运行 DSH 的机器上执行：
 
 ```bash
 dsh plugin --profile web add dsh-webui-m3e
@@ -26,9 +26,11 @@ dsh plugin --profile web add dsh-webui-m3e
 
 `web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
 
-仅支持 **DSH 0.2.0-rc.2**，运行环境要求 Node.js 22 或更高版本。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**（验证环境：macOS 27.2、Node.js 26.7.0、pnpm 11.17.0）。无需获取 M3E 源码、手动构建或安装开发依赖。
+仅支持 **DSH 0.2.0-rc.2**。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
 
-添加后，先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。在隔离的普通 CLI 环境中，从未安装状态添加 M3E 无需重启 Host 即可生效。更新和回退时，界面文件先发生变化，Host 代码在重启前仍是原来的版本，因此更新或回退后必须重启该配置档案的 Host。
+M3E 无需另外安装运行时依赖包，也无需获取 M3E 源码、手动构建或安装开发依赖。
+
+添加后，先在标准界面（`http://<host>/?ui=classic`）登录，再打开 `http://<host>/m3e/`。更新或回退后必须重启该配置档案的 Host，以切换 Host 代码的版本。
 
 Desktop 有[上游关于内置 pnpm 的说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)。本版本尚未在此环境中验证 Desktop，普通 CLI 的验证结果不代表 Desktop 已验证。
 
@@ -44,9 +46,9 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.0-rc.2**（已使用真实的 DSH 和模拟的 LLM 验证启动、发送、停止、审批、提问、重新连接等）
+- DeepSeek Harness **0.2.0-rc.2**
   - 已移除对 0.1.5 系列的支持。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
-- Node.js 22 或更高版本，以及 PATH 中的 pnpm（普通 CLI）。无需构建 M3E。
+- 满足 DSH 和 pnpm 要求的 Node.js，以及 PATH 中的 pnpm（普通 CLI）。版本要求见上面的 Quick Start。
 
 ## 更新、版本确认与卸载
 
@@ -56,7 +58,7 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新时，用明确指定的已发布兼容版本重新添加同名软件包。下面是迁移到首个 registry 版本的示例（发布后执行）。已通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
+更新时，用明确指定的已发布兼容版本重新添加同名软件包。下面是迁移到 0.0.8 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
 
 ```bash
 dsh plugin --profile web add dsh-webui-m3e@0.0.8
@@ -68,13 +70,13 @@ dsh plugin --profile web add dsh-webui-m3e@0.0.8
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-卸载前，请打开 `http://<host>/?ui=classic`，卸载后仍可使用该标准界面。在验证环境中，卸载无需重启即可生效，`/m3e/` 返回 404。重启后也确认了标准界面和已保存的会话仍可访问：
+卸载前，请打开 `http://<host>/?ui=classic`。卸载后 `/m3e/` 返回 404，请使用该标准界面：
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-已在隔离环境中手动验证本地 tgz 的添加、更新、回退和卸载：一个工作区、一段会话以及另一个内置插件的 Shell 设置均得到保留。这一完整流程没有自动化测试。通过 registry 操作、第三方插件和长期使用的既有数据仍未验证。遇到 404 请检查发布状态和版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
+下载时遇到 404，请检查软件包名称和已发布的版本；找不到 pnpm 时检查 PATH；界面未出现时检查配置档案并重启 Host。CLI 失败时还会输出诊断日志位置。
 
 从源码构建请参阅[开发与分发指南](docs/development.md#配布)（日文）。
 
@@ -98,7 +100,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 
 - 界面文字仅提供日语。
 - 插件随附 DSH 的内部库（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`），因此可能无法在某些 DSH 版本上运行。
-- 界面测试主要使用模拟数据。与 DSH 的连接使用与生产环境隔离的真实 DSH 和模拟的 LLM 进行验证。本次迁移尚未使用真实 LLM 或 iPhone 验证。开发方法和工作原理见 [docs/development.md](docs/development.md)。
+- 开发方法、工作原理和验证记录见 [docs/development.md](docs/development.md)。
 
 ## 许可证
 

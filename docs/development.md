@@ -98,7 +98,9 @@ DSH に入れる手順は README の「Quick Start」にあります。
 
 公開名は `dsh-webui-m3e`、準備中の版は **0.0.8**、対応する DSH は **0.2.0-rc.2 のみ**です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開・タグ・GitHub Releases・CI の追加は今回行っていません。
 
-配布判定の単体試験 16 件と各試験の変異検証を追加し、稼働中の追加・更新・旧版復帰・削除とデータ保持を隔離環境で手動確認しました。`e2e-dsh/dsh-host.ts` の単独パッチと、代替の `e2e-dsh/plugin-cli.ts` の追加は、それぞれ 1 回試して保護フックに拒否されました。同じ変更を別手段で再試行していません。利用者の指定した代替手順に従い、導入ライフサイクルの自動の試験は無いまま、下記の手動結果を残しています。公開権限・2 要素認証は公開する人の環境で確認が必要です。
+**0.0.8 は未公開。マージと公開は続けて行います。公開までは、名前だけでの追加は 404 になります。** README は npm に掲載する公開後の利用手順として書いています。公開状況と検証記録はこの文書、`dsh-compatibility.md`、`handoff.md` で管理します。
+
+配布判定の単体試験はレビュー対応で 26 件になり、監査の 35 変異と追加の 11 変異をすべて検出しました。稼働中の追加・更新・旧版復帰・削除とデータ保持は、前回の隔離環境での手動確認を引き継ぎます。`e2e-dsh/dsh-host.ts` の単独パッチと、代替の `e2e-dsh/plugin-cli.ts` の追加は前回、それぞれ 1 回試して保護フックに拒否されました。同じ変更を別手段で再試行していません。利用者の指定した代替手順に従い、導入ライフサイクルの自動の試験は無いまま、下記の手動結果を残しています。公開権限・2 要素認証は公開する人の環境で確認が必要です。
 
 ### ソースからのビルドと配布物の検査
 
@@ -112,7 +114,9 @@ pnpm pack --pack-destination tmp/release
 node scripts/check-pack.ts tmp/release/dsh-webui-m3e-0.0.8.tgz
 ```
 
-Node.js・pnpm・npm と `tar` が必要です。開発では TypeScript ファイルを Node で直接実行するため、その実行に対応した Node を使います（今回の実行版は 26.7.0）。配布する JavaScript の最低 Node は従来どおり 22 です。最低版での追加検証はしていません。
+Node.js・pnpm・npm と `tar` が必要です。開発では TypeScript ファイルを Node で直接実行するため、その実行に対応した Node を使います。確認環境は macOS 27.2（26B5086k）、Node 26.7.0、pnpm 11.17.0、npm 11.19.0 です。DSH 0.2.0-rc.2 自身の manifest に engines はありませんが、CLI の commander 15.0.0 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を宣言しています。最低版での実行は未検証であり、M3E が Node 22 の初期版から動くとは案内しません。
+
+M3E の根拠が不足していた `engines.node: >=22` は削除しました。M3E の実行時 dependencies は空で、依存側の宣言と M3E の検証済み下限は別です。根拠は隔離 DSH の `node_modules/commander/package.json:60` と通常 CLI の pnpm の `package.json:63`、`bin/pnpm.mjs:6-18`。tmp の依存無し tgz に試験用 `engines.node: >=99` を付けて Node 26.7.0 の pnpm 11.17.0 で追加すると、既定では警告無し・exit 0、`--config.engine-strict=true` では `ERR_PNPM_UNSUPPORTED_ENGINE`・exit 1 でした。engines を書くだけで動作確認の代わりにはならず、未確認の下限で利用を拒むことも避けるため、今回は新しい下限を宣言していません。
 
 `prepack` が build → check:pack の順に実行します。`pnpm pack` と `npm pack` の両方で実際に発火を確認しました。`npm publish` も同じ prepack を使うことは [npm の lifecycle の説明](https://docs.npmjs.com/cli/v11/using-npm/scripts/#life-cycle-operation-order)に基づきます。公開コマンド自体は実行していません。公開はソースのルートから行い、`--ignore-scripts` でこの仕組みを無効化しないでください。作成済み tgz をそのまま publish する経路には、再ビルドの保証はありません。
 
@@ -120,7 +124,13 @@ Node.js・pnpm・npm と `tar` が必要です。開発では TypeScript ファ�
 
 検査対象は、package.json、Host/client の JS、HTML、JS/CSS assets、patch、LICENSE、3 言語 README の存在です。配布先の main/exports、package と patch の名前、bundle 宣言、実行時依存が空であること、利用者側の preinstall/install/postinstall/prepare が無いことも調べます。許可するファイルの一覧にないソース・試験・docs・tmp・設定・マップなどは拒否します。JS/CSS の sourceMappingURL と、配布テキストの利用者ホームの絶対パスも拒否します。
 
-偽データは `web/src/main.tsx:12-13` の DEV 分岐からのみ読み、`web/src/dsh/mock/index.ts` が feature の mock を登録します。検査は `readme-review`、`approval-sheet`、`__m3eTest`、`createMockContext`、`mock/open-failed`、`/mock/` を成果物 JS の目印とします。本番のエラー案内にもある `?mock` という文字だけは拒否しません。Vite と build-plugin はソースマップを有効にしておらず、実際の 19 ファイルにもマップはありません。`tests/18-pack.test.ts` の 16 件が正常系と具体的なエラー文字列を確認します。通常の `pnpm test` に含まれます。
+Vite 7.3.6 の既存成果物は `index-BL75o79i.js`、`index-2YhsQp64.css`、`material-symbols-outlined-DzyP15l8.woff2` でした。`vite.config.ts` に `[name]-[hash:8]` の出力形式を明記し、assets の許可条件も名前＋8文字ハッシュと小文字の js/css/woff2 に限定しました。開発用のドット入りの名前、サブディレクトリ、想定外の拡張子は拒否します。出力設定を変える際は正常系の fixture と許可条件も見直し、実 tgz の `check:pack` を通してください。tgz の生の名前は純粋関数 `parsePackEntries` で先に検査し、`package/` 外のファイル・ディレクトリを、内容を読まずに `invalid archive root` で拒否します。
+
+偽データの起動は `web/src/main.tsx:12-13` の DEV 分岐から行い、`web/src/dsh/mock/index.ts` が feature の mock を登録します。Vite の `productionModuleGuard` は、生成チャンクの `modules` に偽データ用モジュールが 1 つでもあればビルドを止めます。対象は `web/src/dsh/mock/` と、features 内の `mock*.ts(x)`、`*-mock*.ts(x)`、`*-fixtures.ts(x)`。現在の 30 ファイル全件を `tests/18-pack.test.ts` の一覧で照合し、Windows の区切りと query 付き id も検査します。
+
+唯一の例外は `web/src/dsh/mock/observable.ts` です。このファイルは通知・購読・スナップショットの汎用処理だけを持ち、偽 workspace・controller・記録は生成しません。本番の `completion-status.ts:2` と `conversation-selection.ts:2` が利用しているため、ファイル名の完全一致だけを許可しています。同じ場所の別名ファイルは拒否します。
+
+tgz 内でも `readme-review`、`approval-sheet`、`__m3eTest`、`createMockContext`、`mock/open-failed`、`/mock/` を JS の目印として検査します。これはモジュール検査を補うもので、目印だけに依存しません。本番の案内にもある `?mock` の文字だけは許可します。Vite と build-plugin はソースマップを有効にしておらず、実際の 19 ファイルにもマップはありません。`tests/18-pack.test.ts` の 26 件が正常系と具体的なエラー文字列を確認し、通常の `pnpm test` に含まれます。
 
 `e2e-dsh` の明示的 build と prepack の build が重なる状態です。解消パッチが拒否されたため、利用者の指定どおり二重ビルドを残しました。結果は変わらず、実行時間だけが増えます。`M3E_SKIP_BUILD=1` は既存の明示的 build を省く指定で、prepack のビルドと検査は省かれません。
 
@@ -187,7 +197,49 @@ env HOME="$PWD/tmp/issue18-cli/home" DSH_HOME="$PWD/tmp/issue18-cli/dsh-home" tm
 
 この導入ライフサイクルの自動の試験はありません。第三者プラグイン、長期利用の既存データ、本物の LLM、Desktop は未検証です。公開後は registry 経由でも下の手順を実行します。
 
-手動確認で使うコマンドの形は次のとおりです。既存補助を Node REPL で起動し、表示された隔離 HOME を別端末の `read` に入力します（全体 e2e とは同時に動かさないでください。全体 e2e は古い `run-*` を片付けます）。
+#### 比較用 tgz を再現する
+
+リポジトリのルートで、未使用の `tmp/issue18-compare/` を使います。元の版は 0.0.8 のまま、コピーだけを試験用の 0.0.10 にします。既存のフォルダがある場合は全コマンドで別の名前に揃えてください。このコピーは公開しません。
+
+```bash
+mkdir -p tmp/issue18-compare/next
+pnpm pack --pack-destination tmp/issue18-compare/base
+tar -xzf tmp/issue18-compare/base/dsh-webui-m3e-0.0.8.tgz -C tmp/issue18-compare/next
+```
+
+`tmp/issue18-compare/make-copy.mjs` に次を保存します。HTML の `<head>` と Host の 2 箇所の 200 応答だけに印を付け、想定した差分を当てられない場合は停止します。
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs'
+import assert from 'node:assert/strict'
+const dir = new URL('./next/package/', import.meta.url)
+const read = path => readFileSync(new URL(path, dir), 'utf8')
+const write = (path, text) => writeFileSync(new URL(path, dir), text)
+const manifest = JSON.parse(read('package.json'))
+assert.equal(manifest.version, '0.0.8')
+const html = read('dist/index.html')
+assert.equal(html.split('<head>').length, 2)
+const host = read('lib/index.js')
+const response = 'res.writeHead(200, {'
+assert.equal(host.split(response).length - 1, 2)
+manifest.version = '0.0.10'
+write('package.json', JSON.stringify(manifest, null, 2) + '\n')
+write('dist/index.html', html.replace('<head>', '<head><meta name="issue18-copy-version" content="0.0.10">'))
+write('lib/index.js', host.replaceAll(response, response + ' "x-issue18-host-version": "0.0.10",'))
+```
+
+```bash
+node tmp/issue18-compare/make-copy.mjs
+cd tmp/issue18-compare/next/package
+npm pack --ignore-scripts
+cd ../../../..
+```
+
+ここだけ `--ignore-scripts` を使うのは、ビルド済みの比較用コピーの印を保持するためです。公開用の pack/publish では使いません。元の tgz は `base/dsh-webui-m3e-0.0.8.tgz`、比較用は `next/package/dsh-webui-m3e-0.0.10.tgz` です。この作成手順はレビュー対応時にそのまま実行し、コピーの版・HTML の印・Host の 2 箇所の印と、リポジトリの版が 0.0.8 のままであることを確認しました。前回の Host 実測では、新版への更新直後は HTML の meta だけが変わり、再起動後に Host ヘッダーも `0.0.10` になりました。元へ戻すときは逆に、再起動まで新版のヘッダーが残りました。
+
+#### 同じ環境で追加・更新・復帰・削除する
+
+既存補助を Node REPL で起動し、表示された隔離 HOME を別端末の `read` に入力します（全体 e2e とは同時に動かさないでください。全体 e2e は古い `run-*` を片付けます）。
 
 ```bash
 node --experimental-repl-await
@@ -206,26 +258,26 @@ var page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 await openM3e(page, host)
 ```
 
-画面から上記の workspace・会話・設定を作ります。次は実際に使ったコピーのパスです。再実行時は同じ構成の作業用コピーを用意してください。
+画面から上記の workspace・会話・設定を作ります。次は直前の手順で作った比較用 tgz を使います。コマンドを一段階ずつ実行し、上の結果表どおりに再起動の前後を確認してください。
 
 ```bash
 read M3E_TEST_HOME
 dsh_lifecycle() {
   env HOME="$M3E_TEST_HOME" DSH_HOME="$M3E_TEST_HOME/../dsh-home" "$PWD/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/.bin/dsh" "$@"
 }
-dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/next10/package/dsh-webui-m3e-0.0.10.tgz"
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-compare/next/package/dsh-webui-m3e-0.0.10.tgz"
 dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
 # 画面とヘッダーを確認し、REPL の await host.restart() 後にも確認
-dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/dsh-webui-m3e-0.0.8.tgz"
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-compare/base/dsh-webui-m3e-0.0.8.tgz"
 dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
 # 前後を確認。削除前には標準画面 /?ui=classic を開く
 dsh_lifecycle plugin --profile web remove dsh-webui-m3e
 dsh_lifecycle plugin --profile web list dsh-webui-m3e --depth 0 --json
 # 削除後と再起動後を確認してから、未導入状態へ再追加
-dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-lifecycle/next10/package/dsh-webui-m3e-0.0.10.tgz"
+dsh_lifecycle plugin --profile web add "file:$PWD/tmp/issue18-compare/next/package/dsh-webui-m3e-0.0.10.tgz"
 ```
 
-REPL で HTTP の結果を確認する例です。標準画面は削除前後に実際に開き、workspace と会話を選んで本文を確かめます。再起動は各段階の確認後に `await host.restart()`、認証と M3E の再表示は `await openM3e(page, host)` で行います。
+REPL で HTTP の結果を確認する例です。標準画面は削除前後に実際に開き、workspace と会話を選んで本文を確かめます。再起動は各段階の確認後に `await host.restart()`、M3E が入っている段階の認証と再表示は `await openM3e(page, host)` で行います。削除中は M3E を開かず、`await page.goto(host.loginUrl)` の後に `await page.goto(host.origin + '/?ui=classic')` で標準画面へ入ります。
 
 ```js
 var response = await page.request.get(host.origin + '/m3e/')
@@ -242,16 +294,16 @@ await llm.close()
 | 確かめ方 | 結果 |
 |---|---|
 | `pnpm typecheck` | 成功 |
-| `pnpm test` | 1,027 件成功、skip なし。配布検査の新規 16 件を含む |
+| `pnpm test` | 1,037 件成功、skip なし。配布検査 26 件を含む |
 | `pnpm build` | 成功。既存のチャンクサイズ警告は残る |
-| `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` | 偽データ 159 件成功（約 4.3 分）、skip なし |
-| `env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000` を 2 回 | 各 34 件が想定どおり。各回とも通常成功 33 件＋既知の差の期待失敗 1 件、予期しない失敗・skip なし（約 2.1 分／2.0 分） |
+| `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` | この worktree 指定の 5218 で偽データ 159 件成功（約 5.6 分）、skip なし。公開者用の既定手順は下記の管理済み設定を使う |
+| `env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000` を 2 回 | 各 34 件が想定どおり。各回とも通常成功 33 件＋既知の差の期待失敗 1 件、予期しない失敗・skip なし（約 3.1 分／3.0 分） |
 | `pnpm run check:pack`、pnpm と npm の実 tgz に `node scripts/check-pack.ts <tgz>` | 19 ファイルで成功 |
-| `pnpm pack` と `npm pack` | 両方 prepack の build → check を実行。npm では `lib/index.js` を一時的な古い印に置き換えても、tgz には再ビルド済みのコードが入ることを確認 |
-| `npm pack` の tgz を隔離 DSH に file: で追加 | exit 0、追加されたパッケージは M3E 1 個。利用側のビルドは走らない |
-| 検査スクリプト 2 ファイルへの追加の TypeScript 検査 | 成功（既存の typecheck の対象外なので個別に確認） |
+| `pnpm pack` と `npm pack` | 修正後も両方で prepack の build → check を実行し、外側の tgz も各 19 ファイルで成功。初回作業では古い印を付けた `lib/index.js` が再ビルドされることも確認 |
+| `npm pack` の tgz を隔離 DSH に file: で追加（初回作業） | exit 0、追加されたパッケージは M3E 1 個。利用側のビルドは走らない |
+| 検査スクリプト 2 ファイルへの追加の TypeScript 検査（初回作業） | 成功。`scripts` と `tests` は `tsconfig.host.json` の include にあり、通常の `pnpm typecheck` の対象にも含まれる |
 
-実 DSH の初回作業の結果は `tmp/issue18-cli/real-run-1.json` と `real-run-2.json`、今回の追加確認の結果は `tmp/issue18-lifecycle/real-run-1.json` と `real-run-2.json` に保存しています。`e2e-dsh` の成功は file: 導入後の `/m3e/` と通信の根拠です。npm レジストリの名前だけの成功や、導入ライフサイクルのデータ保持まで含めません。後者は上記の手動確認と区別しています。
+実 DSH の初回作業の結果は `tmp/issue18-cli/real-run-1.json` と `real-run-2.json`、手動確認を追加した時点は `tmp/issue18-lifecycle/real-run-1.json` と `real-run-2.json`、レビュー修正後の今回の結果は `tmp/issue18-review/real-run-1.json` と `real-run-2.json` に保存しています。`e2e-dsh` の成功は file: 導入後の `/m3e/` と通信の根拠です。npm レジストリの名前だけの成功や、導入ライフサイクルのデータ保持まで含めません。後者は上記の手動確認と区別しています。
 
 次は初回作業で **tmp 内の実 tgz を壊して配布検査を直接実行した結果**です。すべて exit 1 で該当する理由を表示しました。これとは別に、追加した単体試験ごとの本体変異も下表のとおり確認しました。
 
@@ -270,7 +322,7 @@ await llm.close()
 
 破損コピーと結果は `tmp/issue18-cli/mutant-*/` に残しました。本体への破損変更は残していません。
 
-`tests/18-pack.test.ts` の 16 件について、1 件ずつ `scripts/pack-contract.ts` の該当判定を一時的に外し、`node --experimental-strip-types --test --test-name-pattern='<対象試験名>' tests/18-pack.test.ts` が **AssertionError、exit 1** になることを確認しました。各回に本体を復元し、最後に元の内容との完全一致と 16 件すべての成功を確認しています。判定を外したのに成功する試験はありませんでした。
+以下は初回追加確認（`2ade474`）時点の 16 件の記録です。1 件ずつ `scripts/pack-contract.ts` の該当判定を一時的に外し、`node --experimental-strip-types --test --test-name-pattern='<対象試験名>' tests/18-pack.test.ts` が **AssertionError、exit 1** になることを確認しました。各回に本体を復元し、最後に元の内容との完全一致と 16 件すべての成功を確認しています。この後の独立監査で入力の境界不足が見つかったため、レビュー対応で下記の確認を追加しました。行番号は初回時点のものです。
 
 | 試験 | 一時的に壊した判定（pack-contract.ts の行） | 結果 |
 |---|---|---|
@@ -293,13 +345,52 @@ await llm.close()
 
 結果と各回のログは `tmp/issue18-mutations/report.json` と `1.txt`〜`16.txt` にあります。単体試験だけのパッチは通りました。Host 補助の単独パッチは `M3E_SKIP_BUILD` を含む環境変数参照行、代替補助は環境変数を展開する行が保護対象文字列に見えた可能性があります。フックは理由を「protected path or sensitive filename pattern」としか示さず、原因文字列は特定できていません。変異確認の最初の長いシェル呼び出しも形式を理由に拒否されましたが、共通の決まりで許可されたコマンド形式の修正だけを行い、tmp の作業スクリプトを直接実行しました。
 
+#### レビューと独立監査の指摘への対応
+
+監査で生存した M04/M05/M07/M14/M22/M35 を含め、35 変異を修正後の本体に当て直し、すべて検出しました。追加の 11 変異も検出し、計 46/46 が AssertionError・exit 1 です。M05/M07 は新しいハッシュ付きの名前でもサブディレクトリ／txt を許可する同じ変更、M35 は同一行の空白を必須から任意にする同じ変更を適用しました。1 変異ごとに `git restore` し、修正済みの本体との完全一致を確認しています。
+
+以下は 26 試験それぞれを実際に落とした変更です。未変更の試験も含めて当て直しました。場所は原則 `scripts/pack-contract.ts`、最後の 2 件は `scripts/production-modules.ts` です。
+
+| 試験 | 本体を一時的に壊した箇所・内容 | 検出 |
+|---|---|---|
+| 正常系・prepack・固定公開ファイル | M04: 許可一覧から sw.js を除く | exit 1 |
+| 必須ファイル | M02: 必須ファイル検査を除く | exit 1 |
+| JS/CSS 必須 | M08: assets の存在検査を除く | exit 1 |
+| 開発用ファイル・設定・map | M10: 許可パス検査を除く | exit 1 |
+| 空白・タブを含む sourceMappingURL（JS/CSS） | M14: 空白を扱わない式にする。M15: CSS を検査しない | exit 1 |
+| 偽データの目印 | M16: JS を検査しない | exit 1 |
+| 利用者の絶対パス | M12: Windows の検査を除く | exit 1 |
+| 重複 | M18: 重複検査を除く | exit 1 |
+| 不正 manifest | M20: parse エラーの記録を除く | exit 1 |
+| private | M21: true/false を反転 | exit 1 |
+| package/patch の名前 | M23: 名前の一致検査を除く | exit 1 |
+| 実行時依存 | M25: 非空の依存を許可 | exit 1 |
+| 利用者側 lifecycle | M27: prepare を許可 | exit 1 |
+| main の参照先 | M28: ファイル存在検査を除く | exit 1 |
+| exports の参照先 | M31: 先頭の export だけを検査 | exit 1 |
+| bundle 宣言 | M34: patch 宣言検査を除く | exit 1 |
+| assets 内の開発用の名前 | N01: ハッシュを要求せずドットも許可 | exit 1 |
+| assets の下の階層・拡張子 | M05: スラッシュを許可。M07: txt を許可 | exit 1 |
+| file URL のホームパス | N04: file URL の検査を除く | exit 1 |
+| Windows の大小文字 | N05: 大小文字を区別する式にする | exit 1 |
+| patch の name が 2 件 | M22: name の件数検査を除く | exit 1 |
+| 字下げのない name（先頭改行も確認） | M35: 字下げを任意にする | exit 1 |
+| 正常な生の tar 名と directory record | N03: directory record をファイル扱いにする | exit 1 |
+| package/ 外の生の tar 名 | N02: package/ 必須検査を除く | exit 1 |
+| 偽モジュール 30 ファイル | N06/N07: shared/feature の判定を除く。N09: Windows 正規化を除く | exit 1 |
+| 本番モジュールと observable の例外 | N08: 例外を除く。N11: 例外を別名ファイルにも広げる | exit 1 |
+
+記録は `tmp/issue18-review/mutations/report.json` と各 ID のログです。実 tgz も、監査で通った A12 と、新しく作った package/ 外のハッシュ付き JS、ルートの lib/index.js への置換、assets 内の example.test.js の計 4 件をすべて exit 1 で拒否しました。ルート違反は `invalid archive root`、開発用 JS は `unexpected` です。
+
+モジュール検査の実物確認として、本番の `web/src/main.tsx` に `applyMockOperations` の import と `Object.assign(globalThis, { issue18InjectedMock: applyMockOperations })` を一時追加しました。`pnpm run build:web` は `mock module in production: …/features/settings/mock-mutations.ts` を示して exit 1 になりました。単なる未使用 import ではなく、出力に残る参照を作って確認しています。直後に `git restore web/src/main.tsx` で戻し、通常の build 成功を確認しました。
+
 Issue の受け入れ条件は次の状態です。
 
 | 項目 | 判定 |
 |---|---|
-| 1. 公開名・権限・対応版と配布検査 | 満たせない（公開権限のみ）。名前・対応版・配布物の検査・単体 16 件と変異検証は完了。公開アカウントへの認証確認は範囲外なので、権限は公開する人が確認する |
+| 1. 公開名・権限・対応版と配布検査 | 満たせない（公開権限のみ）。名前・対応版・配布物の検査・単体 26 件、46 変異、偽モジュール混入によるビルド失敗は確認済み。公開アカウントへの認証確認は範囲外なので、権限は公開する人が確認する |
 | 2. クリーン環境で名前だけの導入 | 公開のあとでないと確かめられない。現在は 404。file: と `/m3e/` は確認済み |
-| 3. pnpm と Desktop の前提・環境記録 | 満たした。通常 CLI の実物と環境を記録し、Desktop は上流リンクと未検証を明記 |
+| 3. pnpm と Desktop の前提・環境記録 | 満たした。通常 CLI・commander・pnpm の宣言と実測環境を区別し、Node 下限の保証を撤回。Desktop は上流リンクと未検証を明記 |
 | 4. tgz からの移行・公開版の更新 | 公開のあとでないと確かめられない。ローカル tgz の版切替は成功。registry への参照切替、公開旧版→新版を追加確認する |
 | 5. 設定・他プラグイン・会話の保持 | 満たした（隔離したローカル tgz の手動確認範囲）。1 workspace・1 会話と返答・別の組込みプラグインの設定を追加／更新／復帰／削除の前後で保持。第三者プラグインと長期利用データは未検証。registry 経由でも公開後に確認する |
 | 6. 前提不足・誤プロファイル・取得失敗の案内 | 満たした。PATH 不足 127、404、無効名、打ち間違いによる別 profile 作成を再現し、確認先を記載 |
@@ -307,15 +398,20 @@ Issue の受け入れ条件は次の状態です。
 
 ### 公開する人の手順
 
-公開名が未登録だったことは公開権限の証明にはなりません。アカウント、名前を取得できること、アクセス権、2 要素認証は公開する人が自分の環境で確認します。ここではログイン・認証確認も実行していません。上記の手動確認範囲と残る未検証事項を確認し、次の検査を済ませてから公開します。
+順番は **PR をマージ → main の先頭で下記の確認 → 公開者が npm publish → 公開後の確認 → 結果を文書へ記録**です。マージと公開は続けて行います。この作業ではマージ・認証・公開を行っていません。
+
+公開者は npm のアカウント画面で公開に使うアカウントを確認し、[スコープ無しパッケージの公開手順](https://docs.npmjs.com/creating-and-publishing-unscoped-public-packages/)に沿って準備します。`npm view dsh-webui-m3e versions --json` で名前と公開済みの版を再確認し、既に名前が存在する場合は自分に公開権限があることも確認します。404 は名前が未登録であるという結果であり、権限の証明にはなりません。対話的な公開に備え、[2 要素認証の設定と公開時の確認](https://docs.npmjs.com/requiring-2fa-for-package-publishing-and-settings-modification/)を公開者自身の環境で済ませてください。
+
+PR をマージした後、新しく clone した main または更新済み main のルートで実行します。`git branch --show-current` が main、`git status --short` が空であることを確認し、`git rev-parse HEAD` と `git ls-remote origin refs/heads/main` のハッシュを照合します。異なる場合は公開せず、main の先頭を用意し直します。
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
 pnpm typecheck
 pnpm test
 pnpm build
 pnpm run check:pack
-pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000
+pnpm exec playwright test -c e2e/playwright.config.ts --global-timeout=600000
 env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
 env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
 pnpm pack --pack-destination tmp/release
@@ -325,11 +421,36 @@ npm pack --pack-destination tmp/release-npm
 node scripts/check-pack.ts tmp/release-npm/dsh-webui-m3e-0.0.8.tgz
 ```
 
+既定の 5191 が使用中の場合だけ、空きポートを選んで一時設定を用意します。たとえば 5218 が空いていれば `mkdir -p tmp` を行い、`tmp/e2e-alt-port.config.ts` に次を保存します。baseURL・command・port の数値はすべて同じ値に揃え、既存サーバーは流用しません。
+
+```ts
+import base from '../e2e/playwright.config.ts'
+import { fileURLToPath } from 'node:url'
+export default {
+  ...base,
+  testDir: fileURLToPath(new URL('../e2e/', import.meta.url)),
+  use: { ...base.use, baseURL: 'http://localhost:5218' },
+  webServer: { ...base.webServer, command: 'pnpm exec vite --host 127.0.0.1 --port 5218 --strictPort', port: 5218 },
+}
+```
+
+この場合だけ、確認の列の偽データ e2e を `pnpm exec playwright test -c tmp/e2e-alt-port.config.ts --global-timeout=600000` に置き換えます。新規 clone の既定手順は管理済みの設定だけで実行できます。
+
 すべてを確認した公開者だけが、リポジトリのルートで次を実行します。この作業では実行していません。
 
 ```bash
 npm publish
 ```
+
+続けて次節の名前だけでの追加・版確認・`/m3e/`・削除と標準画面を確認します。完了したら README 以外の次の場所へ、公開日、版、main のハッシュ、実行環境、コマンド、結果、残る未検証事項を記録します。
+
+| 更新する場所 | 更新する内容 |
+|---|---|
+| この文書の「配布」「今回の検証結果」「受け入れ条件」「公開のあとに確かめること」 | 未公開の注意を公開済みの事実へ更新し、公開後の結果と判定を追記。2026-10-05 の 404 は過去の実測として残す |
+| `docs/dsh-compatibility.md` の「npm 配布版 0.0.8 の準備」 | 公開版の導入・更新・復帰で確認できた範囲と残件を更新 |
+| `docs/handoff.md` の「npm 配布の準備」 | 公開日・版・検証結果と次に渡すことを更新 |
+
+公開後に問題があれば、基本は版を上げて修正します。[npm の取り消しポリシー](https://docs.npmjs.com/policies/unpublish/)では、新規パッケージの公開から 72 時間以内でも、他の公開パッケージから依存されていないことが条件です。それ以後は、依存されていないことに加え、直近 1 週間のダウンロード数が 300 未満、所有者／管理者が 1 人という条件があります。取り消しても同じ名前と版の組合せは再利用できず、取り消し自体も戻せません。取り消せない場合の非推奨化も含め、公開者が公式の条件を確認して判断します。
 
 ### 公開のあとに確かめること
 

@@ -16,7 +16,7 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 
 ## Quick Start
 
-**0.0.8 は公開準備中です。公開されるまでは、次の名前による追加は npm の 404 で失敗します。** 公開後、DSH が動いている端末で実行します。
+DSH が動いている端末で実行します。
 
 ```bash
 dsh plugin --profile web add dsh-webui-m3e
@@ -24,9 +24,11 @@ dsh plugin --profile web add dsh-webui-m3e
 
 `web` は例です。実際に Web 画面を動かしているプロファイルを指定してください。間違った名前でも新しいプロファイルが作られるため、追加成功だけでは接続先が正しいとは限りません。
 
-対応版は **DSH 0.2.0-rc.2 のみ**、実行環境は Node.js 22 以上です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います（確認環境：macOS 27.2、Node.js 26.7.0、pnpm 11.17.0）。M3E のソース取得・ビルド・開発依存の導入は不要です。
+対応版は **DSH 0.2.0-rc.2 のみ**です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います。DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方の要件を満たす Node を用意してください。動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 で、依存側の下限宣言を M3E の動作保証の下限とはしていません。
 
-追加後、いつもの標準画面（`http://<host>/?ui=classic`）でログインしてから、`http://<host>/m3e/` を開きます。隔離した通常 CLI 環境では、未導入状態からの追加は Host の再起動なしで反映されました。更新・旧版への復帰では画面のファイルだけが先に変わり、Host のコードは再起動まで旧版のままだったため、必ずそのプロファイルの Host を再起動してください。
+M3E には追加で導入する実行時の依存パッケージはありません。M3E のソース取得・ビルド・開発依存の導入は不要です。
+
+追加後、いつもの標準画面（`http://<host>/?ui=classic`）でログインしてから、`http://<host>/m3e/` を開きます。更新・旧版への復帰では Host のコードを切り替えるため、必ずそのプロファイルの Host を再起動してください。
 
 Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)があります。Desktop はこの版・この環境では確かめていません。通常 CLI の確認結果と区別してください。
 
@@ -42,9 +44,9 @@ Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github
 
 ## 必要なもの
 
-- DeepSeek Harness **0.2.0-rc.2**（起動・送信・停止・承認・質問・再接続などを、実物の DSH と偽の LLM で確かめています）
+- DeepSeek Harness **0.2.0-rc.2**
   - 0.1.5 系への対応は外しました。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
-- Node.js 22 以上と PATH 上の pnpm（通常 CLI）。M3E 自体のビルドは不要です。
+- DSH と pnpm の要件を満たす Node.js、および PATH 上の pnpm（通常 CLI）。版の前提は上の Quick Start を参照してください。
 
 ## 更新・版の確認・削除
 
@@ -54,7 +56,7 @@ Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新は、対応する公開済みの版を指定して同じ名前で追加し直します。次は初回公開版への移行例です（公開後に実行）。今のローカル tgz 版を使っている人も、同じプロファイルでこのコマンドを実行し、Host を再起動して上の一覧を確認してください。利用者による版番号の手編集は不要です。
+更新は、対応する公開済みの版を指定して同じ名前で追加し直します。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も、同じプロファイルでこのコマンドを実行し、Host を再起動して上の一覧を確認してください。利用者による版番号の手編集は不要です。
 
 ```bash
 dsh plugin --profile web add dsh-webui-m3e@0.0.8
@@ -66,13 +68,13 @@ dsh plugin --profile web add dsh-webui-m3e@0.0.8
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-削除する前に `http://<host>/?ui=classic` を開きます。削除後も同じ標準画面を使えます。確認環境では再起動なしで削除が反映され、`/m3e/` は 404 になりました。再起動後にも標準画面と保存済みの会話を確認しています。
+削除する前に `http://<host>/?ui=classic` を開きます。削除後は `/m3e/` が 404 になるので、同じ標準画面を使います。
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-隔離環境でローカル tgz の追加・更新・復帰・削除を手動で確認し、1 件のワークスペースと会話、別の組込みプラグインのシェル設定が保持されました。この一連の操作の自動試験はありません。レジストリ経由の操作、第三者プラグイン、既存の長期利用データは未検証です。404 なら公開状況と版、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
+取得時に 404 ならパッケージ名と公開された版、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
 
 ソースからビルドする場合は [開発・配布の手順](docs/development.md#配布)を参照してください。
 
@@ -96,7 +98,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 
 - 画面の文言は日本語だけです。
 - DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
-- 画面の試験は主に偽のデータで行い、DSH とのつながりは、本番から切り離した実物の DSH と偽の LLM で確かめています。今回の移行では、本物の LLM と iPhone での確認は未実施です。開発の方法と仕組みは [docs/development.md](docs/development.md) にあります。
+- 開発の方法と仕組み、検証の記録は [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス
 
