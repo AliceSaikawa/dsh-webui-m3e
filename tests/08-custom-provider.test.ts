@@ -209,6 +209,42 @@ test('I16 numeric ID: キーなしで作成しても既存の登録状況と登�
   } finally { ctx.dispose() }
 })
 
+test('I16 key recheck close: キー保存内部の再照会後も閉じたシートから送信しない', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = ctx.remote as unknown as ProviderRemote
+    const keys = createProviderStore(remote)
+    const store = createCustomProviderStore(remote, keys)
+    await store.load(); store.change(() => good())
+    const started = deferred<void>(), release = deferred<void>()
+    const describe = remote.settings.describe
+    const save = keys.save
+    let insideSave = false, writes = 0
+    keys.save = async (...args) => { insideSave = true; return save(...args) }
+    remote.settings.describe = async () => {
+      const answer = await describe()
+      if (insideSave) { started.resolve(); await release.promise }
+      return answer
+    }
+    const send = remote.credentials.set
+    remote.credentials.set = async (...args) => { writes++; return send(...args) }
+    store.input.input('fake-close-during-recheck')
+    const pending = store.submit()
+    await started.promise
+    assert.equal(store.getSnapshot().phase, 'savingKey')
+    assert.equal(writes, 0)
+    store.dispose(); release.resolve()
+    assert.equal(await pending, false)
+    assert.equal(writes, 0)
+    assert.equal(store.input.getSnapshot().draft, '')
+    await keys.load()
+    assert.equal(keys.getSnapshot().rows.find(row => row.id === 'local-api')!.status, 'missing')
+    // No sheet lifetime is supplied by the existing direct registration path.
+    assert.equal((await keys.save(keys.getSnapshot().rows.find(row => row.id === 'local-api')!, 'fake-direct')).ok, true)
+    assert.equal(writes, 1)
+  } finally { ctx.dispose() }
+})
+
 test('I16 reference recheck: 保存の再照会で新たな参照先の共有を検出する', async () => {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   try {
