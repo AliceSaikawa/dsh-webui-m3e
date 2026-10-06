@@ -272,11 +272,12 @@ export function providerSummary(state: Pick<ProviderState, 'phase' | 'rows'>): s
   if (state.phase === 'loading') return '登録状況を読み込み中…'
   if (state.phase === 'error') return '登録状況を確認できません'
   if (!state.rows.length) return '提供元はありません'
-  const counts = { registered: 0, missing: 0, unnecessary: 0, unknown: 0 }
+  const counts = { registered: 0, missing: 0, unnecessary: 0, unknown: 0, unset: 0 }
   for (const row of state.rows) counts[row.status]++
   return [
     counts.registered && `登録済み ${counts.registered}`,
     counts.missing && `未登録 ${counts.missing}`,
+    counts.unset && `未設定 ${counts.unset}`,
     counts.unnecessary && `キー不要 ${counts.unnecessary}`,
     counts.unknown && `未確認 ${counts.unknown}`,
   ].filter(Boolean).join('・')

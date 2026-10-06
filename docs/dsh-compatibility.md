@@ -102,6 +102,7 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | `workspaceFiles.list/read/stat` | 同じ | `dsh-api-workspace-files/lib/typert.remote-client.d.ts`。実ワークスペースの一覧・本文・版を確認しました |
 | `workspaceFiles.readBytes/changes` | 直した | 同パッケージの `lib/types/types.d.ts` と `lib/index.js`。入れ子の範囲、バイト列、監視の対象と解放を合わせました |
 | `settings.describe/update/mutate` | 直した | `dsh-settings/lib/types/types.d.ts`、`dsh-api-settings-controller`。公開スキーマと共有書込みケースの受理・拒否を照合しました。段階 6-C では整数付近の小数と旧プロフィール項目の拒否も確認しました。全設定値の網羅ではありません |
+| カスタム提供元の `settings.mutate` | 確認済み | `llm-pi-ai` の `providers[ID]` へ開いた revision 付きの path 操作。追加実入力 35 通りと、画面での追加・編集・再読込・競合・設定だけ成功を隔離した 0.2.0-rc.2 で確認。詳細は `docs/design/08-settings.md` |
 | 設定の名前空間・通知 | 直した | 標準の設定 UI と `dsh-settings`。保存から `(ns, revision)` を送る偽通知と、購読側の再取得・解除を確認しました |
 | `permissionPresets.catalog` と変更通知 | 直した | `dsh-permission-presets`。既定値は文字列設定として保存し、画面は候補の所属も確認します。実 DSH で自動候補の追加・削除通知によるシート更新を確認しました |
 | 提供元一覧とキーの照会・登録・削除 | 同じ・表示を修正 | `dsh-llm`、`dsh-api-settings-controller/lib/index.js`、標準 Models の呼出し側。実 DSH で架空値の登録・削除、別ページへの更新、環境由来の変更不可表示を確認しました |

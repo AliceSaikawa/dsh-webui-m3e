@@ -12,7 +12,7 @@ export function mockProviderRegistry(kit: MockKit): { providers: ProviderEntry[]
     { provider: 'deepseek', displayName: 'ディープシーク', settingsNs: 'llm-deepseek', settingsPath: [] },
     ...Object.entries(profiles(kit)).map(([provider, profile]) => ({ provider,
       displayName: profile.displayName ?? (provider === 'cloud' ? 'クラウド提供元' : provider),
-      settingsNs: 'llm-pi-ai', settingsPath: ['providers', provider] })),
+      settingsNs: 'llm-pi-ai', settingsPath: ['providers', provider], declared: !['cloud', 'openai'].includes(provider) })),
     { provider: 'ollama', displayName: 'ローカル', settingsNs: 'example-extension', settingsPath: ['localProvider'] },
   ]
   return { directory, providers: directory.map(row => ({ id: row.provider, name: row.displayName })) }

@@ -25,12 +25,12 @@ test('M5 設定から提供元・モデル・選択の候補を一緒に更新�
     assert.deepEqual(new Set(initial.routableProviders), new Set(unwrapRemoteResult(await llm.listProviders()).map(p => p.id)))
     let events = 0
     const off = onRemoteEvent(ctx.remote, 'llm/adapters-updated', () => { events++ })
-    const patch = { providers: { audit: { displayName: '監査用', models: [{ id: 'audit-model', name: '監査モデル' }] } } }
+    const patch = { providers: { audit: { displayName: '監査用', api: 'openai-completions', baseURL: 'http://localhost:1234/v1', models: [{ id: 'audit-model', name: '監査モデル' }] } } }
     const saved = unwrapRemoteResult(await api.update('llm-pi-ai', patch))
     assert.equal(events, 1)
     assert.deepEqual(unwrapRemoteResult(await llm.listProviders()).find(p => p.id === 'audit'), { id: 'audit', name: '監査用' })
     assert.deepEqual(unwrapRemoteResult(await llm.listConfigurableProviders()).find(p => p.provider === 'audit'), {
-      provider: 'audit', displayName: '監査用', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'audit'],
+      provider: 'audit', displayName: '監査用', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'audit'], declared: true,
     })
     assert.equal((await models.modelCatalog()).groups.find(p => p.id === 'audit')?.models[0]?.id, 'audit-model')
     assert.equal((await models.selectModel('approval-sheet', { provider: 'audit', model: 'audit-model' })).model, 'audit-model')

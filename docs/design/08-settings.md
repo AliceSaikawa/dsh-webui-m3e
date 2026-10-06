@@ -118,6 +118,877 @@
 
 （実装した担当が書き足します）
 
+### 2026-10-05：Issue #16 カスタムプロバイダーの契約と実装
+
+対象は **0.2.0-rc.2 のみ**。第1回の画面案を基に、追加・編集の専用フォームを実装した。過去のメモの未確認事項は、この節で確認できた範囲を更新する。Issue #18 を通常のマージで取り込み、その配布用設定や scripts は変更していない。キーの RPC を呼ぶ既存関数を再利用し、保護対象のパッケージは読んでいない。
+
+#### 配布物で確かめた契約
+
+以下の `P/` は、リポジトリ内の `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/` を指す。5 パッケージを個別に指定して読んだ。上流 master の内容をそのまま契約としない。
+
+| 事実 | 実物のパスと行 |
+|---|---|
+| 設定先は `llm-pi-ai` の `providers[ID]` | `P/dsh-llm-pi-ai/lib/index.js:1017–1051, 2513–2535` |
+| 標準画面の追加は開いた revision を付けた `settings.mutate`。設定成功後にキーを別保存 | `P/dsh-client-ui-settings-models/lib/client.js:1210–1277` |
+| 標準画面の編集は変更箇所の `set/unset` と revision。ID は固定 | 同 `client.js:1455–1489, 1511–1524, 1586–1626` |
+| `update` は再帰マージ、配列は置換。`mutate` は保存済みの層への path 操作 | `P/dsh-settings/lib/index.js:190–218, 276–291, 470–499` |
+| revision は名前空間・Host プロセス単位。異なる値は `settings/conflict`、検証拒否は `settings/rejected` | `P/dsh-settings/lib/index.js:500–514`、`P/dsh-api-settings-controller/lib/index.js:391–423, 451–504` |
+| providers の `sKey` は string、pattern なし。標準画面の小文字英字・ハイフン制限は UI 独自 | `P/dsh-llm-pi-ai/lib/index.js:1051`、`P/dsh-client-ui-settings-models/lib/client.js:1186–1204` |
+| プロトコルは schema の `api` の const union。別の候補 RPC は不要 | 同 `client.js:938–958`、`P/dsh-llm-pi-ai/lib/index.js:802–816, 1020` |
+| カスタムの判定は directory の `declared: true` と設定先。稼働中かどうかではない | `P/dsh-llm-pi-ai/lib/index.js:2506–2529` |
+| スキーマ以外にもモデル ID の重複、カタログ外の必須項目などを解決時に検査 | 同 `index.js:638–711, 1085–1154` |
+| volatile 設定の更新で adapter、directory、catalog が変わる | 同 `index.js:2537–2561, 2588–2597, 2616–2637` |
+| adapter の登録変更で `llm/adapters-updated`、設定変更で `(ns, revision)` の `settings/document-updated` | `P/dsh-llm/lib/index.js:1879–1893, 1910–1963`、`P/dsh-settings/lib/index.js:413–461` |
+| `apiKeyEnv` はキーの参照名。導出式は ID を大文字化し英数字以外の連続を `_` にして `_API_KEY` を付ける | `P/dsh-client-ui-settings-models/lib/client.js:938–940`、`web/src/features/settings/providers.ts:47` |
+| キーの RPC は参照名の検査、状態の照会、登録・削除を別々に扱う | 呼出し側の `P/dsh-api-settings-controller/lib/index.js:62–70, 161–216`。保存実装の保護対象パッケージは対象外 |
+| 伏せる処理はスキーマの role に従う。pi-ai の `apiKeyEnv`、`headers` は自動的に伏せられる項目ではない | `P/dsh-settings/lib/index.js:22–84`、`P/dsh-llm-pi-ai/lib/index.js:1017–1051` |
+
+Issue の版表記は 0.2.0-rc.2 に読み替えた。master を根拠とする保存契約はこの版でも成立した。一方、ID の pattern、HTTP URL の強制、未知項目の一律拒否は Host の条件ではなかった。
+
+#### フォームが扱うスキーマ
+
+根拠は `P/dsh-llm-pi-ai/lib/index.js:1001–1051` と `lib/types/config.d.ts:51–161`。スキーマの任意と、カタログ外の提供元で必要になる条件を区別する。
+
+| 項目 | 型と条件 |
+|---|---|
+| ID（辞書キー） | string。空文字は解決時に拒否。sKey の pattern はない |
+| `displayName` | 任意 string。指定した空文字は拒否。フォームの空欄は省略／既存上書きの unset |
+| `baseURL` | 任意 string だがカスタムでは非空が必須。URL の pattern はなく、HTTP の制限もない |
+| `api` | 任意 const union だがカスタムでは必須。`openai-completions` / `openai-responses` / `anthropic-messages`。フォームは応答から列挙する |
+| `models` | 配列。カタログ外で解決できるモデルが 0 件なら拒否 |
+| モデル `id` | 必須 string、非空、同じ一覧内で一意。空白だけの文字列は Host で受理 |
+| モデル `name` | 任意 string |
+| `contextWindow`, `maxTokens` | 任意 number、1 以上の整数。`maxTokens <= contextWindow` という制約はない |
+| `input` | `text` / `image` の配列。省略・空配列は継承。フォームの「提供元の既定値を使う」で省略する |
+| `apiKeyEnv` | 任意の参照名。キー本体を設定へ入れない |
+
+フォームの対象外は `headers`、`modelOverrides`、`compat`、`reasoningEfforts`、`thinkingBudgets`、各種既定値、timeout、transport、retryPolicy 等。モデルの `reasoningEfforts` は false または off/minimal/low/medium/high/xhigh/max をキー、string/null を値とする辞書。未知の項目と合わせて保持する。スキーマの詳細を高度なフォームへ展開することはしない。
+
+#### 隔離した実 DSH への追加実入力
+
+`tmp/issue16-observe/contract.spec.ts` を既存 e2e-dsh の fixture で実行した。HOME と DSH_HOME は tmp、loopback の Host、偽 LLM を使用。設定 RPC のみで **35 入力**を観測し、受理した入力は毎回 unset で復帰、拒否した入力は保存済みの層が変わらないことを確認した。結果は `tmp/issue16-observed.json`。一時 spec はコミットしない。
+
+| 入力 | 結果 |
+|---|---|
+| キー参照なしの有効なカスタム | 受理 |
+| ID：大文字、下線、点、数字始まり、空白を含む、スラッシュ、空白のみ | すべて受理 |
+| ID：`constructor`, `prototype` | 受理。既存 M3E の安全な path アクセスが拒否する予約名なので、この画面では編集対象外 |
+| ID：空文字、`__proto__` | `settings/rejected` |
+| URL：`not a url`、FTP、空白のみ | 受理。保存可能という結果であり、通信に使えることの確認ではない |
+| URL：空文字、省略 | `settings/rejected` |
+| models：空配列、省略 | `settings/rejected` |
+| モデル ID：空文字、欠落、重複 | `settings/rejected` |
+| モデル ID：空白のみ | 受理 |
+| contextWindow 0、maxTokens 1.5 / 1.000000001 | `settings/rejected` |
+| input：空配列、image のみ | 受理 |
+| input：audio | `settings/rejected` |
+| api：未知値、省略 | `settings/rejected` |
+| 未知の提供元項目、未知のモデル項目 | 受理し保持 |
+| displayName：空文字 | `settings/rejected` |
+| 表示名、モデル名、context 4096、maxTokens 8192、text/image | 受理 |
+
+既存 `tests/support/settings-write-cases.ts` と `e2e-dsh/rpc.spec.ts:183–202` の 37 入力には、pi-ai の表示名の成功と空文字拒否、defaultInput 空配列拒否、未知項目受理、旧フィールド拒否、reasoningEfforts のキー検証がある。これは設定 RPC の確認で、今回の追加・編集フォームとは分けて扱う。
+
+追加直後の `llm.listProviders`、`listConfigurableProviders`、`session.modelCatalog` に新しい ID とモデルが現れた。作成時は adapter 通知 2 回と設定通知、モデル名だけの編集では設定通知だけを観測した。モデル変更でも adapter 通知が必ず来るとは扱わない。編集後のカタログとページ再読み込み後の値も一致し、再起動なしで反映した。Host 再起動を挟む永続性と実際の外部提供元への接続は未検証。
+
+#### 下書き、差分、キーの別保存
+
+追加は次の形で、**フォームを開いて取得した revision** を送る。
+
+```ts
+settings.mutate('llm-pi-ai', [
+  { op: 'set', path: ['providers', id], value: { api, baseURL, models /* 任意の表示名・キー参照 */ } },
+], openedRevision)
+```
+
+編集は `['providers', id, 'displayName' | 'baseURL' | 'api']` の変更項目だけを `set/unset`。モデル一覧は元の各行全体を deep clone し、既知の編集項目だけを変更する。変化があった場合だけ `['providers', id, 'models']` を配列で set する。名前空間全体とプロフィール全体の置換、未変更の配列の再送はしない。伏せた値のパス、disabled、password role と対象が交差するならその欄を変更不可とし、安全な他の欄だけの編集を許可する。
+
+キー入力があれば、参照未指定のときだけ `apiKeyEnv` を設定差分へ追加し、設定成功後に既存 `createProviderStore` の `load` と `save(row, input)` を呼ぶ。参照と登録可能状態を再確認し、キー RPC へ参照名と今回の入力だけを送る。キー空欄では登録済みキーを維持し、キー RPC を呼ばない。標準画面と同じ保存順。登録済みの値を取得・表示する経路は作らない。
+
+`custom-provider-store.ts` は loading / blocked / editing / savingSettings / savingKey / keyFailed / stale / unknown / saved を区別する。同期的な busy で二重送信を止め、revision を通知で勝手に進めない。外部変更・競合では再読込と確認を求める。設定成功後は ID と保存応答を確定し、keyFailed の再試行はキー保存だけ。再作成はしない。応答を失った場合、または明確な拒否コード以外のエラー応答の場合は追加を再送せず、「保存結果を確認」で対象を取得し、既存なら編集へ切り替える。
+
+`createKeyDraft` の送信開始時消去・表示状態初期化・dispose を再利用する。再読込時の `clear` は購読を保って入力だけを消す。キャンセル、Escape、ルート離脱で入力と未送信キーを破棄する。処理は閉じた後も送信済み設定の完了まで追跡し、完了後に一覧を更新するが、閉じたフォームからキーを続けて送らない。接続世代と取得 ticket で古い応答を無効化する。
+
+#### ファイル、偽データ、判断
+
+- 新規：`CustomProviderSheet.tsx`（共通フォーム）、`custom-provider.ts`（下書き・検証・差分）、`custom-provider-store.ts`（保存制御）、`mock-custom.ts`（失敗シナリオ）。いずれも `web/src/features/settings/`。
+- 変更：同フォルダの `ProvidersPanel.tsx`、`providers.ts`、`settings.css`、`mock.ts`、`mock-models.ts`、`mock-validation.ts`。schema の復号、valueAt、既存キー操作、field-access、openFullSheet を再利用。ルーターと共有 overlay は変更しない。
+- 試験：`tests/08-custom-provider.test.ts`、`e2e/settings-custom-provider.spec.ts`、`e2e-dsh/custom-provider.spec.ts`。既存 M5 の入力へ実 Host で必須の api/baseURL を足し、directory の declared を明示した。期待を緩めた修正ではない。`tests/18-pack.test.ts` の偽モジュール一覧に mock-custom を追加。
+- 偽データ：既存 settings-readonly と、新規 custom-no-namespace / custom-unavailable / custom-rejected / custom-conflict / custom-response-lost / custom-slow。custom-partial のキー拒否処理への接続は一度保護フックで停止したが、`tmp/handoff-issue16-01.md` を指示役が `ad192ba` で適用済み。custom-slow はレビュー対応で固定 800ms を廃止し、試験側が開始を観測して保留応答を解放する。
+- 全画面シートを採用。専用ルートは不要な履歴と復元を増やすため採用しない。共通シートを開くだけでは初期高さが半分になることを実測したため、このフォームを持つシートだけに動的画面高を CSS 指定した。ほかのシートを変更しない。
+- 終了経路を統一できる破棄確認の仕組みが共有 overlay にないため、今回も破棄確認なし。送信開始後は取消できないことを表示する。
+- モデルの index ごとの操作より、変更時だけ配列を送る案を採用。継承と削除後の index 移動を避け、元の未知項目を保持する。保護された子がある配列は置換しない。
+- ID は標準画面独自の正規表現を採用せず、非空・重複・既存 M3E path が拒否する 3 予約名を検査する。ID の空白は保存どおり扱う。URL はレビューの明示指示を優先し、前後の空白を除いた HTTP/HTTPS の URL だけを保存する。Host の受理範囲を再現する偽データは変更しない。キー付きの保存には参照名の形式と、明示された名前も含む実際の保存先の重複検査を別に行う。
+
+#### 受け入れ条件と検証の対応
+
+| 条件 | 単体 | 偽データ e2e | 実 DSH e2e |
+|---|---|---|---|
+| 1 追加・編集 | I16 ops | UI lifecycle | real lifecycle、キーあり・なし |
+| 2 値と未編集設定の保持 | I16 ops | UI lifecycle、モデル選択不変 | real lifecycle、再読込・他提供元・未知項目・既定値 |
+| 3 入力検査 | I16 validation | UI lifecycle、欄エラーとフォーカス | 一時 spec の 35 入力 |
+| 4 キーの維持・消去 | I16 partial / close / unknown | UI dismiss / refused / late | real lifecycle / failures |
+| 5 保存失敗の分類 | I16 refusals / partial / unknown | UI blocked / refused / lost / partial（接続差分は適用済み） | real failures、別ページ競合と設定だけ成功 |
+| 6 取消・連打・終了 | I16 partial / close | UI dismiss / late、4 終了経路 | real failures の閉じて再編集 |
+| 7 狭い画面と回帰 | 既存キー・モデル試験 | 390px と 375×420px、実寸の全画面高と横幅 | 新モデルの選択候補。iOS のキーボード実機は未確認 |
+| 8 品質 | typecheck / test | 全偽データ e2e | build、全実 DSH e2e を 2 回 |
+
+追加・変更した各試験は次の故障注入で確認した。表の試験名は先頭の識別子。各回で対象だけを実行し、追跡ファイルへの変更は `git restore` で戻した。一時 spec の準備値は元の値へ戻して再実行した。ブラウザーの短い viewport をソフトウェアキーボード実機確認の代用とはしない。
+
+| 試験 | 一時的な故障（本体または偽データ） | 結果 |
+|---|---|---|
+| I16 ops | custom-provider のモデル変換を既知キーだけに制限 | 未知の extra が消えて失敗 |
+| I16 validation | 検証が常に空のエラーを返す | 空 ID のエラーがなく失敗 |
+| I16 partial | 保存済みフラグと編集モードを消して再作成 | 設定書込み 2 回になり失敗 |
+| I16 partial（入力消去） | createKeyDraft の送信時 draft/visible 初期化を削除 | 入力が残って失敗 |
+| I16 refusals | 競合時に同じ mutate を自動再送 | 書込み 2 回になり失敗 |
+| I16 close | dispose を空にする | 閉じた後も保存が成功扱いになって失敗 |
+| I16 unknown | 再取得後も新規扱いにする | 編集へ切り替わらず失敗 |
+| I16 unknown（エラー応答） | 不明なエラーコードの分類を削除 | unknown でなく editing になって失敗 |
+| I16 partial（参照重複） | 導出参照名の重複検査を削除 | 他の提供元と同じキーを保存できてしまい失敗 |
+| 既存 M5 | mock-models の declared を false にする | directory の厳密一致で失敗 |
+| pack の全偽モジュール検査 | 偽の chunk 入力の mock-custom を命名規則外の custom-provider に変える | 規則外のファイルが検出されず失敗。scripts 本体は変更しない |
+| UI lifecycle | 入力検証を無効化 | ID 重複エラーが表示されず失敗 |
+| UI dismiss | 終了処理で submit も呼ぶ | キャンセル時の書込みが 0 → 1 となり失敗 |
+| UI blocked | 名前空間なしの準備を削除 | 追加ボタンが有効になって失敗 |
+| UI refused | 競合時に自動再送 | 書込み 2 回になり失敗 |
+| UI lost | 再取得後も新規扱い | 保存済み ID の欄が空になって失敗 |
+| UI late | dispose を空にする | 閉じた後にキーが登録済みとなり失敗 |
+| UI lifecycle / dismiss / refused / lost / late（初期フォーカス） | シートが開いた後の見出しへの focus を削除 | 5 件とも見出しのフォーカス検査で失敗 |
+| UI partial | 第2回の時点では接続差分が未適用 | `ad192ba` で適用済み。今回の故障注入の結果は下記のレビュー対応に記録 |
+| real lifecycle | モデルの未知フィールドと reasoningEfforts を落とす | 保存・再読込後の配列の厳密一致で失敗 |
+| real failures | 外部設定通知の処理を無効化 | 別ページ変更後の競合案内がなく失敗 |
+| 一時 spec | 有効入力のモデル準備を空配列に変える | valid-no-key が拒否となり失敗 |
+
+#### 第2回の最終検証（2026-10-05、接続差分適用前）
+
+故障注入を戻した最終コードで実行した。結果を緑にするための skip、期待失敗への変更、アサーションの緩和は行っていない。
+
+| 実行 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test` | 1,052 件成功、失敗・skip 0 |
+| `pnpm build` | 成功。配布側の本番偽モジュール混入検査も通過 |
+| 全偽データ e2e | 165 成功、1 失敗、skip/flaky 0、482.0 秒。既存ポートを避け、一時設定で 5216 を使用 |
+| 全実 DSH e2e 1 回目 | 36 件が想定どおり、unexpected/skip/flaky 0、286.7 秒 |
+| 全実 DSH e2e 2 回目 | 同じく 36 件が想定どおり、unexpected/skip/flaky 0、207.1 秒 |
+| 追加実測の一時 spec | 1 件成功、35 入力（受理 19、拒否 16）と反映・通知・再読込、62.4 秒 |
+
+実 DSH の各 36 件には、変更していない既存の期待失敗（Host が止まったままの場合の切断表示）1 件を含む。通常成功は各 35 件。LLM とキーは架空のもので、外部提供元への実通信ではない。
+
+当時の偽データの失敗は `e2e/settings-custom-provider.spec.ts:140` の `I16 UI partial: 設定だけ成功したらキーだけ再試行する` だけだった。保護フックで止まった `web/src/features/settings/mock.ts` の接続差分は、`tmp/handoff-issue16-01.md` を指示役が `ad192ba` で適用して解消した。同コミットで指示役が型・単体 1,052 件・ビルド・配布検査・偽データ 166 件・実 DSH 2 回を確認済みとの引き継ぎを受けた。今回の再実行と故障注入は下記に分けて記録する。
+
+第2回の判定と結果は `tmp/handoff-issue16-implementation.md`、`tmp/issue16-mock-final.json`、`tmp/issue16-real-run1.json`、`tmp/issue16-real-run2.json` に保存した。その後レビューで指摘された不足と最新の判定は下記のレビュー対応を参照する。iOS 実機のソフトウェアキーボードは引き続き未確認。
+
+範囲外：カタログの提供元追加、提供元削除・ID 変更、OAuth、モデル自動取得、接続試験、高度な設定、他の DSH 版。保護対象パッケージを読むことと、利用者の DSH を操作することは実施していない。
+
+### 2026-10-05：Issue #16 レビューへの対応
+
+`ad192ba` の引き継ぎ差分を含む状態から修正した。対応パッケージの追加や、Issue #18 の配布用ファイルの変更はない。
+
+#### 指摘ごとの変更
+
+| 指摘 | 対応 |
+|---|---|
+| 1 明示された参照名との衝突 | `custom-provider-store.ts` は directory と全名前空間から `providerRows` で実際の参照先を取得し、新規とキーなし提供元へのあと付けの両方を検査する。`providers.ts` の再照会でも、初めて参照を付ける保存では他の行と同じ保存先を使わない。部分成功後の再試行もこの条件を保持する |
+| 2 数字始まり ID が一括照会を壊す | Host の参照名検証を `validKeyReference` へ写し、不正な名前を照会から除外する。当該行だけを変更不可とし、理由を行とフォームへ出す。キー付きの保存は設定送信前の欄エラーで止める。既存提供元の状態・登録・削除は単体と実 DSH の画面で確認 |
+| 3 閉じた後に再照会からキーを送る | 既存 `ProviderStore.save` に省略可能な `canSend` を追加。カスタムフォームは active・接続・接続世代を渡し、再照会の完了後とキー送信直前の両方で判定する。オプションを渡さない既存の登録経路は維持。専用試験は `tmp/handoff-issue16-02.md` へ回し、その後 `e9f4e3a` で適用済み。今回、正常実行と `canSend` を常に true にする変異の検出を確認 |
+| 4 URL と ID の形式 | URL は HTTP/HTTPS のみ。前後の空白を除いて検証・保存する。ID は非空・重複・予約名を検査し、英字始まりを推奨。数字始まりなどはキーなしで許可する。キーの参照名を別に検査する |
+| 5 固定 800ms の待ち | `mock-custom.ts` に試験用の保留・解放を設けた。UI late は開始件数 1、保存中表示、閉じてフォームが消えたことと行が未作成なことを確認してから解放する |
+| 6 古い適用待ちの記述 | UI 仕様とこのメモを `ad192ba` で適用済みに更新。第2回の失敗結果は当時の記録と明示し、今回の結果と区別する |
+| 7 UI partial の故障注入 | 設定の再送、新規再作成、キー送信の省略、最初の拒否の無効化を個別に確認する。結果は下表 |
+| 8 新規・変更試験の故障注入 | 正常状態で通過後、各試験に対応する本体または偽データを壊して実行し、`git restore` で戻す。未適用の専用試験は成功実績に数えない |
+
+根拠：`P/dsh-api-settings-controller/lib/index.js:55–70` は参照名を `^[A-Za-z_][A-Za-z0-9_]*$` と定義し、describe の配列内にも同じ検査を適用する。設定の ID 自体の制約とは異なる。実物の保存処理を含む保護対象パッケージには触れていない。
+
+ID を標準画面の小文字英字・ハイフンだけへ制限する案は不採用。キーなしのローカル提供元や既存の大文字・数字始まりの ID を扱える契約を維持するため。画面から新規にキーを使う場合は有効な導出参照が必要で、既存提供元に有効な参照名が明示されていればそれを優先する。既に明示的に共有している参照は変更しない。
+
+URL は Issue の明示要件を優先する。`http://` / `https://` のプレフィックスと URL の解析を検査し、localhost、IPv4、IPv6、ポートを許可。前後の空白を拒否する案より、入力欄に貼り付けたときの余分な空白だけを除く案を採用した。未変更の既存フィールドを自動的に正規化して書き直すことはしない。Host が FTP や空白だけの文字列も受理するという実測と、その偽データは維持する。フォームの条件とは目的が異なる。
+
+#### レビュー対応で壊して確かめた表
+
+| 試験 | 故障の場所と内容 | 検出 |
+|---|---|---|
+| I16 ops | custom-provider の URL 保存時の trim を削除 | 差分の URL に前後空白が残り失敗 |
+| I16 validation | validBaseURL が常に true | 不正 URL の欄エラーがなく失敗 |
+| I16 explicit reference | custom-provider-store の参照比較を ID からの導出だけへ戻す | 衝突する追加が成功して失敗 |
+| I16 numeric ID | providers の照会対象から不正参照を除外しない | DeepSeek が登録済みでなく unknown となり失敗 |
+| I16 numeric ID（欄検査） | custom-provider-store の参照名の形式検査を無効化 | キー欄のエラーがなく失敗 |
+| I16 reference recheck | providers の送信前の共有検査を削除 | 共有を作るキー保存が成功して失敗 |
+| I16 UI URL | validBaseURL が常に true | 不正 URL の保存が通り、欄エラーが出ず失敗 |
+| I16 real numeric ID | providers の照会対象から不正参照を除外しない | 作成後、既存 DeepSeek の「登録済み」が「確認できません」となり失敗 |
+| I16 UI late | custom-provider-store の dispose を空にする | 閉じてから保留応答を解放するとキーが登録済みとなり失敗 |
+| I16 UI partial（設定再送） | 保存済みでも同じ URL の mutate を送る | 設定書込みが 1 回でなく 2 回となり失敗 |
+| I16 UI partial（新規再作成） | 保存済みフラグを消し editing を false に戻す | 設定書込みが 2 回となり失敗 |
+| I16 UI partial（キー未送信） | keyFailed からの再試行でキー保存の分岐を通らない | 登録済みでなく未登録のままで失敗 |
+| I16 UI partial（拒否なし） | mock-custom の rejectKeyOnce が常に false | 部分成功の案内が出ず失敗 |
+| I16 key recheck close | 前回は試験差分自体が保護フックで停止 | `tmp/handoff-issue16-02.md` は指示役が `e9f4e3a` で適用済み。正常実行も成功。今回の M47（参照先書込み待ち）とは別の待機境界 |
+
+すべての実施した故障を `git restore` で戻し、本体・試験には故障を残していない。今回追加・期待変更した試験は上表に 1 件ずつ載せた。I16 UI partial は既存試験の条件を変更せず、指定の 4 種類の故障を個別に検出した。
+
+#### レビュー対応後の全体検証と残り
+
+| 実行 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test` | 1,055 件成功、失敗・skip 0 |
+| `pnpm build` / `pnpm check:pack` | 成功。配布検査は 19 ファイル |
+| 全偽データ e2e | 167 件成功、unexpected/skip/flaky 0、516.8 秒 |
+| 全実 DSH e2e 1 回目 | 通常成功 36 件＋既存の期待失敗 1 件、unexpected/skip/flaky 0、296.0 秒 |
+| 全実 DSH e2e 2 回目 | 通常成功 36 件＋同じ期待失敗 1 件、unexpected/skip/flaky 0、253.5 秒 |
+
+結果は `tmp/issue16-review-mock-final.json`、`tmp/issue16-review-real-run1.json`、`tmp/issue16-review-real-run2.json`。実 DSH は隔離した 0.2.0-rc.2、LLM とキーは架空値。未適用の試験を skip で除いた結果ではなく、追跡中の試験を全件実行した結果である。
+
+| 受け入れ条件 | 前回終了時（handoff 02 適用前）の判定 |
+|---|---|
+| 1 追加・編集 | 達成。数字始まりのキーなし作成も実 DSH で確認 |
+| 2 再表示・他設定・モデル選択の保持 | 達成。明示参照との衝突を新規・あと付けで検査 |
+| 3 入力検査 | 達成。URL の形式と正規化、ID、キー参照名の条件を分離 |
+| 4 キー維持・伏せ字・入力破棄 | 本体は修正済み。キー保存内部の再照会待ちで送信 0 件を確かめる専用試験は引き継ぎ |
+| 5 失敗の偽データ検証 | 達成。設定だけ成功も全体実行で成功 |
+| 6 キャンセル・連打・再オープン・終了 | 設定保存待ちの終了は確認。キー内部の再照会待ちは専用試験を引き継ぎ |
+| 7 狭い画面・キーボード・既存機能の回帰 | 390px、375×420px、既存キー・モデル操作は確認。実機キーボードは未確認 |
+| 8 試験追加・品質 | 型・単体・ビルド・配布・全 e2e は成功。追加できなかった専用試験 1 件とその故障注入は未完了 |
+
+指摘 3 の試験追加は、前回の保護フック拒否後に `tmp/handoff-issue16-02.md` へ回し、指示役が `e9f4e3a` で適用済み。上記の件数と受け入れ表は適用前の履歴であり、最新の残りは次の再レビュー対応を参照する。
+
+今回の詳細報告は `tmp/handoff-issue16-review-fixes.md`。iOS 実機のキーボード、今回追加した設定の Host 再起動を挟む保持、外部提供元との実通信は引き続き未検証。検索コマンドの引用符なし glob が形式で拒否された 1 回は、対象ファイルを明示して読み直した。保護対象のパスと禁止された操作には触れていない。
+
+### 2026-10-05：Issue #16 再レビュー・変異監査への対応
+
+`e9f4e3a` から開始し、`git fetch origin` 後、`origin/main`（`23e8ec6`、v0.0.8）を通常のマージ `739606e` で取り込んだ。文書に衝突はなく、main の配布・リリースの記述を保持した。
+
+#### 参照先の所有と衝突の契約
+
+`P` は `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai`、`L` は同じ node_modules の `@earendil-works/pi-ai/dist`。
+
+- `P/dsh-llm-pi-ai/lib/index.js:727–730,840–859`：標準のカタログ提供元は標準の認証探索を保持する。独自提供元の認証と区別する。
+- `P/dsh-llm-pi-ai/lib/index.js:2088–2096`：標準の認証探索が環境名を要求すると、DSH の保存済みキーを先に探す。設定に明示名がないことは、保存先がないことを意味しない。
+- `L/providers/openai.js:6–10`：標準 `openai` の既定名は `OPENAI_API_KEY`。`L/providers/google.js:6–10` は `GEMINI_API_KEY`、`L/providers/azure-openai-responses.js:6–9` は `AZURE_OPENAI_API_KEY`。
+- `L/env-api-keys.js:67–121`：標準の環境名の対応表。Anthropic の 3 名、Copilot、Moonshot の共通名、Qwen/Opencode の共通名など、単なる ID 導出では得られない名前がある。ここから既定名を固定の契約データとして `provider-key-refs.ts` に保持する。実行時にライブラリを UI へ追加しない。
+- `L/providers/amazon-bedrock.js:50–78`、`L/providers/google-vertex.js:61–82`：API キー以外の補助環境名も参照する。すべての SDK の探索先まで読んだとは断定せず、`AWS_`、`GOOGLE_`、`GCLOUD_`、`CLOUDFLARE_` の名前群を対応する標準提供元以外から予約する。保護対象パッケージ・設定ファイルは読まない。
+- `L/providers/cloudflare-auth.js:1–3,20–24`：Cloudflare のキーに加え、account/gateway の補助名を使う。上の予約群の根拠に含める。
+- `P/dsh-llm-pi-ai/lib/index.js:818–826`：明示名にキーがなければ認証探索へ戻らず要求が失敗する場合がある。そのため参照先だけの状態を一覧・フォームで案内する。
+
+`ref` は登録状態の照会先、`usedRefs` は衝突防止用の集合と分けた。後者は明示名・導出名・既定名を含む。標準候補が未稼働でも既定名を予約する。既定名の所有者自身、および公開定義で同じ既定名を使う標準提供元どうしは使用できる。カスタムなど別の所有者との共有は止める。DSH の標準 DeepSeek の ID `deepseek-official` も `DEEPSEEK_API_KEY` の所有者とする（実 DSH の既存キー操作試験で確認）。`P/dsh-llm-pi-ai/lib/index.js:2506–2529` が全カタログを directory に含めるため、稼働していない標準 `deepseek` と公式提供元が同時に一覧に現れることを考慮した。
+
+共通のキー保存・削除は毎回最新の行を読み、保存先の衝突を検査する。呼び出し側の `exclusive` オプションは廃止した。フォームの事前検査も同じ判定を使う。明示済み・設定だけ成功・開き直しという履歴に依存しない。衝突中は状態を unknown、変更不可とし、他人のキーを登録済みとして見せない。
+
+補助名の予約は、確認済みの標準 ID 自身の導出名だけは除外する（`google` → `GOOGLE_API_KEY`）。標準の登録経路を妨げず、他の行の実際の参照先との照合は残す。`GOOGLE` のような別 ID や `GOOGLE_CLOUD_PROJECT` のような任意の補助名はこの除外に入らない。対応表は own property だけを読み、Host に `constructor` などの ID が存在しても一覧の取得を壊さない。
+
+選ばなかった案：既存の明示共有だけを許す／未稼働の標準名を予約しない。前者は自動で付いた明示名を識別できず再オープンで迂回でき、後者は認証前の標準提供元を保護できない。安全側の予約は、未使用の標準名や補助名でもカスタムから登録できなくなる制約を持つ。キーなしの設定作成・編集は妨げない。
+
+#### 試験の補強と引き継ぎ
+
+一覧からの後付け登録、明示名が残った状態の再オープン、標準 OpenAI/Google/Moonshot の既定名との衝突は、先に現行本体で落ちる試験 3 件を作成した（全 3 件が誤った保存成功で失敗）。修正後は成功した。M08/M22/M24/M39 は保存要求の revision、欄エラーと送信 0 件、Host 成功値の確定、設定・キーの各待機中の無効ボタンを直接検査する。
+
+実 DSH の競合試験はクライアントへの設定通知を保留し、旧 revision の要求を実 Host へ送る。応答が `settings/conflict`、書込みが 1 回、Host の revision・全提供元の値が別ページの変更のままであることを検査する。部分成功の再試行は Host の値に加え、設定 RPC の要求列が増えないことを検査する。同値の no-op 再送も検出する。RPC 本体や Host は置き換えていない。キー失敗用の参照には、この試験で渡す読み取り専用環境名 `M3E_DSH_VERSION` を使う（他の提供元のキーと共有させない）。
+
+M47 は当時の通常の apply_patch が拒否されたため `tmp/handoff-issue16-03.md` に引き継いだ。その後、指示役が `e187882` で `tests/08-provider-reference-close.test.ts` を適用済み。正常実行、M47 と案内を除去する変異の検出も確認済みとの引き継ぎを受けた。今回も正常実行を確認した。
+
+追加・変更ファイル：`provider-key-refs.ts`（標準名と衝突の純粋な判定）、`providers.ts`、`custom-provider-store.ts`、両フォーム/一覧、単体 2 ファイルと両 e2e、UI 仕様とこのメモ。新しい偽データモジュールはない。配布用のファイルは取り込み以外で変更しない。
+
+#### 壊して確かめた表（今回）
+
+M08/M22/M24/M39 と M09 は監査の置換と同じ。M25 は廃止した `exclusive` 引数だけを除き、監査と同じ条件・同じ no-op の設定書込みを挿入した。試験ごとに正常通過を確かめてから適用し、終了後は対象の本体を `git restore` で戻した。この回の 4 生存変異はすべて検出。M47 は後に `e187882` で適用・検証済み。
+
+| 試験 | 故障 | 検出した結果 |
+|---|---|---|
+| I16 opened revision M08 | 開いた版を describe の最新 revision へ差し替え | 保存が成功してしまい、競合を期待する検査で失敗 |
+| I16 input M22 | 明示する入力種別の検査を除去 | 空配列が保存され、送信しない期待で失敗 |
+| I16 UI input M22 | 同上 | 欄エラーが表示されず失敗 |
+| I16 committed state M24 | 成功応答を編集状態・初期値へ確定する publish を除去 | editing が false のままで失敗。正常時は部分成功も含め ID・revision・Host 整形値を確認 |
+| I16 UI saving M39 | 監査と同じく保存中の phase を保存可能に追加 | 設定待ちの保存ボタンが有効となり失敗 |
+| I16 UI saving M39（キー待ち） | savingKey のときだけ保存を有効化 | キー待ちの保存ボタンが有効となり失敗 |
+| I16 destinations list | 衝突判定を常に false | 一覧からの後付け登録が成功して失敗 |
+| I16 destinations reopen | 同上 | 明示名が残ったフォームでキー保存が成功して失敗 |
+| I16 destinations native | 同上 | 標準の保存先を使うカスタムの作成が成功して失敗 |
+| I16 destinations owners | 同上 | 標準以外の ID の予約が解除されて失敗。継承名の検査追加前には constructor 参照が例外になることも確認し修正 |
+| I16 destinations owners（本人の導出名） | 補助名の予約で標準 ID 自身も除外しない | google 自身の登録まで拒否して失敗。修正前にも同じ検査で失敗を確認 |
+| I16 reference recheck | 同上 | 保存直前に他の行の参照が変わっても成功し失敗 |
+| I16 UI destinations | 同上 | 衝突中の案内が表示されず失敗 |
+| I16 UI destinations（参照先だけ） | keyNotice の付与を除去 | 未登録の参照先に必要な案内が表示されず失敗 |
+| I16 real failures / M09 | RPC 競合後に最新 revision で自動再送 | Host の表示名と revision が別ページの状態から変わり失敗 |
+| I16 real failures / M25 | 部分成功後の再試行で同じ api を mutate | Host の値が同じでも設定要求が 2 件から 3 件になり失敗 |
+| I16 UI partial / M25 | 同上 | 設定要求が 1 件から 2 件になり失敗 |
+| I16 key recheck close（適用済み 02） | canSend を常に true | 閉じた後のキー送信が 0 件でなく 1 件になり失敗 |
+| I16 reference write close / M47 | 参照先書込み後の 2 回目の canSend を除去 | 当時は未実行。`e187882` で適用され、指示役と独立監査が検出を確認済み |
+
+画面と実 DSH の変異の結果は `tmp/issue16-review2-M22.json`、`M39.json`、`M39-key.json`、`destinations.json`、`reference-notice.json`、`M09-real.json`、`M25-real-final.json`、`M25-ui.json`（いずれも先頭は `issue16-review2-`）。失敗を期待した実行は全体の成功件数に含めない。
+
+#### 今回の全体検証と受け入れ判定
+
+- `pnpm typecheck`：成功。
+- `pnpm test`：1,063 件成功、失敗・skip 0。
+- `pnpm build`：成功。既存の 500 kB 超の chunk 警告あり。
+- `pnpm check:pack`：19 ファイルで成功。
+- 偽データ全体 e2e：170 件成功、予期しない失敗・skip・flaky 0。
+- 実 DSH 全体 1 回目：通常成功 36 件、既知の差の期待失敗 1 件、予期しない失敗・skip・flaky 0。
+- 実 DSH 全体 2 回目：通常成功 36 件、既知の差の期待失敗 1 件、予期しない失敗・skip・flaky 0。
+
+全体 e2e は共通のコマンドに `--global-timeout=900000` を付けて実行した。実 DSH は 0.2.0-rc.2 の隔離プロファイルと偽 LLM。既知の期待失敗は、Host が停止したままでも切断済み表示へ変わらない従来の 1 件である。最初の試行では再試行後のボタンが有効になるという試験の誤りを検出した。入力消去後はボタンが無効になることが正しいため、入力欄の再有効化で完了を待ち、ボタンは無効と検査するよう修正した。修正後の正常動作と M25 の検出をやり直した。
+
+| 受け入れ条件 | この回の終了時点（03 適用前）の判定 |
+|---|---|
+| 1 追加・編集の入口とフォーム | 達成。UI / real lifecycle |
+| 2 保存値・他の提供元・未知項目・選択モデルの保持 | 達成。path operation 単体、real lifecycle、M24、実 Host の競合後の全値 |
+| 3 入力検査と欄エラー | 達成。単体、UI lifecycle / URL / input M22、実 Host の設定書込み |
+| 4 キーの非表示・空欄で保持・入力消去 | 実装と適用済み試験は成功。M47 の特定の待機境界の送信 0 件は未検証 |
+| 5 各失敗と部分成功 | 達成。UI blocked / refused / lost / partial、real failures。M09/M25 の変異も検出 |
+| 6 キャンセル・二重送信・戻る・閉じる | 通常の終了経路は成功。UI dismiss / late / saving M39。参照先書込み待ちの M47 は未検証 |
+| 7 375–390px と既存操作の回帰 | 自動試験の範囲で達成。既存のモデル・キー操作と real numeric ID。iOS 実機のキーボードは未検証 |
+| 8 単体・e2e・型・ビルド | 適用済みコードは上記で検証。M47 の追加試験・故障検出を引き継ぐ |
+
+結果は `tmp/issue16-review2-mock-final.json`、`tmp/issue16-review2-real-final-1.json`、`tmp/issue16-review2-real-final-2.json`。最初の試行の結果は `tmp/issue16-review2-real-trial.json` に分けた。詳細報告は `tmp/handoff-issue16-review2-fixes.md`。この集計は 03 適用前の履歴であり、M47 はその後 `e187882` で正常・変異とも確認済み。現在の状態は次節に記す。
+
+本番の利用者の DSH や実キーには触れず、実提供元への認証・推論はしていない。保護対象のパッケージは読まなかった。試験のパッチ以外には、検索引数に保護対象語を含む操作 2 回が停止し、共通の決まりが認める安全な単一ファイル指定へ直した。担当外の追加変更・依存追加・push はない。
+
+### 2026-10-06：6 回目のレビュー（Grok Bot）と変異監査（現在の方針。下の 5 回目の節より優先）
+
+開始時は `379299f`（`feat/16-custom-provider`）。作業ブランチは `grok/16-custom-provider`。レビューの判定は blocking 3 件（すべて修正）、major 0 件、minor 2 件（記録のみ）。この節は 5 回目の節の方針を引き継ぎ、下に書く点だけを改める。食い違う記述は、この節が優先する。DSH の動きの根拠は、e2e-dsh が取得した実物の DSH 0.2.0-rc.2（`tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/`）のコードと、実 DSH の統合試験の結果だけにした。
+
+#### (1) レビューの判定と指摘
+
+| 番号 | 重大度 | ファイルと行（`379299f`） | 内容と根拠 | 対応 |
+|---|---|---|---|---|
+| G1 | blocking | `web/src/features/settings/providers.ts:119`、`ProvidersPanel.tsx:135` | `keyNotice` の条件が `!row.needsReference` だったので、前からある種類の行（参照名を明示した標準の行、同じ名前を明示した複数の行、main の流れで参照名を書き込んだ未稼働の標準の行）でキーが未登録のとき、「キーの参照先だけが設定されています…」が付いた。パネルはカスタムでない行の補足にも `{row.keyNotice}` を足していた。実 DSH では標準の DeepSeek（`dsh-llm-deepseek-api-key/lib/index.js:9` が `apiKeyEnv` の既定値を `DEEPSEEK_API_KEY` にするので、明示の行になる）の表示が「API キー：未登録キーの参照先だけが…」になることを、偽データと実 DSH の両方で確かめた。前からある機能の回帰 | 条件を `row.custom && status && !status.configured` にし、パネルのカスタムでない行を main と同じ表示に戻した |
+| G2 | blocking | `custom-provider-store.ts`（`requireMissing` で止めたあと） | 論点 2。フォームが付けた参照名に、保存の間に別の経路でキーが登録されると、キーは送らずに止めるが、名前は設定に残った。DSH は明示された名前のキーをそのまま使うので（下の (3)）、利用者が入力したベース URL へ別の提供元のキーが送られ得た | (3) の方針で、付けた名前を外す |
+| G3 | blocking | `custom-provider-store.ts` の `load`（予約名の収集） | 一覧（main と同じ動き）は、参照名の無い未稼働の標準の行に導出名（例：pi-ai の `openai-codex` → `OPENAI_CODEX_API_KEY`）を使って照会・登録する。この名前は既定名の表（5 回目の節）に無いので、フォームは ID `OpenAI-Codex` のカスタムに同じ名前を新しく付けられた。その結果、標準の行が他人のキーを「登録済み」と表示し、一覧からの登録がそのキーを上書きし得た。pi-ai の builtin 41 件（`@earendil-works/pi-ai/dist/providers/all.js`）には、表に無い提供元が複数ある | `load` で `providerRows(...)` のカスタムでない行の `row.ref` を予約名に足す |
+| m1 | minor | `custom-provider-store.ts` の予約名の収集 | 提供元でない名前空間の `apiKeyEnv`（例：`web-search-deepseek`）は予約していない。登録済みなら、保存時の 1 件の照会（登録済みならキー欄のエラー）で止まるので、上書きはしない。未登録の名前を先に取った場合は、あとでその機能がキーを共有する | 記録のみ |
+| m2 | minor | G2 の外せなかった場合 | 名前を外せなかったとき（競合・拒否・結果不明）、M3E の中に、カスタムの参照名を外す操作は無い。案内は、再読み込みで状態を確かめ、DSH の標準の設定で外すか変えるよう促す | 記録のみ |
+
+確かめて、問題が無いと判定した点（試験の名前は、根拠にした試験）：
+
+- フォームの保存：追加は `providers.<ID>` への 1 件の `set`、編集は変えた項目だけの `set` / `unset`（`I16 ops`、`I16 A6 edit key reference O06`）。開いた時点の revision を使い、競合では `stale` にして自動で再送しない（`I16 opened revision M08`、`I16 preflight revision`、`I16 A6 change during save S15`）。画面が扱わない項目（`headers` など）、ほかの提供元、既定のモデル・選択中のモデルは変えない（`I16 ops`、`I16 UI lifecycle`、実 DSH の `I16 real lifecycle`）。
+- 保存の状態：二重送信、閉じたあとの応答、切断、結果不明で、提供元を重ねて作らない（`I16 partial`、`I16 UI late`、`I16 A6 double submit S10/S11`）。設定だけ成功してキーが失敗したあとの再試行は、キーだけを送る（`I16 UI partial`）。
+- 重なりの検査：G3 のほかに、すり抜けと止めすぎは見つからなかった。明示された保存先の共有は止めない（`I16 explicit reference`）。
+- API キー：保存済みのキーは取得も表示もしない（使うのは `credentials.describe` の `configured` / `writable` と、`set` / `unset` だけ）。設定の本文、URL、ログ、ブラウザーの保存領域に入力を書く処理は無い（`localStorage` / `sessionStorage` / `console` / `history` の使用なし）。送信の開始時、キャンセル・破棄・切断・読み直し・外部変更のときに入力を消す（`I16 A6 reload clears key S07`、`I16 A6 change while editing S16`）。
+- 偽データ（`?mock`）：参照名の扱い、競合、検査の厳しさで、実物との差は見つからなかった。実物で確かめた動き（G2 の外す流れ、G3）は、偽データと実 DSH の両方の試験で同じ期待にした。
+
+#### (2) main との比較
+
+`git diff origin/main..HEAD -- providers.ts ProvidersPanel.tsx` の差（修正のあと）：
+
+1. `ProviderAddress.declared` を受け取る。`custom = declared === true && settingsNs === 'llm-pi-ai'`。標準のカタログの提供元は `declared` にならない（`dsh-llm-pi-ai/lib/index.js:2513-2525`）。
+2. `native` から、名前の無いカスタムを除く。名前の無いカスタムは `ref` なし、`status: 'unset'`、`needsReference: false`。
+3. `keyNotice`：カスタムの行で、キーが未登録のときだけ。
+4. `settingsWritable` と `customAvailable` を状態に足す（「カスタムプロバイダーを追加」の可否）。
+5. `change` の `canSend`（照会のあとと送信の直前）と `requireMissing`。渡すのはフォームだけで、一覧の `save` / `remove` は渡さない。
+6. `createKeyDraft.clear()`。フォームが入力を消すため。
+7. パネル：状態の文言に「API キー：未設定」を足す。カスタムの行は別の表示（「編集」と、参照名があるときだけ「API キー」）。カスタムでない行は main と同じ。
+
+| 行の種類 | 表示 | 登録 | 削除 | 照会の失敗 | 修正前 |
+|---|---|---|---|---|---|
+| 標準・稼働中・名前なし（キーは不要） | 同じ | 同じ（不可） | 同じ（不可） | 同じ | 同じ |
+| 標準・未稼働・pi-ai・名前なし（導出名） | 同じ | 同じ（参照名を書き込んでからキー） | 同じ | 同じ（確認できません＋再読み込み） | 名前を書き込んだあと、キー未登録の表示に案内が付いた（✗） |
+| 標準・未稼働・pi-ai 以外の名前空間（導出名） | 同じ | 同じ（変更できません） | 同じ | 同じ | 同じ |
+| 参照名を明示した行（実 DSH の DeepSeek を含む） | 同じ | 同じ | 同じ | 同じ | キー未登録のとき案内が付いた（✗） |
+| 同じ名前を明示した複数の行 | 同じ | 同じ（共有を止めない） | 同じ | 同じ | キー未登録のとき案内が付いた（✗） |
+| アカウントの提供元（`deepseek-account`） | 同じ | 同じ（不可） | 同じ | 同じ | 同じ |
+
+根拠の試験：`I16 R4 main parity`（全種類の既存行が、参照先なしのカスタム 70 件の有無で変わらない）、`I16 G1 standard notice`、`I16 UI standard notice G1`、実 DSH の `I16 real numeric ID`（DeepSeek の補足が「API キー：未登録」と完全に一致）。
+
+#### (3) 論点 2：止めたときに、付けた名前を外す
+
+実物の確認（`dsh-llm-pi-ai/lib/index.js`）：
+
+- `2563-2570` の `resolveApiKey`：`apiKeyEnv` があれば、その名前の資格情報を解決して使う。見つからなければ `MISSING_CREDENTIAL` で、ほかの名前へは戻らない。`apiKeyEnv` が無ければ `undefined`。
+- `818-866` の `harnessApiKeyAuth` / `routeAuth`：カタログに無い（手で宣言した）経路は harness の解決だけを使う。名前が無ければ認証なしで、周囲の環境変数は探さない。`1852` で要求ごとに解決する。
+
+したがって、名前を残すと、登録済みの別のキーが、利用者の入力したベース URL へ送られ得る。名前を外せば、この提供元にキーは付かない。方針は適切と判断し、そのまま採用した。
+
+実装（`custom-provider-store.ts` の `detach`）：止めたら、設定をその場で読み直し、その提供元の `apiKeyEnv` がまだ自分の付けた名前のときだけ、読み直した revision で `unset` を 1 回送る。自動で再送しない。結果は次のとおり。
+
+| 結果 | 状態 | 案内（部分成功の説明と「設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。」に続ける） |
+|---|---|---|
+| 外せた | `saved`（入力と保存は無効。開き直すと名前の重なりで止まる） | この保存で付けた参照名を、この提供元の設定から外しました。… ほかと重ならない ID で追加し直してください。 |
+| 値が変わっていた・競合 | `stale`（再読み込み） | この保存で付けた参照名を外せませんでした。… DSH の標準の設定でこの提供元の参照名を外すか変えてください。 |
+| 拒否 | `keyFailed` | 参照名を外す変更が拒否されました。… |
+| 例外・切断・読み直し失敗 | `unknown`（保存結果を確認） | 参照名を外せたか確認できません。… |
+
+外せたあとは、その名前を予約名に足し、付けた名前の記憶を消す。`providers.ts` には、名前を付ける・外す処理を戻していない（返すのは `keyRegisteredMeanwhileMessage` の定数だけ）。`docs/ui-spec.md` の「保存できない場合」の表と、参照名の予約の段落を合わせた。
+
+#### (4) 試験を壊して確かめる監査
+
+本体を 1 か所ずつ書き換え、対象の試験を実際に流して、毎回 `git checkout` で戻した（壊した変更はコミットしていない。監査の終わりに `git status` が clean であることを確かめた）。対象の試験は `tests/08-custom-provider*.test.ts`、`tests/08-provider-*.test.ts`、`tests/08-providers.test.ts`（単体）、`e2e/settings-custom-provider.spec.ts`（偽データ e2e）、`e2e-dsh/custom-provider.spec.ts`（実 DSH）。変異は 88 個で、実行は単体 76 回、偽データ e2e 26 回、実 DSH 15 回。実 DSH で落ちたのは 11 個（P05、P14、F04、F10、F14、S01、O02、O03、U01、U09、U10）。実 DSH で落ちなかった P09、F01、F07、S05 は、単体で検出するか、等価と判断した。結果の内訳は、検出 68、追加の試験で検出 7、等価 13、未検出の非等価 0。「落ちた試験」の欄は、試験の名前の先頭だけを書いた。
+
+| 番号 | 場所 | 変異 | 落ちた試験 | 結果 |
+|---|---|---|---|---|
+| P01 | providers: カスタムの判定 | `const custom = entry.declared === true && entry.settingsNs === 'llm…` → `const custom = entry.settingsNs === 'llm-pi-ai'` | 単体：I16 G1 standard notice、I16 G3 list destination、I16 R4 main parity ほか | 検出 |
+| P02 | providers: カスタムの判定 | `const custom = entry.declared === true && entry.settingsNs === 'llm…` → `const custom = entry.declared === true` | 単体：生存 | 生存→追加試験で検出 |
+| P03 | providers: カスタムの判定 | `const custom = entry.declared === true && entry.settingsNs === 'llm…` → `const custom = false` | 単体：I16 G1 standard notice、I16 G2 detach、I16 R4 main parity ほか | 検出 |
+| P04 | providers: 名前なしカスタムの行 | `!custom && !named && live.has(entry.provider)` → `!named && live.has(entry.provider)` | 単体：生存 | 等価 |
+| P05 | providers: 名前なしカスタムの行 | `const withoutReference = custom && !named` → `const withoutReference = false` | 単体：I16 G2 detach、I16 R4 main parity、I16 R4 native write ほか／実 DSH：I16 real case N09、I16 real destinations、I16 real failures ほか | 検出 |
+| P06 | providers: 名前なしカスタムの行 | `native \|\| withoutReference ? undefined :` → `native ? undefined :` | 単体：I16 G2 detach、I16 R4 main parity、I16 R4 native write ほか | 検出 |
+| P07 | providers: 名前なしカスタムの行 | `needsReference: !named && !native && !custom,` → `needsReference: !named && !native,` | 単体：生存 | 等価 |
+| P08 | providers: 名前なしカスタムの行 | `status: withoutReference ? 'unset' :` → `status: withoutReference ? 'missing' :` | 単体：I16 G2 detach、I16 R4 lookup failures、I16 R4 main parity ほか | 検出 |
+| P09 | providers: keyNotice の条件 | `...(row.custom && status && !status.configured ?` → `...(status && !status.configured ?` | 単体：I16 G1 standard notice、I16 reference write close M47／実 DSH：生存 | 検出 |
+| P10 | providers: keyNotice の条件 | `...(row.custom && status && !status.configured ?` → `...(row.custom && status && status.configured ?` | 単体：I16 G1 standard notice、I16 reference recheck | 検出 |
+| P11 | providers: keyNotice の条件 | `{ keyNotice: pendingKeyReferenceMessage }` → `{}` | 単体：I16 G1 standard notice | 検出 |
+| P12 | providers: canSend（照会後） | `if (options.canSend?.() === false) return { ok: false, message: '入力…` → `（削除）` | 単体：生存 | 等価 |
+| P13 | providers: canSend（送信直前） | `if (options.canSend?.() === false) return { ok: false, message: '入力…` → `（削除）` | 単体：I16 reference write close M47 | 検出 |
+| P14 | providers: requireMissing の判定 | `if (options.requireMissing && row.status !== 'missing')` → `if (false)` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか／実 DSH：I16 real late registration | 検出 |
+| P15 | providers: requireMissing の判定 | `if (options.requireMissing && row.status !== 'missing')` → `if (row.status !== 'missing')` | 単体：I16 G1 standard notice、I16 R4 main parity、I16 destinations reopen ほか | 検出 |
+| P16 | providers: requireMissing の判定 | `if (options.requireMissing && row.status !== 'missing')` → `if (options.requireMissing && row.status === 'm…` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか | 検出 |
+| P17 | providers: 照会の失敗 | `const info = answer.ok ? answer.value : {}` → `const info = answer.ok ? answer.value : Object.…` | 単体：I16 R4 lookup failures、状態照会の拒否・不正応答・例外を未登録に置き換えず書き込みを止める | 検出 |
+| P18 | providers: 照会の失敗 | `if (request === sequence && generation === epoch) publish({ phase: …` → `if (request === sequence && generation === epoc…` | 単体：I16 R4 lookup failures、状態照会の拒否・不正応答・例外を未登録に置き換えず書き込みを止める | 検出 |
+| P19 | providers: 追加の可否 | `customAvailable: settings.value.namespaces.some(row => row.ns === '…` → `customAvailable: true,` | 偽データ e2e：I16 UI blocked | 検出 |
+| P20 | providers: 追加の可否 | `settingsWritable: settings.value.writable,` → `settingsWritable: true,` | 偽データ e2e：I16 UI blocked | 検出 |
+| F01 | フォーム: 明示名との重なり | `return objectValue(value) && typeof value.apiKeyEnv === 'string' ? …` → `return []` | 単体：生存／実 DSH：生存 | 等価（重複） |
+| F02 | フォーム: 明示名との重なり | `if (objectValue(value) && typeof value.apiKeyEnv === 'string') refe…` → `if (false) references.push('')` | 単体：生存 | 等価（重複） |
+| F03 | フォーム: 別の名前空間の名前 | `return objectValue(value) && typeof value.apiKeyEnv === 'string' ? …` → `return entry.settingsNs === CUSTOM_NS && object…` | 単体：生存 | 等価（重複） |
+| F04 | フォーム: 一覧の導出名の予約 | `if (!row.custom && row.ref) references.push(row.ref)` → `if (false) references.push('')` | 単体：I16 G3 list destination／実 DSH：I16 real list destination G3 | 検出 |
+| F05 | フォーム: 重なりの検査 | `else if (key && !hasReference && state.draft) {` → `else if (false) {` | 単体：I16 G2 detach、I16 G3 list destination、I16 R5 foreign owner ほか／偽データ e2e：I16 UI destinations、I16 UI late registration、I16 UI reserved | 検出 |
+| F06 | フォーム: 名前の形 | `if (key && !validKeyReference(ref)) errors.key = invalidKeyReferenc…` → `if (false) errors.key = invalidKeyReferenceMess…` | 単体：I16 numeric ID | 検出 |
+| F07 | フォーム: 登録済みの確認 | `: info.configured ? 'この名前のキーはすでに登録されています。'` → `: false ? 'この名前のキーはすでに登録されています。'` | 単体：I16 orphan destination、I16 preflight／実 DSH：生存 | 検出 |
+| F08 | フォーム: 登録済みの確認 | `const reason = !info ? '登録状況を確認できません。接続を確認して、もう一度お試しください。'` → `const reason = !info ? undefined` | 単体：I16 preflight | 検出 |
+| F09 | フォーム: 登録済みの確認 | `: !info.writable ? 'この保存先は変更できません。' : undefined` → `: undefined` | 単体：I16 preflight | 検出 |
+| F10 | フォーム: 付けた名前を覚える | `          assignedReference = ref⏎` → `（削除）` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか／実 DSH：I16 real late registration | 検出 |
+| F11 | フォーム: 付けた名前を忘れる（1 回目のあと） | `        pendingKey = undefined⏎        const outcome` → `        pendingKey = undefined⏎        assigned…` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか | 検出 |
+| F12 | フォーム: 付けた名前を忘れる（読み直し） | `    input.clear()⏎    publish({ phase: 'loading'` → `    input.clear(); assignedReference = undefine…` | 単体：I16 G2 detach conflict、I16 R5 unknown result | 検出 |
+| F13 | フォーム: requireMissing の付与 | `requireMissing: ref === assignedReference` → `requireMissing: false` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか | 検出 |
+| F14 | フォーム: 名前を外す（呼ばない） | `if (!outcome.ok && outcome.message === keyRegisteredMeanwhileMessag…` → `if (false) {` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか／偽データ e2e：I16 UI late registration／実 DSH：I16 real late registration | 検出 |
+| F15 | フォーム: 名前を外す（値の確認） | `      if (!objectValue(profile) \|\| profile.apiKeyEnv !== ref) retur…` → `（削除）` | 単体：I16 G2 detach changed | 検出 |
+| F16 | フォーム: 名前を外す（revision） | `[{ op: 'unset', path: ['providers', target!, 'apiKeyEnv'] }], names…` → `[{ op: 'unset', path: ['providers', target!, 'a…` | 単体：生存 | 生存→追加試験で検出 |
+| F17 | フォーム: 名前を外す（競合の自動再送） | `      if (!result.ok) return result.error.code === 'settings/confli…` → `      if (!result.ok && result.error.code === '…` | 単体：I16 G2 detach conflict | 検出 |
+| F18 | フォーム: 名前を外す（失敗の分類） | `['settings/rejected', 'gateway/bad-request'].includes(result.error.…` → `['settings/rejected', 'gateway/bad-request'].in…` | 単体：I16 G2 detach failures | 検出 |
+| F19 | フォーム: 名前を外す（忘れる） | `      assignedReference = undefined⏎      references.push(ref)` → `      references.push(ref)` | 単体：生存 | 等価 |
+| F20 | フォーム: 名前を外す（予約に足す） | `      assignedReference = undefined⏎      references.push(ref)` → `      assignedReference = undefined` | 単体：生存 | 等価 |
+| F21 | フォーム: 名前を外す（状態の更新） | `      publish({ namespace: result.value, initial: structuredClone(s…` → `      return 'saved'` | 単体：生存 | 等価 |
+| F22 | フォーム: 名前を外す（成功の phase） | `      return 'saved'⏎    } catch { return 'unknown' }` → `      return 'keyFailed'⏎    } catch { return '…` | 単体：I16 G2 detach、I16 G2 detach conflict、I16 R5 late registration ほか／偽データ e2e：I16 UI late registration | 検出 |
+| F23 | フォーム: 大文字と小文字 | `if (named.includes(ref)) return` → `if (named.some(name => name.toUpperCase() === r…` | 単体：I16 destinations owners | 検出 |
+| F24 | フォーム: 標準の既定名の表 | `if (Object.values(defaults).some(refs => refs.includes(ref))) return` → `if (false) return` | 単体：I16 destinations native、I16 destinations owners | 検出 |
+| F25 | フォーム: 接頭辞の予約 | `const families = ['AWS_', 'GOOGLE_', 'GCLOUD_', 'CLOUDFLARE_']` → `const families: string[] = []` | 単体：I16 destinations owners／偽データ e2e：I16 UI reserved | 検出 |
+| F26 | フォーム: 名前の形 | `export const validKeyReference = (ref: string) => /^[A-Za-z_][A-Za-…` → `export const validKeyReference = (ref: string) …` | 単体：I16 numeric ID | 検出 |
+| S01 | 保存: revision | `const result = await remote.settings.mutate(CUSTOM_NS, ops, namespa…` → `const latest = await remote.settings.describe()…` | 単体：I16 opened revision M08、I16 preflight revision／実 DSH：I16 real failures | 検出 |
+| S02 | 保存: 競合のあとの再送 | `            const conflict = result.error.code === 'settings/confli…` → `            if (result.error.code === 'settings…` | 単体：I16 opened revision M08、I16 preflight revision、I16 refusals | 検出 |
+| S03 | 保存: 部分成功のあとの再試行（設定再送） | `    try {⏎      if (!committed) {⏎        const ops` → `    try {⏎      if (true) {⏎        const ops` | 単体：生存／偽データ e2e：生存 | 等価 |
+| S04 | 保存: 部分成功のあとの再試行（キー） | `      if (pendingKey) {⏎        publish({ phase: 'savingKey' })` → `      if (false) {⏎        publish({ phase: 'sa…` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか | 検出 |
+| S05 | 保存: 閉じたあとの送信 | `canSend: () => active && connected && generation === epoch` → `canSend: () => true` | 単体：I16 key recheck close／実 DSH：生存 | 検出 |
+| S06 | 保存: 閉じたあとの送信 | `dispose() { active = false; ticket++; pendingKey = undefined; input…` → `dispose() {},` | 単体：I16 close、I16 key recheck close、I16 preflight close／偽データ e2e：I16 UI late | 検出 |
+| S07 | キーの入力: 読み直しで消す | `    input.clear()⏎    publish({ phase: 'loading'` → `    publish({ phase: 'loading'` | 単体：生存 | 生存→追加試験で検出 |
+| S08 | キーの入力: 切断で消す | `      connected = next; epoch++; ticket++; pendingKey = undefined⏎ …` → `      connected = next; epoch++; ticket++; pend…` | 単体：I16 unknown | 検出 |
+| S09 | キーの入力: 送信開始で消す | `publish({ draft: '', visible: false, busy: true, error: null })` → `publish({ busy: true, error: null })` | 単体：I16 partial、I16 preflight、サーバーの拒否と例外に入力値が含まれても保存結果と入力シートへ出さない ほか／偽データ e2e：I16 UI late、I16 UI late registration、I16 UI partial ほか | 検出 |
+| S10 | 保存: 二重送信 | `if (!active \|\| !connected \|\| saving \|\| !state.writable` → `if (!active \|\| !connected \|\| !state.writable` | 単体：生存 | 等価（重複） |
+| S11 | 保存: 二重送信 | `      if (saving \|\| !active \|\| !connected) return false` → `      if (!active \|\| !connected) return false` | 単体：生存 | 等価（重複） |
+| S12 | 保存中のボタン | `disabled={!['editing', 'keyFailed'].includes(state.phase) \|\| (!chan…` → `disabled={!['editing', 'keyFailed', 'savingSett…` | 偽データ e2e：I16 UI saving M39 | 検出 |
+| S13 | 失敗の理由の表示 | `          const message = `${partialMessage} ${outcome.message}`` → `          const message = partialMessage` | 単体：I16 R5 retry、I16 partial／偽データ e2e：I16 UI partial | 検出 |
+| S14 | 失敗の理由の表示 | `if (!conflict && !['settings/rejected', 'gateway/bad-request'].incl…` → `if (false) {` | 単体：I16 unknown | 検出 |
+| S15 | 保存: 保存中の外部変更 | `if (saving) { changedDuringSave = true; return }` → `if (saving) return` | 単体：生存 | 生存→追加試験で検出 |
+| S16 | 保存: 編集中の外部変更 | `      input.clear()⏎      publish({ phase: 'stale', message: confli…` → `    },` | 単体：生存／偽データ e2e：生存 | 生存→追加試験で検出 |
+| O01 | path operation: 項目の欠落 | `...(draft.displayName ? { displayName: draft.displayName } : {}),` → `（削除）` | 単体：生存／偽データ e2e：I16 UI URL、I16 UI destinations、I16 UI dismiss ほか | 検出 |
+| O02 | path operation: 項目の欠落 | `...(withKey ? { apiKeyEnv: providerRef(id) } : {}),` → `（削除）` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか／実 DSH：I16 real late registration、I16 real lifecycle | 検出 |
+| O03 | path operation: 変えていない項目の送信 | `if (draft[key] !== initial[key]) put(` → `if (true) put(` | 単体：I16 G2 detach conflict、I16 ops、I16 retry sharing B04／実 DSH：I16 real failures | 検出 |
+| O04 | path operation: 変えていない項目の送信 | `if (!equal(models, initial.models.map(modelValue))) put('models', m…` → `put('models', models)` | 単体：I16 ops、I16 retry sharing B04 | 検出 |
+| O05 | path operation: モデルの未知の項目 | `  const result = structuredClone(model.original)` → `  const result: SettingObject = {}` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか | 検出 |
+| O06 | path operation: 編集での名前の付与 | `if (withKey && !reference) put('apiKeyEnv', providerRef(id))` → `if (false) put('apiKeyEnv', providerRef(id))` | 単体：生存 | 生存→追加試験で検出 |
+| O07 | 入力の検査: ID | `else if (['__proto__', 'constructor', 'prototype'].includes(id))` → `else if (false)` | 単体：I16 validation | 検出 |
+| O08 | 入力の検査: ID | `else if (taken.includes(id))` → `else if (false)` | 単体：I16 validation／偽データ e2e：I16 UI lifecycle | 検出 |
+| O09 | 入力の検査: URL | `  if (!/^https?:\/\//i.test(url)) return false` → `  if (!/^[a-z]+:\/\//i.test(url)) return false` | 単体：生存／偽データ e2e：生存 | 等価 |
+| O10 | 入力の検査: URL | `baseURL: draft.baseURL.trim(), models` → `baseURL: draft.baseURL, models` | 単体：I16 ops | 検出 |
+| O11 | 入力の検査: プロトコル | `if (!choices.includes(draft.api)) errors.api` → `if (!draft.api) errors.api` | 単体：I16 validation | 検出 |
+| O12 | 入力の検査: モデル | `else if (ids.has(name)) errors` → `else if (false) errors` | 単体：I16 validation | 検出 |
+| O13 | 入力の検査: モデル | `if (!name) errors[`${model.row}.id`]` → `if (false) errors[`${model.row}.id`]` | 単体：I16 validation | 検出 |
+| O14 | 入力の検査: モデル | `!Number.isFinite(number) \|\| number < 1 \|\|` → `!Number.isFinite(number) \|\|` | 単体：I16 validation | 検出 |
+| O15 | 入力の検査: モデル | `if (!draft.models.length) errors.models` → `if (false) errors.models` | 単体：I16 validation／偽データ e2e：生存 | 生存→追加試験で検出 |
+| O16 | 入力の検査: モデル | `(!model.input.length \|\| model.input.some(` → `(model.input.some(` | 単体：I16 input M22 | 検出 |
+| U01 | 画面: 未設定の表示 | `unset: 'API キー：未設定',` → `unset: 'API キー：未登録',` | 偽データ e2e：I16 UI destinations、I16 UI late registration、I16 UI lifecycle ほか／実 DSH：I16 real case N09、I16 real destinations、I16 real failures ほか | 検出 |
+| U02 | 画面: 未設定の案内 | `{!row.ref && <span>API キーは「編集」から登録できます。</span>}` → `（削除）` | 偽データ e2e：I16 UI destinations、I16 UI late registration | 検出 |
+| U03 | 画面: 「API キー」の入口 | `{row.ref && <M3eButton variant="text" disabled={!row.writable` → `{<M3eButton variant="text" disabled={!row.writa…` | 偽データ e2e：I16 UI destinations、I16 UI late registration | 検出 |
+| U04 | 画面: 「編集」の入口 | `{state.rows.map(row => row.custom ? <div` → `{state.rows.map(row => row.custom && row.ref ? …` | 偽データ e2e：I16 UI URL、I16 UI destinations、I16 UI dismiss ほか | 検出 |
+| U05 | 画面: 案内の文言（一覧の keyNotice） | `{row.keyNotice && <span>{row.keyNotice}</span>}` → `（削除）` | 偽データ e2e：I16 UI destinations | 検出 |
+| U06 | 画面: 案内の文言（変更できません） | `<span>{statusLabels[row.status]}{row.ref && !row.writable && row.st…` → `<span>{statusLabels[row.status]}</span>{!row.ref` | 偽データ e2e：I16 UI fixed key | 検出 |
+| U07 | 画面: 追加の入口 | `state.settingsWritable !== true \|\| !state.customAvailable \|\| editor…` → `state.settingsWritable !== true \|\| editorBusy` | 偽データ e2e：I16 UI blocked | 検出 |
+| U08 | 画面: 案内の文言（フォームの keyNotice） | `{provider?.keyNotice && <p className="settings-field-help">{provide…` → `（削除）` | 偽データ e2e：I16 UI destinations | 検出 |
+| U09 | 画面: 案内の文言（名前の形） | `{keyRefInvalid && !state.errors.key && <p className="settings-field…` → `（削除）` | 偽データ e2e：生存／実 DSH：I16 real numeric ID | 検出 |
+| U10 | 画面: 名前を外したあとの表示 | `          if (active && generation === epoch) publish({ phase, mess…` → `          if (active && generation === epoch) p…` | 単体：I16 G2 detach、I16 G2 detach changed、I16 G2 detach conflict ほか／偽データ e2e：I16 UI late registration／実 DSH：I16 real late registration | 検出 |
+
+生存した変異の扱い：
+
+- 追加の試験で検出（`tests/08-provider-audit6.test.ts`。修正のあとの本体で成功し、同じ変異で落ちることを確かめた）：P02（`llm-pi-ai` 以外の宣言をカスタムとして扱う）、F16（名前を外すときに、読み直す前の revision を使う。ほかの提供元の変更と競合する）、S07（読み直しでキーの入力を消さない）、S15（保存中の外部変更を覚えない）、S16（編集中の外部変更で `stale` にしない・入力を消さない）、O06（編集でキーを入れたときに参照名を付けない）、O15（モデル 0 件を止めない）。
+- 等価（利用者に見える動きも、送るデータも変わらない）：
+  - P04：名前の無いカスタムは、`native` の値に関わらず `withoutReference` が先に効き、`ref` なし・`unset` になる。
+  - P07：名前の無いカスタムの `needsReference` を読む箇所は、`writable` の計算（`ns === 'llm-pi-ai'` なので結果が同じ）と、`change` の参照名の書き込み（`ref` が無い行は先に止まる）だけ。
+  - P12：照会のあとの `canSend` は、送信の直前の `canSend`（P13 は検出）と重なる。その間の参照名の書き込みは `needsReference` の行だけで、フォームが渡すカスタムの行は該当しない。
+  - F01・F02・F03：明示名を集める処理が 2 か所にあり、互いを覆う。組み合わせの F01+F02、F01+F04、F02+F04 は、どれも単体で落ちることを確かめた。
+  - F19・F20・F21：名前を外せたあとは `saved` で、入力と保存が無効になる。次に開くフォームは `load` で計算し直す。
+  - S03：部分成功のあとの再試行で設定の分岐に入っても、`apiKeyEnv` は保存済みなので操作が空になり、書き込みは起きない。
+  - S10・S11：二重送信の防止は、`saving` の 2 か所と、`phase` の検査（`savingSettings` の間は `save` が先に止まる）の 3 重。S10+S11 の組み合わせも生存したので、`phase` の検査が残る限り等価と判断した。キーなしの二重送信で書き込みが 1 回であることは `I16 A6 double submit S10/S11` で固定した。
+  - O09：URL の正規表現をゆるめても、あとの `new URL` のプロトコルの検査で `http:` / `https:` 以外は止まる。
+
+#### (5) 直した内容と、壊して確かめた表
+
+修正は `ae74342`（G1・G2・G3）、監査で足した試験は `ca76cfa`。足した試験と期待を変えた試験は、修正の前の本体（または対応する変異）で落ちることを、1 件ずつ実行して確かめた。
+
+| 試験 | 種類 | 壊した本体 | 結果 |
+|---|---|---|---|
+| `I16 G1 standard notice`（単体） | 追加 | 修正の前の `providers.ts`（`!row.needsReference`） | 落ちる |
+| `I16 G2 detach` / `detach changed` / `detach conflict` / `detach failures`（単体） | 追加 | 修正の前の `custom-provider-store.ts`（外さない） | 4 件とも落ちる |
+| `I16 G3 list destination`（単体） | 追加 | 修正の前（一覧の導出名を予約しない） | 落ちる |
+| `I16 UI standard notice G1`（偽データ e2e） | 追加 | 修正の前の本体 | 落ちる |
+| `I16 UI late registration`（偽データ e2e） | 期待を変更 | 修正の前の本体 | 落ちる |
+| `I16 real numeric ID`（実 DSH、DeepSeek の補足の完全一致を追加） | 期待を追加 | 修正の前の本体 | 落ちる |
+| `I16 real late registration`（実 DSH） | 期待を変更 | 修正の前の本体 | 落ちる |
+| `I16 real list destination G3`（実 DSH） | 追加 | 修正の前の本体 | 落ちる |
+| `I16 reference write close M47`（単体） | 期待を変更 | 変異 P09（カスタムに限らない） | 落ちる |
+| `I16 R5 late registration` / `I16 R5 unknown result`（単体） | 期待を変更 | 修正の前の本体／変異 U10・F14 | 落ちる |
+| `I16 A6 …` の 8 件（単体） | 追加 | 変異 P02、F16、S07、S15、S16、O06、O15、S10+S11（最後の組み合わせは生存。上の等価の判断を参照） | 7 件は落ちる |
+
+既存の試験の期待を変えた理由：
+
+- `I16 reference write close M47`：標準の行の `keyNotice` を `undefined` にした。G1 で、前からある種類の行を main と同じ表示に戻したため。
+- `I16 R5 late registration`：理由の文言を `keyRegisteredMeanwhileMessage` に変え、外せたあと（`saved`、`apiKeyEnv` なし）の動きを確かめるようにした。同じフォームの再試行、シートの中の読み直し、一覧、開き直したフォームのどれからも、キーを送らないことは保ったまま。G2 の方針を変えたため。
+- `I16 R5 unknown result`：文言を変え、`apiKeyEnv` の確認を足した。G2 のため。
+- 偽データ e2e と実 DSH の `late registration`：外す書き込みが増えたので、書き込みは 2 件で最後が `unset`、行は「API キー：未設定」、開き直すと重なりで止まる、を確かめる。相手のキーは登録済みのまま、送ったキーは 0 件。G2 のため。
+
+#### (6) 検証の件数
+
+基準（`379299f`）：型検査とビルドは成功、単体 1,078 件、`check:pack` は成功、偽データの e2e 173 件（文書の値。この作業では基準の本体で流していない）、実 DSH は全 41 件（この作業で 1 回流して確かめた。通常の成功 40 件と、既知の差の期待失敗 1 件）。
+
+最終（`ca76cfa` の本体）：
+
+| 検証 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test`（単体） | 1,092 件すべて成功（基準より 14 件多い：`08-provider-review6` 6 件、`08-provider-audit6` 8 件） |
+| `pnpm build` | 成功 |
+| `pnpm run check:pack` | 成功（19 ファイル） |
+| 偽データの e2e（`e2e/playwright.config.ts`） | 174 件すべて成功（`I16 UI standard notice G1` を足した） |
+| 実 DSH の e2e 1 回目（`M3E_DSH_VERSION=0.2.0-rc.2`） | 全 42 件が期待どおり（通常の成功 41 件と、再接続の表示についての既知の差の期待失敗 1 件）。3.2 分 |
+| 実 DSH の e2e 2 回目 | 1 回目と同じ。全 42 件が期待どおり（41 件と期待失敗 1 件）。3.2 分 |
+
+偽データの成功と実 DSH の成功は、別々に数えた。実 DSH の 1 件の増加は `I16 real list destination G3`。
+
+#### (7) 未検証のこと
+
+- iOS の実機のキーボードと自動入力でのキー欄の扱い（Chromium の e2e だけで確かめた）。
+- 実際の提供元への認証と推論（実 DSH は偽の LLM と 127.0.0.1 だけで動かした）。
+- Host を再起動したあとに、外した参照名が残らないこと。
+- 読み直しから送信までの時間差（既存の制限。5 回目の節を参照）と、閉じた直後に外す処理が走らない微小な時間差。
+- 外せなかった場合に、DSH の標準の設定で参照名を外す手順の操作確認。
+- `dsh-credentials` 系の内部（保護対象のため読んでいない）。資格情報の挙動は、統合試験で観測した範囲だけを根拠にした。
+
+#### (8) `providers.ts` の main との差の一覧と理由
+
+| 差 | 理由 |
+|---|---|
+| `ProviderAddress.declared?` | 実物の `listConfigurableProviders` が返す `declared` で、手で宣言した `llm-pi-ai` の提供元（カスタム）を見分ける |
+| `ProviderRow.custom` / `keyNotice` / `status: 'unset'` | 名前の無いカスタムを「API キー：未設定」の行にし、キーの登録を編集のフォームへ回すため。`keyNotice` は、カスタムの行でキーが未登録のときだけ（6 回目で G1 を直し、前からある種類の行は main と同じ表示） |
+| `native` から名前の無いカスタムを除き、`ref` を付けない・`needsReference: false` | 一覧から名前を自動で付ける経路を作らないため（5 回目までの判断） |
+| `settingsWritable` / `customAvailable` | 「カスタムプロバイダーを追加」の可否と理由の表示 |
+| `KeySaveOptions`（`canSend`、`requireMissing`）と `save` の第 3 引数 | フォームを閉じたあとに送らないため、フォームが付けたばかりの名前に別のキーが登録されていたら上書きしないため。一覧の `save` / `remove` は渡さないので、main と同じ動き |
+| `keyRegisteredMeanwhileMessage` / `pendingKeyReferenceMessage` の import | 文言を `provider-key-refs.ts` の定数にして、フォームが `requireMissing` の停止を見分けるため（6 回目で `keyRegisteredMeanwhileMessage` を足した） |
+| `createKeyDraft.clear()` | フォームが、送信の開始、キャンセル、破棄、外部変更のときに入力を消すため |
+
+照会・登録・削除の流れ（1 回の `credentials.describe`、参照名の書き込み、`set` / `unset`、失敗の文言）は main と同じで、照会の分割と保存のあとの再検査は戻していない。
+
+### 2026-10-05：5 回目のレビューへの対応（6 回目の節が優先）
+
+開始時は `6652683`。5 回目のレビューは blocking 3 件、minor 1 件で、Issue #16 の前からある機能の回帰は解消したと判定された。この節は、次の「4 回目の判断による単純化」の方針を引き継ぎ、下に書く点だけを改める。食い違う記述は、この節が優先する。
+
+#### `6652683` の時点の状態（次節の「06・07 待ち」の記述の、その後）
+
+次節は `8e45f9f` の時点の記録で、「06 へ引き継ぎ」「07 待ち」「現在のソースには分割ファイルが残る」「現在は確認不能を返す」と書いている。その後の経緯は次のとおり。
+
+- 06（一覧の照会を main と同じ 1 回の呼び出しへ戻す）、07（フォームが新しい参照名の 1 件を照会する接続）、08（main の失敗の契約を固定する試験）は、指示役が `6652683` で当てた。64 件ずつに分ける処理のファイル `provider-key-info.ts` は外し、いまのソースには無い。
+- `6652683` での指示役の検証：型検査とビルドは成功、単体 1,073 件が成功、`check:pack` は成功、偽データの e2e は 171 件が成功、実 DSH は全 40 件（通常の成功 39 件と、既知の差の期待失敗 1 件）。次節の「最終検証」と受け入れ条件の表にある失敗（06・07 待ち）は、この時点で解消している。
+
+#### 指摘 1：衝突の検査で、所有者を除外しない
+
+以前は、設定で参照名を明示している提供元の一覧を `{ id, ref }` で持ち、別の名前空間の所有者の `id` を `名前空間/提供元 ID` という文字列にして、入力されたカスタムの ID と同じなら「自分自身」として除いていた。カスタムの ID は `/` を許すので、たとえば `llm-deepseek` の `deepseek` が `LLM_DEEPSEEK_DEEPSEEK_API_KEY` を明示しているとき、ID `llm-deepseek/deepseek` のカスタムプロバイダーは、導出名が同じなのに衝突を見逃した。
+
+この検査が走るのは、キーが入力されていて、その提供元が参照名をまだ持たない場合だけである。その提供元が同じ名前を自分で明示していることはないので、「自分自身を除く」処理は要らない。所有者を別々の項目で識別する代わりに、除外そのものを外した。`provider-key-refs.ts` の `keyReferenceReason` / `keyReferenceConflict` は、明示されている名前の一覧と、これから付ける名前だけを受け取る。
+
+#### 指摘 2：新しく付けた参照名へは、未登録のときだけキーを送る
+
+設定の保存に付ける revision は `llm-pi-ai` のもので、別の名前空間の設定と、キーの保存先の変化は検出しない。そのため、次の順で、ほかのキーを上書きできた。
+
+1. 画面 A が `acme` をキーつきで追加し、`ACME_API_KEY` が未登録であることを確かめる。
+2. 画面 B が、別の名前空間の提供元の参照先を `ACME_API_KEY` にして、キーを登録する。
+3. A の設定の保存は、`llm-pi-ai` の revision が変わっていないので成功する。
+4. A のキーの保存が、B のキーを上書きする。
+
+指示役の判断にしたがい、次のようにした。
+
+- `providers.ts` の `change` は、キーを送る直前に登録の状況を読み直している。`KeySaveOptions` に任意の `requireMissing` を足し、指定があるときだけ、読み直した結果が「未登録」でなければ、キーを送らずに理由を返す。指定が無い経路（一覧からの登録・削除、参照名のない標準の提供元）は main と同じまま。
+- フォーム（`custom-provider-store.ts`）は、この保存で付けた参照名を `assignedReference` に覚え、その名前へのキーの保存にだけ `requireMissing` を付ける。覚えるのは、保存先の照会を通って、設定を送る直前。フォームを開いている間は消さない。したがって、部分成功のあとの同じシートでの再試行、シートの中での読み直し、設定の応答を失ったあとの「保存結果を確認」のあとでも、同じ確認が続く。
+- フォームを開き直すと、新しい状態から始まり、参照名は設定に明示されたものとして読み込まれる。これまでの方針どおり、ふつうのキーの登録として扱う（一覧からの登録と同じ）。
+- 止めたときは、部分成功の説明に続けて「設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。」を出す。
+
+これにより、次節の「設定成功後の同名の明示は、その操作側が意図した共有として扱う。設定後と再試行では衝突・configured の検査をしない」は、次のように改まる。衝突（名前の重なり）の検査と保存先の照会は、いまも設定の保存の前に 1 回だけで、再試行ではやり直さない。ただし、同じフォームからのキーの送信は、その名前がまだ未登録である場合にかぎる。別の画面が同じ名前を明示しただけ（キーは未登録）なら、これまでどおり送る。
+
+**残る時間差（既存の制限）。** 確認は「読み直しから送信まで」の間を守れない。DSH の `credentials` には「未登録のときだけ書く」操作が無く、画面の側だけでは無くせない。同じ時間差は main にもある。`git show origin/main:web/src/features/settings/providers.ts` の `change`（138〜178 行）は、150 行で登録の状況を読み、参照名のない標準の提供元なら 159 行で導出した名前を `settings.update` で付け、163 行で `credentials.set` を呼ぶ。150 行の読み取りから 163 行の送信までに、ほかの提供元がその名前を明示してキーを登録すれば、同じように上書きになる。この時間差は、既存の制限として扱う。
+
+**残る状態。** 止めたあとも、設定には参照名が残る。その名前には別のキーが登録されているので、このカスタムプロバイダーは、そのキーを参照する状態になる。画面は、そのことを文言で伝えるだけで、参照名を外す書き込みはしない（設定をもう一度書き換える操作は、指示の範囲に無く、それ自体が失敗や競合を起こし得るため）。利用者が、意図した共有かどうかを確かめる。
+
+監査の B04（`I16 retry sharing B04`）は、キーの保存を偽物に置き換えた試験で、再試行で設定を送り直さないことと、保存先の照会をやり直さないことを確かめている。いまも正しい。再試行でキーを送るかどうかは、本物のキーの保存（`providers.ts`）が読み直した登録の状況で決まり、それは下の R5 の試験が確かめる。
+
+#### 指摘 3：外していた照会の上限の試験を戻す
+
+前の回に外した `I16 R3 lookup limit` は、64 件ずつに分ける処理の試験ではなく、偽の RPC が「64 件を受け付け、65 件を拒否する」という、いまも残っている契約の確認だった。根拠は `web/src/features/settings/mock.ts` の `describe` と、実物の `dsh-api-settings-controller/lib/index.js` の 55〜57 行（`MAX_DESCRIBE_REFS = 64`、超えると `gateway/bad-request`）。`tests/08-mock.test.ts` に `I16 lookup limit` として戻した。受け付けた 64 件の名前がそのまま返ることと、拒否のコードも確かめる。次節の表の「R3 lookup limit：削除」は、この回で取り消した。
+
+#### 指摘 4：一覧の補足
+
+カスタムの行から「（変更できません）」の補足が無くなっていた。参照名を持たない行は、「API キー：未設定」と「API キーは「編集」から登録できます。」で理由が伝わるので、変えない。参照名を持つ行は、キーを変更できないとき（キーの保存先だけが読み取り専用、など）に「API キー」のボタンが無効になるだけで理由が出ていなかったので、main の一覧と同じ条件（参照名があり、変更できず、登録状況が分かっている）で「（変更できません）」を添える。
+
+#### `providers.ts` の main との差（この回の時点）
+
+| 箇所 | 差と理由 |
+|---|---|
+| 型（`ProviderAddress.declared`、`ProviderRow.custom` / `keyNotice`、`status` の `unset`） | カスタムプロバイダーの識別、参照先なしの表示、参照先だけ設定された行の案内 |
+| `ProviderState.settingsWritable` / `customAvailable` と、その publish | 「カスタムプロバイダーを追加」の可否 |
+| `providerRows` | `declared` のカスタムで参照名が無い行は、名前を導出せず、`unset`、`needsReference` は false |
+| 照会の結果に `keyNotice` を付ける 1 行 | 参照名が明示されていてキーが未登録の行の案内 |
+| `KeySaveOptions`（`canSend`、`requireMissing`）と、`change` / `save` の引数 | フォームから任意で渡す。指定が無ければ main と同じ |
+| `change` の `canSend` の判定 2 か所 | 閉じたフォームからキーを送らない |
+| `change` の `requireMissing` の判定 1 か所（この回に追加） | フォームが新しく付けた参照名へは、未登録のときだけキーを送る |
+| `createKeyDraft.clear()` | 読み直しと切断のときに入力を消す |
+
+次節の表にある「残っている未完了差（分割 import と呼出し）」は、`6652683` で無くなった。
+
+#### 試験の対応
+
+| 試験 | 内容 |
+|---|---|
+| `I16 R5 foreign owner`（`tests/08-provider-destinations.test.ts`、追加） | `llm-deepseek` の `deepseek` が明示した名前と、ID `llm-deepseek/deepseek` の導出名が同じ場合に、追加と、編集でのあと付けが止まり、設定もキーも書かれない |
+| `I16 destinations owners`（入力を変更） | 関数の引数から ID が無くなったので、呼び出しの引数を直した。名前ごとの期待（衝突する・しない）は同じ。ID だけが違って結果が同じになる行は、まとめた |
+| `I16 R5 late registration`（`tests/08-provider-review5.test.ts`、追加） | 設定の保存の応答を保留し、その間に `llm-deepseek` が同じ名前を明示してキーを登録する。フォームからの送信は 0 件、理由が出る。同じフォームの再試行と、シートの中の読み直しのあとも送らない。一覧からの登録（指定なし）は main と同じく送る。開き直したフォームからも送る |
+| `I16 R5 unknown result`（追加） | 設定の応答を失ったあとの確認で、別に登録されていれば送らず、未登録なら送る |
+| `I16 R5 retry`（追加） | キーが拒否されただけで、未登録のままなら、同じフォームの再試行で送る（止めすぎないこと） |
+| `I16 lookup limit`（`tests/08-mock.test.ts`、戻した） | 偽の照会が 64 件を受け付け、65 件を拒否する |
+| `I16 UI late registration`（偽データの画面、追加） | 上の late registration を画面で確かめる。理由の表示、キーの欄が空に戻ること、送信の記録 |
+| `I16 UI fixed key`（偽データの画面、追加） | 参照名を持つカスタムの行。変更できる場合は補足なしでボタンが有効、キーだけ読み取り専用なら「（変更できません）」が出てボタンが無効、編集は有効 |
+| `I16 real late registration`（実 DSH、追加） | 1 つ目のページの設定の応答だけを保留し、2 つ目のページから `llm-deepseek` の参照先とキーを操作する。1 つ目のページからのキーの送信は 0 件、理由が出る、再試行でも 0 件。一覧からの登録で 1 件になる（数え方が正しいことの確認を兼ねる） |
+
+別の画面の操作が入る位置は 2 通りを確かめている。単体と実 DSH の試験は、設定の書き込みが Host に反映されたあと、応答を受け取る前。偽データの画面の試験は、設定の書き込みが反映される前（レビューが示した順）。どちらも、キーを送る直前の読み直しで止まる。
+
+main と同じ動きを固定している試験（`tests/08-provider-review4.test.ts`、`tests/08-providers.test.ts`）は、入力も期待も変えていない。
+
+#### 壊して確かめた表（この回）
+
+どれも、一時的に当てて、落ちることを見て、元に戻した。
+
+| 試験 | 当てた変更 | 落ちたこと |
+|---|---|---|
+| R5 foreign owner | 直す前の本体（`6652683`）でそのまま実行 | 止まるはずの追加が成功した（`submit()` が true） |
+| R5 foreign owner | `custom-provider-store.ts`：別の名前空間の明示名を集めない（`entry.settingsNs === CUSTOM_NS` の条件を足す） | 同上 |
+| R5 foreign owner、destinations owners、既存の explicit reference / partial | `provider-key-refs.ts`：明示名との比較を常に偽にする | 4 件とも、衝突を期待する断言で落ちた |
+| destinations owners、destinations native | `provider-key-refs.ts`：標準の既定名の予約の行を消す | 予約を期待する断言で落ちた |
+| R5 late registration | 直す前の本体（`6652683` に指摘 1 の直しだけを当てた状態）でそのまま実行 | フォームの保存が成功し、キーが送られた |
+| R5 late registration、R5 unknown result | `providers.ts`：`requireMissing` の判定を無効にする | 2 件とも、フォームの保存が成功し、キーが送られた |
+| R5 late registration | `custom-provider-store.ts`：1 回目のキーの保存のあとに `assignedReference` を消す | 同じフォームの再試行が成功した |
+| R5 late registration、R5 unknown result | `custom-provider-store.ts`：読み直し（`load`）で `assignedReference` を消す | 読み直しのあとの保存が成功した |
+| R5 unknown result | `custom-provider-store.ts`：`assignedReference` を、設定の成功の応答を受けたあとにだけ覚える | 応答を失ったあとの保存が成功した |
+| R5 late registration | `providers.ts`：`requireMissing` の指定が無くても判定する | 一覧からの登録が拒否され、main と同じ `{ ok: true }` の期待で落ちた |
+| R5 late registration、R5 unknown result、R5 retry | `providers.ts`：判定を逆にする（未登録のときに止める） | 3 件とも落ちた。R5 retry は、未登録への再試行が拒否された |
+| I16 lookup limit | `mock.ts`：`refs.length > 64` の判定を消す | 65 件が受け付けられた |
+| UI fixed key | `ProvidersPanel.tsx`：カスタムの行の補足を消す | 「（変更できません）」が見つからない |
+| UI fixed key | `ProvidersPanel.tsx`：変更できる行にも補足を出す | 補足が無いことの断言で落ちた |
+| UI late registration | `providers.ts`：`requireMissing` の判定を無効にする | 理由の表示が見つからない（保存が成功してシートが閉じた） |
+| UI late registration | `custom-provider-store.ts`：1 回目のあとに `assignedReference` を消す | 再試行が成功してシートが閉じた |
+| real late registration | `providers.ts`：`requireMissing` の判定を無効にする | 実 DSH で、理由の表示が見つからない（保存が成功した） |
+| real late registration | `custom-provider-store.ts`：1 回目のあとに `assignedReference` を消す | 実 DSH で、再試行が成功してシートが閉じた |
+
+#### 検証（この回の最後）
+
+コードの最後のコミット（`e247b94`）で、共通の決まりの確かめ方を全部流した。このあとのコミットは文書だけである。
+
+| 確認 | 結果 |
+|---|---|
+| `pnpm typecheck` | 成功 |
+| `pnpm test`（単体。偽データ） | 1,078 件が成功、失敗・skip・cancelled は 0。`6652683` の 1,073 件に、R5 foreign owner、R5 late registration、R5 unknown result、R5 retry、I16 lookup limit の 5 件を足した |
+| `pnpm build` | 成功（既存の 500 kB 超の chunk の警告あり） |
+| `pnpm run check:pack` | 成功（19 ファイル） |
+| 偽データの e2e（`tmp/e2e-alt-port.config.ts`） | 173 件が成功、失敗・skip・flaky は 0。171 件に、UI late registration と UI fixed key の 2 件を足した |
+| 実 DSH 0.2.0-rc.2 の e2e（偽の LLM）1 回目 | 全 41 件。通常の成功 40 件、既知の差の期待失敗 1 件、予期しない失敗・skip・flaky は 0 |
+| 実 DSH 0.2.0-rc.2 の e2e（偽の LLM）2 回目 | 同じ（全 41 件。通常の成功 40 件、期待失敗 1 件） |
+
+実 DSH の 40 件に足した 1 件は real late registration。既知の期待失敗は、Host が止まったままでも切断の表示へ変わらない、従来の 1 件。記録は `tmp/issue16-review5-logs/`（Git の管理外）に置いた。
+
+確かめていないこと：実際の提供元への認証と推論、iOS Safari／PWA の実機のキーボード、Host を再起動したあとの保持。止めたあとに残る「登録済みのキーを参照する状態」を、DSH の標準の画面で解消する手順は、この作業では操作して確かめていない。
+
+### 2026-10-05：4 回目の判断による単純化（方針は継続。上の 5 回目の節が優先）
+
+この節は `8e45f9f` の時点の記録。06〜08 を「引き継ぎ」「待ち」としている記述は、`6652683` で適用済み（上の節の「`6652683` の時点の状態」）。
+
+開始時は `c015aee`。04 の接続・05 の試験はこのコミットで適用済みだが、照会例外を吸収する回帰が残っていた。既存 `tests/08-providers.test.ts:204` の失敗を再現した。今回、一覧の二段保存へ衝突の文脈を持ち込む設計と分割照会を廃止する。以下が旧節より優先する。
+
+#### A・B：一覧の既存動作と参照先なしのカスタム
+
+一覧のキー RPC は `origin/main`（`23e8ec6`）と同じ一括照会へ戻す。拒否・不正な状態は ready/unknown と一部確認不能の案内、例外は error、load の戻り値 false、一覧の取得失敗の案内。標準の未稼働 pi-ai 提供元は、参照書込みが成功すればキーを送り、最後の再取得に失敗してもキー保存は成功とする。新規参照・共有の検査、書込み後の再検査、newReference/attachingReference の文脈を共通保存から除去した。canSend がなければ main の流れとなる。
+
+`declared: true` のカスタムで apiKeyEnv がなければ ref を導出しない。状態は unset（「API キー：未設定」）、書込み不可。「API キー」は出さず、編集から登録する案内を出す。照会対象が増えないため、70 件や数字始まりのキーなし ID を混ぜても、既存行を巻き込まない。設定トップにも未設定の件数を表示する。
+
+**一括照会への実際の接続は保護チェックで拒否されたため 06 へ引き継ぎ。** この時点（`8e45f9f`）のソースには接続と未使用化する分割ファイルが残っていた。06 適用時に import・呼出しを main のブロックへ戻し、`provider-key-info.ts` を削除する、という引き継ぎで、既存の例外試験はこの時点では未解消だった。既存 `08-providers.test.ts` は入力・期待とも変えていない。**その後：06 は `6652683` で適用済み。分割のファイルは外し、既存の例外試験は成功している。**
+
+#### C・D：フォームだけで参照先を付ける
+
+フォームが読み込んだ設定から他の提供元の明示名を集め、同じ設定の revision で mutate する。キーつき追加の provider 全体の set、または編集の apiKeyEnv の set に参照先を含める。キーなしカスタムの ID から導出した候補は予約しない。標準の既定名と AWS_/GOOGLE_/GCLOUD_/CLOUDFLARE_ の予約は残すが、フォームの新規参照にだけ使う。明示参照同士の比較は大小文字を区別する。
+
+新しい参照先に限って、設定を送る前にその 1 件の登録状況を照会する。configured が true、応答が取れない・不正、writable が false なら欄エラーで止める。参照名の形式も先に検査する。キーの値は照会しない。照会中は保存中として二重送信を止め、入力を消し、閉じた後の応答では設定もキーも送らない。**RPC の接続は保護チェックで拒否され 07 へ引き継ぎ。** この時点（`8e45f9f`）では確認不能を返すため、新しい参照へのキーつき保存は停止していた。試験専用の注入可能な reader では状態管理を確認し、既定の reader の未接続を試験で検出していた。**その後：07 は `6652683` で適用済み。既定の reader（`custom-provider-key.ts`）が実際に 1 件を照会し、新しい参照へのキーつき保存は動く。**
+
+同じ llm-pi-ai 名前空間の変更は、開いた版での mutate が競合として拒否する。別の名前空間の設定やキーの登録状況とは原子的な検査にならない。キー照会からキー保存までに別操作が登録する競合も、この API には未登録時だけ書く条件付き保存がないため同時に防げない。今回の指定どおり、設定成功後の同名の明示は、その操作側が意図した共有として扱う。設定後と再試行では衝突・configured の検査をしない（5 回目で一部を改めた：フォームが新しく付けた参照名へのキーの送信は、送る直前の読み直しで未登録の場合にかぎる。上の節の「指摘 2」）。通常のキー登録が行う対象・参照先・書込み可否の再確認と canSend は残す。
+
+部分成功は設定の成功応答（ID、revision、値）を編集の初期値に確定する。同じシートの再試行はキーのみで、開き直した後と一覧からも通常の明示参照の操作。keyNotice は保持する。失敗の理由は partialMessage で捨てず、キー保存の処理が返した日本語の message を続ける。Host の生のメッセージは出さない。
+
+予約・明示名・登録済みのエラーには、導出名、止めた理由、別の ID の例（my- を付ける）を表示する。例が常に空いている保証はなく、「ほかと重ならない」と案内する。編集では ID を変更できないので、キーを空欄にするか別 ID で追加する案内とする。
+
+#### main との差の一覧
+
+| ファイル | 残す差と理由 |
+|---|---|
+| providers.ts：型と providerRows | declared/custom、unset、参照先なしカスタムの ref/needsReference を外す。追加編集と正しい表示のため |
+| providers.ts：状態 | settingsWritable/customAvailable は追加ボタンの可否。keyNotice は参照だけ保存した未登録状態の案内 |
+| providers.ts：change/save | 任意の canSend と送信前 2 か所の中止判定だけ。フォームが閉じたあとの送信を防ぐ。指定なしの一覧は main と同じ |
+| providers.ts：createKeyDraft | clear() は再読込み・切断時の入力破棄 |
+| providers.ts：残っている未完了差 | 分割 import と呼出し。設計では廃止、06 適用待ち。正当化する機能差ではない（`6652683` で無くなった） |
+| ProvidersPanel.tsx：追加・編集 | 全画面フォーム、編集中 controller の寿命と更新通知、保存中の二重起動抑止 |
+| ProvidersPanel.tsx：カスタム行 | 編集入口、unset の表示、ref のない行のキー入口を非表示、keyNotice。既存 KeyEntry/RemoveKey の保存・確認・削除は変更なし |
+
+#### E：試験の対応づけと B04
+
+| 旧試験 | 今回の扱いと理由 |
+|---|---|
+| R3 main parity / many references | R4 main parity へ統合・書き直し。70 件は照会しない。毎回新しい fixture で未稼働標準の参照なしを再現し、アカウント、非 pi-ai、稼働中 pi-ai も追加 |
+| R3 post-reference race | 削除。カスタムの一覧からの参照書込み自体を廃止。保存後の共有を許す reference recheck と、保存前の競合試験へ置換 |
+| R3 batches / partial lookup | 削除。分割と一部失敗を保つ動作を廃止し、main の失敗契約へ戻す。補強試験は 08 に引き継ぎ |
+| R3 lookup limit | 削除。Host/偽データの上限自体は変えず、新しく照会件数を増やさない設計に置換（5 回目で取り消し：残っている契約の確認だったので、`tests/08-mock.test.ts` の `I16 lookup limit` として戻した） |
+| R3 case N09 | 旧一覧後付けを含む試験を削除。明示名の大小文字の区別は destinations owners と既存の実 DSH N09 で維持 |
+| destinations list / native / owners | 書き直し。unset、予約の具体的理由、キーなし ID は予約しないことを確認。標準所有者への制限はなく、フォームの新規参照に予約例外は不要 |
+| reference recheck | 書き直し。設定後の同名の明示を許し、両行が登録済みとなることを確認 |
+| reference write close M47 | 標準の未稼働行に fixture を変更。カスタムの一覧後付けを廃止したため。canSend による中止、送信 0 件、再開と keyNotice は維持 |
+| partial / explicit reference | キーなし ID からの衝突を明示参照からの衝突へ変更し、具体的理由・参照名・例を確認。部分成功の理由を追加断言 |
+| numeric ID / UI lifecycle・destinations・saving / real numeric・lifecycle | 参照先なしの表示を unset と入口なしへ変更。UI saving と real lifecycle のキーあり部分は 07 待ち |
+| UI partial / real failures | キー保存が返した理由を含む期待へ変更。設定を再送しない既存の確認は維持 |
+| real destinations | 一覧の後付けを、編集フォームの後付けへ変更。別ページで既存側の状態と設定が変わらないことを確認 |
+
+close と key recheck close は、新しく入った保存先照会の待機を fixture に加えた。前者は設定の送信開始を待って閉じ、後者は専用 reader を注入して従来の再照会中断点を保つ。試験が確認するキー送信 0 件は維持する。B04 の「部分成功後の衝突検査を飛ばす」は、今回の設計では正しい処理であり変異の対象から外す。逆に保存済み参照へ configured の検査を再導入すると、retry sharing B04 が落ちる。
+
+#### 検証・引き継ぎ
+
+`tmp/handoff-issue16-06.md` は main 照会への復元、07 はフォームの 1 件照会、08 は main の失敗契約の追加試験。いずれも通常 apply_patch を 1 回試して拒否されたため引き継ぐ。保護対象のパッケージは読んでいない。
+
+実物 `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/dsh-api-settings-controller/lib/index.js:55–70,148–161` を再確認し、参照名の形式、64 件上限、名前ごとの照会を確認した。標準の予約表は前節の調査を保持し、増やしていない。キー専用照会の configured/writable は `providers.ts` の既存 keyInfo で真偽値を検証する。実際の新 reader の照会は 07 待ち。
+
+新規・書き直し試験は以下の変更を一時的に当てて失敗を確認し、すべて復元した。各試験ごとの詳細は `tmp/handoff-issue16-review4-fixes.md`。
+
+| 試験 | 壊した処理と失敗 |
+|---|---|
+| R4 main parity / destinations list / numeric ID | 参照なしでも導出名を作る。既存の照会失敗・不正な ref・許してはいけない一覧登録を検出 |
+| R4 native write | 参照書込み直後に拒否する。main と異なる保存 false を検出 |
+| key recheck close / M47 | canSend を外す。終了後のキー送信を検出 |
+| destinations native / owners | 標準既定名の予約を外す。衝突漏れと理由の欠落を検出 |
+| explicit reference / partial | 明示名の衝突を外す。拒否すべき保存の成功を検出 |
+| preflight | configured の判定を外す。登録済みの受理を検出 |
+| preflight revision | 開いた revision に 1 を足す。競合すべき保存の成功を検出 |
+| preflight close | 照会後の終了判定を外す。閉じた後の設定送信 1 件を検出 |
+| close | dispose を無処理にする。閉じた後の成功を検出 |
+| retry sharing B04 | 設定後にも configured を再検査する。正しいキー再試行の拒否を検出 |
+| reference recheck / destinations reopen | 共通保存に共有拒否を戻す。正しい登録の拒否を検出 |
+| partial / real failures | 失敗理由を捨てる。部分成功の説明から理由が消えて失敗 |
+| UI / real destinations | 明示名の衝突検査を外す。衝突の案内がなくなり失敗。07 待ちの確認不能にも阻止されるため、上書きそのものの検出とは区別 |
+| UI lifecycle / real numeric | unset を未登録と表示する。表示の期待で失敗 |
+| real notification / real case N09 | 同上。変更した共通 helper の期待を検出したもので、通知や大小文字の新たな変異ではない |
+| UI reserved | エラーから導出名と例を消す。導出名の期待で失敗 |
+| destination RPC / orphan destination | 正常でも 07 未接続で失敗するため、適用後の変異検証が必要 |
+| UI partial / UI saving M39 / real lifecycle | 正常な新規キーつき保存が 07 待ちのため、今回書き換えた部分の変異検証も適用後 |
+
+最終検証：型検査・ビルド・配布検査は成功（19 ファイル、既存のチャンク容量警告あり）。単体は 1,072 件中 1,069 件成功・3 件失敗、skip/cancelled 0。失敗は既存の照会例外試験（06 待ち）と destination RPC / orphan destination（07 待ち）。偽データ全体は 171 件中 167 件成功・4 件失敗（UI refused / partial / late / saving M39、すべて 07 待ち）。実 DSH 全体は 2 回とも通常成功 38 件・既知の期待失敗 1 件・失敗 1 件（real lifecycle、07 待ち）。e2e の skip/flaky はいずれも 0。結果は `tmp/issue16-review4-mock-final.json`、`tmp/issue16-review4-real-final-1.json`、`tmp/issue16-review4-real-final-2.json` に保存した。実提供元の認証と iOS 実キーボードは対象外のまま。06〜08 の適用後の全体検証が残り、完了とはしていない。（その後：`6652683` で 06〜08 を適用し、ここに挙げた失敗は解消した。件数は上の節。）
+
+| 受け入れ条件 | `8e45f9f` の時点の判定（06・07 待ちは `6652683` で解消） |
+|---|---|
+| 1 追加・編集の入口と共通フォーム | 一部未達。キーなし・既存明示参照は動作、新規キーつきは 07 待ち |
+| 2 再表示と他設定・未知項目・モデル選択の保持 | 一部未検証。差分保存・衝突・競合は確認、キーつき lifecycle は 07 待ち |
+| 3 入力検査と欄エラー | 一部未検証。静的検査・予約理由・注入 reader の configured 検査は確認、実接続は 07 待ち |
+| 4 非表示・空欄維持・消去 | 確認済み。既存単体と終了後の送信 0 件を確認 |
+| 5 各失敗と部分成功 | 一部未検証。詳細理由とキーのみ再試行を単体・既存明示参照の実 DSH で確認。新規参照の UI partial は 07 待ち |
+| 6 キャンセル・連打・再表示・終了操作 | 一部未検証。単体と通る UI は維持、新規参照の UI late / saving は 07 待ち |
+| 7 小画面と既存機能の回帰なし | 未達。main の例外契約が 06 待ち。通常行・70件混在・375px は確認。iOS 実機キーボードは未検証 |
+| 8 試験と品質コマンド | 未達。06・07・08 の適用と全体検証が必要 |
+
+### 2026-10-05：3 回目のレビューと監査（以下は当時の履歴）
+
+この節は 3 回目当時の方針と検証。4 回目の単純化により更新した。04・05 は後に `c015aee` で適用されたが、分割照会と保存後の衝突検査は今回の設計では廃止。開始時の HEAD は `e187882`。03 の試験と M47 は適用済みで、この時点で正常実行を確認した。
+
+#### main と同じに保つ範囲
+
+`git show origin/main:web/src/features/settings/providers.ts`（`23e8ec6`）の `providerRows`・`read`・`change` を読み、次を単体 `I16 R3 main parity` の期待値に固定した。参照未設定のカスタムを追加する前後の両方で確認する。
+
+| 既存の行 | main の状態・操作の期待 |
+|---|---|
+| 稼働中の標準、参照名なし | ref なし、`unnecessary`、変更不可、登録・削除とも拒否。偽データの ollama で確認 |
+| 未稼働の標準、参照名なし（pi-ai） | 導出名で missing/registered を照会。登録時は参照を追加し、登録・削除できる。openai で確認 |
+| 明示参照あり | 実際の参照の missing/registered と writable に従い、登録・削除できる。owner と既存 deepseek で確認 |
+| 同じ名前を明示する 2 行 | 両方を操作でき、一方の登録・削除が他方の登録状態にも反映。share-one/share-two で確認 |
+| 混在する参照未設定のカスタム | この行だけを新しい参照の候補として検査。既存の owner・標準・明示共有の操作は変えない |
+
+#### 残した検査と保存の途中の扱い
+
+フォームのキーつき追加、参照未設定のカスタムへの後付け登録（フォームと一覧）だけが衝突検査の対象。`providers.ts` は `custom && needsReference` の行だけに衝突理由を付ける。明示済みの行や標準の行を予約表で操作不可にしない。新しい側には他の所有者のキーを登録済みとして表示せず、登録・削除の入口を無効にする。キーなしの設定保存は可能。
+
+`custom-provider-store.ts` は保存開始時に参照を新しく足すかを保持し、共通保存に `newReference` を渡す。設定の成功で apiKeyEnv が付いた直後と、同じシートでの部分成功の再試行も、この操作の間は検査を続ける。閉じて開き直すと保存済みの明示参照として main と同じ扱いになる。参照が付いた由来を永続化して共有を禁止する案は、既存の明示共有を意図したものとする原則 1 と合わないため採用しない。
+
+一覧の参照追加（`settings.update`）の応答後は設定を読み直し、対象の存在、参照名、namespace/path、書込み可否、他の所有者との衝突を再確認する。更新通知で再照会中の版が変わったら再度読む。キーを送る直前の終了判定は維持する。途中で衝突すればキーは保存せず、参照先だけが残り得ることを案内する。直接の送信件数の検査は保護チェックで止まったため 05 へ引き継ぐが、適用済みの試験は失敗結果・両行の未登録・keyNotice を確認する。
+
+保存先の集合（明示名・導出名・標準既定名と補助名群）は前節の実物調査を保持し、新しい参照の検査だけに使う。参照名の大文字・小文字は区別する。実物の `dsh-api-settings-controller/lib/index.js:55–70,148–177` の検証は両方の文字を許す。保護対象の保存内部は読まず、実 DSH で `i16_case_api_key` と `I16_CASE_API_KEY` の登録状態が独立し、一方の削除が他方を消さないことを確認した。
+
+#### 64 件の上限と部分失敗
+
+実物の `dsh-api-settings-controller/lib/index.js:55–57` の 64 は参照名の長さではなく、1 回の照会の個数。偽データの `mock.ts:119–123` にも同じ上限がある。`provider-key-info.ts` で 64 件ずつ照会し、成功した回の値だけを返す。拒否・例外の回はその回の行だけ unknown/変更不可とし、ほかの行の表示・操作を保つ。main の「取得できない状態は unknown」という規則を各回に適用し、多数の新しい行の失敗で既存行を巻き込まない選択。全体を失敗にする案は採用しない。
+
+当時は保護チェックで止まり 04・05 に引き継いだが、**`c015aee` で接続と試験は適用済み**。その後 main の例外契約の回帰が見つかり、4 回目の方針で分割を廃止する。下の未適用・失敗の集計は 3 回目の終了時点の履歴であり、現在の判定ではない。
+
+#### 試験の期待を変えた理由（1 件ずつ）
+
+| 試験 | 変更と理由 |
+|---|---|
+| I16 destinations reopen | 明示共有を開き直すと拒否 → フォームと一覧から登録・削除でき、他方の状態にも反映。原則 1 に従い旧制限を外す |
+| I16 reference recheck | 保存結果は引き続き拒否。設定に参照が付いた両行の状態は unknown → missing、既存所有者は writable。原則 1・3 により状態の照会と新規操作の拒否を分離 |
+| I16 UI destinations | 衝突時のカスタム側へ apiKeyEnv を明示する設定を外し、参照未設定での拒否を確認。原則 2 に対象を限定。衝突解除後には明示参照を付け、既存の keyNotice と再登録の確認を維持 |
+
+実 DSH の既存 RPC 競合試験は弱めず残した。通知だけで保存を押さずに警告・保存無効・書込み 0 件を確認する `I16 real notification` を別に追加。`I16 real destinations` はフォーム追加と、一覧の入力画面を開いた後の別ページの参照変更を試す。別ページを読み直して既存側の未登録状態と変更可否、設定全体が変わらないことを確認する。通知を保留するのは後者で保存時の再照会を独立して検査するためで、通常の通知だけの試験とは分けた。
+
+#### 検証と未適用分
+
+指摘 1〜3 は先に現行本体で 3 件すべて失敗を確認（明示共有の操作拒否、参照書込み後の誤った成功、多数照会で既存行が unknown）。今回の追加依存・偽データファイル・配布用ファイルの変更はない。
+
+| 試験 | 壊した処理 | 結果 |
+|---|---|---|
+| R3 main parity | 行の衝突判定を新規の行だけでなく全行に戻す | 明示共有の writable=false で失敗 |
+| destinations reopen | 同上 | 明示共有のフォーム保存が false で失敗 |
+| reference recheck | 同上 | 明示行が missing でなく unknown となり失敗 |
+| reference recheck（新規操作） | フォームから共通保存へ渡す newReference を false | 衝突後に保存が成功して失敗 |
+| R3 post-reference race | 参照書込み後の再照会を除去 | 衝突後にキー保存が成功して失敗 |
+| R3 batches | 64 件を 65 件へ変更 | 64/64/2 でなく 65/65 となり失敗 |
+| R3 batches（部分失敗） | 一度拒否されたら全体を空で終了 | 最後の回を照会せず失敗 |
+| R3 case N09 | 参照名を両方大文字にして照合 | 別名を衝突と扱って失敗。監査と同じ変異 |
+| UI destinations | 行表示と共通保存の衝突検査を除去 | 衝突の案内が消えて失敗 |
+| real destinations | 同上（N06 相当、フォームの事前検査は維持） | 新しい側が unknown でなく missing となり失敗 |
+| real notification | updated の先頭で return | 保存前の競合警告が出ず失敗 |
+| real case N09 | 参照名の検査で小文字を拒否 | 小文字側のキー入口が無効で失敗 |
+| R3 many references | 分割接続は未適用 | 現在も失敗。正常通過後の変異検査は 04 適用後 |
+| 05 の直接 RPC 試験 | 試験自体が未適用 | 未実行 |
+
+変異はすべて `git restore` で戻した。実 DSH の大小文字試験に当てた故障は小文字の過剰拒否であり、単体に当てた N09 とは区別する。詳細な場所・試験名・期待変更の理由は `tmp/handoff-issue16-review3-fixes.md`。画面の失敗結果は `tmp/issue16-review3-N06-ui.json`、`tmp/issue16-review3-N06-real.json`、`tmp/issue16-review3-notification-mutation.json`、`tmp/issue16-review3-case-mutation.json`。
+
+- 型検査・ビルド・配布検査：成功。配布 19 ファイル。既存のチャンク容量警告は残る。
+- 単体：全 1,069 件中 1,068 件成功、1 件失敗、skip 0。失敗は `I16 R3 many references` だけ。04 の接続がないためで、試験は消さず残した。
+- 偽データ全体 e2e：170 件成功、予期しない失敗・skip・flaky 0。
+- 実 DSH 全体：2 回とも通常成功 39 件＋既知の期待失敗 1 件、予期しない失敗・skip・flaky 0。結果は `tmp/issue16-review3-real-final-1.json`、`tmp/issue16-review3-real-final-2.json`。偽データは `tmp/issue16-review3-mock-final.json`。
+
+| 受け入れ条件 | この回の判定 |
+|---|---|
+| 1 追加・編集の入口とフォーム | 充足。UI / real lifecycle |
+| 2 保存値・他の提供元・未知項目・選択モデルの保持 | 修正・実測済み。参照書込み待ちの衝突は失敗結果と未登録維持を確認。直接送信 0 件の追加断言は 05 待ち |
+| 3 入力検査と欄エラー | 充足。従来の単体・UI と N09 の区別、衝突の実 DSH |
+| 4 キーの非表示・空欄で保持・入力消去 | 充足。M47 は e187882 で適用済み、今回も正常成功 |
+| 5 各失敗と部分成功 | 従来の失敗シナリオは維持。多数照会の部分失敗は処理単体のみ確認し、接続と直接 RPC 試験は 04・05 待ち |
+| 6 キャンセル・二重送信・戻る・閉じる | 充足。既存の単体・UI・M47 を維持 |
+| 7 375–390px と既存操作の回帰 | 一部未達。通常件数の main 互換は確認、多数参照は 04 待ち。iOS 実機キーボードは未検証 |
+| 8 単体・e2e・型・ビルド | 未達。単体 1 件が失敗。04・05 の適用とその検証が必要 |
+
+止められた操作は、04 の接続と 05 の試験への通常 apply_patch 各 1 回。理由はキー RPC 名を含む行が保護チェックの対象になったため。回避はしていない。実 DSH のモデルは偽物であり、実提供元の認証・推論、保護された保存内部、iOS 実機は検証していない。
+
 ### 2026-09-25：設定タブの実装と、認証操作の保留
 
 - 作業ブランチは `feat/08-settings`。土台 `25e3b2d` を元にした worktree 内だけで作業し、main の変更、merge、rebase はしていない。

@@ -2,12 +2,13 @@ import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
+import { keyRegisteredMeanwhileMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
 
 /** Broadcasts after which the provider list and key state must be read again. */
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
 
 export interface ProviderEntry { id: string; name: string }
-export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[] }
+export interface ProviderAddress { provider: string; displayName: string; settingsNs: string; settingsPath: string[]; declared?: boolean }
 export interface KeyInfo { configured: boolean; writable: boolean }
 export interface ProviderRemote {
   session?: { modelCatalog(): Promise<RemoteResult<ModelCatalog>> }
@@ -25,12 +26,14 @@ export interface ProviderRemote {
 export interface ProviderRow {
   id: string
   name: string
+  custom?: boolean
   ns: string
   path: string[]
   revision?: number
   ref?: string
+  keyNotice?: string
   needsReference: boolean
-  status: 'registered' | 'missing' | 'unnecessary' | 'unknown'
+  status: 'registered' | 'missing' | 'unnecessary' | 'unknown' | 'unset'
   writable: boolean
 }
 export interface ProviderState {
@@ -38,8 +41,12 @@ export interface ProviderState {
   rows: ProviderRow[]
   error: string | null
   busy: boolean
+  settingsWritable?: boolean
+  customAvailable?: boolean
 }
 export type KeyOutcome = { ok: true } | { ok: false; message: string }
+/** `requireMissing`: the caller has just assigned this reference name, so a key registered meanwhile is someone else's. */
+export interface KeySaveOptions { canSend?(): boolean; requireMissing?: boolean }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 const derivedRef = (id: string) => `${id.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`
 
@@ -61,12 +68,15 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
     const named = object(profile) && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : undefined
     // The existing UI treats active routes without a named reference as using
     // provider-native authentication (including local gateways).
-    const native = entry.provider === 'deepseek-account' || !named && live.has(entry.provider)
+    const custom = entry.declared === true && entry.settingsNs === 'llm-pi-ai'
+    const native = entry.provider === 'deepseek-account' || !custom && !named && live.has(entry.provider)
+    const withoutReference = custom && !named
+    const ref = native || withoutReference ? undefined : named ?? derivedRef(entry.provider)
     return {
-      id: entry.provider, name: entry.displayName, ns: entry.settingsNs, path: [...entry.settingsPath],
-      revision: namespace?.revision, ref: native ? undefined : named ?? derivedRef(entry.provider),
-      needsReference: !named && !native,
-      status: native ? 'unnecessary' : 'unknown', writable: false,
+      id: entry.provider, name: entry.displayName, custom, ns: entry.settingsNs, path: [...entry.settingsPath],
+      revision: namespace?.revision, ref,
+      needsReference: !named && !native && !custom,
+      status: withoutReference ? 'unset' : native ? 'unnecessary' : 'unknown', writable: false,
     }
   })
 }
@@ -106,12 +116,15 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
+          ...(row.custom && status && !status.configured ? { keyNotice: pendingKeyReferenceMessage } : {}),
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
       })
       const incomplete = resolved.some(row => row.status === 'unknown')
-      publish({ phase: 'ready', rows: resolved, error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
+      publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
+        customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
+        error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
       return true
     } catch {
       if (request === sequence && generation === epoch) publish({ phase: 'error', error: unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
@@ -135,7 +148,7 @@ export function createProviderStore(remote: ProviderRemote) {
     publish({ phase: 'loading', rows: [], error: null, busy: false })
     if (connected) void load()
   }
-  async function change(target: ProviderRow, value?: string): Promise<KeyOutcome> {
+  async function change(target: ProviderRow, value?: string, options: KeySaveOptions = {}): Promise<KeyOutcome> {
     if (state.busy || !connected) return { ok: false, message: '接続と処理中の操作を確認してください。' }
     const generation = epoch
     let finish!: () => void
@@ -149,6 +162,7 @@ export function createProviderStore(remote: ProviderRemote) {
         validatedVersion = refreshVersion
         if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
       } while (validatedVersion !== refreshVersion)
+      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
       const row = state.rows.find(item => item.id === target.id)
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
         return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
@@ -160,6 +174,8 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!named.ok || generation !== epoch) return { ok: false, message: '参照先を設定できませんでした。提供元の設定を読み直してください。' }
         referenceWritten = true
       }
+      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
+      if (options.requireMissing && row.status !== 'missing') return { ok: false, message: keyRegisteredMeanwhileMessage }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
       if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
@@ -180,7 +196,7 @@ export function createProviderStore(remote: ProviderRemote) {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     load, connectionChanged,
-    save: (row: ProviderRow, value: string) => change(row, value),
+    save: (row: ProviderRow, value: string, options?: KeySaveOptions) => change(row, value, options),
     remove: (row: ProviderRow) => change(row),
   }
 }
@@ -197,6 +213,7 @@ export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>) {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     activate() { active = true },
+    clear() { epoch++; publish({ draft: '', visible: false, busy: false, error: null }) },
     input(draft: string) { if (active && !state.busy) publish({ draft, error: null }) },
     toggle() { if (active && !state.busy) publish({ visible: !state.visible }) },
     async submit(): Promise<boolean> {
