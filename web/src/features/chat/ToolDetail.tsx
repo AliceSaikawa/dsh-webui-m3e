@@ -25,8 +25,8 @@ const ResultBlocks = memo(function ResultBlockList({ blocks, face, close }: { bl
 export function ToolDetail({ sessionId, initial, close }: { sessionId: string; initial: ToolRow; close: () => void }) {
   const { face, records, stream } = useSession(sessionId)
   // Keep a running tool sheet current when its result arrives.
-  const recorded = useMemo(() => buildChatRows(records).find((item): item is ToolRow => item.kind === 'tool' && item.callId === initial.callId), [records, initial.callId])
-  const row = useMemo(() => recorded ?? buildChatRows([], stream).find((item): item is ToolRow => item.kind === 'tool' && item.callId === initial.callId) ?? initial, [recorded, stream, initial])
+  const recorded = useMemo(() => buildChatRows(records).find((item): item is ToolRow => item.kind === 'tool' && item.callKey === initial.callKey), [records, initial.callKey])
+  const row = useMemo(() => recorded ?? buildChatRows([], stream).find((item): item is ToolRow => item.kind === 'tool' && item.callKey === initial.callKey) ?? initial, [recorded, stream, initial])
   const [expanded, setExpanded] = useState(false)
   const clipped = useMemo(() => clipToolResult(row.result), [row.result])
   const argumentsText = useMemo(() => formatToolArguments(row.arguments), [row.arguments])
