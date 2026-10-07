@@ -20,7 +20,7 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 }
 
 /** M3E_DSH_DIR points at an existing install; otherwise the exact release is installed under tmp/. */
-function dshInstall(): string {
+export function dshInstall(): string {
   const given = process.env.M3E_DSH_DIR
   if (given) return given
   const dir = join(work, `dsh-${dshVersion}`)
@@ -34,8 +34,7 @@ function dshInstall(): string {
 /** The plugin is installed from the same tarball a user would build. */
 function packPlugin(): string {
   if (process.env.M3E_SKIP_BUILD !== '1') run('pnpm', ['build'], root)
-  const out = join(work, 'pack')
-  rmSync(out, { recursive: true, force: true })
+  const out = join(work, 'pack', String(Date.now()))
   mkdirSync(out, { recursive: true })
   run('pnpm', ['pack', '--pack-destination', out], root)
   const tarball = readdirSync(out).find(name => name.endsWith('.tgz'))
@@ -82,11 +81,16 @@ export async function waitForDshUrl(proc: ChildProcess, stop: () => Promise<void
   } catch (error) { await stop(); throw error }
 }
 
-export async function startDsh(llmUrl: string, options: { timedQuestionSeconds?: number } = {}): Promise<DshHost> {
+export async function startDsh(llmUrl: string, options: {
+  timedQuestionSeconds?: number
+  /** Install an inherited bundle, leaving the web profile for real settings writes. */
+  basePatch?: readonly unknown[]
+  preserveRuns?: boolean
+} = {}): Promise<DshHost> {
   const install = dshInstall()
   const actual = JSON.parse(readFileSync(join(install, 'node_modules', '@deepseek-ai', 'dsh', 'package.json'), 'utf8')).version as string
   // Keep only this run's DSH_HOME; earlier runs are evidence in the report, not state.
-  if (existsSync(work)) for (const name of readdirSync(work)) if (name.startsWith('run-')) rmSync(join(work, name), { recursive: true, force: true })
+  if (!options.preserveRuns && existsSync(work)) for (const name of readdirSync(work)) if (name.startsWith('run-')) rmSync(join(work, name), { recursive: true, force: true })
   const runDir = join(work, `run-${Date.now()}`)
   const home = join(runDir, 'home')
   const dshHome = join(runDir, 'dsh-home')
@@ -106,6 +110,18 @@ export async function startDsh(llmUrl: string, options: { timedQuestionSeconds?:
   }
   const bin = join(install, 'node_modules', '.bin', 'dsh')
   run(bin, ['plugin', '--profile', 'web', 'add', `file:${packPlugin()}`], install, env)
+  if (options.basePatch?.length) {
+    // Home patches are overlays above the editable profile. A bundle is the
+    // actual inherited layer used by settings.describe().base and reset.
+    const fixture = join(runDir, 'inherited-settings')
+    mkdirSync(fixture, { recursive: true })
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify({
+      name: 'm3e-inherited-settings-fixture', version: '0.0.0', type: 'module',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(fixture, 'cordis.patch.yml'), JSON.stringify(options.basePatch))
+    run(bin, ['plugin', '--profile', 'web', 'add', `file:${fixture}`], install, env)
+  }
   if (options.timedQuestionSeconds !== undefined) {
     // A separate preset in this run's isolated home. The stock tool Config's
     // mode/timeout fields are not volatile settings, so configure at boot.

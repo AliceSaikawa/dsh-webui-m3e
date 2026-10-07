@@ -125,6 +125,16 @@
 - 組み合わせた状態で `pnpm typecheck`、`pnpm test`（1103件、失敗・skipなし）、`pnpm build`、`git diff --check` が成功した。既存 chunk サイズ警告のみ。統合順は #52 → #53 を推奨し、現時点で履歴を書き換える rebase は不要と判断した。main へのマージ・pushは行っていない。
 - 実 DSH 画面の確認は引き続き未実施。AGENTS.md の起動禁止に対し、隔離した一時ホーム・ローカルの偽LLMだけを使う検証の許可を確認中。許可前には起動せず、既存のユーザー設定にも接続しない。
 
+#### 2026-10-08：PR #53 の main への rebase と実DSH境界ケース
+
+- #52 が main に squash merge された `bc90591` を確認した。利用者の指定に従い、旧先端 `024b572` を `backup/issue-48-before-rebase-20261008` に保持し、#53 固有の2コミットを main 上へ rebase した。#52 の旧コミットと取り込み用マージコミットは再適用していない。mainとの差分には #52 固有の `ToolDetail.tsx`・ツール識別テスト・mock変更が重複しない。
+- 利用者が保護フックで止まったテスト追加を明示許可したため、`e2e-dsh/stream-settlement.spec.ts` と必要なハーネス変更を追加した。隔離した DSH 0.2.0-rc.2 の公開 `llm/stream` waterfall に、番号3のみ／4→2の固定LLM応答を流す。Hostのassembler・永続化・通信・controller・画面には代替処理を入れない。
+- 実画面で生成中の本文と元番号を確認してからLLMを終了させ、確定中のDOM変更を監視した。番号3は1行、4→2は2行を初回到着順に保持した。確定の前後で描画キーとDOM要素が同じで、重複・順序変更がない。実Hostの採用記録が1件で本文も一致し、ページ再読込後もキー・順番・本文が維持されることを確認した。
+- Chromium 390×844 の実DSH2件が成功した。console.error・未捕捉例外なし。生成中・確定後の画像4枚を `docs/review/pr53-index3-*.png` と `docs/review/pr53-index4-2-*.png` に保存し、目視でも確認した。LLMだけ固定応答で、日常利用のDSH・設定・外部LLMは使用していない。
+- 再現コマンド：`pnpm exec playwright test -c e2e-dsh/playwright.config.ts stream-settlement.spec.ts --trace on`。配置済みの対応DSHには M3E_DSH_DIR を指定する。今回のtraceと採用記録は `tmp/dsh-integration/results/1791410350984/` と `tmp/dsh-integration/report.json` に残した。ハーネスは検証ホーム・配布物を実行別に保持する。
+- `pnpm typecheck`、`pnpm test`（1103件、失敗・skipなし）、`pnpm build`、配布物検査、追加specのTypeScript検査が成功した。既存chunkサイズ警告は残る。上の「疎な番号の実画面は未確認」は、この2ケースについて解消した。GitHub CIと独立レビューは別の確認事項として残す。
+- 作業中の既存テストへのワイルドカード検索は自動審査で拒否された。mainへのpush・PRのマージはしていない。
+
 ### 2026-09-25：チャットタブの実装
 
 #### 実装したこと
