@@ -27,6 +27,8 @@ export interface TextRow extends RowBase {
 export interface ToolRow extends RowBase {
   readonly kind: 'tool'
   readonly callId: string
+  /** Provider call IDs may repeat in another turn or step. */
+  readonly callKey: string
   readonly name: string
   readonly arguments: string
   readonly result: readonly ChatContentBlock[]
@@ -63,6 +65,12 @@ export type ChatRow = UserRow | ContextRow | TextRow | ToolRow | SystemRow | Com
 type ObjectValue = Record<string, unknown>
 const objectOf = (value: unknown): ObjectValue | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined
+
+interface ToolScope { readonly turn?: unknown; readonly step?: unknown }
+function toolCallKey(scope: ToolScope, callId: string): string {
+  const coordinate = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
+  return JSON.stringify([coordinate(scope.turn), coordinate(scope.step), callId])
+}
 
 /** Replacement messages summarize model context; they are not chat history. */
 function isChatEvent(event: SessionWireEvent): boolean {
@@ -239,7 +247,7 @@ export interface SettledChat {
   readonly rpcIds: ReadonlySet<string>
   readonly keys: ReadonlySet<string>
   readonly shownCalls: ReadonlySet<string>
-  toolRow(callId: string, name: string, args: string, base: RowBase): ToolRow
+  toolRow(callId: string, name: string, args: string, base: RowBase, scope: ToolScope): ToolRow
 }
 
 /**
@@ -255,9 +263,9 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     const data = objectOf(event.data)
     if (data === undefined) continue
     if (event.type === 'tool/call' && typeof data.callId === 'string') {
-      calls.set(data.callId, { event, name: stringOf(data.name) ?? 'ツール', arguments: stringOf(data.arguments) ?? '' })
+      calls.set(toolCallKey(data, data.callId), { event, name: stringOf(data.name) ?? 'ツール', arguments: stringOf(data.arguments) ?? '' })
     } else if (event.type === 'tool/result') {
-      for (const { callId, result } of resultsOf(event)) results.set(callId, result)
+      for (const { callId, result } of resultsOf(event)) results.set(toolCallKey(data, callId), result)
     } else if (event.type === 'command/run') {
       const name = stringOf(data.name)
       if (name !== undefined) {
@@ -274,14 +282,15 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     if (event.type !== 'assistant/message') continue
     const data = objectOf(event.data)
     const message = objectOf(data?.message)
-    for (const block of contentOf(message?.content)) if (block.type === 'tool-call') assistantCallIds.add(block.id)
+    for (const block of contentOf(message?.content)) if (block.type === 'tool-call') assistantCallIds.add(toolCallKey(data ?? {}, block.id))
   }
-  const toolRow = (callId: string, name: string, args: string, base: RowBase): ToolRow => {
-    const result = results.get(callId)
-    const call = calls.get(callId)
+  const toolRow = (callId: string, name: string, args: string, base: RowBase, scope: ToolScope): ToolRow => {
+    const callKey = toolCallKey(scope, callId)
+    const result = results.get(callKey)
+    const call = calls.get(callKey)
     const duration = result !== undefined && call !== undefined ? result.event.time - call.event.time : undefined
     return {
-      ...base, kind: 'tool', callId, name: name || call?.name || 'ツール', arguments: args || call?.arguments || '',
+      ...base, kind: 'tool', callId, callKey, name: name || call?.name || 'ツール', arguments: args || call?.arguments || '',
       result: result?.content ?? [], status: result === undefined ? 'running' : result.isError ? 'error' : 'success',
       ...(duration !== undefined && Number.isFinite(duration) ? { durationMs: Math.max(0, duration) } : {}),
       ...(result?.error !== undefined ? { error: result.error } : {}),
@@ -315,17 +324,20 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
           rows.push({ ...blockBase, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: false,
             ...(durationMs === undefined ? {} : { durationMs }),
           })
-        } else if (block.type === 'tool-call' && !shownCalls.has(block.id)) {
-          shownCalls.add(block.id)
-          rows.push(toolRow(block.id, block.name, block.arguments, blockBase))
+        } else if (block.type === 'tool-call') {
+          const callKey = toolCallKey(data, block.id)
+          if (shownCalls.has(callKey)) return
+          shownCalls.add(callKey)
+          rows.push(toolRow(block.id, block.name, block.arguments, blockBase, data))
         }
       })
     } else if (event.type === 'tool/result') {
       for (const { callId } of resultsOf(event)) {
-        if (shownCalls.has(callId) || assistantCallIds.has(callId)) continue
-        shownCalls.add(callId)
-        const call = calls.get(callId)
-        rows.push(toolRow(callId, call?.name ?? 'ツール', call?.arguments ?? '', { ...base, key: `${base.key}:${callId}` }))
+        const callKey = toolCallKey(data, callId)
+        if (shownCalls.has(callKey) || assistantCallIds.has(callKey)) continue
+        shownCalls.add(callKey)
+        const call = calls.get(callKey)
+        rows.push(toolRow(callId, call?.name ?? 'ツール', call?.arguments ?? '', { ...base, key: `${base.key}:${callId}` }, data))
       }
     } else if (event.type === 'system/message') {
       const message = objectOf(data.message)
@@ -366,9 +378,11 @@ export function appendLiveRows(
           liveTextRows.set(value, row)
         }
         rows.push(row)
-      } else if (block.type === 'tool-call' && !settled.shownCalls.has(block.id) && !shownCalls.has(block.id)) {
-        shownCalls.add(block.id)
-        rows.push(settled.toolRow(block.id, block.name, block.arguments, base))
+      } else if (block.type === 'tool-call') {
+        const callKey = toolCallKey(stream, block.id)
+        if (settled.shownCalls.has(callKey) || shownCalls.has(callKey)) continue
+        shownCalls.add(callKey)
+        rows.push(settled.toolRow(block.id, block.name, block.arguments, base, stream))
       }
     }
   }

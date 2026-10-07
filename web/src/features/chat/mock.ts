@@ -70,6 +70,28 @@ export function extendMock(kit: MockKit): void {
     event(25, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
   ]))
   kit.addWorkspace({ workspaceId: 'ws-chat-check', path: '/mock/chat', title: 'チャットの確認', sessionIds: ['chat-long', 'chat-samples', 'chat-spec-check'], createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString() })
+  kit.scenario('chat-reused-tool-ids', active => {
+    const sessionId = 'chat-reused-tool-ids'
+    const records = [1, 2].flatMap(turn => {
+      const start = (turn - 1) * 10
+      const path = turn === 1 ? '最初の資料.txt' : '次の資料.txt'
+      const text = turn === 1 ? '最初の資料の結果です。' : '次の資料の結果です。'
+      return [
+        event(start, 'turn/start', { turn }),
+        event(start + 1, 'user/message', { role: 'user', content: [{ type: 'text', text: `${path}を確認して` }] }),
+        event(start + 2, 'step/start', { turn, step: 1 }),
+        event(start + 3, 'assistant/message', { turn, step: 1, stream: [], message: { role: 'assistant', content: [
+          { type: 'tool-call', id: 'same-id', name: 'read_file', arguments: JSON.stringify({ path }) },
+        ] } }),
+        event(start + 4, 'tool/call', { turn, step: 1, callId: 'same-id', name: 'read_file', arguments: JSON.stringify({ path }) }),
+        event(start + 5, 'tool/result', { turn, step: 1, message: { role: 'tool', toolCallId: 'same-id', content: [{ type: 'text', text }] } }),
+        event(start + 6, 'step/end', { turn, step: 1 }),
+        event(start + 7, 'turn/end', { turn, reason: { kind: 'completed' } }),
+      ]
+    })
+    active.addSession(summary(sessionId, '同じ呼び出しIDの確認'), history(records))
+    active.updateWorkspace('ws-chat-check', workspace => ({ sessionIds: [...workspace.sessionIds, sessionId] }))
+  })
   kit.scenario('streaming', active => {
     void active.streamAssistant('approval-sheet', Array.from({ length: 8 }, (_, index) => `### 確認 ${index + 1}\n\n承認シートの表示とテストを確認しています。返事は少しずつ届きます。上へスクロールすると、読んでいる位置で止まります。\n\n`).join(''), { chunkMs: 35 })
   })

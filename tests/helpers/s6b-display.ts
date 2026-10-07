@@ -21,7 +21,7 @@ function visible(value: unknown): any {
   if (Array.isArray(value)) return value.map(visible)
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(Object.entries(value).filter(([key, v]) => v !== undefined && ![
-    'key', 'seq', 'time', 'id', 'callId', 'toolCallId', 'parentCallId', 'rootCallId', 'turn', 'step',
+    'key', 'seq', 'time', 'id', 'callId', 'callKey', 'toolCallId', 'parentCallId', 'rootCallId', 'turn', 'step',
     'startedAt', 'completedAt', 'input', 'attachmentId',
   ].includes(key)).map(([key, v]) => [key, visible(v)]))
 }
