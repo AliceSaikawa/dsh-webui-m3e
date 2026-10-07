@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
@@ -19,6 +19,12 @@ export function InboxScreen() {
   const { list, pending } = useInbox()
   const [now, setNow] = useState(Date.now)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  const interactionCloses = useRef(new Set<() => void>())
+  useLayoutEffect(() => () => {
+    // Remove queued requests first so cleanup cannot open one on the next route.
+    for (const close of [...interactionCloses.current.values()].reverse()) close()
+    interactionCloses.current.clear()
+  }, [])
   const navigationAttempt = useRef(0)
   const openingLifetime = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => { navigationAttempt.current++; openingLifetime.current?.abort() }, [])
@@ -61,7 +67,7 @@ export function InboxScreen() {
             onClick={() => {
               navigationAttempt.current++
               setOpeningId(null)
-              presentInteraction(row.pending, { from: 'inbox' })
+              interactionCloses.current.add(presentInteraction(row.pending, { from: 'inbox' }))
             }}>
             <Icon slot="leading" name={row.icon} />
             <span className="inbox-title">{row.title}</span>
