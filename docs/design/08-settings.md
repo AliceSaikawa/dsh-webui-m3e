@@ -1160,3 +1160,12 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 推論の強さに選べる「既定（モデルに任せる）」を置き、選択時は `reasoningEffort` の `unset` を保存する。候補外の保存値は一覧外と表示して保持する。モデル一覧の再読込失敗中は、残っている一覧と保存値を表示しながら編集操作を無効にする。推論欄がない場合の区切り線と余白は `hidden` の表示規則で消した。
 - `mock.ts` に本物と同じ空リストの検査を追加したのは、オーケストレーターである。ユーザーの了承を得て編集され、Codex はこのファイルを編集していない。単体試験と幅375pxのブラウザー試験で、有効化の順序、最後の1件、推論の既定への復帰、欄を隠す表示を確認した。
 - `pnpm typecheck` 成功、`pnpm test` 712件成功、`pnpm build` 成功、Playwright 全件77件成功。変更したブラウザー試験3件は `--repeat-each 3` で計9件成功。DSH 本体は起動しておらず、実物への保存とモデル一覧の再読込失敗をブラウザーで起こす操作は未確認。
+
+### 2026-10-07：Issue #45、推論の指定なしと下位設定の継承を区別
+
+- 非対応モデルの選択と「既定（モデルに任せる）」では、`reasoningEffort` に固定の loader 設定式 `{ __jsExpr: 'void 0' }` を `set` する。`unset` は下位設定の推論値を復活させるため、この操作には使用しない。「既定値に戻す」の `modelResetOperations` は従来の `unset` を維持する。
+- DSH 0.2.0-rc.2 の公開配布コードで検証した。`dsh-settings/lib/index.js` の `SettingsForms.mutate` は `unset` を下位値の `set` へ変換する。`cordis-plugin-loader/lib/index.js` の `interpolate` は固定式を `undefined` に解決し、`dsh-agent-default-model` の Config と currentSelection を経て推論指定が省略される。`null` は推論値として残るので代替にならない。
+- `tests/08-reasoning-inheritance.test.ts` に下位 high を持つ設定からの保存・再読込・カタログ・リセットの回帰を追加。配布コードが配置されている環境では、実際の mutate、設定解決、`LlmRuntime.resolveCallWithInfo` を呼ぶ契約試験も実行する。旧 unset が非対応モデルで拒否されること、修正後が成功すること、対応モデルの既定 low を妨げないことを確認した。配布物がない環境ではこの1件だけ明示的に skip する。
+- mock はこの固定式だけを解釈し、任意の JavaScript は評価しない。`settings-inherited-reasoning` シナリオを追加し、ブラウザーで非対応モデル・指定なしを保存して開き直せること、リセットで high を継承することを検証した。
+- `pnpm typecheck`、`pnpm test`（1096件、skipなし）、`pnpm build`、`git diff --check` 成功。Chromium 390×844 のモデル設定既存3件と新規回帰1件が成功。既存の chunk サイズ警告あり。DSH 本体の起動や実設定の変更は行っていない。
+- 保護フックでの公開コード検索の拒否後、利用者から公開コード限定の再試行許可を得た。シェルのワイルドカード検索も実行審査で拒否されたため、許可された公開ファイルの明示的な読み取りだけで確認した。

@@ -18,7 +18,7 @@ test('モデルの選択は提供元・モデル・既定の推論を一緒に�
   assert.deepEqual(modelSaveOperations(chooseModel(local)), [
     { op: 'set', path: ['provider'], value: 'ollama' },
     { op: 'set', path: ['model'], value: 'local' },
-    { op: 'unset', path: ['reasoningEffort'] },
+    { op: 'set', path: ['reasoningEffort'], value: { __jsExpr: 'void 0' } },
   ])
   assert.deepEqual(modelSaveOperations(chooseModel(deepseek)).at(-1),
     { op: 'set', path: ['reasoningEffort'], value: 'high' })
@@ -39,7 +39,7 @@ test('保存済みの一覧外モデルと候補外の推論を残し、推論�
     { value: '', unknownLabel: undefined })
   const defaulted = withReasoningEffort(chooseModel(deepseek), '')
   assert.deepEqual(defaulted, { provider: 'deepseek', model: 'deepseek-v4' })
-  assert.deepEqual(modelSaveOperations(defaulted).at(-1), { op: 'unset', path: ['reasoningEffort'] })
+  assert.deepEqual(modelSaveOperations(defaulted).at(-1), { op: 'set', path: ['reasoningEffort'], value: { __jsExpr: 'void 0' } })
 })
 
 test('許可リストは一覧にない値を保持し、追加・削除で他の選択を変えない', () => {

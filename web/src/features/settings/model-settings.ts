@@ -49,7 +49,9 @@ export function modelSaveOperations(next: ModelSelection): SettingsOperation[] {
     { op: 'set', path: ['provider'], value: next.provider },
     { op: 'set', path: ['model'], value: next.model },
     next.reasoningEffort === undefined
-      ? { op: 'unset', path: ['reasoningEffort'] }
+      // unset restores the inherited effort; null is also an explicit effort.
+      // DSH's loader expression masks the lower layer with actual undefined.
+      ? { op: 'set', path: ['reasoningEffort'], value: { __jsExpr: 'void 0' } }
       : { op: 'set', path: ['reasoningEffort'], value: next.reasoningEffort },
   ]
 }
