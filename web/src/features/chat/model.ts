@@ -78,11 +78,14 @@ function isChatEvent(event: SessionWireEvent): boolean {
 }
 
 /** A step has one accepted assistant message; retries remain attempt events. */
-function assistantBlockKey(turn: unknown, step: unknown, index: number, fallback: string): string {
+function assistantStepKey(turn: unknown, step: unknown): string | undefined {
   return typeof turn === 'number' && Number.isSafeInteger(turn) && turn >= 0
     && typeof step === 'number' && Number.isSafeInteger(step) && step >= 0
-    ? `assistant:${turn}:${step}:${index}`
-    : `${fallback}:${index}`
+    ? `assistant:${turn}:${step}` : undefined
+}
+
+function assistantBlockKey(turn: unknown, step: unknown, index: number, fallback: string): string {
+  return `${assistantStepKey(turn, step) ?? fallback}:${index}`
 }
 
 function fileAttachment(value: unknown): FileAttachmentRef | undefined {
@@ -164,7 +167,7 @@ const textOf = (content: readonly ChatContentBlock[]): string => content.flatMap
 
 export type { StreamBlock }
 
-/** Fold by block index rather than arrival order; final blocks replace all deltas. */
+/** Identify blocks by index and display them in the assembler's first-seen order. */
 export function getStreamBlocks(stream: AssistantStream): readonly StreamBlock[] {
   return streamBlocksOf(stream)
 }
@@ -187,10 +190,11 @@ function resultsOf(event: SessionWireEvent): { callId: string; result: ResultInf
   return !callId ? [] : [{ callId, result: { event, content, isError: failure || message.isError === true, ...(failure ? { error: data.error } : {}) } }]
 }
 
-/** Only explicit per-block boundaries establish the full reasoning interval. */
-function reasoningDurations(value: unknown, content: readonly unknown[]): ReadonlyMap<number, number> {
+/** Map accepted positions back to stream indices; only explicit boundaries time reasoning. */
+function assistantBlockMetadata(value: unknown, content: readonly unknown[]): { indices: readonly number[]; durations: ReadonlyMap<number, number> } {
   const boundaries = new Map<number, { type: string; start?: number; end?: number; text?: string; invalid: boolean }>()
-  if (!Array.isArray(value)) return new Map()
+  const durations = new Map<number, number>()
+  if (!Array.isArray(value)) return { indices: [], durations }
   let dropsToolCalls = false
   for (const candidate of value) {
     const record = objectOf(candidate)
@@ -228,22 +232,22 @@ function reasoningDurations(value: unknown, content: readonly unknown[]): Readon
       state.text = stringOf(objectOf(chunk.block)?.text)
     }
   }
-  const durations = new Map<number, number>()
   // The DSH assembler keeps first-seen order, not numeric stream indices, and
   // omits tool calls when a max-token finish truncates the accepted message.
-  const ordered = [...boundaries.values()].filter(block => !dropsToolCalls || block.type !== 'tool-call')
-  if (ordered.length !== content.length || ordered.some((block, index) => objectOf(content[index])?.type !== block.type)) return durations
-  for (const [index, { type, start, end, text, invalid }] of ordered.entries()) {
+  const ordered = [...boundaries.entries()].filter(([, block]) => !dropsToolCalls || block.type !== 'tool-call')
+  if (ordered.length !== content.length || ordered.some(([, block], index) => objectOf(content[index])?.type !== block.type)) return { indices: [], durations }
+  for (const [index, [, { type, start, end, text, invalid }]] of ordered.entries()) {
     if (type !== 'reasoning' || invalid || start === undefined || end === undefined || text === undefined || objectOf(content[index])?.text !== text) continue
     const duration = end - start
     if (Number.isSafeInteger(duration) && duration >= 0) durations.set(index, duration)
   }
-  return durations
+  return { indices: ordered.map(([index]) => index), durations }
 }
 
 /** Rows built from durable records, plus what live rows need to join them. */
 export interface SettledChat {
   readonly rows: readonly ChatRow[]
+  readonly acceptedSteps: ReadonlySet<string>
   readonly rpcIds: ReadonlySet<string>
   readonly keys: ReadonlySet<string>
   readonly shownCalls: ReadonlySet<string>
@@ -275,6 +279,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     }
   }
   const rows: ChatRow[] = []
+  const acceptedSteps = new Set<string>()
   const rpcIds = new Set<string>()
   const shownCalls = new Set<string>()
   const assistantCallIds = new Set<string>()
@@ -312,13 +317,15 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
         rows.push({ ...base, kind: 'user', content, text: textOf(content) })
       }
     } else if (event.type === 'assistant/message') {
+      const stepKey = assistantStepKey(data.turn, data.step)
+      if (stepKey !== undefined) acceptedSteps.add(stepKey)
       const message = objectOf(data.message) ?? {}
       const content = Array.isArray(message.content) ? message.content : []
-      const durations = reasoningDurations(data.stream, content)
+      const { indices, durations } = assistantBlockMetadata(data.stream, content)
       content.forEach((value, index) => {
         const block = contentOf([value])[0]
         if (block === undefined) return
-        const blockBase = { ...base, key: assistantBlockKey(data.turn, data.step, index, base.key) }
+        const blockBase = { ...base, key: assistantBlockKey(data.turn, data.step, indices[index] ?? index, base.key) }
         if (block.type === 'text' || block.type === 'reasoning') {
           const durationMs = block.type === 'reasoning' ? durations.get(index) : undefined
           rows.push({ ...blockBase, kind: block.type === 'text' ? 'assistant' : 'reasoning', text: block.text, streaming: false,
@@ -352,7 +359,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       rows.push({ ...base, kind: 'command', name, text: stringOf(data.text) ?? '', status })
     }
   }
-  return { rows, rpcIds, keys: new Set(rows.map(row => row.key)), shownCalls, toolRow }
+  return { rows, rpcIds, keys: new Set(rows.map(row => row.key)), shownCalls, acceptedSteps, toolRow }
 }
 
 /** A text block that has not changed keeps its row, so its Markdown is not rendered again. */
@@ -365,7 +372,7 @@ export function appendLiveRows(
   pendingSubmissions: readonly PendingSubmission[] = [],
 ): ChatRow[] {
   const rows = [...settled.rows]
-  if (stream !== null) {
+  if (stream !== null && !settled.acceptedSteps.has(assistantStepKey(stream.turn, stream.step) ?? '')) {
     const shownCalls = new Set<string>()
     for (const value of getStreamBlocks(stream)) {
       const { index, block, complete } = value
