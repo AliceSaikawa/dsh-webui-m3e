@@ -81,6 +81,14 @@ test('I45 実設定: 指定なしで下位のhighを消し、Host再起動後も
   await expect(page.getByText('保存しました', { exact: true })).toBeVisible()
   await reopen(page, integration.host)
   await expect(effort(page).locator('[slot="value"]')).toHaveText('既定（モデルに任せる）')
+  // An empty select value still has a visible custom label. After blur the
+  // field label must stay above it, including after a full Host restart.
+  await page.getByRole('heading', { name: 'モデル', exact: true }).click()
+  await expect.poll(() => effort(page).evaluate(select => {
+    const label = select.closest('m3e-form-field')!.querySelector('label')!.getBoundingClientRect()
+    const value = select.querySelector('[slot="value"]')!.getBoundingClientRect()
+    return value.top - label.bottom
+  })).toBeGreaterThan(0)
   const saved = await snapshot(page)
   expect(saved.base).toMatchObject(inherited)
   expect(saved.user.reasoningEffort).toEqual({ __jsExpr: 'void 0' })

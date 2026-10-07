@@ -1183,6 +1183,7 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 | 非対応モデルへ変更 | 推論非対応モデル `plain` に切り替えて保存。下位 `high` は保持しつつ、解決後の値と既定選択から推論指定が消え、推論欄は非表示。再起動後の新規会話から実アダプター経由でローカルLLMへ送信し、返答を受信した。 |
 
 - 下位設定は追加の検証用bundleで定義した。ホーム直下のpatchは編集対象より優先されるoverlayであり、継承元ではないため使用しない。この違いを確認する初期テストの失敗も保存済み。モデルは実カタログへ登録する検証専用の2種類を使う。
-- 実アダプターが付ける `/v1/messages?beta=true` を偽LLMが誤って404にしていたため、テスト用サーバーの判定をpathnameへ修正した。要求パスも添付する。製品の保存コードの変更は不要だった。
+- 実アダプターが付ける `/v1/messages?beta=true` を偽LLMが誤って404にしていたため、テスト用サーバーの判定をpathnameへ修正した。要求パスも添付する。製品の保存ロジックの追加変更は不要だった。
+- 実画面の証跡を目視すると、指定なしで空のselect値と独自の表示文言を併用した際、ラベル「推論の強さ」が選択値と重なっていた。製品の `ModelsPanel.tsx` で推論欄の `floatLabel` を常時浮動にし、フォーカスを外した後も両者の矩形が重ならないことを実DSH試験で検査した。再起動を含む3経路を再実行して成功し、修正後の画像も目視確認した。修正前後は `docs/review/pr51-reasoning-before.png` と `pr51-reasoning-after.png` に保存した。
 - 再現コマンドは `pnpm exec playwright test -c e2e-dsh/playwright.config.ts reasoning-inheritance.spec.ts`（配置済み配布物を使う場合は `M3E_DSH_DIR` を指定）。3件すべて成功。`pnpm typecheck`、単体1096件、配布build/check:pack、新規specの個別TypeScript検査も成功。既存chunk警告のみ。
 - 対象は隔離した実プロセス・実設定ファイル・実RPC・実ブラウザーであり、本番や利用者の日常設定、本物のLLM、iPhone/Safariの検証ではない。最終証跡は当ブランチの `tmp/dsh-integration/report.json`（3件成功、画面写真・設定スナップショットを含む）。実行時刻で変わる出力先はJSON内の設定を正とする。

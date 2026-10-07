@@ -151,7 +151,7 @@ function DefaultModel({ namespace, state, store, choices, available }: EditorPro
         {choices.map(item => <M3eOption key={item.value} value={item.value}>{item.label}</M3eOption>)}
       </M3eSelect>
     </M3eFormField></div>
-    <div className="settings-field" hidden={!reasoning}><M3eFormField variant="outlined" error={Boolean(error)}>
+    <div className="settings-field" hidden={!reasoning}><M3eFormField variant="outlined" floatLabel="always" error={Boolean(error)}>
       <label slot="label" htmlFor={effortId}>推論の強さ</label>
       <M3eSelect ref={effortSelect} id={effortId} aria-label="推論の強さ" disabled={!state.writable || saving || !available}
         onChange={event => {
