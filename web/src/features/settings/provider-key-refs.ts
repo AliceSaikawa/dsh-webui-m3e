@@ -21,6 +21,8 @@ const defaults: Record<string, string[]> = {
 // Ambient discovery also reads auxiliary names. Reserve these whole families
 // conservatively; status lookup still uses only the configured reference.
 const families = ['AWS_', 'GOOGLE_', 'GCLOUD_', 'CLOUDFLARE_']
+/** The key check refused a reference this form had just assigned (`requireMissing`). */
+export const keyRegisteredMeanwhileMessage = '設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。'
 export const pendingKeyReferenceMessage = 'キーの参照先だけが設定されています。キーを登録するまで、この提供元を使えない場合があります。'
 /**
  * `named` holds every reference name that a provider states in the settings.

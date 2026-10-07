@@ -8,7 +8,8 @@ import { modelDraft } from '../web/src/features/settings/custom-provider.ts'
 
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>(fn => { resolve = fn }); return { promise, resolve } }
 const row = (keys: ProviderStore, id: string) => keys.getSnapshot().rows.find(item => item.id === id)!
-const raceMessage = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。この提供元は登録済みのキーを参照します。提供元の設定とキーを確認してください。'
+// Since the 6th review the form takes the name it assigned back out (I16 G2).
+const raceMessage = '提供元の設定は保存しましたが、API キーを保存できませんでした。 設定を保存する間に、この参照名のキーが登録されました。上書きを避けるため、API キーを送信していません。 この保存で付けた参照名を、この提供元の設定から外しました。登録済みのキーは、この提供元には使われません。この提供元の API キーは未設定です。キーを使うには、ほかと重ならない ID で追加し直してください。'
 function setup() {
   const ctx = createMockContext({ extensions: [{ extendMock }] })
   const remote = ctx.remote as unknown as ProviderRemote
@@ -57,33 +58,34 @@ test('I16 R5 late registration: 設定の保存中に別の名前空間で登録
     held.resolve()
     assert.equal(await pending, false)
     assert.deepEqual(sent, ['LOCAL_API_API_KEY=fake-other-owner'])
-    assert.equal(form.getSnapshot().phase, 'keyFailed')
+    assert.equal(form.getSnapshot().phase, 'saved')
     assert.equal(form.getSnapshot().message, raceMessage)
-    assert.equal((await profile('local-api')).apiKeyEnv, 'LOCAL_API_API_KEY')
+    // The name this save assigned is gone, so the other owner's key is not used here.
+    assert.equal((await profile('local-api')).apiKeyEnv, undefined)
     assert.equal(row(keys, 'deepseek').status, 'registered')
-    // The same form keeps the "reference assigned by this save" context.
+    // The same form sends nothing more.
     form.input.input('fake-form-retry')
     assert.equal(await form.submit(), false)
     assert.deepEqual(sent, ['LOCAL_API_API_KEY=fake-other-owner'])
     assert.equal(form.getSnapshot().message, raceMessage)
-    assert.equal(form.input.getSnapshot().draft, '')
-    // Reading the settings again inside the same sheet does not end it either.
+    // Reading the settings again inside the same sheet: the name now collides.
     await form.load(); assert.equal(form.getSnapshot().editing, true)
     form.input.input('fake-form-reloaded')
     assert.equal(await form.submit(), false)
+    assert.match(form.getSnapshot().errors.key!, /参照名が重なります/)
     assert.deepEqual(sent, ['LOCAL_API_API_KEY=fake-other-owner'])
-    assert.equal(form.getSnapshot().message, raceMessage)
     form.dispose()
-    // No option: registration from the list is the same as main and sends.
+    // The list has no destination for the row any more (as for any unnamed custom row).
     await keys.load()
-    assert.deepEqual(await keys.save(row(keys, 'local-api'), 'fake-list'), { ok: true })
-    assert.deepEqual(sent, ['LOCAL_API_API_KEY=fake-other-owner', 'LOCAL_API_API_KEY=fake-list'])
-    // Reopened: the reference is an explicit one read from the settings.
+    assert.equal(row(keys, 'local-api').status, 'unset')
+    assert.equal((await keys.save(row(keys, 'local-api'), 'fake-list')).ok, false)
+    assert.deepEqual(sent, ['LOCAL_API_API_KEY=fake-other-owner'])
+    // Reopened: the collision is found before any write.
     const reopened = await open('local-api', true)
     reopened.input.input('fake-reopened')
-    assert.equal(await reopened.submit(), true)
-    assert.equal(sent.at(-1), 'LOCAL_API_API_KEY=fake-reopened')
-    assert.equal(sent.length, 3)
+    assert.equal(await reopened.submit(), false)
+    assert.match(reopened.getSnapshot().errors.key!, /参照名が重なります/)
+    assert.equal(sent.length, 1)
     reopened.dispose()
   } finally { ctx.dispose() }
 })
@@ -109,6 +111,7 @@ test('I16 R5 unknown result: 設定の応答を失っても付けようとした
       assert.equal(await form.submit(), !registeredElsewhere)
       assert.deepEqual(sent, [registeredElsewhere ? 'LOCAL_API_API_KEY=fake-other-owner' : 'LOCAL_API_API_KEY=fake-after-check'])
       if (registeredElsewhere) assert.equal(form.getSnapshot().message, raceMessage)
+      assert.equal((await profile('local-api')).apiKeyEnv, registeredElsewhere ? undefined : 'LOCAL_API_API_KEY')
       form.dispose()
     } finally { ctx.dispose() }
   }

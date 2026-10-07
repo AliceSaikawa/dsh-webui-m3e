@@ -38,7 +38,8 @@ test('I16 reference write close M47: 標準の参照書込み中もcanSendで中
     const row = reopened.getSnapshot().rows.find(row => row.id === 'close-ref')!
     assert.equal(row.needsReference, false)
     assert.equal(row.status, 'missing')
-    assert.match(row.keyNotice!, /キーの参照先だけが設定されています/)
+    // A standard row: no notice, exactly as main shows it ("API キー：未登録").
+    assert.equal(row.keyNotice, undefined)
     assert.equal(row.writable, true)
     assert.equal((await reopened.save(row, 'fake-reference-retry')).ok, true)
     assert.equal(writes, 1)
