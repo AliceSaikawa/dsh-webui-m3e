@@ -230,7 +230,7 @@ test('parallel streaming blocks retain independent text, stable index keys, and 
     { type: 'text-delta', index: 2, text: '事' },
   ]
   const before = buildChatRows([], stream(first))
-  assert.deepEqual(before.map(row => [row.key, row.kind]), [['assistant:1:1:0', 'reasoning'], ['assistant:1:1:1', 'tool'], ['assistant:1:1:2', 'assistant']])
+  assert.deepEqual(before.map(row => [row.key, row.kind]), [['assistant:1:1:2', 'assistant'], ['assistant:1:1:0', 'reasoning'], ['assistant:1:1:1', 'tool']])
   const complete = stream([
     ...first,
     { type: 'reasoning-delta', index: 0, text: '中' },
@@ -240,11 +240,11 @@ test('parallel streaming blocks retain independent text, stable index keys, and 
     { type: 'block-end', index: 2, block: { type: 'text', text: '確定した返事' } },
   ])
   const blocks = getStreamBlocks(complete)
-  assert.deepEqual(blocks.map(value => [value.index, value.complete]), [[0, true], [1, false], [2, true]])
+  assert.deepEqual(blocks.map(value => [value.index, value.complete]), [[2, true], [0, true], [1, false]])
   const rows = buildChatRows([], complete)
-  assert.deepEqual(rows.map(row => row.kind === 'tool' ? [row.arguments, row.status] : row.kind === 'reasoning' || row.kind === 'assistant' ? [row.text, row.streaming] : []), [['確定した検討', false], ['{"path":"README.md"}', 'running'], ['確定した返事', false]])
+  assert.deepEqual(rows.map(row => row.kind === 'tool' ? [row.arguments, row.status] : row.kind === 'reasoning' || row.kind === 'assistant' ? [row.text, row.streaming] : []), [['確定した返事', false], ['確定した検討', false], ['{"path":"README.md"}', 'running']])
   assert.deepEqual(rows.map(row => row.key), before.map(row => row.key))
-  assert.equal((before[0] as { text: string }).text, '検討')
+  assert.equal((before[1] as { text: string }).text, '検討')
 })
 
 test('folded stream content is not added again and reconnect replaces previous transient text', () => {

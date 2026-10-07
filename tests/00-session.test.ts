@@ -50,8 +50,8 @@ test('interleaved indexed stream blocks fold independently and block-end is auth
   assert.equal(result.records.length, 1)
   assert.deepEqual(result.stream?.content, [
     { type: 'reasoning', text: '考えました' },
-    { type: 'tool-call', id: 'call-1', name: 'read_file', arguments: '{"path":"README.md"}' },
     { type: 'text', text: '確定した返事' },
+    { type: 'tool-call', id: 'call-1', name: 'read_file', arguments: '{"path":"README.md"}' },
   ])
   assert.deepEqual(result.stream?.usage, { inputTokens: 12, outputTokens: 3 })
   assert.deepEqual(result.stream?.finishReason, { kind: 'tool-calls' })

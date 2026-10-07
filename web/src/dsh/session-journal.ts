@@ -17,7 +17,7 @@ export interface AssistantStream {
   readonly step: number
   /** Raw chunks; the journal folds them into `blocks` and leaves this out. */
   readonly chunks?: readonly StreamChunk[]
-  /** Folded blocks in index order, kept by identity while a block does not change. */
+  /** Folded blocks in first-seen order, kept by identity while a block does not change. */
   readonly blocks?: readonly StreamBlock[]
   readonly content: readonly ContentBlock[]
   readonly usage?: TokenUsage
@@ -69,6 +69,7 @@ interface StreamFold {
   turn: number
   step: number
   readonly blocks: Map<number, StreamBlock>
+  readonly order: Set<number>
   usage?: TokenUsage
   finishReason?: FinishReason
 }
@@ -77,7 +78,7 @@ function applyChunks(fold: StreamFold | undefined, entries: readonly SessionEven
   for (const entry of entries) {
     if (entry.type === 'event') continue
     const { attemptId, turn, step, chunk } = entry.event.data
-    if (fold?.attemptId !== attemptId) fold = { attemptId, turn, step, blocks: new Map() }
+    if (fold?.attemptId !== attemptId) fold = { attemptId, turn, step, blocks: new Map(), order: new Set() }
     applyChunk(fold, chunk)
   }
   return fold
@@ -86,6 +87,9 @@ function applyChunks(fold: StreamFold | undefined, entries: readonly SessionEven
 function applyChunk(fold: StreamFold, chunk: StreamChunk): void {
   if (chunk.type === 'usage') { fold.usage = chunk.usage; return }
   if (chunk.type === 'finish') { fold.finishReason = chunk.reason; return }
+  // DSH's assembler retains the first appearance, including a tool's start
+  // before its first renderable delta. Numeric indices identify, not sort.
+  fold.order.add(chunk.index)
   const { blocks } = fold
   if (chunk.type === 'block-end') {
     blocks.set(chunk.index, { index: chunk.index, block: chunk.block, complete: true })
@@ -118,7 +122,7 @@ export function streamBlocksOf(stream: AssistantStream): readonly StreamBlock[] 
   if (stream.chunks === undefined || stream.chunks.length === 0) {
     return stream.content.map((block, index) => ({ index, block, complete: stream.finishReason !== undefined }))
   }
-  const fold: StreamFold = { attemptId: stream.attemptId, turn: stream.turn, step: stream.step, blocks: new Map() }
+  const fold: StreamFold = { attemptId: stream.attemptId, turn: stream.turn, step: stream.step, blocks: new Map(), order: new Set() }
   for (const chunk of stream.chunks) applyChunk(fold, chunk)
   if (stream.finishReason !== undefined) fold.finishReason ??= stream.finishReason
   return streamOf(fold)?.blocks ?? []
@@ -128,7 +132,10 @@ export function streamBlocksOf(stream: AssistantStream): readonly StreamBlock[] 
 const completedBlocks = new WeakMap<StreamBlock, StreamBlock>()
 function streamOf(fold: StreamFold | undefined): AssistantStream | null {
   if (fold === undefined) return null
-  let blocks = [...fold.blocks.values()].sort((a, b) => a.index - b.index)
+  let blocks = [...fold.order].flatMap(index => {
+    const block = fold.blocks.get(index)
+    return block ? [block] : []
+  })
   if (fold.finishReason !== undefined) {
     blocks = blocks.map(value => {
       if (value.complete) return value
