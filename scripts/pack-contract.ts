@@ -15,12 +15,26 @@ export function allowedPackPath(path: string): boolean {
 }
 
 /** Validate raw tar names before removing the npm package root or reading content. */
-export function parsePackEntries(names: readonly string[]): { entries: { name: string; path: string }[]; errors: string[] } {
+export function parsePackEntries(names: readonly string[], types: readonly string[]): { entries: { name: string; path: string }[]; errors: string[] } {
   const entries: { name: string; path: string }[] = []
   const errors: string[] = []
-  for (const name of names) {
+  if (names.length !== types.length) return { entries, errors: ['archive name/type count mismatch'] }
+  for (const [index, name] of names.entries()) {
     if (!name.startsWith('package/')) { errors.push(`invalid archive root: ${name}`); continue }
-    if (!name.endsWith('/')) entries.push({ name, path: name.slice('package/'.length) })
+    const type = types[index]
+    if (type !== '-' && type !== 'd') { errors.push(`unsupported archive entry type: ${name}`); continue }
+    const path = name.slice('package/'.length)
+    const directory = type === 'd'
+    const canonical = directory && path.endsWith('/') ? path.slice(0, -1) : path
+    const checkedName = directory && name.endsWith('/') ? name.slice(0, -1) : name
+    if (/[\\\x00-\x1f\x7f]/.test(name) || checkedName.split('/').some(part => !part || part === '.' || part === '..')) {
+      errors.push(`invalid archive path: ${name}`); continue
+    }
+    if (directory) {
+      if (!['', 'lib', 'dist', 'dist/assets'].includes(canonical)) errors.push(`unexpected archive directory: ${name}`)
+    } else if (!allowedPackPath(path)) {
+      errors.push(`unexpected: ${path}`)
+    } else entries.push({ name, path })
   }
   return { entries, errors }
 }
