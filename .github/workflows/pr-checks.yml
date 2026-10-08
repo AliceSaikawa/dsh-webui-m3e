@@ -1,0 +1,73 @@
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+        with:
+          version: 11.17.0
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install project dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install pinned public DSH contract distribution
+        env:
+          NODE_OPTIONS: --experimental-strip-types
+        run: |
+          dsh_dir=tmp/dsh-integration/dsh-0.2.0-rc.2
+          mkdir -p "$dsh_dir"
+          cp .github/ci/dsh/package.json .github/ci/dsh/package-lock.json "$dsh_dir/"
+          npm ci --prefix "$dsh_dir" --ignore-scripts --no-audit --no-fund
+          node scripts/check-ci-dsh.ts
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests (zero skips required)
+        env:
+          NODE_OPTIONS: --experimental-strip-types
+        shell: bash
+        run: |
+          mkdir -p tmp/ci
+          # Fresh destinations prevent an earlier report from masking a crashed runner.
+          : > tmp/ci/unit-summary.json
+          set +e
+          node --experimental-strip-types --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=./scripts/ci-summary-reporter.ts \
+            --test-reporter-destination=tmp/ci/unit-summary.json tests/*.test.ts
+          test_status=$?
+          set -e
+          node scripts/check-ci-test-results.ts tmp/ci/unit-summary.json "$test_status"
+      - name: Build
+        env:
+          NODE_OPTIONS: --experimental-strip-types
+        run: pnpm build
+      - name: Check release package
+        env:
+          NODE_OPTIONS: --experimental-strip-types
+        run: pnpm check:pack
+      - name: Check patch whitespace
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git diff --check "$CI_BASE_SHA" HEAD
+          git diff --check

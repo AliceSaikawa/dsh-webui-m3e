@@ -380,3 +380,14 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 今回の確定作業でも、追加指示ファイルの検索に付けた禁止対象の除外指定が、保護対象の語を含む引数としてフックに拒否されました。その検索は再実行せず、指定された指示と文書を読みました。保護対象ファイルへの操作は行っていません。
 
 コミット後の差分確認コマンドも、親コミットを表す引数のシェル形式を理由に拒否されました。再実行はしていません。コミット前の作業差分とステージ済み差分の `git diff --check` は成功しており、コミット後は変更ファイルの一覧と作業ツリーが空であることを確認しました。
+
+### PR ごとの CI（2026-10-08、公開前のローカル検証）
+
+- `origin/main` の `cd99f273f9582729475272e48722d7ec850d6857` から専用ブランチ `ci/pr-checks-zero-skips` を作った。PR #51 の作業ブランチ、main、PR #54 は変更していない。
+- `.github/workflows/pr-checks.yml` を 1 本追加した。すべての PR の head SHA で、Node 22・TypeScript の strip-types、型検査、単体、ビルド、配布検査、PR 差分と作業差分の空白検査を実行する。イベントは `pull_request`、権限は `contents: read` だけ、checkout の認証情報は保持しない。Actions は確認した commit SHA に固定した。
+- `.github/ci/dsh/` の専用 npm lockfile で、公開 `@deepseek-ai/dsh@0.2.0-rc.2` と依存 608 パッケージの URL・integrity を固定した。既存の公開配布物の lockfile を基に、レジストリの当該版の配布 integrity と依存宣言が一致することを確認した。CI は別ディレクトリに `npm ci --ignore-scripts` で配置し、版と契約コードの存在を検査する。プロジェクト本体の package.json・pnpm lockfile は変更していない。
+- Node の構造化された累積集計を専用 reporter で出力する。skip が 1 件以上、失敗・cancelled・TODO、集計の欠落・破損・重複・不正な件数・成功件数の不一致は失敗にする。元のテストランナーが非ゼロなら、その終了コードを保持する。guard の 11 件は、CLI の終了コードと欠落ファイルの扱いも確認する。既存テストの削除・変更、skip/only の追加、期待値の緩和はしていない。
+- Mac の公式 portable Node 22.23.3（公式 SHA-256 照合済み）で、全 1,118 件成功、失敗・skip・cancelled・TODO は 0。BlockAssembler と推論設定のネイティブ契約テストも成功した。型検査、追加スクリプトの厳格な型検査、ビルド、配布検査 19 ファイル、workflow YAML の構造検査が成功した。既存の大きい chunk の警告は残る。システム Node は変更していない。
+- 追加確認では、既存 DSH のリンクを外し、空の専用ディレクトリ・空 npm cache から公式 Node 22.23.3 / 付属 npm 10.9.9 で実際の `npm ci --ignore-scripts --no-audit --no-fund` を実行し、540 パッケージを新規配置した。全配置済みパッケージの版と lockfile の一致、契約テストの参照先が新規配布物内であることを確認した。この新規配布物だけで契約を含む対象 10 件と全体 1,118 件がそれぞれ成功し、失敗・skip・cancelled・TODO は 0。既存配布物の再利用による代替ではない。Linux 上の新規インストールと GitHub Actions の実行は引き続き未確認。DSH の Host、実 LLM、利用者の設定は起動・使用していない。
+- 現在の委任実行の実モデル名を示す runtime metadata は見つからなかった。2026-10-08、利用者がこのタスクに限り `unknown` を認めたため、コミットの `AI-Model` は `unknown`、PR 本文・コメントは `AI: unknown / Harness: Codex` と記す。恒久的な規則変更とは扱わず、dot の製品モデル・別セッションのモデル・既定設定も採用しない。main のマージ、auto-merge、deploy は行わない。
+- 公開前の最終レビューで、固定した checkout/setup-node 自体は Node 20 で動くと確認した。`NODE_OPTIONS=--experimental-strip-types` は Node 22 の run ステップにだけ設定し、Node 20 の Actions と後処理には渡さない。
