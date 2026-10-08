@@ -11,8 +11,8 @@ async function setup(page: Page) {
   })
   await visit(page)
   await page.evaluate(async () => {
-    // @ts-expect-error Vite serves the browser module at this URL.
-    const { presentInteraction } = await import('/m3e/src/features/interactions/InteractionSheet.tsx')
+    const modulePath = '/m3e/src/features/interactions/InteractionSheet.tsx'
+    const { presentInteraction } = await import(modulePath)
     const store = (window as any).__cancelRaceStore
     const replies: { resolve(value: boolean): void; reject(error: Error): void }[] = []
     let calls = 0
