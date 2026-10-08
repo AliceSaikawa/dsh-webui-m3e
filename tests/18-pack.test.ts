@@ -1,5 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { gzipSync } from 'node:zlib'
 import { parsePackEntries, validatePack, type PackFile } from '../scripts/pack-contract.ts'
 import { productionModuleErrors } from '../scripts/production-modules.ts'
 
@@ -24,6 +29,67 @@ function metadata(change: (manifest: any) => void): PackFile[] {
 }
 const content = (path: string, text: string) => fixture().map(file => file.path === path ? { ...file, text } : file)
 const rejects = (files: PackFile[], message: string) => assert.ok(validatePack(files).includes(message), message)
+
+// Build real USTAR records without extracting them or relying on tar's writer
+// to normalize the invalid names being tested.
+function archiveRecord(name: string, type = '0', text = '', link = ''): Buffer {
+  const header = Buffer.alloc(512)
+  header.write(name, 0, 100)
+  header.write('0000644\0', 100, 8)
+  header.write('0000000\0', 108, 8)
+  header.write('0000000\0', 116, 8)
+  const body = Buffer.from(text)
+  header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124, 12)
+  header.write('00000000000\0', 136, 12)
+  header.fill(32, 148, 156)
+  header.write(type, 156, 1)
+  header.write(link, 157, 100)
+  header.write('ustar\0', 257, 6)
+  header.write('00', 263, 2)
+  const checksum = header.reduce((sum, byte) => sum + byte, 0)
+  header.write(`${checksum.toString(8).padStart(6, '0')}\0 `, 148, 8)
+  return Buffer.concat([header, body, Buffer.alloc((512 - body.length % 512) % 512)])
+}
+
+test('pack CLI: accepts real archives with ordinary directory records', () => {
+  const result = inspectArchive(['package/', 'package/lib/', 'package/dist/', 'package/dist/assets/'].map(name => archiveRecord(name, '5')))
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /check:pack OK/)
+})
+
+function inspectArchive(extra: Buffer[]) {
+  const parent = new URL('../tmp/pack-regression/', import.meta.url)
+  mkdirSync(parent, { recursive: true })
+  const directory = mkdtempSync(join(fileURLToPath(parent), 'run-'))
+  const archive = join(directory, 'fixture.tgz')
+  const replacements = new Set(extra.map(record => record.subarray(0, 100).toString().replace(/\0.*$/s, '')))
+  writeFileSync(archive, gzipSync(Buffer.concat([
+    ...fixture().filter(file => !replacements.has(`package/${file.path}`)).map(file => archiveRecord(`package/${file.path}`, '0', file.text)),
+    ...extra, Buffer.alloc(1024),
+  ])))
+  return spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/check-pack.ts', import.meta.url)), archive], { encoding: 'utf8', timeout: 30_000 })
+}
+
+for (const [name, type, link] of [
+  ['package/../../outside/', '5', ''],
+  ['package/unexpected/', '5', ''],
+  ['package/dist/assets/nested/', '5', ''],
+  ['/package/dist/', '5', ''],
+  ['package/dist/../lib/', '5', ''],
+  ['package/dist//assets/', '5', ''],
+  ['package/dist/./assets/', '5', ''],
+  ['package//', '5', ''],
+  ['package/lib/index.js', '5', ''],
+  ['package/dist/icon-192.png', '2', '../../outside.png'],
+  ['package/dist/icon-192.png', '1', 'package/README.md'],
+  ['package/dist/icon-192.png', '6', ''],
+] as const) {
+  test(`pack CLI: rejects archive entry ${JSON.stringify({ name, type, link })}`, () => {
+    const result = inspectArchive([archiveRecord(name, type, '', link)])
+    assert.notEqual(result.status, 0, result.stdout)
+    assert.match(result.stderr, /Invalid release tarball/)
+  })
+}
 
 test('pack: accepts release artifacts and producer-only prepack', () => {
   assert.deepEqual(validatePack(fixture()), [])
@@ -130,16 +196,31 @@ test('pack: rejects a newline between the patch name key and value', () => {
 })
 test('pack: accepts npm archive entries and directory records', () => {
   const names = ['package/', 'package/lib/', ...fixture().map(file => `package/${file.path}`)]
-  assert.deepEqual(parsePackEntries(names), { entries: fixture().map(file => ({ name: `package/${file.path}`, path: file.path })), errors: [] })
+  assert.deepEqual(parsePackEntries(names, names.map(name => name.endsWith('/') ? 'd' : '-')), { entries: fixture().map(file => ({ name: `package/${file.path}`, path: file.path })), errors: [] })
 })
 test('pack: rejects raw entries outside the npm package root', () => {
   for (const name of ['lib/index.js', 'dist/assets/index-AbCd1234.js', 'outside/', './package/lib/index.js', '/package/lib/index.js']) {
-    assert.deepEqual(parsePackEntries([name]), { entries: [], errors: [`invalid archive root: ${name}`] })
+    assert.deepEqual(parsePackEntries([name], ['-']), { entries: [], errors: [`invalid archive root: ${name}`] })
   }
   const names = fixture().map(file => file.path === 'lib/index.js' ? file.path : `package/${file.path}`)
-  const parsed = parsePackEntries(names)
+  const parsed = parsePackEntries(names, names.map(() => '-'))
   assert.deepEqual(parsed.errors, ['invalid archive root: lib/index.js'])
   assert.ok(validatePack(parsed.entries).includes('missing: lib/index.js'))
+})
+
+test('pack: rejects missing type information and special entry types', () => {
+  assert.deepEqual(parsePackEntries(['package/LICENSE'], []).errors, ['archive name/type count mismatch'])
+  for (const type of ['l', 'h', 'b', 'c', 'p', 's', '?', '']) {
+    assert.deepEqual(parsePackEntries(['package/LICENSE'], [type]).errors, ['unsupported archive entry type: package/LICENSE'])
+  }
+})
+test('pack: validates names even for directories and keeps file/directory types distinct', () => {
+  for (const name of ['package//', 'package/../lib/', 'package//lib/', 'package/./lib/', 'package/lib\\other/', 'package/lib\n/', 'package/lib\t/']) {
+    assert.equal(parsePackEntries([name], ['d']).errors.length, 1, name)
+  }
+  assert.equal(parsePackEntries(['package/lib/'], ['-']).errors.length, 1)
+  assert.equal(parsePackEntries(['package/LICENSE'], ['d']).errors.length, 1)
+  assert.deepEqual(parsePackEntries(['package/dist/assets'], ['d']), { entries: [], errors: [] })
 })
 
 // Inventory of the current mock files (observable.ts is the sole shared utility).
