@@ -315,7 +315,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       <div className="composer-frame">
         {draft.images.length > 0 && <div className="composer-images">{draft.images.map(image => <figure key={image.id}><img src={image.previewUrl} alt={image.name || '添付画像'} /><M3eIconButton aria-label={`${image.name || '画像'} を外す`} disabled={busy} onClick={() => update({ images: draft.images.filter(item => item.id !== image.id) })}><Icon name="close" /></M3eIconButton></figure>)}</div>}
         <textarea ref={textArea} id={inputId} rows={1} aria-label="メッセージ入力欄" aria-describedby={hint ? hintId : undefined} placeholder="メッセージを入力" value={draft.text} disabled={busy} onChange={event => { update({ text: event.target.value }); setCursor(event.target.selectionStart); setSuggesting(true) }} onSelect={event => setCursor(event.currentTarget.selectionStart)} onFocus={() => setSuggesting(true)} onKeyDown={event => { if (event.key === 'Escape') setSuggesting(false) }} />
-        <M3eTextareaAutosize ref={autosize} htmlFor={inputId} minRows={1} maxRows={6} />
+        {/* CSS owns the limits: the library's row measurement includes min-height. */}
+        <M3eTextareaAutosize ref={autosize} htmlFor={inputId} />
         {hint && <small id={hintId} className="composer-hint">{hint}</small>}
         {preparing && <small role="status">画像を準備しています…</small>}
         <div className="composer-controls">

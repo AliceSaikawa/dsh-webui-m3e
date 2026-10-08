@@ -1,7 +1,11 @@
 .composer { position: relative; min-width: 0; }
 .composer-input-wrap { position: relative; }
-.composer-frame { border-radius: var(--app-radius); padding: calc(var(--app-space) * .875) calc(var(--app-space) * .75) calc(var(--app-space) * .5); min-height: 110px; background: var(--md-sys-color-surface-container-high); }
-.composer-frame textarea { border: 0; border-radius: 0; padding: calc(var(--app-space) * .125) calc(var(--app-space) * .25) calc(var(--app-space) * .5); resize: none; line-height: 24px; min-height: 34px; max-height: 154px; overflow-y: auto; }
+.composer-frame { max-height: max(44px, calc(var(--app-height, 100dvh) - 129px - env(safe-area-inset-top) - env(safe-area-inset-bottom) - clamp(0px, calc(var(--app-height, 100dvh) - 222px), 16px))); overflow-y: auto; border-radius: var(--app-radius); padding: clamp(0px, calc((var(--app-height, 100dvh) - 238px) / 2), 11px) calc(var(--app-space) * .75); background: var(--md-sys-color-surface-container-high); }
+/* Content-box matches M3E's measured content height. 34px + 10px padding is
+   a 44px target; 6lh bounds actual lines rather than the minimum target size.
+   The 273px viewport reserve includes header/tabs (129), footer/frame padding
+   (38), controls (48), textarea padding (10), and 48px of conversation. */
+.composer-frame textarea { position: relative; z-index: 1; display: block; box-sizing: content-box; width: calc(100% - var(--app-space) * .5); border: 0; border-radius: 0; padding: calc(var(--app-space) * .125) calc(var(--app-space) * .25) calc(var(--app-space) * .5); resize: none; line-height: 24px; min-height: 34px; max-height: min(6lh, max(34px, calc(var(--app-height, 100dvh) - 273px - env(safe-area-inset-top) - env(safe-area-inset-bottom)))); overflow-y: auto; }
 .composer-frame textarea:focus-visible { outline-offset: 0; border-radius: calc(var(--app-radius) * 2 / 7); }
 .composer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--app-space) * .25); min-height: 48px; }
 .composer-controls m3e-icon-button { flex: none; min-width: 44px; min-height: 44px; }
