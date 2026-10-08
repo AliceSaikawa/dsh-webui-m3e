@@ -44,6 +44,8 @@ jobs:
       - name: Unit tests (zero skips required)
         env:
           NODE_OPTIONS: --experimental-strip-types
+          # The existing display golden fixture was captured with +09:00 clocks.
+          TZ: Asia/Tokyo
         shell: bash
         run: |
           mkdir -p tmp/ci
