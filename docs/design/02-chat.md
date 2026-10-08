@@ -297,3 +297,10 @@
 - #50 がマージされた `origin/main` の `7372a2c` から、隔離した `verify/pr-52-53-review` を作り、`git merge --no-commit --no-ff fix/issue-32-tool-identity fix/issue-48-stream-settlement` を実行した。両ファイルとも自動マージ成功。未解決ファイルは0件で、`git diff --check` も成功した。main とPRブランチの履歴は変更していない。
 - この組み合わせで `pnpm typecheck`、`pnpm test`（1103件、失敗・skipなし）、`pnpm build` が成功した。既存の chunk サイズ警告のみ。DSH は起動していない。
 - 統合順は #52 → #53 を推奨する。現在のコミットには rebase・強制pushは不要。将来 main に別の変更が入った場合は、その時点の競合と統合後のテストを再確認する。
+
+### 2026-10-08：issue #44 の画像シートのフォーカス
+
+- Codex、依頼時モデル指定 `gpt-6-astra`。`cd99f273` からの専用ブランチで画像プレビュー共通の `ImageSheet` を作った。見出しを tabIndex=-1 とし、native popover の opened／toggle 後のフレームでフォーカスする。画像・子シート内で既に操作しているフォーカスは奪わない。
+- 開く前の画像ボタンを保持し、シートの native 終了後に残っている入口へ戻す。表示先が変わった場合や新たなシートで操作している場合には戻さない。フレームと開閉イベントの listener は終了時に解除する。
+- 修正前のキーボード試験は初期フォーカスで失敗。autofocus 属性だけでは改善せず、表示後の明示フォーカスと、native 終了後の入口復帰が必要だった。修正後は見出し、Tab で閉じるボタン、Escape／閉じるで入口復帰、別シートの割込みからの再表示を実 Chromium で確認した。
+- `e2e/mobile-accessibility.spec.ts` を現在の回帰検証の指示で追加。既存 `chat-details.spec.ts` と overlay 関連試験も成功。実行環境・他の検証・制限は `01-home.md` の同日メモを参照。コミット・公開はしていない。
