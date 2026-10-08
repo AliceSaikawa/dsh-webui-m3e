@@ -68,8 +68,8 @@ test('scrolling up and filtering suppress follow while reading existing content'
     assert.equal(traceScrollAction({ ...shown, searching: true }, trigger), 'none')
   }
   assert.equal(isTraceAtBottom(900, 1500, 500), false)
-  assert.equal(isTraceAtBottom(960, 1500, 500), true)
-  assert.equal(isTraceAtBottom(952, 1500, 500), false)
+  assert.equal(isTraceAtBottom(997, 1500, 500), true)
+  assert.equal(isTraceAtBottom(996, 1500, 500), false)
   assert.equal(isTraceAtBottom(0, 0, 0), false)
 })
 
@@ -147,4 +147,12 @@ test('an upward gesture stops following until the user returns to the end', () =
   assert.equal(traceScrollAction({ ...shown, following: stopped }, 'resize'), 'none')
   assert.equal(traceFollowAfterScroll(stopped, true, 'scroll'), true)
   assert.equal(traceScrollAction(shown, 'resize'), 'bottom')
+})
+
+test('scrolling 20px above the end after an upward gesture stays stopped on the next stream update', () => {
+  const stopped = traceFollowAfterScroll(true, false, 'user-up')
+  const following = traceFollowAfterScroll(stopped, isTraceAtBottom(780, 1000, 200), 'scroll')
+  assert.equal(following, false)
+  assert.equal(traceScrollAction({ ...shown, following }, 'content'), 'none')
+  assert.equal(traceFollowAfterScroll(stopped, isTraceAtBottom(800, 1000, 200), 'scroll'), true)
 })

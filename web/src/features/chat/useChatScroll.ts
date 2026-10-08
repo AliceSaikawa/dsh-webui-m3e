@@ -69,12 +69,16 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
   const onScroll = () => {
     if (!active || !ready || !canObserveChatScroll(state.current)) return
     const node = viewport.current
-    if (!node || node.clientHeight === 0 || anchor.current) return
+    if (!node || node.clientHeight === 0) return
     // RetainedScrollPanel and our own writes also dispatch scroll events.
     if (readingAnchor.current?.scrollTop === node.scrollTop) return
     // Once the reader moves away, resume only when they return to the actual end.
     state.current = { ...state.current, following: isNearBottom(node, state.current.following ? 64 : 4) }
     readingAnchor.current = captureAnchor(node)
+    // A pending page belongs to the reader's latest position, not the position
+    // where the request began. Our own writes already update readingAnchor, so
+    // their queued scroll events are ignored by the equality guard above.
+    if (anchor.current) anchor.current = state.current.following ? null : readingAnchor.current
     setLatestVisible(!state.current.following)
     if (node.scrollTop <= 24 && !state.current.following) void loadOlder()
   }
@@ -83,7 +87,11 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
     state.current = restored.state
     if (restored.action === 'none') return
     if (restored.action === 'bottom') toLatest()
+    else if (readingAnchor.current) restoreAnchor(node, readingAnchor.current)
     readingAnchor.current = captureAnchor(node)
+    // If the request is still pending on return, its eventual prepend must
+    // preserve the newly restored row too.
+    if (!state.current.following && (loading.current || loadingOlder)) anchor.current = readingAnchor.current
     dimensions.current = `${node.scrollHeight}:${node.clientHeight}:${node.clientWidth}`
     setLatestVisible(!state.current.following)
     if (pendingError.current) { pendingError.current = false; onLoadError() }
@@ -99,14 +107,14 @@ export function useChatScroll({ face, revision, active, ready, loadingOlder, has
     state.current = transition.state
     if (shouldDiscardChatAnchor(active, state.current.restoring)) {
       anchor.current = null
-      readingAnchor.current = null
     }
     if (!node || transition.action === 'suspend' || transition.action === 'wait') return
     if (transition.action === 'initialize') toLatest()
     if (transition.action !== 'resume') return
     // Child layout effects run before the parent's componentDidUpdate restore.
     // The first visible frame resumes the mode held before hiding. Only a reader
-    // who was following moves to the now-current end; manual reading stays put.
+    // who was following moves to the now-current end; manual reading restores
+    // the row key after the parent's numeric position, including hidden prepends.
     const frame = requestAnimationFrame(() => {
       if (!mounted.current || !state.current.active || !state.current.restoring) return
       if (node.clientHeight === 0) {
