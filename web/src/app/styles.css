@@ -65,7 +65,9 @@ label { display: block; margin-block: 8px; }
 @keyframes reconnecting { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
 .edge-swipe-zone { position: absolute; z-index: 2; inset: 0 auto 0 0; width: 16px; touch-action: pan-y; }
 .sheet-content { padding: 0 4px max(12px, env(safe-area-inset-bottom)); overflow-wrap: anywhere; }
-.full-sheet { --m3e-bottom-sheet-top-space: 0px; --m3e-bottom-sheet-compact-top-space: 0px; --m3e-bottom-sheet-full-container-shape: 0px; }
+/* M3E 2.8.2 measures the closed popover before showing it, which can cache NaNpx
+   and fall back to half-height. Full sheets have a fixed viewport-sized contract. */
+m3e-bottom-sheet.full-sheet { height: var(--app-height, 100dvh); top: 0; border-radius: 0; --m3e-bottom-sheet-top-space: 0px; --m3e-bottom-sheet-compact-top-space: 0px; --m3e-bottom-sheet-full-container-shape: 0px; }
 .full-sheet .sheet-content { min-height: calc(var(--app-height, 100dvh) - 48px); padding-top: env(safe-area-inset-top); }
 .dialog-content { min-width: min(260px, 70vw); }
 .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
