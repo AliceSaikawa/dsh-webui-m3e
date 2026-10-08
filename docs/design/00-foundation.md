@@ -566,3 +566,9 @@ web/src/
 - 新しいシートを前のネイティブ閉鎖完了までマウントしないようにした。すでに描画済みの下層シートは同じ key で残し、入力状態を保持する。M3E の private フィールドや同梱コードは変更していない。
 - `?mock` のモデル一覧に、Playwright が読み込み前に設定した場合だけ 120 ミリ秒の遅延を加えられる試験用入口を置いた。通常の `?mock` は変えない。修正前は新規 e2e でモデルシートが `open=true` のまま非表示となり失敗し、修正後は選択と入力補助の再表示まで成功した。
 - `pnpm typecheck`、`pnpm build` は成功。`pnpm test` は 702 件、Playwright は 65 件が成功した。DSH は起動していない。実物の DSH と iPhone 実機での確認は段階 3 に残る。
+
+### 2026-10-08：Issue #24 スナックバーと画面下部の重なり
+
+- 同梱 M3E 2.8.2 が読む `--m3e-snackbar-margin` を使用する。下部ナビゲーションがある画面では `TabScaffold` が safe-area の padding を含む実際の高さを計測し、外側に作られるスナックバーへ root の CSS 変数で渡す。ナビゲーションがない画面へ移ると計測値を解除する。余白は `16px + max(safe-area-inset-bottom, ナビゲーション高さ)` とし、下端領域を二重に加えない。高さ変更は ResizeObserver で追い、破棄後の通知は反映しない。
+- 回帰試験の指示に基づき `e2e/snackbar-position.spec.ts` を追加した。Chromium の CDP で `env(safe-area-inset-bottom)` 自体を 34px／21px に設定し、一覧・検索・対応待ち・設定の各タブ、設定の詳細、会話、下端領域なし、568×320 の横向きと表示中通知のルート往復を実測した。修正前は 8 件とも余白が不足して失敗、修正後は 8 件とも障害物との間隔が 16px（誤差 1px 以下）で成功した。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・全単体 1,107 件（失敗・スキップなし）・ビルドが成功。既存の chunk サイズ警告が残る。専用 localhost:5297 の偽データ画面だけを使用し、実 DSH・iPhone 実機は未検証。証拠は `tmp/issue24-*.log` に保存した。
