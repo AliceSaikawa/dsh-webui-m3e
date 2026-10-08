@@ -22,6 +22,7 @@ export interface HeldTurn {
 
 export interface FakeLlm {
   readonly url: string
+  readonly requestPaths: readonly string[]
   readonly requests: ChatRequest[]
   /** Requests whose stream the client closed before the scripted reply finished, such as a stop. */
   readonly abandoned: ChatRequest[]
@@ -67,16 +68,19 @@ export function titleFor(prompt: string): string {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 export async function startFakeLlm(options: { port?: number; log?: string } = {}): Promise<FakeLlm> {
+  const requestPaths: string[] = []
   const requests: ChatRequest[] = []
   const abandoned: ChatRequest[] = []
   const turns = new Map<string, HeldTurn & { stepGate: Promise<void>; turnGate: Promise<void> }>()
   const server: Server = createServer((req, res) => {
+    requestPaths.push(req.url ?? '/')
     let body = ''
     req.on('data', chunk => { body += chunk })
     req.on('end', () => {
       void (async () => {
         // A Files API 404 makes the real adapter fall back to inline base64.
-        if (req.url !== '/v1/messages') { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}'); return }
+        // The real Anthropic adapter appends ?beta=true to the same endpoint.
+        if (new URL(req.url ?? '/', 'http://127.0.0.1').pathname !== '/v1/messages') { res.writeHead(404, { 'content-type': 'application/json' }); res.end('{}'); return }
         const request = JSON.parse(body) as ChatRequest
         requests.push(request)
         const last = request.messages.at(-1)
@@ -153,6 +157,7 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
   const port = typeof address === 'object' && address ? address.port : 0
   return {
     url: `http://127.0.0.1:${port}`,
+    requestPaths,
     requests,
     abandoned,
     holdTurn(prompt) {

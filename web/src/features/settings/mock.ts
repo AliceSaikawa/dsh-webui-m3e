@@ -72,10 +72,15 @@ export function extendMock(kit: MockKit): void {
 
   async function commit(current: SettingsNamespace, user: SettingObject): Promise<RemoteResult<SettingsNamespace>> {
     const next = merge(current.base ?? {}, user)
+    // Model settings emit this one constant loader expression. Match its
+    // resolved value without evaluating arbitrary JavaScript in the mock.
+    const effort = next.reasoningEffort
+    if (current.ns === 'agent-default-model' && isObject(effort)
+      && Object.keys(effort).length === 1 && effort.__jsExpr === 'void 0') delete next.reasoningEffort
     if (!validMockValue(current, next)) return failure('settings/rejected', '公開された設定の型に合わない変更です。')
     if (!mockSettingsChanged(current, user)) return success(current)
     current.user = user
-    current.value = merge(current.base ?? {}, user)
+    current.value = next
     current.revision++
     await kit.emit('settings/document-updated', current.ns, { additionalArgs: [current.revision] })
     if (current.ns === 'llm-deepseek' || current.ns === 'llm-pi-ai') await kit.emit('llm/adapters-updated')
@@ -143,6 +148,12 @@ export function extendMock(kit: MockKit): void {
     },
   })
   kit.scenario('settings-readonly', () => { writable = false })
+  kit.scenario('settings-inherited-reasoning', () => {
+    const row = namespaces.get('agent-default-model')!
+    row.base = { ...row.base, reasoningEffort: 'high' }
+    row.user = {}
+    row.value = structuredClone(row.base)
+  })
   kit.scenario('settings-conflict', () => { firstWriteConflict = true })
   kit.scenario('settings-rejected', () => { rejectWrites = true })
   kit.scenario('settings-unset', () => {
