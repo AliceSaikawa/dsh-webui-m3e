@@ -2,9 +2,11 @@ import type { ISessions, SessionReference, SessionTarget } from './services.ts'
 import { observable } from './mock/observable.ts'
 import { resolveConversationTarget } from './session-navigation.ts'
 import { RemoteCallError } from './remote-result.ts'
+import { conversationSessionId } from '../app/conversation-route.ts'
+export { conversationSessionId } from '../app/conversation-route.ts'
 
 export const MAIN_VIEW_SOURCE = 'm3e.mainView'
-export interface ConversationSelectionState { sessionId?: string; pending: boolean; error?: unknown }
+export interface ConversationSelectionState { sessionId?: string; pending: boolean; error?: unknown; visibleSessionId?: string }
 const pageWindow = () => (globalThis as { window?: { location?: { hash: string }; addEventListener(name: string, listener: () => void): void; removeEventListener(name: string, listener: () => void): void } }).window
 const owners = new WeakMap<ISessions, ConversationSelection>()
 
@@ -18,8 +20,10 @@ export function conversationSelection(sessions: ISessions): ConversationSelectio
 export class ConversationSelection {
   readonly state = observable<ConversationSelectionState>({ pending: false })
   private reference?: SessionReference
+  private unsubscribeReference?: () => void
   private revision = 0
   private desired?: string
+  private routeSessionId?: string
   private flight: Promise<boolean> = Promise.resolve(false)
   private cancelWait?: () => void
   private readonly preparations = new Set<AbortController>()
@@ -41,6 +45,7 @@ export class ConversationSelection {
     if (target === undefined) { this.clear(); return Promise.resolve(true) }
     const key = typeof target === 'string' ? target : JSON.stringify(target)
     const sessionId = typeof target === 'string' ? target : target.childSessionId
+    this.routeChanged(sessionId)
     // Address resolution must not turn a route remount into a new generation.
     if (key === this.desired) return this.flight
     this.desired = key
@@ -50,6 +55,18 @@ export class ConversationSelection {
     this.state.set({ sessionId, pending: true })
     this.flight = this.open(target, revision)
     return this.flight
+  }
+  /** Convey the current URL even while the app waits for its workspace baseline. */
+  routeChanged(sessionId: string | undefined): void {
+    this.routeSessionId = sessionId
+    const current = this.state.getSnapshot()
+    const visibleSessionId = !current.pending && !current.error && current.sessionId === sessionId
+      && this.reference?.binding.session.getSnapshot().openState === 'open' ? sessionId : undefined
+    if (visibleSessionId !== current.visibleSessionId) this.state.set({ ...current, visibleSessionId })
+  }
+  private openedState(sessionId: string): ConversationSelectionState {
+    return { sessionId, pending: false, visibleSessionId: this.routeSessionId === sessionId
+      && this.reference?.binding.session.getSnapshot().openState === 'open' ? sessionId : undefined }
   }
   /** Commit a ready delivery/preparation while its reference still owns the generation. */
   adopt(reference: SessionReference): void {
@@ -62,7 +79,7 @@ export class ConversationSelection {
     this.cancelWait?.()
     this.desired = typeof target === 'string' ? target : JSON.stringify(target)
     this.replaceReference(next)
-    this.state.set({ sessionId: next.sessionId, pending: false })
+    this.state.set(this.openedState(next.sessionId))
     this.flight = Promise.resolve(true)
   }
   /** Preparation never changes the visible selection. Only a live caller may commit it. */
@@ -96,7 +113,7 @@ export class ConversationSelection {
     const active = () => revision === this.revision
     try {
       if (typeof target === 'string' && this.reference?.sessionId === target && this.reference.binding.session.getSnapshot().openState === 'open') {
-        this.state.set({ sessionId: target, pending: false })
+        this.state.set(this.openedState(target))
         return true
       }
       if (typeof target === 'string' && this.sessions.list.getSnapshot().phase !== 'ready') {
@@ -118,7 +135,7 @@ export class ConversationSelection {
       if (!active()) return false
       const snapshot = binding.session.getSnapshot()
       this.checkOpen(snapshot)
-      this.state.set({ sessionId: acquired.sessionId, pending: false })
+      this.state.set(this.openedState(acquired.sessionId))
       return true
     } catch (error) {
       if (!active()) return false
@@ -131,16 +148,22 @@ export class ConversationSelection {
   /** The sole release point for the main-view reference, including pending opens. */
   private replaceReference(next: SessionReference | undefined): void {
     const previous = this.reference
+    this.unsubscribeReference?.()
+    this.unsubscribeReference = undefined
     this.reference = next
     previous?.release()
+    if (next && this.reference === next) this.unsubscribeReference = next.binding.session.subscribe(() => {
+      if (this.reference === next) this.routeChanged(this.routeSessionId)
+    })
   }
   clear(): void {
     ++this.revision
     for (const controller of this.preparations) controller.abort()
     this.desired = undefined
+    this.routeSessionId = undefined
     this.cancelWait?.()
-    this.replaceReference(undefined)
     this.state.set({ pending: false })
+    this.replaceReference(undefined)
   }
   dispose(): void {
     this.clear()
@@ -148,12 +171,6 @@ export class ConversationSelection {
     pageWindow()?.removeEventListener('pageshow', this.onPageShow)
     owners.delete(this.sessions)
   }
-}
-
-export function conversationSessionId(pathname: string): string | undefined {
-  const encoded = /^\/s\/([^/]+)(?:\/|$)/.exec(pathname)?.[1]
-  if (!encoded) return undefined
-  try { return decodeURIComponent(encoded) || undefined } catch { return undefined }
 }
 
 export function createConversationVisitTracker(onReentry: (sessionId: string) => void): (sessionId: string | undefined) => void {
