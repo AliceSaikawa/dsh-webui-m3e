@@ -1,4 +1,9 @@
-.st-menu { --m3e-menu-container-min-width: 240px; --m3e-menu-item-container-height: 52px; }
+.st-menu { position: fixed; --m3e-menu-container-min-width: 240px; --m3e-menu-item-container-height: 52px; }
+/* M3E measures the anchor before opening the popover. Keep the closed menu
+   measurable, hidden and outside normal layout so its first position uses its
+   actual width instead of zero. Fixed positioning also prevents an old anchor
+   from enlarging the mobile layout viewport while a resize is being handled. */
+.st-menu:not(:popover-open) { display: block; visibility: hidden; inset: 0 auto auto 0; }
 .st-content { display: grid; align-content: start; gap: var(--app-space); padding: var(--app-space); }
 .st-content > p { margin: 0; }
 .st-card { border-radius: var(--app-radius); background: var(--md-sys-color-surface-container); padding: calc(var(--app-space) * 1.25); overflow-wrap: anywhere; }
