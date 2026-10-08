@@ -13,8 +13,8 @@ async function setup(page: Page) {
   })
   await visit(page)
   await page.evaluate(async path => {
-    // @ts-expect-error Vite serves this browser module directly.
-    const { createWorkspaceFilesMock } = await import('/m3e/src/features/session-tools/mock-files.ts')
+    const modulePath = '/m3e/src/features/session-tools/mock-files.ts'
+    const { createWorkspaceFilesMock } = await import(modulePath)
     const fixture = createWorkspaceFilesMock()
     const text = (label: string) => Array.from({ length: 6000 }, (_, i) => `${label} ${i + 1}`).join('\n')
     fixture.updateText(path, text('最新'))
