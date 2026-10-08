@@ -1,7 +1,7 @@
 /* Spacing and shapes derive from the theme: --app-space is the base gutter, --app-radius the large corner. */
 .trace-view { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; }
 .trace-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; overflow-anchor: none; }
-.trace-body { padding: calc(var(--app-space) / 2) var(--app-space) calc(var(--app-space) * 1.25); }
+.trace-body { padding: calc(var(--app-space) / 2) max(var(--app-space), env(safe-area-inset-right)) calc(var(--app-space) * 1.25) max(var(--app-space), env(safe-area-inset-left)); }
 .trace-older { display: flex; justify-content: center; padding-block: calc(var(--app-space) / 2); }
 .trace-turn { margin-block: var(--app-space) calc(var(--app-space) * 1.5); }
 .trace-turn h2 { margin: calc(var(--app-space) * 0.75) calc(var(--app-space) / 4); font-size: 13px; line-height: 1.7; font-weight: 650; color: var(--md-sys-color-on-surface-variant); }

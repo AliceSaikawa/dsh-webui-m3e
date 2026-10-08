@@ -1,6 +1,6 @@
 .chat-view { height: 100%; min-height: 0; position: relative; }
 .chat-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; overflow-anchor: none; }
-.chat-rows { width: 100%; max-width: 800px; margin: 0 auto; padding: 0 var(--app-space) calc(var(--app-space) * 4.5); display: flex; flex-direction: column; gap: calc(var(--app-space) * .75); }
+.chat-rows { width: 100%; max-width: 800px; margin: 0 auto; padding: 0 max(var(--app-space), env(safe-area-inset-right)) calc(var(--app-space) * 4.5) max(var(--app-space), env(safe-area-inset-left)); display: flex; flex-direction: column; gap: calc(var(--app-space) * .75); }
 .chat-rows > div { min-width: 0; }
 .chat-older { min-height: 48px; display: flex; align-items: center; justify-content: center; }
 .chat-user { margin-left: auto; width: fit-content; max-width: 92%; }
@@ -49,7 +49,7 @@
 .chat-state h2 { margin: calc(var(--app-space) * .75) 0 0; }
 .chat-progress { display: flex; gap: calc(var(--app-space) * .625); align-items: center; font-size: 13px; color: var(--md-sys-color-on-surface-variant); padding: calc(var(--app-space) * .5) 0; }
 .chat-progress-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--md-sys-color-primary); animation: chat-pulse 1s ease-in-out infinite alternate; }
-.chat-latest { position: absolute; right: var(--app-space); bottom: var(--app-space); z-index: 1; }
+.chat-latest { position: absolute; right: max(var(--app-space), env(safe-area-inset-right)); bottom: var(--app-space); z-index: 1; }
 .chat-detail { padding: 0 calc(var(--app-space) * .5); min-width: 0; }
 .chat-detail h3 { font-size: 15px; margin: calc(var(--app-space) * 1.25) 0 calc(var(--app-space) * .5); overflow-wrap: anywhere; }
 .chat-detail-heading { display: flex; align-items: center; gap: calc(var(--app-space) * .5); }
