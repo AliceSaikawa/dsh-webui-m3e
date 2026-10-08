@@ -53,11 +53,12 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
     const keys = new Set(allPending.map(item => item.key))
     pruneInteractionDrafts(keys)
     presentations.pruneQueued(keys)
+    // Recheck cancellation when busy clears after a failed submission.
     if (active || sending.current || cancelled.current) return
     cancelled.current = true
     close()
     showSnackbar(pending.kind === 'approval' ? '承認の要求は取り消されました' : '質問の要求は取り消されました')
-  }, [active, allPending, close, pending.kind])
+  }, [active, allPending, busy, close, pending.kind])
 
   async function submit(answer: () => Promise<void>) {
     if (sending.current || !active) return
