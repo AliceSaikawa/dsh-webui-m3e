@@ -6,6 +6,7 @@ export type SettingValue = null | boolean | number | string | SettingValue[] | {
 export type SettingObject = { [key: string]: SettingValue }
 export type SettingPath = readonly string[]
 export interface SchemaNode {
+  truncated?: boolean
   type?: string
   value?: SettingValue
   dict?: Record<string, SchemaNode>
@@ -69,18 +70,32 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const safeKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 const japanese = (value?: string) => value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value) ? value : undefined
 
+const MAX_SCHEMA_NODES = 1024
+const MAX_SCHEMA_WORK = 4096
+const MAX_SCHEMA_FIELDS = 512
+class SchemaTooComplex extends Error {}
+
 /** Resolve Cordis' node table without mutating it or following cycles. */
 export function decodeSchema(input: unknown): SchemaNode {
   if (!isObject(input)) return {}
   if (!isObject(input.refs) || !('uid' in input)) return {}
   const refs = input.refs
+  const cache = new Map<string, SchemaNode>()
+  let work = 0
+  let cycles = 0
   function visit(id: unknown, ancestors: Set<string>, depth: number): SchemaNode {
-    if ((typeof id !== 'string' && typeof id !== 'number') || depth > 32) return {}
+    if (++work > MAX_SCHEMA_WORK || depth > 32) throw new SchemaTooComplex()
+    if (typeof id !== 'string' && typeof id !== 'number') return {}
     const key = String(id)
-    if (!safeKey(key) || ancestors.has(key) || !Object.hasOwn(refs, key)) return {}
+    if (!safeKey(key) || !Object.hasOwn(refs, key)) return {}
+    if (ancestors.has(key)) { cycles++; return {} }
+    const cached = cache.get(key)
+    if (cached) return cached
+    if (cache.size >= MAX_SCHEMA_NODES) throw new SchemaTooComplex()
     const node = refs[key]
     if (!isObject(node)) return {}
     const seen = new Set(ancestors).add(key)
+    const previousCycles = cycles
     const result: SchemaNode = { type: typeof node.type === 'string' ? node.type : undefined }
     if ('value' in node) result.value = node.value as SettingValue
     if (isObject(node.meta)) result.meta = node.meta as SchemaNode['meta']
@@ -88,9 +103,11 @@ export function decodeSchema(input: unknown): SchemaNode {
     if (Array.isArray(node.list)) result.list = node.list.map(child => visit(child, seen, depth + 1))
     if ('inner' in node) result.inner = visit(node.inner, seen, depth + 1)
     if ('sKey' in node) result.sKey = visit(node.sKey, seen, depth + 1)
+    // An ancestor-truncated result depends on its path and cannot be reused elsewhere.
+    if (cycles === previousCycles) cache.set(key, result)
     return result
   }
-  return visit(input.uid, new Set(), 0)
+  try { return visit(input.uid, new Set(), 0) } catch (error) { if (error instanceof SchemaTooComplex) return { truncated: true }; throw error }
 }
 
 export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Record<SettingsPage, SettingsNamespace[]> {
@@ -120,13 +137,23 @@ export function valueAt(value: unknown, path: SettingPath): SettingValue | undef
 }
 
 export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
+  try { return boundedSchemaFields(namespace, catalog) } catch (error) {
+    if (!(error instanceof SchemaTooComplex)) throw error
+    // Never show an incompletely redacted value after a traversal limit.
+    return [{ path: [], kind: 'readonly', label: '設定項目', description: '設定の定義が複雑なため表示できません。標準の画面で確認してください。', overridden: false, disabled: true, required: false }]
+  }
+}
+function boundedSchemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
   const schema = decodeSchema(namespace.schema)
+  if (schema.truncated) throw new SchemaTooComplex()
+  let protectionWork = 0, valueWork = 0, fieldCount = 0
   const protectedPaths: SettingPath[] = (namespace.secrets ?? []).map(entry => entry.path)
   const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
   const protectedAt = (path: SettingPath) => protectedPaths.some(parent => containsPath(parent, path))
 
   // Password roles also protect values nested inside read-only arrays/dictionaries.
   function collectProtected(node: SchemaNode, path: string[], value: unknown): void {
+    if (++protectionWork > MAX_SCHEMA_WORK || path.length > 64) throw new SchemaTooComplex()
     if (node.meta?.role === 'password') { protectedPaths.push(path); return }
     if (node.dict) for (const [key, child] of Object.entries(node.dict)) collectProtected(child, [...path, key], isObject(value) ? value[key] : undefined)
     if (node.list) for (const child of node.list) collectProtected(child, path, value)
@@ -138,7 +165,8 @@ export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionC
 
   // Remove protected descendants before a read-only parent can reach JSON formatting.
   function visibleValue(value: SettingValue | undefined, path: string[], depth = 0): SettingValue | undefined {
-    if (protectedAt(path) || depth > 64) return undefined
+    if (++valueWork > MAX_SCHEMA_WORK || depth > 64) throw new SchemaTooComplex()
+    if (protectedAt(path)) return undefined
     if (Array.isArray(value)) return value.map((child, index) => visibleValue(child, [...path, String(index)], depth + 1) ?? null)
     if (isObject(value)) return Object.fromEntries(Object.entries(value).filter(([key]) => safeKey(key)).flatMap(([key, child]) => {
       const visible = visibleValue(child as SettingValue, [...path, key], depth + 1)
@@ -155,6 +183,7 @@ export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionC
     return [field(node, path, 0, inheritedDisabled)]
   }
   function field(node: SchemaNode, path: string[], index: number, inheritedDisabled: boolean): SettingField {
+    if (++fieldCount > MAX_SCHEMA_FIELDS) throw new SchemaTooComplex()
     const meta = node.meta ?? {}
     let kind: SettingField['kind'] = protectedAt(path) ? 'masked'
       : (node.type === 'object' && node.dict) || node.type === 'intersect' ? 'group'
