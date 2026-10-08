@@ -234,7 +234,7 @@ for (const failure of ['reject', 'error'] as const) test('R12 deliverDraftのrea
   assert.equal(readDraft('session:' + result.createdId).text, '残す下書き')
 })
 
-test('R12 idsにない子も完了通知で未読になりdeliveryとrenameの一時参照では既読にならない', t => {
+test('R12 idsにない子も完了通知で未読になり一時参照や準備中の主参照では既読にならない', t => {
   const base = createMockContext(); t.after(() => base.dispose())
   const child = { id: 'child', parentId: id, origin: 'subagent' as const, displayTitle: '子', running: false, blank: false, updatedAt: 0, retainedBy: {} }
   const list = observable<SessionListState>({ phase: 'ready', ids: [], byId: { child }, projectionsBySession: {} })
@@ -248,7 +248,7 @@ test('R12 idsにない子も完了通知で未読になりdeliveryとrenameの�
     assert.equal(state.getSnapshot().byId.child?.completionUnread, true)
   }
   list.set({ ...list.getSnapshot(), byId: { child: { ...child, retainedBy: { 'm3e.mainView': 1 } } } })
-  assert.equal(state.getSnapshot().byId.child?.completionUnread, false)
+  assert.equal(state.getSnapshot().byId.child?.completionUnread, true)
 })
 
 test('R12 inboxの未到着・画像のみ・異なるRPC ID・非userのnext-turnを保つ', () => {

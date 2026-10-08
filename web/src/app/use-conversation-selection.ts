@@ -21,6 +21,7 @@ export function useConversationSelection(pathname: string): void {
   const diagnostic = useMemo(() => ({ reported: false }), [owner, sessionId])
   useLayoutEffect(() => { visit(sessionId) }, [visit, sessionId])
   useLayoutEffect(() => {
+    owner.routeChanged(sessionId)
     if (sessionId !== undefined && (list.phase !== 'ready' || workspaceList.phase !== 'ready')) return
     let active = true
     void owner.select(sessionId).catch(error => {

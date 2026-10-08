@@ -566,3 +566,18 @@ web/src/
 - 新しいシートを前のネイティブ閉鎖完了までマウントしないようにした。すでに描画済みの下層シートは同じ key で残し、入力状態を保持する。M3E の private フィールドや同梱コードは変更していない。
 - `?mock` のモデル一覧に、Playwright が読み込み前に設定した場合だけ 120 ミリ秒の遅延を加えられる試験用入口を置いた。通常の `?mock` は変えない。修正前は新規 e2e でモデルシートが `open=true` のまま非表示となり失敗し、修正後は選択と入力補助の再表示まで成功した。
 - `pnpm typecheck`、`pnpm build` は成功。`pnpm test` は 702 件、Playwright は 65 件が成功した。DSH は起動していない。実物の DSH と iPhone 実機での確認は段階 3 に残る。
+
+### 2026-10-08：Issue #42・#43 の URL と完了未読の修正
+
+- 利用者が指定したモデルは `gpt-6-astra`、ハーネスは Codex。今回の実行情報にルーティングの矛盾は見つからなかったが、実モデル ID を独立に照会したものではない。過去のセッションから推定していない。
+- `cd99f273f9582729475272e48722d7ec850d6857` を起点とする専用 worktree／`fix/issue-42-43-conversation-selection` で実装した。PR #54・#55 と他の作業場所は変更していない。
+- 会話の正当な URL パターンを `app/conversation-route.ts` に集め、会話・補助画面の登録、選択、overlay ownership、pageshow が同じ `resolveRoute` の解析を使う。不明な下位 URL は選択を解除し、以前の会話のシートを閉じる。クエリ、末尾スラッシュ、符号化された ID の扱いも通常のルーターと揃えた。会話／補助画面の routes.tsx は共有パターンの参照にだけ変更した。
+- 主参照の保持と既読判定を分離した。`visibleSessionId` は現在の URL と一致し、open が成功した会話だけを示す。準備中、失敗、取消、古い open、子の URL 解決のために残した前の参照では未読を消さない。ナビゲーション準備の adopt も、URL の選択が届くまで既読にしない。workspace baseline の待機中でも URL の意図を先に渡し、後着の旧 open が可視扱いに戻ることを防ぐ。
+- 完了未読は selection の変化を購読する。mock の破棄時はこの購読を先に解除してから selection owner を破棄し、遅延生成による owner の再作成を避ける。再読み込みで未読を引き継がない仕様は変えていない。
+- 修正前の本体に対して追加した回帰試験 9 件はすべて失敗した（`tmp/issue42-43-before.log`）。修正後、workspace baseline 待機、表示後の open 状態の変化、購読解除の追加試験を含む 12 件を検証した。既存の 3 試験は、主参照があるだけで既読にする期待と未登録 `/files/deeper` を会話とする期待を修正した。成功済み表示・再開・削除と、一時参照で未読を保持する検証は残した。
+- ブラウザ用には専用ポート 5293 と tmp 配下の設定を使った。追加した 4 件（失敗時の未読保持、不明 URL でのシート解除、query／符号化 ID の pagehide→pageshow、子の解決待ち中の旧会話の完了）と既存の失敗診断試験が成功した。初回の依存フォントの Vite 公開範囲エラーは、検証用設定の node_modules 許可で解消した。本体の Vite 設定は変更していない。
+- この段階ではコミット・公開はしていない。独立した差分レビューは指示役へ依頼する。実 Safari の bfcache 復帰と iOS 実機は未確認。DSH 本体、利用者の設定・認証情報、外部 LLM API は使用していない。
+
+- 独立レビューの指摘を受け、保持中の binding の状態を購読し、表示後に open が失敗した場合と復旧にも追従するようにした。追加の再現試験は修正前に失敗した（`tmp/issue42-43-live-open-before.log`）。参照交換では古い購読を先に解除し、release の同期的な再入後も同じ参照を所有するときだけ新しく購読する。A→B、clear、dispose で購読数が 0 に戻ることも直接確かめる。
+- 最終確認：`pnpm typecheck` 成功、`pnpm test` は 1,119 件成功（失敗・skip とも 0）、`pnpm build` 成功（既存の大きな chunk の警告のみ）。関連する偽データの Chromium e2e は 27 件成功。ログは `tmp/issue42-43-{typecheck,test,build,browser-related}.log`、再現と制約の一覧は `tmp/issue42-43-evidence.md`。
+- 親の独立レビュー後、隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の `e2e-dsh/session-contract.spec.ts` 3 件成功。初回送信の世代引継ぎ・離脱時解放・pagehide/pageshow 後の再取得と送信を確認した。実 Safari の bfcache は未確認。
