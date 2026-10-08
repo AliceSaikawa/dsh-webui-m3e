@@ -1,15 +1,16 @@
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eFormField } from '@m3e/react/form-field'
 import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { openDialog, openFullSheet, openSheet, showSnackbar } from '../../app/overlay/index.ts'
+import { openDialog, openFullSheet, openSheet, showSnackbar, useOverlays } from '../../app/overlay/index.ts'
+import { getOverlays } from '../../app/overlay/store.ts'
 import { CustomProviderSheet } from './CustomProviderSheet.tsx'
 import { createCustomProviderStore, type CustomProviderStore } from './custom-provider-store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
-import { createKeyDraft, createProviderStore, PROVIDER_EVENTS, type ProviderRemote, type ProviderRow, type ProviderStore } from './providers.ts'
+import { createProviderStore, PROVIDER_EVENTS, type ProviderRemote, type ProviderRow, type ProviderStore } from './providers.ts'
 
 const statusLabels = {
   registered: 'API キー：登録済み', missing: 'API キー：未登録',
@@ -17,28 +18,80 @@ const statusLabels = {
   unset: 'API キー：未設定',
 }
 
-function KeyEntry({ row, store, close }: { row: ProviderRow; store: ProviderStore; close(): void }) {
+function KeyEntry({ row, store, close, overlayKey }: { row: ProviderRow; store: ProviderStore; close(): void; overlayKey: string }) {
   const id = useId()
-  const draft = useMemo(() => createKeyDraft(value => store.save(row, value)), [row, store])
-  const state = useSyncExternalStore(draft.subscribe, draft.getSnapshot, draft.getSnapshot)
+  const { connection } = useDsh()
+  const input = useRef<HTMLInputElement>(null)
+  const lifetime = useRef({ active: false, revision: 0, busy: false })
+  // The key lives only in the uncontrolled input, never in React state or markup.
+  const [state, setState] = useState({ hasInput: false, visible: false, busy: false, error: null as string | null })
+  const present = useOverlays().some(entry => entry.interactionKey === overlayKey)
   const providers = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const current = providers.rows.find(item => item.id === row.id)
-  const canWrite = current?.writable === true && current.ref === row.ref && !providers.busy
-  useEffect(() => { draft.activate(); return () => draft.dispose() }, [draft])
+  const canWrite = present && current?.writable === true && current.ref === row.ref && !providers.busy
+  function clearInput() {
+    if (input.current) { input.current.value = ''; input.current.type = 'password' }
+  }
+  function discard() {
+    lifetime.current.revision++; lifetime.current.busy = false
+    clearInput()
+    setState({ hasInput: false, visible: false, busy: false, error: null })
+  }
+  useLayoutEffect(() => {
+    lifetime.current.active = true
+    const changed = () => { if (connection.state.getSnapshot() !== 'connected') discard() }
+    const off = connection.state.subscribe(changed)
+    // Invalidate at close start, including a temporarily covered sheet.
+    const sheet = input.current?.closest('m3e-bottom-sheet')
+    sheet?.addEventListener('closing', discard)
+    changed()
+    return () => {
+      off(); sheet?.removeEventListener('closing', discard)
+      lifetime.current.active = false; lifetime.current.revision++
+      clearInput()
+    }
+  }, [connection])
+  useLayoutEffect(() => { if (!present) discard() }, [present])
   async function save() {
-    if (canWrite && await draft.submit()) { close(); showSnackbar('API キーを保存しました') }
+    const revision = lifetime.current.revision
+    const canSend = () => lifetime.current.active && lifetime.current.revision === revision
+      && connection.state.getSnapshot() === 'connected'
+      && getOverlays().some(entry => entry.interactionKey === overlayKey)
+      && (input.current?.closest('m3e-bottom-sheet') as (HTMLElement & { open: boolean }) | null)?.open === true
+    if (!canWrite || lifetime.current.busy || !canSend()) return
+    let value = input.current?.value.trim() ?? ''
+    if (!value) return
+    lifetime.current.busy = true
+    clearInput()
+    setState({ hasInput: false, visible: false, busy: true, error: null })
+    try {
+      const pending = store.save(row, value, { canSend })
+      value = ''
+      const outcome = await pending
+      if (!canSend()) return
+      if (outcome.ok) { close(); showSnackbar('API キーを保存しました') }
+      else setState({ hasInput: false, visible: false, busy: false, error: outcome.message })
+    } catch {
+      if (canSend()) setState({ hasInput: false, visible: false, busy: false, error: 'API キーを保存できませんでした。入力し直してください。' })
+    } finally {
+      value = ''
+      if (lifetime.current.revision === revision) lifetime.current.busy = false
+    }
   }
   return <div className="settings-sheet">
     <h2>API キー</h2>
     <p className="muted">保存すると、あとから表示できません</p>
     <M3eFormField variant="outlined" error={Boolean(state.error)} className="settings-key-input">
       <label slot="label" htmlFor={id}>API キー</label>
-      <input id={id} type={state.visible ? 'text' : 'password'} value={state.draft}
+      <input ref={input} id={id} type={state.visible ? 'text' : 'password'}
         autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={state.busy || !canWrite}
-        aria-describedby={`${id}-error`} onChange={event => draft.input(event.currentTarget.value)}
+        aria-describedby={`${id}-error`} onChange={event => {
+          const hasInput = Boolean(event.currentTarget.value.trim())
+          setState(current => ({ ...current, hasInput, error: null }))
+        }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void save() } }} />
       <M3eIconButton slot="suffix" aria-label={state.visible ? '入力したキーを隠す' : '入力したキーを表示する'}
-        aria-pressed={state.visible} disabled={state.busy || !canWrite} onClick={draft.toggle}>
+        aria-pressed={state.visible} disabled={state.busy || !canWrite} onClick={() => setState(current => ({ ...current, visible: !current.visible }))}>
         <Icon name={state.visible ? 'visibility_off' : 'visibility'} />
       </M3eIconButton>
     </M3eFormField>
@@ -46,11 +99,11 @@ function KeyEntry({ row, store, close }: { row: ProviderRow; store: ProviderStor
     {state.busy && <p role="status" className="settings-saving">保存しています…</p>}
     <div className="settings-key-actions">
       <M3eButton variant="outlined" disabled={state.busy || !canWrite || current?.status !== 'registered'} onClick={() => {
-        // Keep the sheet entry in the stack. The host disposes this draft while
-        // confirming and mounts an empty input sheet again after cancellation.
+        // Covering the sheet clears its input before confirmation; cancelling
+        // returns to an empty, masked field.
         openDialog(dismiss => <RemoveKey row={row} store={store} close={dismiss} removed={close} />, { label: 'API キーの登録を消す確認' })
       }}>登録を消す</M3eButton>
-      <M3eButton variant="filled" disabled={state.busy || !canWrite || !state.draft.trim()} onClick={() => { void save() }}>保存</M3eButton>
+      <M3eButton variant="filled" disabled={state.busy || !canWrite || !state.hasInput} onClick={() => { void save() }}>保存</M3eButton>
     </div>
   </div>
 }
@@ -86,6 +139,12 @@ export function ProvidersPanel() {
   const editors = useRef(new Set<CustomProviderStore>())
   const [editorBusy, setEditorBusy] = useState(false)
   const editorSequence = useRef(0)
+  const keySequence = useRef(0)
+  function enterKey(row: ProviderRow) {
+    const overlayKey = `provider-key-${++keySequence.current}`
+    openSheet(close => <KeyEntry row={row} store={store} close={close} overlayKey={overlayKey} />,
+      { label: `${row.name} の API キー`, interactionKey: overlayKey })
+  }
   function editCustom(id?: string) {
     if ([...editors.current].some(editor => editor.isSaving())) return
     const controller = createCustomProviderStore(remote as unknown as ProviderRemote, store, id, () => {
@@ -128,9 +187,9 @@ export function ProvidersPanel() {
       {state.rows.map(row => row.custom ? <div className="custom-provider-row" role="group" aria-label={row.name} key={row.id}>
         <div><strong>{row.name}</strong><span>{row.id}</span><span>{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>{!row.ref && <span>API キーは「編集」から登録できます。</span>}{row.keyNotice && <span>{row.keyNotice}</span>}</div>
         <div className="custom-row-actions"><M3eButton variant="text" disabled={state.phase !== 'ready' || editorBusy} onClick={() => editCustom(row.id)}>編集</M3eButton>
-          {row.ref && <M3eButton variant="text" disabled={!row.writable || state.busy || editorBusy} onClick={() => openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` })}>API キー</M3eButton>}</div>
+          {row.ref && <M3eButton variant="text" disabled={!row.writable || state.busy || editorBusy} onClick={() => enterKey(row)}>API キー</M3eButton>}</div>
       </div> : <M3eListAction key={row.id} disabled={!row.writable || state.busy}
-        onClick={() => { if (row.writable && !state.busy) openSheet(close => <KeyEntry row={row} store={store} close={close} />, { label: `${row.name} の API キー` }) }}>
+        onClick={() => { if (row.writable && !state.busy) enterKey(row) }}>
         <span slot="leading"><Icon name={row.status === 'unnecessary' ? 'dns' : 'key'} /></span>{row.name}
         <span slot="supporting-text">{statusLabels[row.status]}{row.ref && !row.writable && row.status !== 'unknown' ? '（変更できません）' : ''}</span>
         {row.writable && <span slot="trailing"><Icon name="chevron_right" /></span>}
