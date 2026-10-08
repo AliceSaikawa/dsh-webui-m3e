@@ -10,7 +10,7 @@
 .home-workspace-label small { font-size: 12px; font-weight: 400; color: var(--md-sys-color-on-surface-variant); }
 .home-drawer-hint { font-size: 12px; padding: calc(var(--app-space) * .75); margin-block: var(--app-space); color: var(--md-sys-color-on-surface-variant); }
 .home-title { text-align: center; }
-.home-drawer-container .tab-content { display: flex; flex-direction: column; padding-bottom: 0; }
+.home-drawer-container .tab-content { display: flex; flex-direction: column; padding-bottom: 0; padding-left: 0; padding-right: 0; }
 .home-list { flex: 1 0 auto; display: flex; flex-direction: column; padding: calc(var(--app-space) / 2) calc(var(--app-space) * .75); }
 .home-list-caption { margin: calc(var(--app-space) / 2) calc(var(--app-space) / 2) var(--app-space); font-size: 13px; color: var(--md-sys-color-on-surface-variant); }
 .home-sessions, .home-folders { list-style: none; margin: 0; padding: 0; }
@@ -64,3 +64,14 @@
 .home-picker-footer { display: flex; gap: calc(var(--app-space) / 2); justify-content: space-between; }
 .home-picker-footer m3e-button { flex: 1; }
 .home-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* These bodies own their gutters instead of adding the common screen inset twice. */
+.home-picker .screen-content { padding-left: 0; padding-right: 0; }
+.home-drawer, .home-list, .home-folders, .home-picker-error {
+  padding-left: max(calc(var(--app-space) * .75), env(safe-area-inset-left));
+  padding-right: max(calc(var(--app-space) * .75), env(safe-area-inset-right));
+}
+.home-picker-explanation, .home-current-path, .home-crumbs {
+  padding-left: max(calc(var(--app-space) * 1.25), env(safe-area-inset-left));
+  padding-right: max(calc(var(--app-space) * 1.25), env(safe-area-inset-right));
+}

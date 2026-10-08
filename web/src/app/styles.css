@@ -40,7 +40,7 @@ label { display: block; margin-block: 8px; }
 .screen { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
 .top-bar { display: flex; flex: none; align-items: center; gap: 8px; min-height: calc(64px + env(safe-area-inset-top)); padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); background: var(--md-sys-color-surface); }
 .top-bar h1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.screen-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+.screen-content { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); flex: 1; min-height: 0; overflow: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 .tab-content { padding-bottom: 100px; }
 .page-screen .screen-content { padding-bottom: env(safe-area-inset-bottom); }
 .bottom-navigation { flex: none; padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--md-sys-color-surface-container, var(--md-sys-color-surface-variant)); }
@@ -53,7 +53,8 @@ label { display: block; margin-block: 8px; }
 .placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; text-align: center; padding: 28px; color: var(--md-sys-color-on-surface-variant); }
 .muted { color: var(--md-sys-color-on-surface-variant); }
 .conversation-tabs { flex: none; }
-.conversation-content { overflow: hidden; scrollbar-gutter: auto; background: var(--md-sys-color-surface-container-low, var(--md-sys-color-surface)); }
+/* Conversation panels own their body gutters; the trace footer already has safe-area padding. */
+.conversation-content { padding-left: 0; padding-right: 0; overflow: hidden; scrollbar-gutter: auto; background: var(--md-sys-color-surface-container-low, var(--md-sys-color-surface)); }
 .conversation-panel { height: 100%; min-height: 0; overflow: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 .conversation-panel[hidden] { display: none; }
 .conversation-footer, .page-footer { flex: none; background: var(--md-sys-color-surface); padding: 8px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
