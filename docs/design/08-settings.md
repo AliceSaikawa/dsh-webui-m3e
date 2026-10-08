@@ -1187,3 +1187,13 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 実画面の証跡を目視すると、指定なしで空のselect値と独自の表示文言を併用した際、ラベル「推論の強さ」が選択値と重なっていた。製品の `ModelsPanel.tsx` で推論欄の `floatLabel` を常時浮動にし、フォーカスを外した後も両者の矩形が重ならないことを実DSH試験で検査した。再起動を含む3経路を再実行して成功し、修正後の画像も目視確認した。修正前後は `docs/review/pr51-reasoning-before.png` と `pr51-reasoning-after.png` に保存した。
 - 再現コマンドは `pnpm exec playwright test -c e2e-dsh/playwright.config.ts reasoning-inheritance.spec.ts`（配置済み配布物を使う場合は `M3E_DSH_DIR` を指定）。3件すべて成功。`pnpm typecheck`、単体1096件、配布build/check:pack、新規specの個別TypeScript検査も成功。既存chunk警告のみ。
 - 対象は隔離した実プロセス・実設定ファイル・実RPC・実ブラウザーであり、本番や利用者の日常設定、本物のLLM、iPhone/Safariの検証ではない。最終証跡は当ブランチの `tmp/dsh-integration/report.json`（3件成功、画面写真・設定スナップショットを含む）。実行時刻で変わる出力先はJSON内の設定を正とする。
+
+### 2026-10-08：Issue #27、一覧の API キー入力の寿命
+
+- `ProvidersPanel.tsx` の一覧用 `KeyEntry` を非制御の入力へ変更した。キーの文字列を React の状態や `value` 属性へ渡さず、入力の有無・表示状態・処理状態だけを保持する。送信開始、切断、シートの閉じ始め、破棄で入力を空にし、伏せ字へ戻す。削除確認に覆われた場合も、戻ると空欄になる。
+- 保存ごとにシートの世代、接続、overlay の所属、開閉状態を調べる `canSend` を渡す。既存の `ProviderStore.save` が行う照会後と参照先の設定後の 2 回の確認を使い、閉じたあとから未送信のキーを送らない。store の epoch・revision・参照名の検査と、カスタムプロバイダー編集フォームは変更していない。すでに送信した RPC は取り消さず、閉じたシートの再表示や成功通知を抑える。
+- 利用者の不具合修正・試験指示に従い、担当表外の `e2e/settings-key-lifetime.spec.ts` に回帰試験を追加した。合成したダミー文字列だけを使い、照会／参照先設定の待機中の閉鎖、切断と再接続、HTML 属性、正常保存と連打、同じタスクでの閉鎖と応答、送信済み応答、削除確認からの復帰の 9 件を検証した。既存試験の期待値は変えていない。
+- 修正前は、照会中の閉鎖後もキー送信が 1 回、切断後も入力が残留、HTML の `value` 属性にダミー文字列が複製されることを確認した（`tmp/issue27-before.log`）。参照先設定待機の fixture は、未稼働・参照名なしの標準提供元に修正し、本体未変更で閉鎖後のキー送信 1 回を確認した（`tmp/issue27-before-attach-valid.log`）。修正後の 9 件はすべて成功（`tmp/issue27-browser-final.log`）。関連する既存の提供元試験 16 件も成功した。追加試験の削除確認は、開いた直後の Escape の競合を避けて登録済み提供元を直接開く fixture に直し、最終 9 件で再確認した。
+- Node 22.23.3 で `pnpm typecheck`、`pnpm test`（1,107 件成功、失敗・skip 0）、`pnpm build`、`pnpm run check:pack`（19 ファイル）、`git diff --check` が成功。初回の単体実行は公開 DSH 配布コードを参照する 2 件が skip したため、既存の公開パッケージ fixture の node_modules だけを接続して全件を再実行した。DSH プロセスは起動していない。既存の 500 kB 超 chunk 警告は残る。
+- 専用 worktree `fix/issue-27-key-sheet-lifetime` と localhost:5295 の偽データ画面を使用した。worktree 作成の sandbox 内操作は Git メタデータの書込み権限で停止し、正式な昇格の承認後に作成した。ブラウザ試験も承認された昇格で実行した。pnpm 11 の自動 install は TTY 不在で停止したため、既存依存を使用し `pnpm_config_verify_deps_before_run=false` を指定した。依存・ロックファイル、PR #54、認証情報は変更せず、本物のキー・外部 API は使用していない。コミット・公開は指示役に引き継ぐ。iOS Safari の実機動作は未確認。
+- 親の独立レビューで新規 Chromium 9 件を再実行し成功。隔離公開 DSH 0.2.0-rc.2 の合成キー登録・削除試験 1 件も成功。実キーや利用者の設定は使用していない。
