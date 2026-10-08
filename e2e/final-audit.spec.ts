@@ -8,11 +8,15 @@ async function expose(page: Page) {
     await route.fulfill({ response, body: body.replace(/\breturn ctx;?/, `
       globalThis.__finalAudit = ctx;
       globalThis.__jobWatches = {};
-      const originalWatchRows = ctx.jobs.watchRows.bind(ctx.jobs);
-      ctx.jobs.watchRows = id => {
+      const originalList = ctx.remote.job.list.bind(ctx.remote.job);
+      ctx.remote.job.list = (request, signal) => {
+        const id = request.sessionId;
         globalThis.__jobWatches[id] = (globalThis.__jobWatches[id] ?? 0) + 1;
-        const off = originalWatchRows(id);
-        return () => { globalThis.__jobWatches[id]--; off(); };
+        const stream = originalList(request, signal);
+        let disposed = false;
+        const close = () => { if (disposed) return; disposed = true; globalThis.__jobWatches[id]--; stream.dispose(); };
+        signal?.addEventListener('abort', close, { once: true });
+        return { ...stream, dispose: close };
       };
       return ctx;`) })
   })
@@ -34,11 +38,9 @@ test('J3 ジョブ画面の反復開閉と会話切替で購読を解放し、�
     await expect.poll(() => page.evaluate(() => (window as any).__jobWatches['approval-sheet'])).toBe(1)
     await page.evaluate(() => { window.location.hash = '/' })
     await expect.poll(() => page.evaluate(() => (window as any).__jobWatches['approval-sheet'])).toBe(0)
-    await expect.poll(() => page.evaluate(() => (window as any).__finalAudit.jobs.state.getSnapshot().rows['approval-sheet'] ?? null)).toBe(null)
     await page.evaluate(() => (window as any).__finalAudit.mock.setJobs('approval-sheet', [{
       id: 'late', kind: 'bash', label: '閉じた会話の更新', status: 'running', startedAt: 1000, output: { total: 0, earliest: 0 },
     }]))
-    expect(await page.evaluate(() => (window as any).__finalAudit.jobs.state.getSnapshot().rows['approval-sheet'] ?? null)).toBe(null)
     await expect(page.getByText('閉じた会話の更新', { exact: true })).toHaveCount(0)
   }
   await page.evaluate(() => { window.location.hash = '/s/approval-sheet/jobs' })
