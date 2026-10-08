@@ -1187,3 +1187,13 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 実画面の証跡を目視すると、指定なしで空のselect値と独自の表示文言を併用した際、ラベル「推論の強さ」が選択値と重なっていた。製品の `ModelsPanel.tsx` で推論欄の `floatLabel` を常時浮動にし、フォーカスを外した後も両者の矩形が重ならないことを実DSH試験で検査した。再起動を含む3経路を再実行して成功し、修正後の画像も目視確認した。修正前後は `docs/review/pr51-reasoning-before.png` と `pr51-reasoning-after.png` に保存した。
 - 再現コマンドは `pnpm exec playwright test -c e2e-dsh/playwright.config.ts reasoning-inheritance.spec.ts`（配置済み配布物を使う場合は `M3E_DSH_DIR` を指定）。3件すべて成功。`pnpm typecheck`、単体1096件、配布build/check:pack、新規specの個別TypeScript検査も成功。既存chunk警告のみ。
 - 対象は隔離した実プロセス・実設定ファイル・実RPC・実ブラウザーであり、本番や利用者の日常設定、本物のLLM、iPhone/Safariの検証ではない。最終証跡は当ブランチの `tmp/dsh-integration/report.json`（3件成功、画面写真・設定スナップショットを含む）。実行時刻で変わる出力先はJSON内の設定を正とする。
+
+### 2026-10-08：Issue #33、不正データと例外の境界
+
+- スキーマの同一参照を復号キャッシュで共有し、復号・保護対象の探索・表示値の探索・項目数に上限を設けた。上限を超える定義は値を含まない読取専用の案内1件にする。通常の共有参照は各パスに表示でき、password の伏字も維持する。
+- 質問の初期 projection と inbox を配列・項目単位で検査する。不正項目を除外し、有効な質問を維持する。初期購読で例外が起きた場合は登録済みハンドラーと購読を解除し、画面初期化の例外も既存の起動失敗表示へ渡す。
+- trace は null の添付を除外する。tool-output の本文探索と JSON 整形には深さ・処理量の上限を設け、深い値や循環参照でも通常の行と詳細表示を維持する。
+- 設定の再読込は接続ごとに同時1件とし、処理中の通知は終了後の再取得へまとめる。待機する呼出元は最後の取得まで同じ Promise を待つ。再接続・保存後の古い応答の無効化は維持する。`settings/rejected` はコードに対応する固定の日本語案内を表示し、サーバーの診断文は表示しない。
+- 修正前に単体回帰7件がすべて失敗することを確認した。追加した正常データの維持確認を含め、単体1116件（失敗・skip とも0）、型検査、build、配布検査19ファイルが成功。新規ブラウザー6件と既存の設定通知・時間指定質問6件が成功した。隔離した実 DSH 0.2.0-rc.2 でも既存 S5 のシェル設定保存・再読込1件が成功した。本番設定や外部 LLM は使用していない。既存のチャンク容量警告は残る。
+- 回帰は `tests/08-malformed-data.test.ts` と `e2e/malformed-data.spec.ts`、取得の直列化と最新結果の確認は `tests/08-store.test.ts`。作業証跡は `tmp/issue33-before.log`、`tmp/issue33-unit.log`、`tmp/issue33-browser-verified.log`、`tmp/issue33-real-dsh.log` に保存した。
+- 独立レビューで、循環打切りを含む復号結果のキャッシュが別パスの password マスクを失わせる退行と、JSON文字列を再帰的に解釈する表示差分を検出した。各回帰を修正前に失敗確認し、循環打切りを含む部分木はキャッシュせず、JSONの解釈は一度だけにした。通常の循環スキーマ内の兄弟項目を維持し、再検証の単体1118件は失敗・skip とも0。証跡は `tmp/issue33-review-before.log` と `tmp/issue33-review-unit.log`。

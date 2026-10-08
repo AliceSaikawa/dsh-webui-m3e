@@ -115,7 +115,7 @@ test('同じ接続の小さい revision の通知でも再読込し、同じ番�
   assert.deepEqual(h.revisions, [0])
 })
 
-test('同じ接続で新しい読込の revision が小さくても、遅れて届いた古い高い revision は捨てる', async () => {
+test('読込中の再要求をまとめ、小さいrevisionでも追読した最新状態を採用する', async () => {
   const h = restartingHarness()
   await h.store.connectionChanged('connected')
   const original = h.api.describe
@@ -125,10 +125,10 @@ test('同じ接続で新しい読込の revision が小さくても、遅れて�
   const earlier = h.store.reload()
   h.restart()
   h.api.describe = original
-  assert.equal(await h.store.reload(), true)
-  assert.equal(current(h.store).revision, 0)
+  const latest = h.store.reload()
+  assert.equal(latest, earlier, 'pending reload requests share one flight')
   delayed.resolve(old)
-  assert.equal(await earlier, false)
+  assert.deepEqual(await Promise.all([earlier, latest]), [true, true])
   assert.equal(current(h.store).revision, 0)
 })
 
@@ -278,7 +278,7 @@ test('保存拒否は対象の項目だけに理由を出し、再試行が成�
     h.api.update = async () => failure('settings/rejected', 'この値は管理者の設定によって許可されていません。')
     assert.equal(await h.store.edit(ns, ['timeout'], 70), false)
     assert.deepEqual(h.store.getSnapshot().fieldErrors, {
-      [fieldKey(ns, ['timeout'])]: 'この値は管理者の設定によって許可されていません。',
+      [fieldKey(ns, ['timeout'])]: 'この値は設定できません。入力内容を確認してください。',
     })
     assert.equal(current(h.store).value.timeout, 45)
     assert.equal(h.store.getSnapshot().busy[ns], false)
@@ -298,7 +298,7 @@ test('通信例外と英語の拒否理由は日本語の項目エラーにす�
     assert.equal(h.store.getSnapshot().fieldErrors[fieldKey(ns, ['timeout'])], '設定を保存できませんでした。接続を確認してください。')
     h.api.update = async () => failure('settings/rejected', 'Update rejected')
     assert.equal(await h.store.edit(ns, ['timeout'], 70), false)
-    assert.equal(h.store.getSnapshot().fieldErrors[fieldKey(ns, ['timeout'])], 'この変更は保存できませんでした。入力内容と接続を確認してください。')
+    assert.equal(h.store.getSnapshot().fieldErrors[fieldKey(ns, ['timeout'])], 'この値は設定できません。入力内容を確認してください。')
     assert.equal(h.store.getSnapshot().busy[ns], false)
   } finally { h.ctx.dispose() }
 })
@@ -398,7 +398,7 @@ test('保存前に開始した古い describe 応答で新しい保存結果を�
   } finally { h.ctx.dispose() }
 })
 
-test('複数の describe が逆順に戻っても、最後に開始した読込だけを採用する', async () => {
+test('複数の再読込を直列にまとめ、古い応答を捨てて追読した最新状態だけ採用する', async () => {
   const h = harness()
   try {
     await h.store.reload()
@@ -408,9 +408,10 @@ test('複数の describe が逆順に戻っても、最後に開始した読込�
     const earlier = h.store.reload()
     await h.remote.update(ns, { timeout: 77 }, 0)
     h.api.describe = () => h.remote.describe()
-    assert.equal(await h.store.reload(), true)
+    const latest = h.store.reload()
+    assert.equal(latest, earlier, 'pending reload requests share one flight')
     delayed.resolve(old)
-    assert.equal(await earlier, false)
+    assert.deepEqual(await Promise.all([earlier, latest]), [true, true])
     assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 77)
   } finally { h.ctx.dispose() }

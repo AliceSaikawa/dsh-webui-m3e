@@ -35,7 +35,24 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
   const publish = (patch: Partial<SettingsState>) => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
   const find = (ns: string) => state.namespaces.find(row => row.ns === ns)
   const invalidate = (ns: string) => ({ ...state.generation, [ns]: (state.generation[ns] ?? 0) + 1 })
-  async function reload(): Promise<boolean> {
+  let reloading: Promise<boolean> | undefined
+  let reloadAgain = false
+  function reload(): Promise<boolean> {
+    if (reloading) { reloadAgain = true; sequence++; return reloading }
+    const epoch = connectionEpoch
+    const run = async () => {
+      let loaded = false
+      do {
+        reloadAgain = false
+        loaded = await loadOnce()
+      } while (epoch === connectionEpoch && reloadAgain)
+      return loaded
+    }
+    const current = run().finally(() => { if (reloading === current) reloading = undefined })
+    reloading = current
+    return current
+  }
+  async function loadOnce(): Promise<boolean> {
     if (connectionState !== undefined && connectionState !== 'connected') return false
     const ticket = ++sequence
     const epoch = connectionEpoch
@@ -63,6 +80,8 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
     if (connectionState === next) return false
     connectionState = next
     connectionEpoch++
+    reloading = undefined
+    reloadAgain = false
     sequence++
     revisionEpoch = -1
     // Old requests may never settle. They must not block a new connection's edits.
@@ -115,8 +134,8 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
           const loaded = await reload()
           if (epoch === connectionEpoch) notices.forEach(notice => notice(loaded ? 'ほかの場所で設定が変わりました。読み直しました' : 'ほかの場所で設定が変わりました。読み直せなかったため、再読み込みしてください。'))
         } else {
-          const reason = result.error.code === 'settings/rejected' && /[\u3040-\u30ff\u3400-\u9fff]/.test(result.error.message)
-            ? result.error.message : 'この変更は保存できませんでした。入力内容と接続を確認してください。'
+          const reason = result.error.code === 'settings/rejected'
+            ? 'この値は設定できません。入力内容を確認してください。' : 'この変更は保存できませんでした。入力内容と接続を確認してください。'
           publish({ fieldErrors: { ...state.fieldErrors, [key]: reason } })
         }
       } catch {

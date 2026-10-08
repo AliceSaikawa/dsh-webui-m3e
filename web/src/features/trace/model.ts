@@ -61,8 +61,23 @@ export function object(value: unknown): Data {
 }
 function number(value: unknown): number | undefined { return typeof value === 'number' && Number.isFinite(value) ? value : undefined }
 function string(value: unknown): string | undefined { return typeof value === 'string' ? value : undefined }
+function validBlock(value: unknown): value is ContentBlock {
+  const block = object(value)
+  switch (block.type) {
+    case 'text': case 'reasoning': return typeof block.text === 'string'
+    case 'tool-call': return typeof block.name === 'string' && typeof block.arguments === 'string'
+    case 'image': case 'file': {
+      const attachment = object(block.attachment)
+      return typeof attachment.attachmentId === 'string' && number(attachment.bytes) !== undefined
+        && (attachment.name === undefined || typeof attachment.name === 'string')
+        && (block.type === 'file' ? typeof attachment.name === 'string'
+          : typeof attachment.mediaType === 'string' && number(attachment.width) !== undefined && number(attachment.height) !== undefined)
+    }
+    default: return typeof block.type === 'string' && block.type !== 'tool-output'
+  }
+}
 export function blocks(value: unknown): ContentBlock[] {
-  return Array.isArray(value) ? value.filter(item => typeof object(item).type === 'string') as ContentBlock[] : []
+  return Array.isArray(value) ? value.filter(validBlock) : []
 }
 export function elapsed(start: number | undefined, end: number | undefined): number | undefined {
   return start === undefined || end === undefined ? undefined : Math.max(0, end - start)
@@ -96,20 +111,41 @@ function fillToolName(row: TraceRow, name: string | undefined): void {
 }
 export function prettyJson(value: unknown): string {
   if (typeof value === 'string') {
-    try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
+    try { value = JSON.parse(value) } catch { return value as string }
   }
-  return JSON.stringify(value, null, 2) ?? ''
+  let nodes = 0
+  const parents: object[] = []
+  try {
+    return JSON.stringify(value, function(_key, child) {
+      if (++nodes > 10000) return '省略'
+      if (child === null || typeof child !== 'object') return child
+      while (parents.length && parents.at(-1) !== this) parents.pop()
+      if (parents.includes(child) || parents.length >= 64) return '省略'
+      parents.push(child)
+      return child
+    }, 2) ?? ''
+  } catch { return '内容を表示できません。' }
 }
 export function contentText(content: readonly TraceInputBlock[]): string {
-  return content.map(block => {
-    switch (block.type) {
-      case 'text': case 'reasoning': return block.text
-      case 'tool-call': return `${block.name} ${block.arguments}`
-      case 'tool-output': return contentText(block.content)
-      case 'image': case 'file': return block.attachment.name ?? '添付'
-      default: return ''
+  const text: string[] = []
+  const stack = [Array.isArray(content) ? content[Symbol.iterator]() : [][Symbol.iterator]()]
+  let remaining = 10000
+  while (stack.length && remaining-- > 0) {
+    const next = stack.at(-1)!.next()
+    if (next.done) { stack.pop(); continue }
+    const block = object(next.value)
+    if (block.type === 'tool-output') {
+      if (Array.isArray(block.content) && stack.length < 64) stack.push(block.content[Symbol.iterator]())
+      continue
     }
-  }).join('\n')
+    if (!validBlock(block)) continue
+    switch (block.type) {
+      case 'text': case 'reasoning': text.push(block.text); break
+      case 'tool-call': text.push(`${block.name} ${block.arguments}`); break
+      case 'image': case 'file': text.push(block.attachment.name ?? '添付'); break
+    }
+  }
+  return text.join('\n')
 }
 function usageOf(value: unknown): TokenUsage | undefined {
   const data = object(value)

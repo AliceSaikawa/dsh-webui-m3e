@@ -60,6 +60,26 @@ export interface UserQuestionsRemote {
   answer(sessionId: string, callId: string, answer: AskUserQuestionAnswer): Promise<RemoteResult<boolean>>
 }
 
+const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+function questionItems(value: unknown): AskUserQuestionItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(value => {
+    const item = record(value)
+    if (typeof item.id !== 'string' || typeof item.question !== 'string') return []
+    const intent = record(item.intent)
+    return [{ id: item.id, question: item.question,
+      ...(typeof item.detail === 'string' ? { detail: item.detail } : {}),
+      ...(typeof item.header === 'string' ? { header: item.header } : {}),
+      ...(typeof item.multiSelect === 'boolean' ? { multiSelect: item.multiSelect } : {}),
+      ...(Array.isArray(item.options) ? { options: item.options.flatMap(value => {
+        const option = record(value)
+        return typeof option.label === 'string' ? [{ label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) }] : []
+      }) } : {}),
+      ...(intent.kind === 'plan-review' && typeof intent.approve === 'string' ? { intent: { kind: 'plan-review' as const, approve: intent.approve } } : {}),
+    }]
+  })
+}
+
 interface QuestionCard {
   pending: PendingQuestion
   projectedActive?: boolean
@@ -226,10 +246,16 @@ export class InteractionStore {
   /** Mirror the same continued/queued/settled states as the stock question UI. */
   syncQuestions(sessionId: string, projection: UserQuestionProjection | undefined, inbox: unknown,
     answer: (callId: string, value: AskUserQuestionAnswer) => Promise<boolean>): void {
-    const queues = inbox as { 'next-step'?: { source?: { kind?: string; callId?: string } }[]; 'next-turn'?: { source?: { kind?: string; callId?: string } }[] } | undefined
-    const queued = new Set([...(queues?.['next-step'] ?? []), ...(queues?.['next-turn'] ?? [])]
-      .filter(message => message.source?.kind === 'user-question-reply').map(message => message.source?.callId))
-    const active = projection?.active.filter(row => row.state !== 'continued' || !queued.has(row.callId)) ?? []
+    const queues = record(inbox)
+    const queued = new Set(['next-step', 'next-turn'].flatMap(key => Array.isArray(queues[key]) ? queues[key] : [])
+      .flatMap(message => { const source = record(record(message).source); return source.kind === 'user-question-reply' && typeof source.callId === 'string' ? [source.callId] : [] }))
+    const rows = record(projection).active
+    const active = (Array.isArray(rows) ? rows : []).flatMap(value => {
+      const row = record(value)
+      if (typeof row.callId !== 'string' || (row.state !== 'open' && row.state !== 'continued')) return []
+      const questions = questionItems(row.questions)
+      return questions.length && (row.state !== 'continued' || !queued.has(row.callId)) ? [{ callId: row.callId, state: row.state, questions }] : []
+    })
     for (const row of active) if (row.state === 'continued') {
       const card = this.#questionCard(sessionId, row.callId, row.questions)
       card.rpc = value => answer(row.callId, value)
@@ -341,7 +367,7 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
     const sessionId = ctx.sessions.scopeOf(this)
     return sessionId === undefined ? next() : store.requestApproval(sessionId, request)
   })
-  let removeQuestion: (() => void) | void
+  let removeQuestion: (() => void) | void = undefined
   let stopProjections: (() => void) | undefined
   const claims = new Set<AbortController>()
   try {
@@ -373,6 +399,10 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
     stopProjections = observeQuestions(ctx, store)
   } catch (error) {
     removeApproval?.()
+    removeQuestion?.()
+    stopProjections?.()
+    for (const claim of claims) claim.abort()
+    store.dispose()
     throw error
   }
   let disposed = false
@@ -422,12 +452,14 @@ function observeQuestions(ctx: InteractionContext, store: InteractionStore): () 
       const inbox = binding.session.projections.faceOf('inbox')
       const update = () => store.syncQuestions(id, questions.getSnapshot() as UserQuestionProjection | undefined, inbox.getSnapshot(), answerFor(id))
       const stopQuestions = questions.subscribe(update)
-      const stopInbox = inbox.subscribe(update)
+      let stopInbox: () => void
+      try { stopInbox = inbox.subscribe(update) } catch (error) { stopQuestions(); throw error }
       observed.set(id, { binding, stop: () => { stopQuestions(); stopInbox() } })
       update()
     }
   }
-  reconcile()
-  const stopList = sessions.list?.subscribe(reconcile)
-  return () => { stopList?.(); for (const entry of observed.values()) entry.stop(); observed.clear() }
+  let stopList: (() => void) | undefined
+  const dispose = () => { stopList?.(); for (const entry of observed.values()) entry.stop(); observed.clear() }
+  try { reconcile(); stopList = sessions.list?.subscribe(reconcile) } catch (error) { dispose(); throw error }
+  return dispose
 }
