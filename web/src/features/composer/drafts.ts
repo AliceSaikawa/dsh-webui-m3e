@@ -17,6 +17,7 @@ export interface Draft {
   deliveryOutcome?: 'unknown'
 }
 const drafts = new Map<string, Draft>()
+const textRevisions = new Map<string, number>()
 const listeners = new Map<string, Set<() => void>>()
 const preparations = new Map<string, Map<symbol, number>>()
 const prefix = 'm3e:composer:'
@@ -59,6 +60,7 @@ export function readDraft(key: string): Draft {
   return draft
 }
 export function writeDraft(key: string, draft: Draft): void {
+  if (readDraft(key).text !== draft.text) textRevisions.set(key, draftTextRevision(key) + 1)
   drafts.set(key, draft)
   // Updating an existing text value can succeed when adding metadata exceeds
   // quota. Keep every available write independent of metadata failures.
@@ -75,6 +77,15 @@ export function writeDraft(key: string, draft: Draft): void {
     else storage()?.removeItem(attachmentKey(key))
   } catch { /* Preserve usable text even if recovery metadata cannot be saved. */ }
   listeners.get(key)?.forEach(listener => listener())
+}
+export function draftTextRevision(key: string): number { return textRevisions.get(key) ?? 0 }
+
+/** A completed command may consume its original text, never a later edit (including ABA). */
+export function consumeDraftCommand(key: string, command: string, revision: number): void {
+  const draft = readDraft(key)
+  if (draftTextRevision(key) === revision && draft.text.trim() === command) {
+    writeDraft(key, { ...draft, text: '' })
+  }
 }
 export function clearDraft(key: string): void {
   preparations.delete(key)

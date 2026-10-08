@@ -42,7 +42,17 @@ export interface ModelApplySnapshot {
   readonly error?: unknown
 }
 
-/** One request per Composer, shared by every sheet opened for that Composer. */
+const controllers = new WeakMap<object, Map<string, ModelApplyController>>()
+
+/** Requests belong to the session service and draft, not the mounted view. */
+export function modelApplyController(scope: object, draftKey: string): ModelApplyController {
+  let scoped = controllers.get(scope)
+  if (!scoped) { scoped = new Map(); controllers.set(scope, scoped) }
+  let controller = scoped.get(draftKey)
+  if (!controller) { controller = createModelApplyController(); scoped.set(draftKey, controller) }
+  return controller
+}
+
 export function createModelApplyController() {
   let snapshot: ModelApplySnapshot = { pending: false, composerBusy: false }
   const listeners = new Set<() => void>()
@@ -55,6 +65,7 @@ export function createModelApplyController() {
     },
     async run(selection: ModelSelection, apply: (selection: ModelSelection) => Promise<ModelSelection>): Promise<ModelSelection> {
       if (snapshot.pending) throw new Error('モデルの選択を反映中です。')
+      if (snapshot.composerBusy) throw new Error('送信が終わってからモデルを選んでください。')
       publish({ ...snapshot, pending: true, error: undefined })
       try {
         const selected = await apply(selection)

@@ -5,6 +5,7 @@ import { clearDraft, readDraft, writeDraft } from './drafts.ts'
 import { submitMessage } from './submission.ts'
 import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-status.ts'
 import { clearWorkspaceOrigin, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
+import { modelApplyController } from './model-picker.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
 export interface DeliveryOptions {
@@ -42,6 +43,9 @@ export function pendingDelivery(draftKey: string): Promise<DeliveryResult> | und
 export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> {
   const active = pendingDelivery(options.draftKey)
   if (active) return active
+  const modelApply = modelApplyController(options.sessions, options.draftKey)
+  if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new Error('モデルの選択を反映中です。') })
+  modelApply.setComposerBusy(true)
   const keys = new Set([options.draftKey])
   const flight = runDelivery(options, key => {
     keys.add(key)
@@ -50,6 +54,7 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
   }).finally(() => {
     for (const key of flightKeys.get(flight) ?? keys) if (flights.get(key) === flight) flights.delete(key)
     flightKeys.delete(flight)
+    modelApply.setComposerBusy(false)
   })
   // Retained creation IDs can register synchronously before runDelivery awaits.
   for (const key of keys) shareKey(key, flight)
