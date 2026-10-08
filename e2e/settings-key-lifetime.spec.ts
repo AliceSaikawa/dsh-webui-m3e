@@ -126,8 +126,8 @@ test('#27 シート削除と照会解放が同じタスクでもキーを送ら�
   await button(page, '保存').click()
   await expect.poll(() => page.evaluate(() => (window as any).__keyLifetime.started)).toBe(true)
   await page.evaluate(async () => {
-    // @ts-expect-error Vite serves this browser module.
-    const { getOverlays } = await import('/m3e/src/app/overlay/store.ts')
+    const modulePath = '/m3e/src/app/overlay/store.ts'
+    const { getOverlays } = await import(modulePath)
     getOverlays().at(-1).close()
     ;(window as any).__keyLifetime.release()
   })
