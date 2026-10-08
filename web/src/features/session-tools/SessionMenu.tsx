@@ -27,7 +27,8 @@ export function SessionMenuButton({ sessionId }: { sessionId: string }) {
   const menu = useRef<M3eMenuElement>(null)
   const pending = useRef(false)
   const [busy, setBusy] = useState(false)
-  const count = runningJobCount(useSessionJobs(sessionId))
+  const jobRows = useSessionJobs(sessionId)
+  const count = runningJobCount(jobRows.rows)
   const items = menuActions(hasChildren(sessionId, list.projectionsBySession[sessionId], list.byId), goal)
 
   async function select(action: MenuAction) {
@@ -54,7 +55,8 @@ export function SessionMenuButton({ sessionId }: { sessionId: string }) {
     <M3eMenu ref={menu} id={id} positionX="before" positionY="below" className="st-menu" aria-label="会話のメニュー">
       {items.map(action => <M3eMenuItem key={action} disabled={busy || ((action === 'rename' || action === 'archive') && (!face || snapshot.removed || !!snapshot.subagent))} onClick={() => { void select(action) }}>
         <Icon name={labels[action][1]} slot="icon" />{labels[action][0]}
-        {action === 'jobs' && count > 0 && <span slot="trailing-icon" className="st-badge" aria-label={`実行中・停止中 ${count} 件`}>{count}</span>}
+        {action === 'jobs' && jobRows.status !== 'ready' && <span slot="trailing-icon" aria-label={jobRows.status === 'error' ? 'ジョブの更新に失敗' : 'ジョブを確認中'}><Icon name={jobRows.status === 'error' ? 'error' : 'pending'} /></span>}
+        {action === 'jobs' && jobRows.status === 'ready' && count > 0 && <span slot="trailing-icon" className="st-badge" aria-label={`実行中・停止中 ${count} 件`}>{count}</span>}
       </M3eMenuItem>)}
     </M3eMenu>
   </>

@@ -39,6 +39,8 @@ export const MARK = {
   medium: '[[medium]]',
   /** A bash call that asks for wider sandbox permission, which DSH turns into an approval request. */
   approval: '[[approval]]',
+  /** Synthetic background process for the job-list stop control. */
+  job: '[[job]]',
   /** An ask_user_question call. */
   question: '[[question]]',
 } as const
@@ -131,6 +133,10 @@ export async function startFakeLlm(options: { port?: number; log?: string } = {}
           finish('end_turn'); return
         }
         if (last?.role === 'user' && last.content.some(block => block.type === 'tool_result')) { await words(['ツールの結果を受け取りました。'], 20); finish('end_turn'); return }
+        if (prompt.includes(MARK.job)) {
+          tool('call-job-stop', 'bash', { command: 'sleep 30', description: '停止試験用の合成ジョブ', run_in_background: true })
+          return
+        }
         if (prompt.includes(MARK.slow)) {
           await words(Array.from({ length: 200 }, (_, index) => `第${index + 1}節。`), 150)
           finish('end_turn'); return
