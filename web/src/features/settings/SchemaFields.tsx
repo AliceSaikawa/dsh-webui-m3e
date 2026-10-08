@@ -1,13 +1,12 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eOption } from '@m3e/react/option'
 import { M3eFormField } from '@m3e/react/form-field'
-import { formatSetting, parseFieldInput, selectFieldState, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
+import { formatSetting, selectFieldState, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
-import { createSettingInput } from './input.ts'
-import { findSettingField, settingFieldAccess } from './field-access.ts'
+import { settingFieldAccess } from './field-access.ts'
 
 interface FieldsProps {
   fields: SettingField[]
@@ -27,17 +26,16 @@ export function SchemaFields({ fields, ...props }: FieldsProps) {
 }
 
 function GroupReset({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
-  const [saving, setSaving] = useState(false)
+  const saving = store.isResetting(namespace.ns, field.path)
   const access = settingFieldAccess(namespace, field)
   const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
   if (!field.overridden || !field.path.length) return null
   async function reset() {
-    if (saving) return
-    setSaving(true)
-    try { await store.edit(namespace.ns, field.path) } finally { setSaving(false) }
+    if (store.isResetting(namespace.ns, field.path)) return
+    await store.edit(namespace.ns, field.path)
   }
   return <div>
-    <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || saving}
+    <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || saving || store.isResetting(namespace.ns, field.path)}
       onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>
     {access.resetBlocked && <p className="settings-field-help">保護された項目や変更できない項目があるため、まとめて既定値に戻せません。</p>}
     {saving && <div className="settings-saving" role="status">保存しています…</div>}
@@ -47,68 +45,26 @@ function GroupReset({ field, namespace, state, store }: Omit<FieldsProps, 'field
 
 function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
   const id = useId()
-  const [validation, setValidation] = useState<string | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const currentField = useRef(field)
-  currentField.current = field
-  const disabled = !state.writable || field.disabled
-  const [input] = useState(() => {
-    const generation = state.generation[namespace.ns] ?? 0
-    return createSettingInput<SettingValue | undefined>(inputValue(field, field.value), {
-      canSave: () => store.getSnapshot().writable && !currentField.current.disabled
-        && (store.getSnapshot().generation[namespace.ns] ?? 0) === generation,
-      async save(value, reset) {
-        const latestField = currentField.current
-        let next = value
-        if (!reset && ['text', 'number'].includes(latestField.kind)) {
-          const parsed = parseFieldInput(latestField, String(value ?? ''))
-          if (!parsed.ok) { setValidation(parsed.message); return { ok: false } }
-          next = parsed.value
-        }
-        setValidation(null)
-        const accepted = await store.edit(namespace.ns, latestField.path, reset ? undefined : next)
-        if (!accepted) return { ok: false }
-        const row = store.getSnapshot().namespaces.find(item => item.ns === namespace.ns)
-        return { ok: true, value: inputValue(latestField, row && findSettingField(row, latestField.path, store.getSnapshot().permissionCatalog)?.value) }
-      },
-    })
-  })
+  const disabled = !state.writable || field.disabled || store.isResetting(namespace.ns, field.path)
+  const [input] = useState(() => store.input(namespace.ns, field.path))
   const editing = useSyncExternalStore(input.subscribe, input.getSnapshot, input.getSnapshot)
   const draft = String(editing.value ?? '')
   const choice = editing.value
   const selection = selectFieldState(field, choice)
-  const error = validation ?? state.fieldErrors[fieldKey(namespace.ns, field.path)]
+  const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = 'すぐ反映されます'
   useEffect(() => {
-    input.receive(inputValue(field, field.value))
-  }, [input, field.kind, field.value])
-  useEffect(() => {
     input.setActive(true)
-    return () => { clearTimeout(timer.current); input.setActive(false) }
+    return () => input.setActive(false)
   }, [input])
-  function cancelTimer() { clearTimeout(timer.current); timer.current = undefined }
-  function flush() {
-    cancelTimer()
-    return input.flush()
-  }
-  function changeText(input: string) {
-    changeDraft(input)
-    cancelTimer()
-    timer.current = setTimeout(() => { void flush() }, 600)
-  }
-  function changeDraft(value: SettingValue) {
-    input.change(value)
-    setValidation(null)
-  }
+  function flush() { return input.flush() }
+  function changeText(value: string) { input.changeDeferred(value) }
   function changeChoice(value: SettingValue) {
     if (disabled) return
-    changeDraft(value)
+    input.change(value)
     return input.flush()
   }
-  function reset() {
-    cancelTimer(); setValidation(null)
-    return input.reset()
-  }
+  function reset() { return input.reset() }
   const helpId = `${id}-help`
   const errorId = `${id}-error`
   const describedBy = `${helpId}${error ? ` ${errorId}` : ''}`
@@ -145,16 +101,15 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
     </M3eFormField>}
     <p className="settings-field-help" id={helpId}>{[field.description, timing].filter(Boolean).join('\n')}</p>
     {error && <p className="settings-error" role="alert" id={errorId}>{error}</p>}
-    {field.kind !== 'masked' && field.overridden && field.path.length > 0 && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || editing.saving}
+    {editing.notice && <div className="settings-notice" role="status">
+      <p>{editing.notice}</p>
+      <p>保存済みの値：{formatSetting(field.value)}</p>
+      <M3eButton disabled={disabled || editing.saving} onClick={() => { void input.retry() }}>もう一度保存する</M3eButton>
+    </div>}
+    {field.kind !== 'masked' && field.overridden && field.path.length > 0 && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || editing.saving || store.isResetting(namespace.ns, field.path)}
       onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>}
     {access.resetBlocked && <p className="settings-field-help">保護された項目や変更できない項目があるため、まとめて既定値に戻せません。</p>}
     {editing.saving && <div className="settings-saving" role="status">保存しています…</div>}
     {editing.saved && !editing.saving && !error && <div className="settings-saving" role="status">保存しました</div>}
   </div>
-}
-
-function inputValue(field: Pick<SettingField, 'kind'>, value: SettingValue | undefined): SettingValue | undefined {
-  return ['text', 'number'].includes(field.kind)
-    ? typeof value === 'string' || typeof value === 'number' ? String(value) : ''
-    : value
 }

@@ -1187,3 +1187,17 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 実画面の証跡を目視すると、指定なしで空のselect値と独自の表示文言を併用した際、ラベル「推論の強さ」が選択値と重なっていた。製品の `ModelsPanel.tsx` で推論欄の `floatLabel` を常時浮動にし、フォーカスを外した後も両者の矩形が重ならないことを実DSH試験で検査した。再起動を含む3経路を再実行して成功し、修正後の画像も目視確認した。修正前後は `docs/review/pr51-reasoning-before.png` と `pr51-reasoning-after.png` に保存した。
 - 再現コマンドは `pnpm exec playwright test -c e2e-dsh/playwright.config.ts reasoning-inheritance.spec.ts`（配置済み配布物を使う場合は `M3E_DSH_DIR` を指定）。3件すべて成功。`pnpm typecheck`、単体1096件、配布build/check:pack、新規specの個別TypeScript検査も成功。既存chunk警告のみ。
 - 対象は隔離した実プロセス・実設定ファイル・実RPC・実ブラウザーであり、本番や利用者の日常設定、本物のLLM、iPhone/Safariの検証ではない。最終証跡は当ブランチの `tmp/dsh-integration/report.json`（3件成功、画面写真・設定スナップショットを含む）。実行時刻で変わる出力先はJSON内の設定を正とする。
+
+### 2026-10-08：Issue #46 共通設定の未保存入力とエラー
+
+- 指定された選択は `gpt-6-astra`／Codex。今回の情報にルーティング矛盾は見つからなかったが、実モデル ID の独立照会はしていない。`cd99f273f9582729475272e48722d7ec850d6857` から専用 worktree と `fix/issue-46-settings-drafts` を作成した。PR #54 とカスタム提供元のコードには触れていない。
+- 共通の項目の下書きは settings store が名前空間／path ごとに所有し、入力欄は購読する。文字・数値の 600ms debounce も入力 controller が持つ。namespace generation を React key にして全項目を作り直す処理を共通設定から除いた。
+- グループの復帰は対象 subtree の書き込み世代だけを進め、子の古い下書き・待機保存を破棄する。兄弟項目の下書きと待機保存は残す。モデル専用画面の namespace-wide reset、revision による直列化、接続 epoch の拒否処理は維持した。
+- 独立レビューで、復帰開始後の子項目の追加入力が成功応答で消えるケースが見つかった。この入力を受け付けた後に消すことがないように、復帰を依頼した時点から対象 subtree だけ入力を無効にする。UI に加えて controller の変更・保存入口でも同じ状態を確かめる。状態は store が所有し、切断後に古い RPC が停止しても新しい接続の編集を妨げない。
+- 切断時は debounce と古い保存 controller の継続を止め、入力と中断案内を残す。古い Promise が永久に解決しなくても、新しい接続では明示した再試行ができる。再接続の読み直しで値が既に保存済みなら中断状態を解消し、差がある場合は自動再送せず、保存済みの値と「もう一度保存する」を表示する。外部 revision の変更でも未保存の入力は保持して停止し、明示した再試行で最新 revision を使う。
+- 保存のエラーは入力変更で消し、遅れて返る拒否は入力の世代・revision が同じ場合だけ表示する。外部 revision の読み直しでは古いエラーを消す。読み取り専用化・削除された項目は編集可能な下書きを残さない。
+- 修正前の本体で、兄弟の待機保存が group reset に巻き込まれるケースと外部 revision 更新後の stale error を追加試験で再現した（`tmp/issue46-before.log`、2 件とも失敗）。既存の group reset 試験は namespace generation が進むという期待だけを対象 subtree の無効化へ変更し、子の待機保存の拒否と次の新規編集の成功は維持した。
+- すべて通常の合成設定による検証。秘密ファイル、認証情報、実 DSH、外部 LLM API は使っていない。ブラウザは tmp 配下の専用設定とポート 5293 の偽データだけを使用。iOS 実機は未確認。この段階でコミット・公開はしていない。
+- 最終確認：`pnpm typecheck` 成功、`pnpm test` は 1,121 件成功（失敗・skip とも 0）、`pnpm build` 成功、`pnpm run check:pack` 成功（19 ファイル）。npm のキャッシュは作業場所内の `tmp/npm-cache` を指定した。既存の bundle サイズ警告は残る。
+- Chromium の関連 e2e は 10 件成功（追加の共通設定 5 件、放送 1 件、モデル設定 3 件、推論の継承 1 件）。途中の 1 失敗はテスト用遅延条件で未指定値同士を比較して nested update まで保留したためで、遅延指定の有無を判定するように試験を修正して解消した。独立レビューは修正後に残る指摘なし、関連単体 53 件を独立実行して成功。再現・制約・ログ一覧は `tmp/issue46-evidence.md` に記録した。
+- 親の確認で、隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の設定一覧・保存再読込、および 35 項目と辞書キー 2 項目の受理・拒否の 2 試験が成功。利用者の設定や実キーは使用していない。
