@@ -87,7 +87,7 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
     navigate(`/s/${encodeURIComponent(pending.sessionId)}/trace`, { replace: from === 'conversation' })
   }
 
-  return <section className={`interaction-sheet${plan ? ' interaction-sheet--plan' : ''}`} data-from={from} aria-busy={busy}>
+  return <><section className={`interaction-sheet${plan ? ' interaction-sheet--plan' : ''}`} data-from={from} aria-busy={busy}>
     {pending.kind === 'approval' ? <>
       <div className="interaction-heading"><h2>ツールの承認</h2></div>
       <p className="interaction-question"><strong>{pending.toolName}</strong> を実行しようとしています</p>
@@ -98,6 +98,8 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
         <M3eButton variant="filled" disabled={busy || !active} onClick={() => { void submit(() => pending.answer('allowed-once')) }}>許可（1 回）</M3eButton></div>
     </> : <QuestionSheet pending={pending} plan={plan} busy={busy || !active} error={error} later={later} submit={submit} />}
   </section>
+    <div role="status" aria-live="polite" aria-atomic="true">{busy && <p>回答を送信しています…</p>}</div>
+  </>
 }
 
 function QuestionSheet({ pending, plan, busy, error, later, submit }: {
@@ -112,6 +114,7 @@ function QuestionSheet({ pending, plan, busy, error, later, submit }: {
   const last = state.index === pending.items.length - 1
   const planItem = item?.intent?.kind === 'plan-review'
   const labelId = useId()
+  const QuestionHeading = plan ? 'h3' : 'h2'
 
   useLayoutEffect(() => {
     if (body.current) body.current.scrollTop = 0
@@ -145,7 +148,7 @@ function QuestionSheet({ pending, plan, busy, error, later, submit }: {
       role={presentation.standalonePlan ? 'region' : undefined} aria-label={presentation.standalonePlan ? 'プランの本文' : undefined}>
       {item ? <>
         {presentation.header && <p className="interaction-item-header">{presentation.header}</p>}
-        {presentation.title && <h3 id={labelId} className="interaction-question" ref={heading} tabIndex={-1}>{presentation.title}</h3>}
+        {presentation.title && <QuestionHeading id={labelId} className="interaction-question" ref={heading} tabIndex={-1}>{presentation.title}</QuestionHeading>}
         {item.detail && (planItem ? <Markdown>{item.detail}</Markdown> : <p className="interaction-detail">{item.detail}</p>)}
         {planItem ? state.editingPlan && <label className="interaction-custom">直してほしいこと
           <textarea rows={5} autoFocus value={draft.custom} disabled={busy} onChange={event => edit({ selected: [], custom: event.target.value })} />

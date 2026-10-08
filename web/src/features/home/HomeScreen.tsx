@@ -9,6 +9,7 @@ import { TabScaffold, useConnection } from '../../app/shell/index.ts'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
 import { showSnackbar } from '../../app/overlay/index.ts'
+import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
@@ -46,11 +47,26 @@ export function HomeScreen() {
   const pullStart = useRef<{ x: number; y: number } | null>(null)
   const pullDistance = useRef(0)
   const drawer = useRef<M3eDrawerContainerElement | null>(null)
+  const drawerTrigger = useRef<HTMLElement | null>(null)
   const menu = useRef<M3eMenuElement | null>(null)
   const loading = snapshot.phase === 'pending' || list.phase === 'pending'
   const [slowLoading, setSlowLoading] = useState(false)
 
   useEffect(() => scheduleLoadingRecovery(loading, setSlowLoading), [loading])
+
+  useEffect(() => {
+    const element = drawer.current
+    if (!element) return
+    let cancelled = false
+    // The native drawer owns the focus trap and background inert state. Wait
+    // for its update before moving into it or back to the now-interactive entry.
+    void element.updateComplete.then(() => {
+      if (cancelled) return
+      if (drawerOpen) element.querySelector<HTMLElement>('.home-drawer m3e-icon-button')?.focus({ preventScroll: true })
+      else if (!getOverlays().length && drawerTrigger.current?.isConnected) drawerTrigger.current.focus({ preventScroll: true })
+    })
+    return () => { cancelled = true }
+  }, [drawerOpen])
 
   useEffect(() => {
     if (snapshot.phase === 'ready' && preferences.workspaceId !== (workspace?.workspaceId ?? null)) setCurrentWorkspace(workspace?.workspaceId ?? null)
@@ -88,7 +104,7 @@ export function HomeScreen() {
   }
   const changeMode = (value: Mode) => { menu.current?.hide(); setMode(value); setSelected(new Set()) }
   const toolbar = <>
-    {mode === 'normal' ? <M3eIconButton aria-label="ワークスペースを切り替え" onClick={() => setDrawerOpen(true)}><Icon name="menu" /></M3eIconButton>
+    {mode === 'normal' ? <M3eIconButton aria-label="ワークスペースを切り替え" onClick={event => { if (event.currentTarget instanceof HTMLElement) drawerTrigger.current = event.currentTarget; setDrawerOpen(true) }}><Icon name="menu" /></M3eIconButton>
       : <M3eIconButton aria-label="操作を終了" disabled={busy} onClick={() => changeMode('normal')}><Icon name="close" /></M3eIconButton>}
     <h1 className="home-title">{mode === 'sort' ? '並べ替え' : mode === 'select' ? `${selectedIds.length} 件選択中` : workspace?.title ?? '一覧'}</h1>
     {mode === 'normal' && <M3eIconButton aria-label="一覧のメニュー" onClick={event => { if (event.currentTarget instanceof HTMLElement) void menu.current?.toggle(event.currentTarget) }}><Icon name="more_vert" /></M3eIconButton>}
