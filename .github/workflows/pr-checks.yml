@@ -2,6 +2,7 @@ name: PR checks
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -11,13 +12,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
+  static:
+    name: typecheck / unit / build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Use the default pull_request ref (refs/pull/N/merge): it verifies the
+      # result of merging into the current base, not the PR branch in isolation.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
@@ -30,14 +33,25 @@ jobs:
           cache: pnpm
       - name: Install project dependencies
         run: pnpm install --frozen-lockfile
+      # The pinned lockfile is the cache key; check-ci-dsh.ts still verifies the
+      # installed versions and contract files after a cache hit.
+      - name: Restore pinned DSH distribution
+        id: dsh
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules
+          key: dsh-0.2.0-rc.2-${{ runner.os }}-${{ hashFiles('.github/ci/dsh/package-lock.json') }}
       - name: Install pinned public DSH contract distribution
         env:
           NODE_OPTIONS: --experimental-strip-types
+          DSH_CACHE_HIT: ${{ steps.dsh.outputs.cache-hit }}
         run: |
           dsh_dir=tmp/dsh-integration/dsh-0.2.0-rc.2
           mkdir -p "$dsh_dir"
           cp .github/ci/dsh/package.json .github/ci/dsh/package-lock.json "$dsh_dir/"
-          npm ci --prefix "$dsh_dir" --ignore-scripts --no-audit --no-fund
+          if [ "$DSH_CACHE_HIT" != 'true' ]; then
+            npm ci --prefix "$dsh_dir" --ignore-scripts --no-audit --no-fund
+          fi
           node scripts/check-ci-dsh.ts
       - name: Typecheck
         run: pnpm typecheck
@@ -45,6 +59,8 @@ jobs:
         env:
           NODE_OPTIONS: --experimental-strip-types
           # The existing display golden fixture was captured with +09:00 clocks.
+          # Remove this once display formatting receives an explicit time zone;
+          # the advisory UTC step below shows whether that is done.
           TZ: Asia/Tokyo
         shell: bash
         run: |
@@ -59,6 +75,13 @@ jobs:
           test_status=$?
           set -e
           node scripts/check-ci-test-results.ts tmp/ci/unit-summary.json "$test_status"
+      # Keep the time zone dependency visible instead of hiding it. Advisory only.
+      - name: Unit tests in UTC (advisory)
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: --experimental-strip-types
+          TZ: UTC
+        run: node --experimental-strip-types --test tests/*.test.ts
       - name: Build
         env:
           NODE_OPTIONS: --experimental-strip-types
@@ -67,9 +90,86 @@ jobs:
         env:
           NODE_OPTIONS: --experimental-strip-types
         run: pnpm check:pack
+      # On the merge ref, HEAD^1 is the base commit the PR was merged onto, so
+      # this checks exactly the PR's changes even when the base moved on.
       - name: Check patch whitespace
-        env:
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git diff --check "$CI_BASE_SHA" HEAD
+          git diff --check HEAD^1 HEAD
           git diff --check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: unit-summary
+          path: tmp/ci/unit-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  e2e:
+    name: browser shard ${{ matrix.shard }}/3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+        with:
+          version: 11.17.0
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install project dependencies
+        run: pnpm install --frozen-lockfile
+      # Match the browser build to the exact @playwright/test version in package.json.
+      - name: Resolve pinned Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('./package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+      - name: Restore Playwright browsers
+        id: pw-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Chromium system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+      - name: Browser tests (?mock)
+        env:
+          TZ: Asia/Tokyo
+        run: pnpm exec playwright test -c e2e/playwright.config.ts --shard=${{ matrix.shard }}/3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: e2e-evidence-shard-${{ matrix.shard }}
+          path: |
+            tmp/e2e-results
+            tmp/e2e-shots
+            tmp/e2e-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Require only this job in branch protection. Requiring the shard jobs directly
+  # would leave a stale required check whenever the shard count changes.
+  required:
+    name: all checks
+    needs: [static, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every job succeeded
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          echo "static=$STATIC_RESULT e2e=$E2E_RESULT"
+          test "$STATIC_RESULT" = success
+          test "$E2E_RESULT" = success

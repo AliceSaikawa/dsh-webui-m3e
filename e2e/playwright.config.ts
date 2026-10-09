@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const ci = !!process.env.CI
 
 export default defineConfig({
   testDir: '.',
@@ -9,11 +10,20 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  timeout: 30_000,
-  expect: { timeout: 7_000 },
+  // CI runners are slower than the local machines. Only the waiting time grows;
+  // parallelism, retries and assertions stay the same so CI cannot turn green
+  // through a weaker test.
+  timeout: ci ? 60_000 : 30_000,
+  expect: { timeout: ci ? 15_000 : 7_000 },
+  forbidOnly: ci,
   // Preserve earlier failure evidence instead of clearing it on the next run.
-  outputDir: `${root}tmp/e2e-results/${Date.now()}`,
-  reporter: [['list'], ['json', { outputFile: `${root}tmp/e2e-report.json` }]],
+  // CI needs a fixed path so the evidence can be uploaded as an artifact.
+  outputDir: `${root}tmp/e2e-results/${ci ? 'ci' : Date.now()}`,
+  reporter: [
+    ...(ci ? [['github'] as const] : []),
+    ['list'],
+    ['json', { outputFile: `${root}tmp/e2e-report.json` }],
+  ],
   use: {
     browserName: 'chromium',
     baseURL: 'http://localhost:5191',
@@ -35,7 +45,9 @@ export default defineConfig({
     // Pin IPv4 and a separate port so another local server cannot be reused.
     port: 5191,
     reuseExistingServer: false,
-    timeout: 30_000,
+    // A cold runner spends longer than 30 s in Vite's dependency optimization,
+    // which would fail every browser test before the first one starts.
+    timeout: ci ? 120_000 : 30_000,
     stdout: 'pipe',
   },
 })

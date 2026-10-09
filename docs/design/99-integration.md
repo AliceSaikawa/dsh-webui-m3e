@@ -392,3 +392,39 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - 現在の委任実行の実モデル名を示す runtime metadata は見つからなかった。2026-10-08、利用者がこのタスクに限り `unknown` を認めたため、コミットの `AI-Model` は `unknown`、PR 本文・コメントは `AI: unknown / Harness: Codex` と記す。恒久的な規則変更とは扱わず、dot の製品モデル・別セッションのモデル・既定設定も採用しない。main のマージ、auto-merge、deploy は行わない。
 - 公開前の最終レビューで、固定した checkout/setup-node 自体は Node 20 で動くと確認した。`NODE_OPTIONS=--experimental-strip-types` は Node 22 の run ステップにだけ設定し、Node 20 の Actions と後処理には渡さない。
 - 初回 Actions は単体 1,118 件中 1,117 成功・1 失敗・skip 0。既存の表示 golden fixture は +09:00 の時計で作られており、UTC runner では `search-permissions` の日付が 9/24、期待値が 9/25 だった。Mac にプロセス単位の `TZ=UTC` を設定して同じ失敗を再現した。CI の単体ステップだけに `TZ=Asia/Tokyo` を明示し、既存テスト・golden fixture・アサーションは一切変更していない。
+
+### PR ごとの CI へのブラウザ試験の追加（2026-10-09、ローカル適用と検証のみ）
+
+外部レビューの CI 計画（#55 への指摘と成果物 7 件）を精査し、不具合を直したものだけを #55 の head `538270c` の上に適用した。作業はローカルブランチ `ci/pr-checks-e2e`（`tmp/worktrees/pr55-ci`）。サンドボックスの書き込み範囲がワークスペース内だけのため、worktree はリポジトリ外ではなく Git 管理外の `tmp/` に置いた。commit は利用者の指示で行い、トレーラにはハーネス（DeepSeek Harness）とモデル（claude-opus-5-5）を記す。push・GitHub の設定変更はしていない。
+
+- `.github/workflows/pr-checks.yml`
+  - checkout の `ref: head.sha` をやめ、既定の merge ref でマージ後の状態を検証する。空白検査の基点は `HEAD^1`（merge commit の base 側の親）にした。base が進んでも PR 自身の差分だけを見る。
+  - `?mock` の Playwright を独立ジョブとし、3 分割で並列実行する（各 60・60・58 件）。ブラウザは `@playwright/test` の固定版をキーにキャッシュする。失敗時だけ証跡を artifact にする。
+  - DSH 配布物の `node_modules` を、専用 lockfile のハッシュをキーにキャッシュする。キャッシュが当たっても `check-ci-dsh.ts` で版と契約コードを検査する。
+  - `TZ=UTC` の単体を advisory（`continue-on-error`）で追加し、タイムゾーン依存を見える形で残す。
+  - 集約ジョブ `all checks` を追加した。必須チェックにするのはこれ 1 件だけにする。
+  - 追加した `actions/cache` は v4.3.0 の `0057852b…`、`actions/upload-artifact` は v4.6.2 の `ea165f8d…` に固定した。commit はタグから GitHub API で解決した。レビュー案はタグ指定（`@v4`）のままだった。
+- `e2e/playwright.config.ts`：`CI` のときだけ、待ち時間（テスト 60 秒、expect 15 秒、webServer 120 秒）を延ばし、`forbidOnly` を有効にし、出力先を固定の `tmp/e2e-results/ci` にし、`github` reporter を足す。並列度・リトライ・アサーションは変えていない。ローカルの挙動も変わらない。
+- `e2e/helpers.ts`：異常系テストが `test.use({ expectedErrors: [/…/] })` で想定する console.error を宣言できるようにした。既定は空で、従来どおり 1 件でも失敗する。宣言したのに発生しなかったパターンも失敗にする。ただし本体が先に失敗したときは、最初の失敗を隠さないように、この判定を省く。
+- `scripts/ci-local.sh`：CI と同じ順序・環境変数で手元で検証する。`bash scripts/ci-local.sh` で実行する。レビュー案から次を直した。
+  - `corepack use`（package.json に `packageManager` を書き込む）をやめ、pnpm の版の違いを警告するだけにした。
+  - sudo が要る `--with-deps` を使わない。
+  - `origin/main` を取得できないときは、手元の参照と比べる。
+  - `E2E_CONFIG` で代替ポートの設定を選べる。
+
+#### 採用しなかったもの
+
+- package.json への `e2e`・`ci:local` スクリプトの追加：AGENTS.md は package.json の変更を段階 1 の担当に限っており、#55 も package.json を変えていない。レビュー案の `ci:local` は、存在しない `scripts/ci-local.ts` を指していた。CI とスクリプトは Playwright を直接呼ぶので、追加しなくても困らない。
+- 19 本の PR を rebase して force-push する手順書：`git push --force` の禁止に抵触する。#55 は main に対して fast-forward できるので、rebase も不要。
+- ブランチ保護の案：merge queue は Organization が所有するリポジトリだけの機能で、このリポジトリ（個人所有）では使えない。使う場合も、ワークフローに `merge_group` のトリガーが要る。また共同作業者が 1 人なので「承認 1 件必須」にすると自分の PR をマージできなくなる。保護を設定するなら、必須チェックを `all checks` だけにし、承認は必須にしない形を利用者と決める。
+- #73 の 4 本への分割：作者の設計判断なので、ここでは行わない。
+
+#### 検証（Linux、Node 26.10.0、pnpm 12.4.1、npm 12.2.0）
+
+- `scripts/ci-local.sh` で依存の導入、DSH 配布物の `npm ci`（538 パッケージ）と `check-ci-dsh.ts`、`pnpm typecheck`、単体（TZ=Asia/Tokyo、1,118 件成功、失敗・skip・cancelled・TODO は 0、集計 guard も成功）、`pnpm build` が成功した。
+- 単体を TZ=UTC で実行すると 1,117 件成功・1 件失敗（S6B の fixture 比較）。#55 の初回 Actions と同じ既知の失敗で、advisory 扱いのとおり。
+- `pnpm check:pack` は、この環境では `~/.npm` が読み取り専用のため失敗した。npm cache を `tmp/npm-cache` に向けても、npm 12.2.0 の `npm pack --json` はオブジェクトを返すため、配列を前提にした `check-pack.ts` が解釈できない（既存の不整合で今回は未修正。CI の npm 10 は配列を返す）。代わりに `npm pack` で作った tarball を `node scripts/check-pack.ts <tarball>` で検査し、19 ファイルで成功した。追加したファイルは配布物に含まれない。
+- `CI=1 TZ=Asia/Tokyo pnpm exec playwright test -c e2e/playwright.config.ts`：178 件すべて成功（5.1 分）。出力先は `tmp/e2e-results/ci` になった。
+- `expectedErrors` は一時的なテスト 5 件で確かめた。宣言したエラーは許可され、未宣言のエラー・宣言したのに発生しなかったエラー・既定でのエラーは失敗した。
+- `e2e/playwright.config.ts`・`e2e/helpers.ts` を strict の tsc で単独に型検査して成功した（e2e は `pnpm typecheck` の対象外）。ワークフローは DSH 配布物同梱の `yaml` で構文解析し、全 Actions が SHA 固定であることを確かめた。`git diff --check` も成功した。
+- 未確認：GitHub Actions 上での実行（キャッシュ・shard・merge ref・`install-deps`）、pnpm 11.17.0 と Node 22 での実行、actionlint。

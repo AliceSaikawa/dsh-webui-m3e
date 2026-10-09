@@ -3,8 +3,12 @@ import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 export const shots = fileURLToPath(new URL('../tmp/e2e-shots/', import.meta.url))
-export const test = base.extend<{ browserErrors: string[] }>({
-  browserErrors: [async ({ page }, use, info) => {
+// Tests that deliberately feed broken data declare the errors they expect with
+// `test.use({ expectedErrors: [/pattern/] })`. Nothing is allowed by default,
+// and a declared pattern that never occurs fails the test so it cannot go stale.
+export const test = base.extend<{ browserErrors: string[]; expectedErrors: RegExp[] }>({
+  expectedErrors: [[], { option: true }],
+  browserErrors: [async ({ page, expectedErrors }, use, info) => {
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
@@ -13,8 +17,18 @@ export const test = base.extend<{ browserErrors: string[] }>({
     if (info.status !== info.expectedStatus) {
       await page.screenshot({ path: `${shots}failure-${info.title.match(/^\S+/)?.[0]}.png` })
     }
-    await info.attach('browser-errors', { body: JSON.stringify(errors, null, 2), contentType: 'application/json' })
-    expect(errors, 'ブラウザ例外・console.error がない').toEqual([])
+    const unexpected = errors.filter(text => !expectedErrors.some(pattern => pattern.test(text)))
+    await info.attach('browser-errors', {
+      body: JSON.stringify(expectedErrors.length ? { errors, expected: expectedErrors.map(String) } : errors, null, 2),
+      contentType: 'application/json',
+    })
+    expect(unexpected, 'ブラウザ例外・console.error がない').toEqual([])
+    // Skip this when the test already failed, so the real failure stays the first report.
+    if (info.status === info.expectedStatus) {
+      for (const pattern of expectedErrors) {
+        expect(errors.some(text => pattern.test(text)), `宣言した想定エラーが発生した: ${pattern}`).toBe(true)
+      }
+    }
   }, { auto: true }],
 })
 export { expect }
