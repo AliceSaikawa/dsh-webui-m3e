@@ -395,7 +395,7 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 
 ### PR ごとの CI へのブラウザ試験の追加（2026-10-09、ローカル適用と検証のみ）
 
-外部レビューの CI 計画（#55 への指摘と成果物 7 件）を精査し、不具合を直したものだけを #55 の head `538270c` の上に適用した。作業はローカルブランチ `ci/pr-checks-e2e`（`tmp/worktrees/pr55-ci`）。サンドボックスの書き込み範囲がワークスペース内だけのため、worktree はリポジトリ外ではなく Git 管理外の `tmp/` に置いた。commit は利用者の指示で行い、トレーラにはハーネス（DeepSeek Harness）とモデル（claude-opus-5-5）を記す。push・GitHub の設定変更はしていない。
+外部レビューの CI 計画（#55 への指摘と成果物 7 件）を精査し、不具合を直したものだけを #55 の head `538270c` の上に適用した。作業はローカルブランチ `ci/pr-checks-e2e`（`tmp/worktrees/pr55-ci`）。サンドボックスの書き込み範囲がワークスペース内だけのため、worktree はリポジトリ外ではなく Git 管理外の `tmp/` に置いた。commit は利用者の指示で行い、トレーラにはハーネス（DeepSeek Harness）とモデル（claude-opus-5-5）を記す。2026-10-10 に利用者の指示で #55 のブランチへ fast-forward で push し、PR 本文を更新した。ブランチ保護とマージは行っていない。
 
 - `.github/workflows/pr-checks.yml`
   - checkout の `ref: head.sha` をやめ、既定の merge ref でマージ後の状態を検証する。空白検査の基点は `HEAD^1`（merge commit の base 側の親）にした。base が進んでも PR 自身の差分だけを見る。
@@ -427,4 +427,11 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - `CI=1 TZ=Asia/Tokyo pnpm exec playwright test -c e2e/playwright.config.ts`：178 件すべて成功（5.1 分）。出力先は `tmp/e2e-results/ci` になった。
 - `expectedErrors` は一時的なテスト 5 件で確かめた。宣言したエラーは許可され、未宣言のエラー・宣言したのに発生しなかったエラー・既定でのエラーは失敗した。
 - `e2e/playwright.config.ts`・`e2e/helpers.ts` を strict の tsc で単独に型検査して成功した（e2e は `pnpm typecheck` の対象外）。ワークフローは DSH 配布物同梱の `yaml` で構文解析し、全 Actions が SHA 固定であることを確かめた。`git diff --check` も成功した。
-- 未確認：GitHub Actions 上での実行（キャッシュ・shard・merge ref・`install-deps`）、pnpm 11.17.0 と Node 22 での実行、actionlint。
+- GitHub Actions（2026-10-10、`c587d74`、run 38007626012）：全ジョブ成功、所要約 4 分。
+  - checkout は `pull/55/merge` だった。
+  - 単体は 1,118 件すべて成功、skip 0。UTC の advisory は既知の 1 件（S6B の fixture 比較）だけが失敗し、設計どおり全体は失敗にしなかった。
+  - `check:pack`（CI の npm）と `HEAD^1` 基点の空白検査は成功した。
+  - e2e は shard 1〜3 が 60・60・58 件で、計 178 件すべて成功した。各 1.9〜2.6 分。
+  - 初回のため DSH とブラウザのキャッシュは miss だったが、両方とも保存された。
+- `gh` のトークンに `workflow` 権限がなかったため、利用者の端末での device 認証で追加した。1 回目は承認後に `~/.config/gh/hosts.yml` がサンドボックスで読み取り専用のため保存できず、利用者の承認を得て書き込みを 1 回だけ許可し、再実行した。
+- 未確認：actionlint。
