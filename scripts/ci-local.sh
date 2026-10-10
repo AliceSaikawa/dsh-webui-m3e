@@ -10,7 +10,6 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-dsh=tmp/dsh-integration/dsh-0.2.0-rc.2
 strip=--experimental-strip-types
 ci_pnpm=11.17.0
 e2e_config=${E2E_CONFIG:-e2e/playwright.config.ts}
@@ -22,9 +21,7 @@ local_pnpm=$(pnpm --version)
 pnpm install --frozen-lockfile
 
 echo '==> 2/8 pinned DSH distribution'
-mkdir -p "$dsh"
-cp .github/ci/dsh/package.json .github/ci/dsh/package-lock.json "$dsh/"
-[ -d "$dsh/node_modules" ] || npm ci --prefix "$dsh" --ignore-scripts --no-audit --no-fund
+bash scripts/ci-local-dsh.sh
 NODE_OPTIONS=$strip node scripts/check-ci-dsh.ts
 
 echo '==> 3/8 typecheck'

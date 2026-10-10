@@ -1,34 +1,38 @@
 import { test as base, expect, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { reviewConsoleErrors } from './browser-errors.ts'
 
 export const shots = fileURLToPath(new URL('../tmp/e2e-shots/', import.meta.url))
-// Tests that deliberately feed broken data declare the errors they expect with
-// `test.use({ expectedErrors: [/pattern/] })`. Nothing is allowed by default,
-// and a declared pattern that never occurs fails the test so it cannot go stale.
-export const test = base.extend<{ browserErrors: string[]; expectedErrors: RegExp[] }>({
+// Same rule as e2e-dsh: no uncaught exception and no console.error.
+// Tests that deliberately feed broken data declare the console errors they
+// expect with `test.use({ expectedErrors: [/pattern/] })`. Nothing is allowed
+// by default, uncaught exceptions are never allowed, and a declared pattern
+// that never occurs fails the test so it cannot go stale.
+export const test = base.extend<{ pageErrors: string[]; browserErrors: string[]; expectedErrors: RegExp[] }>({
   expectedErrors: [[], { option: true }],
-  browserErrors: [async ({ page, expectedErrors }, use, info) => {
+  pageErrors: async ({ page }, use) => {
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
+    await use(errors)
+  },
+  browserErrors: [async ({ page, pageErrors, expectedErrors }, use, info) => {
+    const errors: string[] = []
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     await use(errors)
     await mkdir(shots, { recursive: true })
     if (info.status !== info.expectedStatus) {
       await page.screenshot({ path: `${shots}failure-${info.title.match(/^\S+/)?.[0]}.png` })
     }
-    const unexpected = errors.filter(text => !expectedErrors.some(pattern => pattern.test(text)))
+    const { unexpected, missing } = reviewConsoleErrors(errors, expectedErrors)
     await info.attach('browser-errors', {
-      body: JSON.stringify(expectedErrors.length ? { errors, expected: expectedErrors.map(String) } : errors, null, 2),
+      body: JSON.stringify({ console: errors, page: pageErrors, expected: expectedErrors.map(String) }, null, 2),
       contentType: 'application/json',
     })
-    expect(unexpected, 'ブラウザ例外・console.error がない').toEqual([])
-    // Skip this when the test already failed, so the real failure stays the first report.
-    if (info.status === info.expectedStatus) {
-      for (const pattern of expectedErrors) {
-        expect(errors.some(text => pattern.test(text)), `宣言した想定エラーが発生した: ${pattern}`).toBe(true)
-      }
-    }
+    expect(pageErrors, '捕まえられていない例外がない').toEqual([])
+    expect(unexpected, 'console.error がない').toEqual([])
+    // Only when the test body passed, so an earlier failure stays the first report.
+    if (info.status === 'passed') expect(missing.map(String), '宣言した想定エラーがすべて発生した').toEqual([])
   }, { auto: true }],
 })
 export { expect }

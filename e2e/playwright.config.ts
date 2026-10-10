@@ -10,15 +10,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  // CI runners are slower than the local machines. Only the waiting time grows;
-  // parallelism, retries and assertions stay the same so CI cannot turn green
-  // through a weaker test.
-  timeout: ci ? 60_000 : 30_000,
-  expect: { timeout: ci ? 15_000 : 7_000 },
+  // Same timeouts in CI and locally: on GitHub's ubuntu runner the slowest test
+  // took 9.1 s (local 8.9 s) and Vite was ready within 2.2 s.
+  timeout: 30_000,
+  expect: { timeout: 7_000 },
   forbidOnly: ci,
   // Preserve earlier failure evidence instead of clearing it on the next run.
-  // CI needs a fixed path so the evidence can be uploaded as an artifact.
-  outputDir: `${root}tmp/e2e-results/${ci ? 'ci' : Date.now()}`,
+  outputDir: `${root}tmp/e2e-results/${Date.now()}`,
   reporter: [
     ...(ci ? [['github'] as const] : []),
     ['list'],
@@ -45,9 +43,7 @@ export default defineConfig({
     // Pin IPv4 and a separate port so another local server cannot be reused.
     port: 5191,
     reuseExistingServer: false,
-    // A cold runner spends longer than 30 s in Vite's dependency optimization,
-    // which would fail every browser test before the first one starts.
-    timeout: ci ? 120_000 : 30_000,
+    timeout: 30_000,
     stdout: 'pipe',
   },
 })
