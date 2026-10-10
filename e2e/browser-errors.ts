@@ -27,3 +27,15 @@ export function reviewConsoleErrors(errors: readonly string[], expected: readonl
     missing: expected.filter(pattern => !errors.some(text => matchesError(pattern, text))),
   }
 }
+
+export type TestStatus = 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
+
+/**
+ * The status a test ends with once the fixture has made its own assertions.
+ * The fixture can only turn a passing body into a failure; an earlier failure
+ * keeps its status. Decide failure evidence from this, not from the body alone,
+ * or every test.fail() case would look unexpected before the fixture fails it.
+ */
+export function finalStatus(bodyStatus: TestStatus, fixtureFails: boolean): TestStatus {
+  return bodyStatus === 'passed' && fixtureFails ? 'failed' : bodyStatus
+}

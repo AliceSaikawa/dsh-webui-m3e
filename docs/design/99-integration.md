@@ -467,3 +467,37 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - `check:pack` は前回と同じく npm 12.2.0 の出力形式の差で止まった。代わりに tarball を渡して検査し、19 ファイルで成功した。scripts/・e2e/・tests/ は配布物に含まれない。
 - `CI=1 TZ=Asia/Tokyo` の e2e は 183 件（既存 178 件と追加 5 件）がすべて成功した（5.1 分）。待ち時間は元の値で、`02g` も成功した。
 - 追加・変更した TypeScript を strict の tsc で単独に型検査して成功した。`git diff --check` も成功した。
+- GitHub Actions（`453e98d`、run 38014606156）：全ジョブ成功。単体 1,128 件（skip 0）、e2e は shard ごとに 64・61・58 件で計 183 件。最も遅いテストは 10.4 秒、Vite の起動は 0.2 秒だった。
+
+### PR #55 の第 5 回レビューへの対応（2026-10-10）
+
+`453e98d` への外部レビューで、P1 が 1 件、P3 が 2 件あった。
+
+- e2e の skip ガード（P1）
+  - Playwright は `test.skip()`・`test.fixme()` があっても終了コード 0 で終わる。e2e ジョブは終了コードしか見ていなかったため、ブラウザ試験の skip は素通りしていた。
+  - 一時的な spec で確かめた。静的・実行時の skip と fixme は、いずれも JSON レポートの `stats.skipped` にだけ現れ、終了コードは 0 だった。対象が 0 件のときは終了コード 1 と `No tests found` になった。
+  - `scripts/ci-e2e-results.ts` と CLI の `scripts/check-ci-e2e-results.ts` を追加した。単体の `ci-test-results.ts` と同じく fail-closed で、次を失敗にする。
+    - skipped・unexpected・flaky が 1 件以上
+    - 実行した件数が 0（空の shard）
+    - レポートの集計と、列挙されたテストの状態の食い違い
+    - 未知の状態
+    - テスト外のエラー（webServer の失敗など）
+    - レポートの欠落・破損・重複
+  - Playwright の非ゼロ終了コードは保持する。`test.fail()` で期待どおり失敗したテストは `expected` として数える。
+  - workflow の e2e ステップと `scripts/ci-local.sh` で、実行前にレポートを消し、Playwright の終了コードと一緒に検査する。
+  - `tests/ci-e2e-results.test.ts`（9 件）を追加した。実際の Playwright でも、skip を含む実行は終了コード 0 だったが、ガードが失敗にすることを確かめた。
+  - main の必須チェックは、引き続き設定していない（ブランチ保護の変更は利用者の判断を待つ）。
+- 期待失敗のテストが毎回スクリーンショットを保存する（P3）
+  - フィクスチャが自分の判定より前に、本体の状態だけで撮影を決めていた。`test.fail()` の 4 件は、本体が成功した時点で期待（failed）と食い違って見え、全件成功の実行でも毎回 `failure-*.png` を書いていた。前回の実行で 4 枚が残っていた。
+  - 逆に、本体は成功したがフィクスチャが想定外の console.error で失敗にしたテストは、撮影されていなかった。
+  - フィクスチャの判定を先に済ませ、最終結果（`e2e/browser-errors.ts` の `finalStatus`）が期待と違うときだけ撮るようにした。単体テストを 1 件追加した。実ブラウザでも確かめた：期待失敗の spec は撮影 0 枚になり、フィクスチャが失敗にした通常のテストは撮影された。
+- e2e の `helpers.ts` と spec が型検査の対象外（P3）：今回は対応しない。
+  - e2e 全体を strict で型検査すると、#55 が触っていない既存の spec に 5 件のエラーがある。いずれも main と同じ状態で、`conversation-picker`・`mock`・`robustness`・`settings-custom-provider`・`sheet-handoff` の各 spec にある。`sheet-handoff.spec.ts` は、存在しない `ModelSelectionProjection` を import している。
+  - 型検査を CI に加えるには、ほかの機能の spec を直す必要があるため、別の PR にする。
+  - 判定ロジックの `e2e/browser-errors.ts` は、`tests/` からの import を通じて `pnpm typecheck`（`tsconfig.host.json`）の対象になっている。
+
+#### 検証（Linux、Node 26.10.0）
+
+- 単体（TZ=Asia/Tokyo）は 1,138 件（前回の 1,128 件と追加 10 件）がすべて成功し、skip は 0。集計 guard も成功した。`pnpm typecheck` と build も成功した。
+- `CI=1 TZ=Asia/Tokyo` の e2e は 183 件がすべて成功した（5.0 分）。新しいガードも成功した（expected 183、skipped・unexpected・flaky は 0）。全件成功の実行で、スクリーンショットは 0 枚だった。
+- `git diff --check` が成功し、workflow の構文解析も成功した。

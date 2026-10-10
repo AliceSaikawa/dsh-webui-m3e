@@ -142,10 +142,20 @@ jobs:
       - name: Install Chromium system dependencies
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
-      - name: Browser tests (?mock)
+      # Playwright exits 0 when tests are skipped, so its JSON report is checked
+      # with the same zero-skip rule as the unit tests. The exit status is kept.
+      - name: Browser tests (?mock, zero skips required)
         env:
           TZ: Asia/Tokyo
-        run: pnpm exec playwright test -c e2e/playwright.config.ts --shard=${{ matrix.shard }}/3
+        shell: bash
+        run: |
+          # A fresh report prevents an earlier one from masking a crashed run.
+          rm -f tmp/e2e-report.json
+          set +e
+          pnpm exec playwright test -c e2e/playwright.config.ts --shard=${{ matrix.shard }}/3
+          test_status=$?
+          set -e
+          node --experimental-strip-types scripts/check-ci-e2e-results.ts tmp/e2e-report.json "$test_status"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:

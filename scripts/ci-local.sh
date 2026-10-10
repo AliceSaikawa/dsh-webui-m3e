@@ -47,11 +47,16 @@ echo '==> 6/8 build / pack'
 NODE_OPTIONS=$strip pnpm build
 NODE_OPTIONS=$strip pnpm check:pack
 
-echo '==> 7/8 browser (?mock)'
+echo '==> 7/8 browser (?mock, zero skips)'
 # GitHub runners also get system packages through --with-deps; locally that needs
 # sudo, so only the browser build is installed here. M3E_CHROMIUM_PATH skips it.
 [ -n "${M3E_CHROMIUM_PATH:-}" ] || pnpm exec playwright install chromium
+rm -f tmp/e2e-report.json
+set +e
 CI=1 TZ=Asia/Tokyo pnpm exec playwright test -c "$e2e_config"
+status=$?
+set -e
+node $strip scripts/check-ci-e2e-results.ts tmp/e2e-report.json "$status"
 
 echo '==> 8/8 whitespace'
 git fetch -q origin main 2>/dev/null || echo "!! origin/main を取得できませんでした。手元の $base と比べます。"

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { matchesError, reviewConsoleErrors } from '../e2e/browser-errors.ts'
+import { finalStatus, matchesError, reviewConsoleErrors } from '../e2e/browser-errors.ts'
 
 const flags = ['', 'g', 'y', 'gy', 'i']
 
@@ -46,4 +46,18 @@ test('expectedErrors: /y keeps matching only at the start of the message', () =>
   assert.equal(matchesError(/synthetic/y, 'synthetic failure'), true)
   assert.equal(matchesError(/synthetic/y, 'a synthetic failure'), false)
   assert.equal(matchesError(/synthetic/, 'a synthetic failure'), true)
+})
+
+test('browser error fixture: failure evidence follows the final result, not the body alone', () => {
+  // test.fail() whose body passed and that the fixture fails: expected, so no screenshot.
+  assert.equal(finalStatus('passed', true), 'failed')
+  // A normal test whose body passed but the fixture fails: unexpected, so a screenshot.
+  assert.notEqual(finalStatus('passed', true), 'passed')
+  // Nothing for the fixture to add: the body result stands.
+  assert.equal(finalStatus('passed', false), 'passed')
+  // The fixture never hides an earlier failure, timeout or skip.
+  for (const status of ['failed', 'timedOut', 'skipped', 'interrupted'] as const) {
+    assert.equal(finalStatus(status, true), status)
+    assert.equal(finalStatus(status, false), status)
+  }
 })
