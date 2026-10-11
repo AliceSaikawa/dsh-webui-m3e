@@ -512,3 +512,10 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 
 - `ready_for_review` を workflow の起動条件から外した。draft の解除はコードを変えないが、同じ head で 2 回目の実行が始まり、その間 `all checks` が保留になってマージがブランチ保護に拒否されていた（#72・#64・#71 で発生）。draft の PR も `opened`・`synchronize`・`reopened` で検証される。
 - `scripts/check-pack.ts` の `npm pack --json` の読み取りを `packedTarballName`（`scripts/pack-contract.ts`）に分けた。npm 10 は配列を、npm 11 以降は名前をキーにしたオブジェクトを返すため、どちらでも結果がちょうど 1 件で、ファイル名が区切り文字を含まないときだけ受け付ける。`tests/18-pack.test.ts` に両形式と不正な形の検査を追加した。npm 12.2.0 の手元で `pnpm check:pack` が 19 ファイルで成功した（以前は形式の差で止まっていた）。
+
+
+### 単体のタイムゾーン依存の解消（2026-10-11）
+
+- TZ=UTC で落ちていたのは `tests/s6b-display.test.ts` の 1 件だけだった。一覧の日付ラベルは利用者の端末のタイムゾーンで表示する（製品として正しい）。一方、比較対象の 722692c の baseline は +09:00 で作られていた。
+- 製品のコードは変えず、`tests/helpers/s6b-display.ts` の `captureDisplay` が描画の間だけ `process.env.TZ` を `Asia/Tokyo` に固定し、終了時に元へ戻すようにした。修正前は TZ=UTC で失敗し、修正後は UTC・America/Los_Angeles・Pacific/Kiritimati・Asia/Tokyo・未設定のいずれでも成功した。全単体 1,170 件は UTC・America/Los_Angeles・Asia/Tokyo のいずれでも成功し、skip は 0 だった。
+- CI の必須の単体ステップは `TZ: UTC` で実行する。advisory だった UTC のステップは、必須の Asia/Tokyo のステップに置き換えた。`scripts/ci-local.sh` も同じ構成にした。
