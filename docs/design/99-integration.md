@@ -501,3 +501,9 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - 単体（TZ=Asia/Tokyo）は 1,138 件（前回の 1,128 件と追加 10 件）がすべて成功し、skip は 0。集計 guard も成功した。`pnpm typecheck` と build も成功した。
 - `CI=1 TZ=Asia/Tokyo` の e2e は 183 件がすべて成功した（5.0 分）。新しいガードも成功した（expected 183、skipped・unexpected・flaky は 0）。全件成功の実行で、スクリーンショットは 0 枚だった。
 - `git diff --check` が成功し、workflow の構文解析も成功した。
+
+### 2026-10-08：Issue #35 配布アーカイブの項目検査
+
+- `scripts/check-pack.ts` で tar の通常一覧と詳細一覧から名前・種類を取得し、件数の一致を確認する。`scripts/pack-contract.ts` では通常ファイルと許可されたディレクトリ（package、lib、dist、dist/assets）だけを通し、リンクや特殊ファイル、絶対パス、`..`、`.`、空のパス要素、制御文字を内容の読み取り前に拒否する。アーカイブの展開は行わない。
+- `tests/18-pack.test.ts` で USTAR の実アーカイブを組み立てる CLI 回帰を追加した。修正前は外向き・想定外ディレクトリ、シンボリックリンク、ハードリンク、FIFO など 9 ケースを見逃した（39 件中 9 件失敗）。通常のディレクトリを含むアーカイブの成功、名前と種類の不整合、型情報不足も検査する。
+- Node 22.23.3、macOS の bsdtar で `pnpm typecheck`、`pnpm test`（1,122 件成功、失敗・スキップなし）、`pnpm build`、`pnpm run check:pack`（19 ファイル成功）を確認した。ビルドには既存の 500 kB 超チャンク警告が残る。GNU tar での実行は未確認。依存やロックファイルの変更、DSH の起動、公開は行っていない。
