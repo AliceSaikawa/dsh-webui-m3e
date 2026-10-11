@@ -379,3 +379,18 @@
 - 隔離公開 DSH と localhost 偽 LLM に対する I41 試験で、既存会話で変更した provider/model/reasoningEffort が次回 `request/header` に記録され、偽 LLM に選択モデルで要求が届くことを確認。実データ・有料 API・実機は使用しない。
 - 2026-10-11 追記：CI（Linux）で `e2e/model-send-race.spec.ts:75` が `6:ollamalocal` を表示して失敗した。controller の寿命が Composer から session service＋draft key に延びたため、前回の `selected` が送信後も残る。`ModelPicker` の `[applyState.selected]` effect は mount 時にも実行され、`initialCatalog` があって `observed`（現在の既定値）で初期化した後に、古い `selected` で上書きしていた。試験の期待は正しく、製品側の不具合。ローカルの Linux では毎回再現し、修正前の PR 先頭でも同じだった。
 - `Sheets.tsx` で、mount 時点の `selected` を ref に記録し、表示中に届いた新しい結果だけを `current` へ反映するようにした。反映中にシートを開き直した場合は、完了時に値が変わるため従来どおり表示する。Mac で成功した理由は未確認。推測では、カタログ取得前にシートが開くと、取得後の `observedKey` の変化で既定値に戻るため。
+
+
+### 2026-10-08：Issue #29 / #31 入力欄の高さと低い表示領域
+
+- M3E の `minRows` / `maxRows` は、最小高さを含む複製 textarea から 1 行を 34px と測り、6 行の上限を 204px に上書きしていた。M3E は内容の自動伸縮に使い続け、上下限は CSS に任せる。content-box の内容高を 6lh まで、最小内容高を 34px にして、上下 10px の余白を含めた実際の入力領域を 44px 以上にする。
+- 入力欄の下端に M3E ボタンの拡張タッチ領域が重なっていたため、textarea を手前に置き、44px の下端も入力欄へのタップとして受ける。8 行・折り返す長文は内部スクロールとなり、空欄へ戻すと 44px に縮む。
+- 既存の `--app-height`（visualViewport に追従）から、ヘッダーとタブ 129px、通常の外側・内側余白 38px、操作行 48px、入力の余白 10px、本文 48px を差し引いて内容高も制限する。低い表示領域では frame と footer の縦余白を縮める。222px で 44px の入力欄と 48px の操作行を残すには footer の縦余白も縮める必要があるため、今回の Issue 修正範囲として許可された `web/src/app/styles.css` の `.composer` を含む footer だけも変更した。
+- 添付画像などで枠に収まらない場合は frame 内をスクロールでき、補助・送信・停止へ到達できる。候補は frame の外なのでスクロール領域で切れない。通常の新規会話、Enter 改行、下書き、候補と添付、モデル・権限、順番待ちの既存試験も検証する。
+- 修正前の Chromium 回帰試験で、空欄 34px、6 行の表示高が余白分 10px 不足、8 行が期待上限 154px を 38px 超過、844×390 の本文 0px、222px の操作行のはみ出しを確認した。証跡は `tmp/issue29-31/before-expanded-browser.log`。
+- 390×844、844×390、844×222 は合成ビューポートによる検証。iPhone 実機・Safari・実キーボード・セーフエリアを伴う操作は未検証であり、Issue #26 の解決とは扱わない。極端に低い領域では本文と全操作を同時に表示できず、枠内スクロールで操作に到達する。
+- 実行環境は Codex。今回依頼されたモデルは gpt-6-astra（過去の設計書のモデル指定を現在の実行証跡として転記しない）。コミット・公開は行わず、統合担当のレビューへ渡す。
+- 最終検証：単体試験 1107 件すべて成功、skip 0。typecheck・build・check:pack（19 ファイル）成功。Chromium は新規 5 件と既存 composer 6 件の計 11 件成功。build の既存の大きなチャンク警告は残る。証跡は `tmp/issue29-31/{test,typecheck,build,pack,final-browser}.log`。
+- 最後の `git status` / `git diff --check` は、この worktree の `.git` を読めず `fatal: error reading .../.git` で停止した（先行した rg は `Resource deadlock avoided`）。製品ファイルと試験は読み書き可能だが、Git の差分チェック完了とは扱わない。Git メタデータの修復・別経路での操作はせず、統合担当へ報告した。
+- main 取り込み後、既存の e2e「02b」が会話の末尾から 6px 上で止まった（main 10/10 成功、本変更 9/10 失敗）。原因は M3E の高さ測定：接続時と入力のたびに、textarea へ一時的に `height: auto; padding: 2px 0` を当てて同期で scrollHeight を読む。content-box にしたことで測定中だけ入力欄が余白の差 6px（10px→4px）縮み、会話の表示域が伸びて scrollTop が末尾から 6px 上へ切り詰められる。測定後に高さは戻るため ResizeObserver は差を見ず、末尾へ戻らない（修正前の border-box では測定中に伸びる向きで、切り詰めは起きなかった）。
+- 測定中（inline の `height: auto`）だけ縮む分の `margin-bottom` を足し、外形を変えないようにした。margin は scrollHeight に入らず測定値も変わらない。会話のスクロール処理（02 の担当）は変えていない。初回表示と 1 文字入力の回帰試験を `e2e/composer-height.spec.ts` に追加した。Firefox の測定経路（`height: 0`）は対象外で、修正前から同じ。
