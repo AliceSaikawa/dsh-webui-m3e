@@ -97,7 +97,7 @@ test('I16 UI blocked: 読み取り専用・名前空間なし・取得失敗の�
     ['settings-readonly', 'この DSH では設定を変更できません'],
     ['custom-no-namespace', 'この DSH ではカスタムプロバイダーを設定できません。'],
     ['custom-unavailable', '提供元と API キーの登録状況を読み込めませんでした。もう一度お試しください。'],
-  ]) {
+  ] as const) {
     await visit(page, '/settings/providers', scenario)
     await expect(button(page, 'カスタムプロバイダーを追加')).toBeDisabled()
     await expect(page.getByText(message, { exact: true }).first()).toBeVisible()

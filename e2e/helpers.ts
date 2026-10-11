@@ -21,14 +21,17 @@ export const test = base.extend<{ pageErrors: string[]; browserErrors: string[];
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     await use(errors)
     const { unexpected, missing } = reviewConsoleErrors(errors, expectedErrors)
+    // Playwright sets the body status before fixture teardown; the type is only
+    // optional. Treating a missing status as passed applies every check below.
+    const bodyStatus = info.status ?? 'passed'
     // Missing declarations count only when the body passed, so an earlier
     // failure stays the first report.
-    const missed = info.status === 'passed' ? missing : []
+    const missed = bodyStatus === 'passed' ? missing : []
     const fixtureFails = pageErrors.length > 0 || unexpected.length > 0 || missed.length > 0
     // Save evidence only for an unexpected final result: test.fail() cases that
     // this fixture fails as expected get no screenshot, and a passing body that
     // this fixture fails does.
-    if (finalStatus(info.status, fixtureFails) !== info.expectedStatus) {
+    if (finalStatus(bodyStatus, fixtureFails) !== info.expectedStatus) {
       await mkdir(shots, { recursive: true })
       await page.screenshot({ path: `${shots}failure-${info.title.match(/^\S+/)?.[0]}.png` })
     }

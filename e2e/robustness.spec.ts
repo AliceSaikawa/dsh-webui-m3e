@@ -249,7 +249,7 @@ for (const width of [375, 390]) {
       }
       await release('readme-review')
       await expect.poll(async () => (await metrics(page)).flights.owners).toBe(0)
-      for (const [id, text] of [['readme-review', a], ['session-tools-review', b]]) {
+      for (const [id, text] of [['readme-review', a], ['session-tools-review', b]] as const) {
         await navigate(page, id)
         await expect(input).toHaveValue('')
         await expect(page.getByLabel('自分のメッセージ', { exact: true }).filter({ hasText: text })).toHaveCount(1)

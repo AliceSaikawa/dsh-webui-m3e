@@ -519,3 +519,16 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - TZ=UTC で落ちていたのは `tests/s6b-display.test.ts` の 1 件だけだった。一覧の日付ラベルは利用者の端末のタイムゾーンで表示する（製品として正しい）。一方、比較対象の 722692c の baseline は +09:00 で作られていた。
 - 製品のコードは変えず、`tests/helpers/s6b-display.ts` の `captureDisplay` が描画の間だけ `process.env.TZ` を `Asia/Tokyo` に固定し、終了時に元へ戻すようにした。修正前は TZ=UTC で失敗し、修正後は UTC・America/Los_Angeles・Pacific/Kiritimati・Asia/Tokyo・未設定のいずれでも成功した。全単体 1,170 件は UTC・America/Los_Angeles・Asia/Tokyo のいずれでも成功し、skip は 0 だった。
 - CI の必須の単体ステップは `TZ: UTC` で実行する。advisory だった UTC のステップは、必須の Asia/Tokyo のステップに置き換えた。`scripts/ci-local.sh` も同じ構成にした。
+
+
+### e2e の型検査（2026-10-11）
+
+- `tsconfig.e2e.json`（`tsconfig.json` を継承し、`node` と `vite/client` の型を足す）を追加した。workflow の static ジョブと `scripts/ci-local.sh` で `pnpm exec tsc -p tsconfig.e2e.json --noEmit` を実行する。package.json の `typecheck` は変えていない。
+- 対象にすると `e2e/` に 9 件の型エラーがあった。実行時の動作を変えない最小限の修正をした。
+  - ループの配列に `as const`（`mock`・`robustness`・`settings-custom-provider`）
+  - push 済みの要素への `!`（`interaction-cancel-race`）
+  - 移動した型の import 先を `web/src/features/composer/api.ts` に直す（`sheet-handoff`）
+  - 未使用の import の削除（`conversation-picker`）
+  - `helpers.ts` の `info.status` の未定義を `'passed'` とみなす（後処理の時点では Playwright が必ず設定する。未定義を成功とみなすと検査がすべて適用される側に倒れる）
+- 変更した spec と `browser-errors.spec.ts` の 91 件を実行した。`mock.spec.ts` の 05c が 1 回だけ失敗したが、単独で 5 回繰り返すと 5 回とも成功した。並行して別の e2e を 3 つ実行していた負荷による、時間依存の失敗と考えている（この変更は型だけ）。
+- `e2e-dsh/` は対象外にした。`rpc.spec.ts` に `page.evaluate` の型の展開が深すぎるエラー（TS2589）などがあり、実 DSH の e2e は CI で実行していないため。後続で扱う。
