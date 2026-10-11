@@ -23,6 +23,7 @@ context.then(
       </StrictMode>,
     )
   },
+).catch(
   (error: unknown) => {
     console.error(error)
     const kind = classifyBootFailure(error instanceof Error ? error.message : String(error))
