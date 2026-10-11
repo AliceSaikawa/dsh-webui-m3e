@@ -307,3 +307,11 @@
 - Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・単体 1,108 件・ビルド成功。既存 `e2e/chat-details.spec.ts` の 8 件も成功。ビルドの既存の大きな chunk 警告は残る。
 - 実機・DSH・有料 API は未使用。共有 Git メタデータへの worktree 作成と Chromium の macOS IPC は sandbox の外で実行する承認を受けた。試験用 Vite は自分の port 5299 のみ使用し、明示された依存ディレクトリを一時設定で許可した。ログは `tmp/issue49/`。他の worktree／PR #54・#55 は未変更。
 - 親の独立レビュー後、隔離した公開 DSH 0.2.0-rc.2 と localhost 偽 LLM で `e2e-dsh/records-v4.spec.ts` 2 件成功。会話とトレースへの実記録の表示を確認した。新規のスクロール通知順序は実 DOM の専用 fixture で検証しており、iOS タッチ操作は未確認。
+
+
+### 2026-10-08：issue #44 の画像シートのフォーカス
+
+- Codex、依頼時モデル指定 `gpt-6-astra`。`cd99f273` からの専用ブランチで画像プレビュー共通の `ImageSheet` を作った。見出しを tabIndex=-1 とし、native popover の opened／toggle 後のフレームでフォーカスする。画像・子シート内で既に操作しているフォーカスは奪わない。
+- 開く前の画像ボタンを保持し、シートの native 終了後に残っている入口へ戻す。表示先が変わった場合や新たなシートで操作している場合には戻さない。フレームと開閉イベントの listener は終了時に解除する。
+- 修正前のキーボード試験は初期フォーカスで失敗。autofocus 属性だけでは改善せず、表示後の明示フォーカスと、native 終了後の入口復帰が必要だった。修正後は見出し、Tab で閉じるボタン、Escape／閉じるで入口復帰、別シートの割込みからの再表示を実 Chromium で確認した。
+- `e2e/mobile-accessibility.spec.ts` を現在の回帰検証の指示で追加。既存 `chat-details.spec.ts` と overlay 関連試験も成功。実行環境・他の検証・制限は `01-home.md` の同日メモを参照。コミット・公開はしていない。
