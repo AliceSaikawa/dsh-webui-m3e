@@ -15,7 +15,7 @@ export const REQUIRED_CONTRACT = {
     methods: ['create', 'retain', 'using', 'retainInfo', 'subagentAddress', 'refreshProjections', 'refresh', 'search', 'fork', 'scope', 'scopeOf', 'sessionOf', 'binding'],
   },
   workspaces: { observables: ['list'], methods: ['create', 'rename', 'delete', 'insertBefore', 'archiveSession', 'insertSessionBefore'] },
-  jobs: { observables: ['state'], methods: ['watchRows'] },
+  jobs: { observables: ['state'], methods: ['watchRows', 'kill'] },
   remote: { observables: [], methods: ['$on'] },
 } as const satisfies Record<string, { observables: readonly string[]; methods: readonly string[] }>
 

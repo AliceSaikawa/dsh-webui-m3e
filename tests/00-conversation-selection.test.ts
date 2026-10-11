@@ -15,8 +15,8 @@ function deferred<T>() {
 }
 
 test('URL の会話IDは補助画面・エンコードを含めて解釈する', () => {
-  for (const tail of ['', '/trace', '/files', '/file', '/jobs', '/subagents', '/goal', '/files/deeper']) assert.equal(conversationSessionId('/s/a%2Fb' + tail), 'a/b')
-  for (const path of ['/', '/search', '/inbox', '/settings', '/new', '/s/', '/s/%ZZ', '/sessions/a']) assert.equal(conversationSessionId(path), undefined)
+  for (const tail of ['', '/trace', '/files', '/file', '/jobs', '/subagents', '/goal']) assert.equal(conversationSessionId('/s/a%2Fb' + tail), 'a/b')
+  for (const path of ['/', '/search', '/inbox', '/settings', '/new', '/s/', '/s/%ZZ', '/sessions/a', '/s/a/files/deeper']) assert.equal(conversationSessionId(path), undefined)
 })
 
 test('StrictMode の二重通知・画面作り直し・補助画面往復でも同じ世代を保つ', async t => {

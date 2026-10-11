@@ -24,7 +24,9 @@ export function traceScrollAction(state: TraceScrollState, trigger: TraceScrollT
 
 /** Do not read layout while inactive; callers invoke this only after that guard. */
 export function isTraceAtBottom(scrollTop: number, scrollHeight: number, clientHeight: number): boolean {
-  return clientHeight > 0 && scrollHeight - scrollTop - clientHeight < 48
+  // Resuming after user-up requires the actual end, allowing only rounding.
+  // Existing follow mode survives layout changes in traceFollowAfterScroll.
+  return clientHeight > 0 && scrollHeight - scrollTop - clientHeight < 4
 }
 
 /** A growing list can leave the current position above its new end without user input. */

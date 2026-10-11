@@ -567,6 +567,46 @@ web/src/
 - `?mock` のモデル一覧に、Playwright が読み込み前に設定した場合だけ 120 ミリ秒の遅延を加えられる試験用入口を置いた。通常の `?mock` は変えない。修正前は新規 e2e でモデルシートが `open=true` のまま非表示となり失敗し、修正後は選択と入力補助の再表示まで成功した。
 - `pnpm typecheck`、`pnpm build` は成功。`pnpm test` は 702 件、Playwright は 65 件が成功した。DSH は起動していない。実物の DSH と iPhone 実機での確認は段階 3 に残る。
 
+### 2026-10-08：Issue #42・#43 の URL と完了未読の修正
+
+- 利用者が指定したモデルは `gpt-6-astra`、ハーネスは Codex。今回の実行情報にルーティングの矛盾は見つからなかったが、実モデル ID を独立に照会したものではない。過去のセッションから推定していない。
+- `cd99f273f9582729475272e48722d7ec850d6857` を起点とする専用 worktree／`fix/issue-42-43-conversation-selection` で実装した。PR #54・#55 と他の作業場所は変更していない。
+- 会話の正当な URL パターンを `app/conversation-route.ts` に集め、会話・補助画面の登録、選択、overlay ownership、pageshow が同じ `resolveRoute` の解析を使う。不明な下位 URL は選択を解除し、以前の会話のシートを閉じる。クエリ、末尾スラッシュ、符号化された ID の扱いも通常のルーターと揃えた。会話／補助画面の routes.tsx は共有パターンの参照にだけ変更した。
+- 主参照の保持と既読判定を分離した。`visibleSessionId` は現在の URL と一致し、open が成功した会話だけを示す。準備中、失敗、取消、古い open、子の URL 解決のために残した前の参照では未読を消さない。ナビゲーション準備の adopt も、URL の選択が届くまで既読にしない。workspace baseline の待機中でも URL の意図を先に渡し、後着の旧 open が可視扱いに戻ることを防ぐ。
+- 完了未読は selection の変化を購読する。mock の破棄時はこの購読を先に解除してから selection owner を破棄し、遅延生成による owner の再作成を避ける。再読み込みで未読を引き継がない仕様は変えていない。
+- 修正前の本体に対して追加した回帰試験 9 件はすべて失敗した（`tmp/issue42-43-before.log`）。修正後、workspace baseline 待機、表示後の open 状態の変化、購読解除の追加試験を含む 12 件を検証した。既存の 3 試験は、主参照があるだけで既読にする期待と未登録 `/files/deeper` を会話とする期待を修正した。成功済み表示・再開・削除と、一時参照で未読を保持する検証は残した。
+- ブラウザ用には専用ポート 5293 と tmp 配下の設定を使った。追加した 4 件（失敗時の未読保持、不明 URL でのシート解除、query／符号化 ID の pagehide→pageshow、子の解決待ち中の旧会話の完了）と既存の失敗診断試験が成功した。初回の依存フォントの Vite 公開範囲エラーは、検証用設定の node_modules 許可で解消した。本体の Vite 設定は変更していない。
+- この段階ではコミット・公開はしていない。独立した差分レビューは指示役へ依頼する。実 Safari の bfcache 復帰と iOS 実機は未確認。DSH 本体、利用者の設定・認証情報、外部 LLM API は使用していない。
+
+- 独立レビューの指摘を受け、保持中の binding の状態を購読し、表示後に open が失敗した場合と復旧にも追従するようにした。追加の再現試験は修正前に失敗した（`tmp/issue42-43-live-open-before.log`）。参照交換では古い購読を先に解除し、release の同期的な再入後も同じ参照を所有するときだけ新しく購読する。A→B、clear、dispose で購読数が 0 に戻ることも直接確かめる。
+- 最終確認：`pnpm typecheck` 成功、`pnpm test` は 1,119 件成功（失敗・skip とも 0）、`pnpm build` 成功（既存の大きな chunk の警告のみ）。関連する偽データの Chromium e2e は 27 件成功。ログは `tmp/issue42-43-{typecheck,test,build,browser-related}.log`、再現と制約の一覧は `tmp/issue42-43-evidence.md`。
+- 親の独立レビュー後、隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の `e2e-dsh/session-contract.spec.ts` 3 件成功。初回送信の世代引継ぎ・離脱時解放・pagehide/pageshow 後の再取得と送信を確認した。実 Safari の bfcache は未確認。
+
+
+### 2026-10-08：Issue #24 スナックバーと画面下部の重なり
+
+- 同梱 M3E 2.8.2 が読む `--m3e-snackbar-margin` を使用する。下部ナビゲーションがある画面では `TabScaffold` が safe-area の padding を含む実際の高さを計測し、外側に作られるスナックバーへ root の CSS 変数で渡す。ナビゲーションがない画面へ移ると計測値を解除する。余白は `16px + max(safe-area-inset-bottom, ナビゲーション高さ)` とし、下端領域を二重に加えない。高さ変更は ResizeObserver で追い、破棄後の通知は反映しない。
+- 回帰試験の指示に基づき `e2e/snackbar-position.spec.ts` を追加した。Chromium の CDP で `env(safe-area-inset-bottom)` 自体を 34px／21px に設定し、一覧・検索・対応待ち・設定の各タブ、設定の詳細、会話、下端領域なし、568×320 の横向きと表示中通知のルート往復を実測した。修正前は 8 件とも余白が不足して失敗、修正後は 8 件とも障害物との間隔が 16px（誤差 1px 以下）で成功した。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・全単体 1,107 件（失敗・スキップなし）・ビルドが成功。既存の chunk サイズ警告が残る。専用 localhost:5297 の偽データ画面だけを使用し、実 DSH・iPhone 実機は未検証。証拠は `tmp/issue24-*.log` に保存した。
+
+
+### 2026-10-08：Issue #47 起動失敗画面からの再読み込み
+
+- 起動失敗の案内に、`location.reload()` を実行する標準の「読み直す」ボタンを追加した。ブラウザーの再読み込み操作がない PWA でも同じ URL の起動をやり直せる。React・カスタム要素の起動に依存せず、タップ領域の高さは 48px 以上とする。失敗の分類と案内文、`/?ui=classic` リンクの有無は変更していない。
+- 回帰試験の指示に基づき `e2e/startup-retry.spec.ts` を追加した。実 Chromium で偽コンテキストの動的 import を一度だけ失敗させ、画面内のボタンをキーボードから操作して同じ URL の正常画面へ戻ることを確かめた。互換性エラー、Host 以外のページの診断・標準画面リンクの表示条件も検証する。修正前はボタンがなく 3 件失敗、修正後は 3 件成功した。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・単体 1,107 件（失敗・スキップなし）・ビルドが成功した。既存の chunk サイズ警告が残る。偽データの専用 localhost:5297 だけを使用し、実 DSH・実機 PWA は未確認。証拠は `tmp/issue47-*.log` に保存した。
+- 親の独立レビューでも起動失敗・再読込 3 件を専用 Chromium で再実行して成功。隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の通常起動 1 件も成功。実 iOS のホーム画面 PWA は未確認。
+
+
+
+### 2026-10-08：Issue #28 全画面シートの高さ
+
+- プラン確認と画像表示は `detents=['full']` が `open=true` より先に設定されていた。M3E 2.8.2 は `showPopover()` 前に shadow 内の top-space を測り、閉じた popover では値が解決できず `--_bottom-sheet-height: NaNpx` を保存する。登録済み CSS プロパティの初期値 `50vh` に戻り、390×844 では高さ 422px、844×390 では 195px となった。開いた後に top-space が 0px と解決されても高さは再計算されなかった。
+- カスタム提供元だけにあった `height: var(--app-height, 100dvh); top: 0; border-radius: 0` を共通の `m3e-bottom-sheet.full-sheet` に移した。全画面という表示契約を CSS で明示し、通常シートの fit/full 切り替えや M3E の開閉・割り込み・ロック解除の順序は変更しない。内部プロパティの上書きやライブラリ変更はしていない。
+- Playwright にプラン・画像の縦横表示と回転、カスタム提供元、確認ダイアログと全画面シートを挟んだ復元の回帰を追加した。修正前はプランと画像の 4 件が半高で失敗し、既存カスタム提供元の 1 件は成功した。実機のソフトウェアキーボードによる viewport 変化（Issue #26）はこの検証の対象外。
+- 最終検証：`pnpm typecheck`、`pnpm build`、`pnpm check:pack`（19 ファイル）成功。`TZ=Asia/Tokyo pnpm test` は 1,107 件成功、失敗・スキップなし。新規ブラウザ試験は 7 件成功、関連する既存ブラウザ試験も 34 件成功。ネイティブ初回開閉の順序や物理端末でのキーボード挙動は変更していない。
+- 表示上のトレードオフ：固定した全高は M3E の閉鎖時の縮小アニメーションより優先されるため、全画面シートは閉鎖完了まで全高を保ち、その後消える。カスタム提供元で既に採用していた挙動が、プラン確認と画像表示にも適用される。独立したブラウザ確認で閉鎖完了、popover の終了、アンマウント、背景の inert 解除を確認した。通常シートの縮小アニメーションは変更しない。
+
 ### Issue #25: 横向きの本文 safe area
 
 - 共通 `.screen-content` が左右の safe area を確保する。独自の本文余白を持つ会話・ホーム・フォルダー選択では共通余白を外し、各本文の既存余白と `env(safe-area-inset-left/right)` の大きい方を使う。トレース検索フッターや入力欄へ二重適用しない。

@@ -1,6 +1,6 @@
 import type { DshContext, SessionListState, SessionSummary } from './services.ts'
 import { observable } from './mock/observable.ts'
-import { MAIN_VIEW_SOURCE } from './conversation-selection.ts'
+import { conversationSelection } from './conversation-selection.ts'
 
 export type M3eSessionList = Omit<SessionListState, 'byId'> & { byId: Record<string, SessionSummary & { completionUnread?: boolean }> }
 const stores = new WeakMap<DshContext, ReturnType<typeof createCompletionStatus>>()
@@ -10,14 +10,15 @@ export function completionStatus(ctx: DshContext) {
   return store
 }
 
-/** Port of ui-session observeRunning/reconcileStatus, using M3E's main source.
+/** Port of ui-session observeRunning/reconcileStatus, using M3E's ready visible selection.
  * Baseline idle rows are read; only observed completions become unread. No persistence.
  */
 function createCompletionStatus(ctx: DshContext) {
   const running = new Map<string, boolean>()
   const unread = new Set<string>()
   const state = observable<M3eSessionList>({ ...ctx.sessions.list.getSnapshot(), byId: {} })
-  const isMain = (id: string) => (ctx.sessions.list.getSnapshot().byId[id]?.retainedBy[MAIN_VIEW_SOURCE] ?? 0) > 0
+  const selection = conversationSelection(ctx.sessions)
+  const isMain = (id: string) => selection.state.getSnapshot().visibleSessionId === id
   const publish = () => {
     const list = ctx.sessions.list.getSnapshot()
     state.set({ ...list, byId: Object.fromEntries(Object.entries(list.byId).map(([id, row]) => [id, { ...row, completionUnread: unread.has(id) }])) })
@@ -41,8 +42,9 @@ function createCompletionStatus(ctx: DshContext) {
     publish()
   }
   const unsubscribe = ctx.sessions.list.subscribe(reconcile)
+  const unsubscribeSelection = selection.state.subscribe(reconcile)
   const on = ctx.remote.$on as ((event: string, handler: (id: string, running: boolean) => void) => (() => void)) | undefined
   const off = on?.call(ctx.remote, 'api-session/status', (id, value) => { observe(id, value); publish() })
   reconcile()
-  return { ...state, dispose() { unsubscribe(); off?.(); stores.delete(ctx) } }
+  return { ...state, dispose() { unsubscribe(); unsubscribeSelection(); off?.(); stores.delete(ctx) } }
 }
