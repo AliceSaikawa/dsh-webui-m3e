@@ -55,6 +55,10 @@ jobs:
           node scripts/check-ci-dsh.ts
       - name: Typecheck
         run: pnpm typecheck
+      # The browser tests are not part of pnpm typecheck (package.json is kept
+      # unchanged); check them with their own config.
+      - name: Typecheck browser tests
+        run: pnpm exec tsc -p tsconfig.e2e.json --noEmit
       - name: Unit tests (zero skips required)
         env:
           NODE_OPTIONS: --experimental-strip-types

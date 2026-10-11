@@ -1,4 +1,4 @@
-import { test, expect, visit, button, shot } from './helpers'
+import { test, expect, visit, shot } from './helpers'
 import type { Page } from '@playwright/test'
 
 // The catalog controls stay in the intercepted mock browser, never in production.

@@ -507,3 +507,15 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - `scripts/check-pack.ts` で tar の通常一覧と詳細一覧から名前・種類を取得し、件数の一致を確認する。`scripts/pack-contract.ts` では通常ファイルと許可されたディレクトリ（package、lib、dist、dist/assets）だけを通し、リンクや特殊ファイル、絶対パス、`..`、`.`、空のパス要素、制御文字を内容の読み取り前に拒否する。アーカイブの展開は行わない。
 - `tests/18-pack.test.ts` で USTAR の実アーカイブを組み立てる CLI 回帰を追加した。修正前は外向き・想定外ディレクトリ、シンボリックリンク、ハードリンク、FIFO など 9 ケースを見逃した（39 件中 9 件失敗）。通常のディレクトリを含むアーカイブの成功、名前と種類の不整合、型情報不足も検査する。
 - Node 22.23.3、macOS の bsdtar で `pnpm typecheck`、`pnpm test`（1,122 件成功、失敗・スキップなし）、`pnpm build`、`pnpm run check:pack`（19 ファイル成功）を確認した。ビルドには既存の 500 kB 超チャンク警告が残る。GNU tar での実行は未確認。依存やロックファイルの変更、DSH の起動、公開は行っていない。
+
+### e2e の型検査（2026-10-11）
+
+- `tsconfig.e2e.json`（`tsconfig.json` を継承し、`node` と `vite/client` の型を足す）を追加した。workflow の static ジョブと `scripts/ci-local.sh` で `pnpm exec tsc -p tsconfig.e2e.json --noEmit` を実行する。package.json の `typecheck` は変えていない。
+- 対象にすると `e2e/` に 9 件の型エラーがあった。実行時の動作を変えない最小限の修正をした。
+  - ループの配列に `as const`（`mock`・`robustness`・`settings-custom-provider`）
+  - push 済みの要素への `!`（`interaction-cancel-race`）
+  - 移動した型の import 先を `web/src/features/composer/api.ts` に直す（`sheet-handoff`）
+  - 未使用の import の削除（`conversation-picker`）
+  - `helpers.ts` の `info.status` の未定義を `'passed'` とみなす（後処理の時点では Playwright が必ず設定する。未定義を成功とみなすと検査がすべて適用される側に倒れる）
+- 変更した spec と `browser-errors.spec.ts` の 91 件を実行した。`mock.spec.ts` の 05c が 1 回だけ失敗したが、単独で 5 回繰り返すと 5 回とも成功した。並行して別の e2e を 3 つ実行していた負荷による、時間依存の失敗と考えている（この変更は型だけ）。
+- `e2e-dsh/` は対象外にした。`rpc.spec.ts` に `page.evaluate` の型の展開が深すぎるエラー（TS2589）などがあり、実 DSH の e2e は CI で実行していないため。後続で扱う。

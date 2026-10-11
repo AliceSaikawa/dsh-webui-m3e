@@ -389,7 +389,7 @@ test('07c search-error の失敗表示と再試行', async ({ page }) => {
 test('08a 設定の各ページ・保存・既定値・外観・標準画面の確認', async ({ page }) => {
   await visit(page, '/settings')
   await shot(page, '08-settings')
-  for (const [label, id] of [['モデル', 'models'], ['権限', 'permission'], ['エージェント', 'agent'], ['Web 検索とシェル', 'tools'], ['そのほか', 'other']]) {
+  for (const [label, id] of [['モデル', 'models'], ['権限', 'permission'], ['エージェント', 'agent'], ['Web 検索とシェル', 'tools'], ['そのほか', 'other']] as const) {
     await action(page, label!).first().click()
     await expect(page.locator('h1')).toHaveText(label)
     await shot(page, `08-${id}`)

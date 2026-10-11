@@ -26,6 +26,7 @@ NODE_OPTIONS=$strip node scripts/check-ci-dsh.ts
 
 echo '==> 3/8 typecheck'
 pnpm typecheck
+pnpm exec tsc -p tsconfig.e2e.json --noEmit
 
 echo '==> 4/8 unit (zero skips, TZ=Asia/Tokyo as in CI)'
 mkdir -p tmp/ci
