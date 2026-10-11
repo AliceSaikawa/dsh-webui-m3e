@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
+import { conversationSessionId } from '../conversation-route.ts'
 
 export type CloseOverlay = () => void
 export type OverlayRender = ReactNode | ((close: CloseOverlay) => ReactNode)
@@ -37,10 +38,8 @@ function routePath(path: string): string {
 }
 export function overlayOwnerForRoute(path: string): OverlayOwner {
   const normalized = routePath(path)
-  const match = normalized.split('?')[0]!.match(/^\/s\/([^/]+)(?:\/|$)/)
-  if (match) {
-    try { return { kind: 'conversation', sessionId: decodeURIComponent(match[1]!) } } catch { /* Invalid URLs use exact route ownership. */ }
-  }
+  const sessionId = conversationSessionId(normalized)
+  if (sessionId !== undefined) return { kind: 'conversation', sessionId }
   return { kind: 'route', path: normalized }
 }
 export function closeOverlaysOutsideRoute(path: string): void {

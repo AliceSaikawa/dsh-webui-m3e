@@ -93,14 +93,14 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
           if (controller.signal.aborted) break
           const file = metadataRef.current
           if (!file) continue
-          if (frame.kind === 'change') {
-            if (fileChanged(frame.change, file)) setChanged(true)
-          } else {
-            // A ready frame closes the gap while opening or reconnecting the watch.
-            const result = await api.stat(sessionId, path, controller.signal)
-            if (controller.signal.aborted) break
-            if (!result.ok || result.value.version !== file.version) setChanged(true)
-          }
+          if (frame.kind === 'change' && !fileChanged(frame.change, file)) continue
+          // Notifications can arrive late; stat confirms the current revision.
+          // Ready frames also close the gap while opening or reconnecting the watch.
+          const result = await api.stat(sessionId, path, controller.signal)
+          if (controller.signal.aborted) break
+          const current = metadataRef.current
+          if (current && (!result.ok || result.value.version !== current.version
+            || result.value.absolutePath !== current.absolutePath)) setChanged(true)
         }
         if (!controller.signal.aborted) setWatchError('更新の通知が途切れました。読み直して確認できます。')
       } catch (failure) {
