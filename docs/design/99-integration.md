@@ -380,3 +380,124 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 今回の確定作業でも、追加指示ファイルの検索に付けた禁止対象の除外指定が、保護対象の語を含む引数としてフックに拒否されました。その検索は再実行せず、指定された指示と文書を読みました。保護対象ファイルへの操作は行っていません。
 
 コミット後の差分確認コマンドも、親コミットを表す引数のシェル形式を理由に拒否されました。再実行はしていません。コミット前の作業差分とステージ済み差分の `git diff --check` は成功しており、コミット後は変更ファイルの一覧と作業ツリーが空であることを確認しました。
+
+### PR ごとの CI（2026-10-08、公開前のローカル検証）
+
+- `origin/main` の `cd99f273f9582729475272e48722d7ec850d6857` から専用ブランチ `ci/pr-checks-zero-skips` を作った。PR #51 の作業ブランチ、main、PR #54 は変更していない。
+- `.github/workflows/pr-checks.yml` を 1 本追加した。すべての PR の head SHA で、Node 22・TypeScript の strip-types、型検査、単体、ビルド、配布検査、PR 差分と作業差分の空白検査を実行する。イベントは `pull_request`、権限は `contents: read` だけ、checkout の認証情報は保持しない。Actions は確認した commit SHA に固定した。
+- `.github/ci/dsh/` の専用 npm lockfile で、公開 `@deepseek-ai/dsh@0.2.0-rc.2` と依存 608 パッケージの URL・integrity を固定した。既存の公開配布物の lockfile を基に、レジストリの当該版の配布 integrity と依存宣言が一致することを確認した。CI は別ディレクトリに `npm ci --ignore-scripts` で配置し、版と契約コードの存在を検査する。プロジェクト本体の package.json・pnpm lockfile は変更していない。
+- Node の構造化された累積集計を専用 reporter で出力する。skip が 1 件以上、失敗・cancelled・TODO、集計の欠落・破損・重複・不正な件数・成功件数の不一致は失敗にする。元のテストランナーが非ゼロなら、その終了コードを保持する。guard の 11 件は、CLI の終了コードと欠落ファイルの扱いも確認する。既存テストの削除・変更、skip/only の追加、期待値の緩和はしていない。
+- Mac の公式 portable Node 22.23.3（公式 SHA-256 照合済み）で、全 1,118 件成功、失敗・skip・cancelled・TODO は 0。BlockAssembler と推論設定のネイティブ契約テストも成功した。型検査、追加スクリプトの厳格な型検査、ビルド、配布検査 19 ファイル、workflow YAML の構造検査が成功した。既存の大きい chunk の警告は残る。システム Node は変更していない。
+- 追加確認では、既存 DSH のリンクを外し、空の専用ディレクトリ・空 npm cache から公式 Node 22.23.3 / 付属 npm 10.9.9 で実際の `npm ci --ignore-scripts --no-audit --no-fund` を実行し、540 パッケージを新規配置した。全配置済みパッケージの版と lockfile の一致、契約テストの参照先が新規配布物内であることを確認した。この新規配布物だけで契約を含む対象 10 件と全体 1,118 件がそれぞれ成功し、失敗・skip・cancelled・TODO は 0。既存配布物の再利用による代替ではない。Linux 上の新規インストールと GitHub Actions の実行は引き続き未確認。DSH の Host、実 LLM、利用者の設定は起動・使用していない。
+- 現在の委任実行の実モデル名を示す runtime metadata は見つからなかった。2026-10-08、利用者がこのタスクに限り `unknown` を認めたため、コミットの `AI-Model` は `unknown`、PR 本文・コメントは `AI: unknown / Harness: Codex` と記す。恒久的な規則変更とは扱わず、dot の製品モデル・別セッションのモデル・既定設定も採用しない。main のマージ、auto-merge、deploy は行わない。
+- 公開前の最終レビューで、固定した checkout/setup-node 自体は Node 20 で動くと確認した。`NODE_OPTIONS=--experimental-strip-types` は Node 22 の run ステップにだけ設定し、Node 20 の Actions と後処理には渡さない。
+- 初回 Actions は単体 1,118 件中 1,117 成功・1 失敗・skip 0。既存の表示 golden fixture は +09:00 の時計で作られており、UTC runner では `search-permissions` の日付が 9/24、期待値が 9/25 だった。Mac にプロセス単位の `TZ=UTC` を設定して同じ失敗を再現した。CI の単体ステップだけに `TZ=Asia/Tokyo` を明示し、既存テスト・golden fixture・アサーションは一切変更していない。
+
+### PR ごとの CI へのブラウザ試験の追加（2026-10-09、ローカル適用と検証のみ）
+
+外部レビューの CI 計画（#55 への指摘と成果物 7 件）を精査し、不具合を直したものだけを #55 の head `538270c` の上に適用した。作業はローカルブランチ `ci/pr-checks-e2e`（`tmp/worktrees/pr55-ci`）。サンドボックスの書き込み範囲がワークスペース内だけのため、worktree はリポジトリ外ではなく Git 管理外の `tmp/` に置いた。commit は利用者の指示で行い、トレーラにはハーネス（DeepSeek Harness）とモデル（claude-opus-5-5）を記す。2026-10-10 に利用者の指示で #55 のブランチへ fast-forward で push し、PR 本文を更新した。ブランチ保護とマージは行っていない。
+
+- `.github/workflows/pr-checks.yml`
+  - checkout の `ref: head.sha` をやめ、既定の merge ref でマージ後の状態を検証する。空白検査の基点は `HEAD^1`（merge commit の base 側の親）にした。base が進んでも PR 自身の差分だけを見る。
+  - `?mock` の Playwright を独立ジョブとし、3 分割で並列実行する（各 60・60・58 件）。ブラウザは `@playwright/test` の固定版をキーにキャッシュする。失敗時だけ証跡を artifact にする。
+  - DSH 配布物の `node_modules` を、専用 lockfile のハッシュをキーにキャッシュする。キャッシュが当たっても `check-ci-dsh.ts` で版と契約コードを検査する。
+  - `TZ=UTC` の単体を advisory（`continue-on-error`）で追加し、タイムゾーン依存を見える形で残す。
+  - 集約ジョブ `all checks` を追加した。必須チェックにするのはこれ 1 件だけにする。
+  - 追加した `actions/cache` は v4.3.0 の `0057852b…`、`actions/upload-artifact` は v4.6.2 の `ea165f8d…` に固定した。commit はタグから GitHub API で解決した。レビュー案はタグ指定（`@v4`）のままだった。
+- `e2e/playwright.config.ts`：`CI` のときだけ、待ち時間（テスト 60 秒、expect 15 秒、webServer 120 秒）を延ばし、`forbidOnly` を有効にし、出力先を固定の `tmp/e2e-results/ci` にし、`github` reporter を足す。並列度・リトライ・アサーションは変えていない。ローカルの挙動も変わらない。
+- `e2e/helpers.ts`：異常系テストが `test.use({ expectedErrors: [/…/] })` で想定する console.error を宣言できるようにした。既定は空で、従来どおり 1 件でも失敗する。宣言したのに発生しなかったパターンも失敗にする。ただし本体が先に失敗したときは、最初の失敗を隠さないように、この判定を省く。
+- `scripts/ci-local.sh`：CI と同じ順序・環境変数で手元で検証する。`bash scripts/ci-local.sh` で実行する。レビュー案から次を直した。
+  - `corepack use`（package.json に `packageManager` を書き込む）をやめ、pnpm の版の違いを警告するだけにした。
+  - sudo が要る `--with-deps` を使わない。
+  - `origin/main` を取得できないときは、手元の参照と比べる。
+  - `E2E_CONFIG` で代替ポートの設定を選べる。
+
+#### 採用しなかったもの
+
+- package.json への `e2e`・`ci:local` スクリプトの追加：AGENTS.md は package.json の変更を段階 1 の担当に限っており、#55 も package.json を変えていない。レビュー案の `ci:local` は、存在しない `scripts/ci-local.ts` を指していた。CI とスクリプトは Playwright を直接呼ぶので、追加しなくても困らない。
+- 19 本の PR を rebase して force-push する手順書：`git push --force` の禁止に抵触する。#55 は main に対して fast-forward できるので、rebase も不要。
+- ブランチ保護の案：merge queue は Organization が所有するリポジトリだけの機能で、このリポジトリ（個人所有）では使えない。使う場合も、ワークフローに `merge_group` のトリガーが要る。また共同作業者が 1 人なので「承認 1 件必須」にすると自分の PR をマージできなくなる。保護を設定するなら、必須チェックを `all checks` だけにし、承認は必須にしない形を利用者と決める。
+- #73 の 4 本への分割：作者の設計判断なので、ここでは行わない。
+
+#### 検証（Linux、Node 26.10.0、pnpm 12.4.1、npm 12.2.0）
+
+- `scripts/ci-local.sh` で依存の導入、DSH 配布物の `npm ci`（538 パッケージ）と `check-ci-dsh.ts`、`pnpm typecheck`、単体（TZ=Asia/Tokyo、1,118 件成功、失敗・skip・cancelled・TODO は 0、集計 guard も成功）、`pnpm build` が成功した。
+- 単体を TZ=UTC で実行すると 1,117 件成功・1 件失敗（S6B の fixture 比較）。#55 の初回 Actions と同じ既知の失敗で、advisory 扱いのとおり。
+- `pnpm check:pack` は、この環境では `~/.npm` が読み取り専用のため失敗した。npm cache を `tmp/npm-cache` に向けても、npm 12.2.0 の `npm pack --json` はオブジェクトを返すため、配列を前提にした `check-pack.ts` が解釈できない（既存の不整合で今回は未修正。CI の npm 10 は配列を返す）。代わりに `npm pack` で作った tarball を `node scripts/check-pack.ts <tarball>` で検査し、19 ファイルで成功した。追加したファイルは配布物に含まれない。
+- `CI=1 TZ=Asia/Tokyo pnpm exec playwright test -c e2e/playwright.config.ts`：178 件すべて成功（5.1 分）。出力先は `tmp/e2e-results/ci` になった。
+- `expectedErrors` は一時的なテスト 5 件で確かめた。宣言したエラーは許可され、未宣言のエラー・宣言したのに発生しなかったエラー・既定でのエラーは失敗した。
+- `e2e/playwright.config.ts`・`e2e/helpers.ts` を strict の tsc で単独に型検査して成功した（e2e は `pnpm typecheck` の対象外）。ワークフローは DSH 配布物同梱の `yaml` で構文解析し、全 Actions が SHA 固定であることを確かめた。`git diff --check` も成功した。
+- GitHub Actions（2026-10-10、`c587d74`、run 38007626012）：全ジョブ成功、所要約 4 分。
+  - checkout は `pull/55/merge` だった。
+  - 単体は 1,118 件すべて成功、skip 0。UTC の advisory は既知の 1 件（S6B の fixture 比較）だけが失敗し、設計どおり全体は失敗にしなかった。
+  - `check:pack`（CI の npm）と `HEAD^1` 基点の空白検査は成功した。
+  - e2e は shard 1〜3 が 60・60・58 件で、計 178 件すべて成功した。各 1.9〜2.6 分。
+  - 初回のため DSH とブラウザのキャッシュは miss だったが、両方とも保存された。
+- `gh` のトークンに `workflow` 権限がなかったため、利用者の端末での device 認証で追加した。1 回目は承認後に `~/.config/gh/hosts.yml` がサンドボックスで読み取り専用のため保存できず、利用者の承認を得て書き込みを 1 回だけ許可し、再実行した。
+- 未確認：actionlint。
+
+### PR #55 の再レビューへの対応（2026-10-10）
+
+`80cd667` への再レビューで、修正推奨 2 件（P2）と仕様確認 1 件を受けた。前回の外部レビューは、根拠のない断定を撤回・訂正した。撤回された前提に基づいていた変更は元に戻した。
+
+- 想定エラーの判定（指摘 1）
+  - 宣言した RegExp を除外の判定と発生の確認で使い回していた。`/g`・`/y` 付きでは `lastIndex` が動き、2 回目の判定が変わる。
+  - 例：`/synthetic/g` で `synthetic` が 1 件出ても「発生しなかった」になり、同じログが 2 件あると 2 件目が想定外になる。旧実装を同じ入力で実行して再現した。
+  - 判定を `e2e/browser-errors.ts` の純粋関数に分けた。毎回 `source`・`flags` から複製した RegExp で照合し、宣言の `lastIndex` を変えない。`/y` は「先頭で一致」の意味のまま扱う。
+  - `tests/ci-browser-errors.test.ts`（5 件）を追加した。フラグなし・`g`・`y`・`gy`・`i` で 1 件と複数件のログを確かめ、同じ宣言を繰り返し使っても結果と `lastIndex` が変わらないことを確かめる。照合を旧実装の `pattern.test` に戻したコピーでは 3 件が失敗した。
+- 未捕捉例外の扱い（指摘 3）：利用者と確認し、`e2e-dsh/fixtures.ts` と同じ規則にした。
+  - `pageerror` は `pageErrors` に分け、`expectedErrors` に関係なく常に失敗にする。宣言で除外できるのは console.error だけ。
+  - `browserErrors` は console.error だけを持つ。`02g` のように配列から確認済みの診断を取り除く使い方は変わらない。
+  - 「宣言したのに発生しなかった」の判定は、本体が成功したとき（`status === 'passed'`）だけ行う。前回の `status === expectedStatus` では、`test.fail()` のテストで判定が飛ばされていた。
+  - `e2e/browser-errors.spec.ts`（5 件）を追加した。宣言した console.error が `g` フラグ・複数回でも許可されることを確かめる。失敗すべき 4 件は `test.fail()` で確かめる：同じ文言の未捕捉例外、未宣言の console.error、発生しなかった宣言、宣言なしの console.error。JSON レポートで、4 件がそれぞれ意図したアサーションで失敗したことを確認した。
+- ローカルの DSH 配置（指摘 2）
+  - `node_modules` が存在するだけで `npm ci` を省いていた。そのため lockfile を更新した後や、導入が途中で失敗した後も、古い配置や壊れた配置のまま検証していた。
+  - 配置を `scripts/ci-local-dsh.sh` に分けた。lockfile の SHA-256 を導入の成功後にだけ印として書き、`node_modules` と一致する印がそろうときだけ再利用する。導入の前に印を消すので、失敗した配置は完了扱いにならない。ハッシュは Mac でも同じに動くよう `node:crypto` で計算する。
+  - `tests/ci-local-dsh.test.ts`（5 件）を追加した。偽の `npm` を `PATH` の先頭に置き、次を確かめる：初回の導入、同じ lockfile での再利用、lockfile 更新後の再導入、途中で失敗した導入のあとの再導入、印のない空の `node_modules`、`node_modules` のない印。旧実装に戻したコピーでは 5 件とも失敗した。
+- 撤回された前提に基づく変更の取り消し
+  - `e2e/playwright.config.ts` の CI 用の待ち時間（60 秒・15 秒・webServer 120 秒）と、固定の出力先 `tmp/e2e-results/ci` を元に戻した。残したのは `forbidOnly` と `github` reporter だけ。
+  - 根拠は Actions の 2 回の実行の実測。Vite の起動完了は 1.5〜2.2 秒、最も遅いテストは 9.1 秒（ローカル 8.9 秒）だった。CI がローカルより遅いという前提は成り立たなかった。
+  - artifact は親の `tmp/e2e-results` を指定しているので、時刻付きの出力先でも回収できる。
+  - 前回の節の「CI のときだけ待ち時間を延ばす」「出力先を固定」は、この時点で無効。
+
+#### 検証（Linux、Node 26.10.0、pnpm 12.4.1、npm 12.2.0）
+
+- `scripts/ci-local.sh` で、依存の導入、DSH の配置、`pnpm typecheck`、ビルドが成功した。DSH の配置は、印のない既存の配置を入れ直した（538 パッケージ）。その直後の再実行では再利用した。
+- 単体（TZ=Asia/Tokyo）は 1,128 件（既存 1,118 件と追加 10 件）がすべて成功し、失敗・skip は 0。集計 guard も成功した。TZ=UTC は既知の 1 件だけが失敗した。
+- `check:pack` は前回と同じく npm 12.2.0 の出力形式の差で止まった。代わりに tarball を渡して検査し、19 ファイルで成功した。scripts/・e2e/・tests/ は配布物に含まれない。
+- `CI=1 TZ=Asia/Tokyo` の e2e は 183 件（既存 178 件と追加 5 件）がすべて成功した（5.1 分）。待ち時間は元の値で、`02g` も成功した。
+- 追加・変更した TypeScript を strict の tsc で単独に型検査して成功した。`git diff --check` も成功した。
+- GitHub Actions（`453e98d`、run 38014606156）：全ジョブ成功。単体 1,128 件（skip 0）、e2e は shard ごとに 64・61・58 件で計 183 件。最も遅いテストは 10.4 秒、Vite の起動は 0.2 秒だった。
+
+### PR #55 の第 5 回レビューへの対応（2026-10-10）
+
+`453e98d` への外部レビューで、P1 が 1 件、P3 が 2 件あった。
+
+- e2e の skip ガード（P1）
+  - Playwright は `test.skip()`・`test.fixme()` があっても終了コード 0 で終わる。e2e ジョブは終了コードしか見ていなかったため、ブラウザ試験の skip は素通りしていた。
+  - 一時的な spec で確かめた。静的・実行時の skip と fixme は、いずれも JSON レポートの `stats.skipped` にだけ現れ、終了コードは 0 だった。対象が 0 件のときは終了コード 1 と `No tests found` になった。
+  - `scripts/ci-e2e-results.ts` と CLI の `scripts/check-ci-e2e-results.ts` を追加した。単体の `ci-test-results.ts` と同じく fail-closed で、次を失敗にする。
+    - skipped・unexpected・flaky が 1 件以上
+    - 実行した件数が 0（空の shard）
+    - レポートの集計と、列挙されたテストの状態の食い違い
+    - 未知の状態
+    - テスト外のエラー（webServer の失敗など）
+    - レポートの欠落・破損・重複
+  - Playwright の非ゼロ終了コードは保持する。`test.fail()` で期待どおり失敗したテストは `expected` として数える。
+  - workflow の e2e ステップと `scripts/ci-local.sh` で、実行前にレポートを消し、Playwright の終了コードと一緒に検査する。
+  - `tests/ci-e2e-results.test.ts`（9 件）を追加した。実際の Playwright でも、skip を含む実行は終了コード 0 だったが、ガードが失敗にすることを確かめた。
+  - main の必須チェックは、引き続き設定していない（ブランチ保護の変更は利用者の判断を待つ）。
+- 期待失敗のテストが毎回スクリーンショットを保存する（P3）
+  - フィクスチャが自分の判定より前に、本体の状態だけで撮影を決めていた。`test.fail()` の 4 件は、本体が成功した時点で期待（failed）と食い違って見え、全件成功の実行でも毎回 `failure-*.png` を書いていた。前回の実行で 4 枚が残っていた。
+  - 逆に、本体は成功したがフィクスチャが想定外の console.error で失敗にしたテストは、撮影されていなかった。
+  - フィクスチャの判定を先に済ませ、最終結果（`e2e/browser-errors.ts` の `finalStatus`）が期待と違うときだけ撮るようにした。単体テストを 1 件追加した。実ブラウザでも確かめた：期待失敗の spec は撮影 0 枚になり、フィクスチャが失敗にした通常のテストは撮影された。
+- e2e の `helpers.ts` と spec が型検査の対象外（P3）：今回は対応しない。
+  - e2e 全体を strict で型検査すると、#55 が触っていない既存の spec に 5 件のエラーがある。いずれも main と同じ状態で、`conversation-picker`・`mock`・`robustness`・`settings-custom-provider`・`sheet-handoff` の各 spec にある。`sheet-handoff.spec.ts` は、存在しない `ModelSelectionProjection` を import している。
+  - 型検査を CI に加えるには、ほかの機能の spec を直す必要があるため、別の PR にする。
+  - 判定ロジックの `e2e/browser-errors.ts` は、`tests/` からの import を通じて `pnpm typecheck`（`tsconfig.host.json`）の対象になっている。
+
+#### 検証（Linux、Node 26.10.0）
+
+- 単体（TZ=Asia/Tokyo）は 1,138 件（前回の 1,128 件と追加 10 件）がすべて成功し、skip は 0。集計 guard も成功した。`pnpm typecheck` と build も成功した。
+- `CI=1 TZ=Asia/Tokyo` の e2e は 183 件がすべて成功した（5.0 分）。新しいガードも成功した（expected 183、skipped・unexpected・flaky は 0）。全件成功の実行で、スクリーンショットは 0 枚だった。
+- `git diff --check` が成功し、workflow の構文解析も成功した。
