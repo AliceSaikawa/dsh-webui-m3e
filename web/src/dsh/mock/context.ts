@@ -129,6 +129,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const list = observable<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null })
   const mockJobs = createMockJobs(options.readJobRows)
+  remote.job = mockJobs.remote
   const hostJobs = mockJobs.host
   const projectionReads = new Map<string, { controller: AbortController; promise: Promise<void> }>()
   const readProjectionIds = new Set<string>()
