@@ -129,6 +129,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
   const list = observable<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} })
   const workspaceList = observable<WorkspaceSnapshot>({ items: [], archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null })
   const mockJobs = createMockJobs(options.readJobRows)
+  remote.job = mockJobs.remote
   const hostJobs = mockJobs.host
   const projectionReads = new Map<string, { controller: AbortController; promise: Promise<void> }>()
   const readProjectionIds = new Set<string>()
@@ -953,10 +954,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     jobs: mockJobs.jobs,
     get mock() { return kit },
     dispose() {
+      // The completion observer subscribes to the selection owner.
+      completionStatus(ctx).dispose()
       conversationSelection(sessions).dispose()
       for (const read of projectionReads.values()) read.controller.abort()
       projectionReads.clear()
-      completionStatus(ctx).dispose()
       mockJobs.dispose()
       mockQuestions.dispose()
       connectionLifetime.abort()
