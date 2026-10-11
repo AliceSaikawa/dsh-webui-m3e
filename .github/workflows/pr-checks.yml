@@ -2,7 +2,9 @@ name: PR checks
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # ready_for_review is left out: marking a draft ready does not change the
+    # code, and a second run on the same head kept "all checks" pending.
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read

@@ -484,7 +484,7 @@ test('複合値の復帰も書き込み不可・無効・保護された子を�
   }
 })
 
-test('まとまりの復帰で前の子の編集を破棄し、次の世代で新しく編集できる', async () => {
+test('まとまりの復帰で前の子の編集だけを破棄し、新しく編集できる', async () => {
   const h = harness()
   try {
     await h.store.reload()
@@ -498,7 +498,7 @@ test('まとまりの復帰で前の子の編集を破棄し、次の世代で�
     assert.equal(h.store.getSnapshot().busy[ns], true)
     gate.resolve()
     assert.deepEqual(await Promise.all([resetting, queued]), [true, false])
-    assert.ok(h.store.getSnapshot().generation[ns]! > generation)
+    assert.equal(h.store.getSnapshot().generation[ns] ?? 0, generation)
     assert.deepEqual(current(h.store).value.retry, current(h.store).base!.retry)
     assert.equal(await h.store.edit(ns, ['retry', 'interval'], 8), true)
     assert.deepEqual(h.calls.map(call => call.kind), ['mutate', 'update'])
