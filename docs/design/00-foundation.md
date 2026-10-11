@@ -581,3 +581,10 @@ web/src/
 - 独立レビューの指摘を受け、保持中の binding の状態を購読し、表示後に open が失敗した場合と復旧にも追従するようにした。追加の再現試験は修正前に失敗した（`tmp/issue42-43-live-open-before.log`）。参照交換では古い購読を先に解除し、release の同期的な再入後も同じ参照を所有するときだけ新しく購読する。A→B、clear、dispose で購読数が 0 に戻ることも直接確かめる。
 - 最終確認：`pnpm typecheck` 成功、`pnpm test` は 1,119 件成功（失敗・skip とも 0）、`pnpm build` 成功（既存の大きな chunk の警告のみ）。関連する偽データの Chromium e2e は 27 件成功。ログは `tmp/issue42-43-{typecheck,test,build,browser-related}.log`、再現と制約の一覧は `tmp/issue42-43-evidence.md`。
 - 親の独立レビュー後、隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の `e2e-dsh/session-contract.spec.ts` 3 件成功。初回送信の世代引継ぎ・離脱時解放・pagehide/pageshow 後の再取得と送信を確認した。実 Safari の bfcache は未確認。
+
+
+### 2026-10-08：Issue #24 スナックバーと画面下部の重なり
+
+- 同梱 M3E 2.8.2 が読む `--m3e-snackbar-margin` を使用する。下部ナビゲーションがある画面では `TabScaffold` が safe-area の padding を含む実際の高さを計測し、外側に作られるスナックバーへ root の CSS 変数で渡す。ナビゲーションがない画面へ移ると計測値を解除する。余白は `16px + max(safe-area-inset-bottom, ナビゲーション高さ)` とし、下端領域を二重に加えない。高さ変更は ResizeObserver で追い、破棄後の通知は反映しない。
+- 回帰試験の指示に基づき `e2e/snackbar-position.spec.ts` を追加した。Chromium の CDP で `env(safe-area-inset-bottom)` 自体を 34px／21px に設定し、一覧・検索・対応待ち・設定の各タブ、設定の詳細、会話、下端領域なし、568×320 の横向きと表示中通知のルート往復を実測した。修正前は 8 件とも余白が不足して失敗、修正後は 8 件とも障害物との間隔が 16px（誤差 1px 以下）で成功した。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・全単体 1,107 件（失敗・スキップなし）・ビルドが成功。既存の chunk サイズ警告が残る。専用 localhost:5297 の偽データ画面だけを使用し、実 DSH・iPhone 実機は未検証。証拠は `tmp/issue24-*.log` に保存した。
