@@ -377,3 +377,5 @@
 - 修正前にブラウザ回帰 4 件すべて失敗、送信中の選択拒否の単体も失敗。修正後は新規 5 件＋既存 9 件の Chromium 試験成功。別会話の独立性、失敗解除、再表示、編集の ABA、現在の既定値での新規下書き再利用を含む。
 - Node 22.23.3／TZ=Asia/Tokyo の全単体 1,112 件成功、skip 0。型検査・ビルド・梱包検査も実施。公開 DSH 0.2.0-rc.2 の native 2 件を含む。独立レビューの 39 件成功、最終的な残存指摘なし。
 - 隔離公開 DSH と localhost 偽 LLM に対する I41 試験で、既存会話で変更した provider/model/reasoningEffort が次回 `request/header` に記録され、偽 LLM に選択モデルで要求が届くことを確認。実データ・有料 API・実機は使用しない。
+- 2026-10-11 追記：CI（Linux）で `e2e/model-send-race.spec.ts:75` が `6:ollamalocal` を表示して失敗した。controller の寿命が Composer から session service＋draft key に延びたため、前回の `selected` が送信後も残る。`ModelPicker` の `[applyState.selected]` effect は mount 時にも実行され、`initialCatalog` があって `observed`（現在の既定値）で初期化した後に、古い `selected` で上書きしていた。試験の期待は正しく、製品側の不具合。ローカルの Linux では毎回再現し、修正前の PR 先頭でも同じだった。
+- `Sheets.tsx` で、mount 時点の `selected` を ref に記録し、表示中に届いた新しい結果だけを `current` へ反映するようにした。反映中にシートを開き直した場合は、完了時に値が変わるため従来どおり表示する。Mac で成功した理由は未確認。推測では、カタログ取得前にシートが開くと、取得後の `observedKey` の変化で既定値に戻るため。
