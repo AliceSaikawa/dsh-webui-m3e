@@ -31,6 +31,14 @@ context.then(
       : kind === 'incompatible'
       ? `起動に失敗しました。この DSH の版に M3E の画面が対応していない可能性があります。M3E の画面は DSH ${SUPPORTED_DSH_VERSION} で確かめています。`
       : '起動に失敗しました。ページを読み直してください。'
+    // A standalone PWA has no browser reload control. Keep recovery independent
+    // of React and custom-element startup so it also works after loading fails.
+    const retry = document.createElement('button')
+    retry.type = 'button'
+    retry.textContent = '読み直す'
+    retry.style.cssText = 'min-height: 48px; padding: 0 16px; font: inherit'
+    retry.addEventListener('click', () => location.reload())
+    element.append(document.createElement('br'), retry)
     if (kind === 'not-host') return
     // The stock index honors ?ui=classic, so a broken M3E page never strands the device.
     const back = document.createElement('a')

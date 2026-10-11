@@ -588,3 +588,11 @@ web/src/
 - 同梱 M3E 2.8.2 が読む `--m3e-snackbar-margin` を使用する。下部ナビゲーションがある画面では `TabScaffold` が safe-area の padding を含む実際の高さを計測し、外側に作られるスナックバーへ root の CSS 変数で渡す。ナビゲーションがない画面へ移ると計測値を解除する。余白は `16px + max(safe-area-inset-bottom, ナビゲーション高さ)` とし、下端領域を二重に加えない。高さ変更は ResizeObserver で追い、破棄後の通知は反映しない。
 - 回帰試験の指示に基づき `e2e/snackbar-position.spec.ts` を追加した。Chromium の CDP で `env(safe-area-inset-bottom)` 自体を 34px／21px に設定し、一覧・検索・対応待ち・設定の各タブ、設定の詳細、会話、下端領域なし、568×320 の横向きと表示中通知のルート往復を実測した。修正前は 8 件とも余白が不足して失敗、修正後は 8 件とも障害物との間隔が 16px（誤差 1px 以下）で成功した。
 - Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・全単体 1,107 件（失敗・スキップなし）・ビルドが成功。既存の chunk サイズ警告が残る。専用 localhost:5297 の偽データ画面だけを使用し、実 DSH・iPhone 実機は未検証。証拠は `tmp/issue24-*.log` に保存した。
+
+
+### 2026-10-08：Issue #47 起動失敗画面からの再読み込み
+
+- 起動失敗の案内に、`location.reload()` を実行する標準の「読み直す」ボタンを追加した。ブラウザーの再読み込み操作がない PWA でも同じ URL の起動をやり直せる。React・カスタム要素の起動に依存せず、タップ領域の高さは 48px 以上とする。失敗の分類と案内文、`/?ui=classic` リンクの有無は変更していない。
+- 回帰試験の指示に基づき `e2e/startup-retry.spec.ts` を追加した。実 Chromium で偽コンテキストの動的 import を一度だけ失敗させ、画面内のボタンをキーボードから操作して同じ URL の正常画面へ戻ることを確かめた。互換性エラー、Host 以外のページの診断・標準画面リンクの表示条件も検証する。修正前はボタンがなく 3 件失敗、修正後は 3 件成功した。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・単体 1,107 件（失敗・スキップなし）・ビルドが成功した。既存の chunk サイズ警告が残る。偽データの専用 localhost:5297 だけを使用し、実 DSH・実機 PWA は未確認。証拠は `tmp/issue47-*.log` に保存した。
+- 親の独立レビューでも起動失敗・再読込 3 件を専用 Chromium で再実行して成功。隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の通常起動 1 件も成功。実 iOS のホーム画面 PWA は未確認。
