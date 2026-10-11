@@ -20,8 +20,14 @@ if (!tarball) {
   if (result.length !== 1 || !result[0]?.filename) throw new Error('npm pack did not produce one tarball')
   tarball = join(destination, result[0].filename)
 }
-const names = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8', timeout: 30_000 }).trim().split('\n')
-const parsed = parsePackEntries(names)
+// BSD and GNU tar both start each verbose record with its entry type. Keep
+// names from the plain listing: verbose metadata and link-target text vary.
+const list = (verbose: boolean) => execFileSync('tar', [verbose ? '-tvzf' : '-tzf', tarball!], {
+  encoding: 'utf8', timeout: 30_000,
+}).replace(/\n$/, '').split('\n')
+const names = list(false)
+const types = list(true).map(line => line[0] ?? '')
+const parsed = parsePackEntries(names, types)
 if (parsed.errors.length) throw new Error(`Invalid release tarball:\n${parsed.errors.join('\n')}`)
 const files = parsed.entries.map(({ name, path }) => {
   // Unexpected entries are rejected by name, without reading their contents.
