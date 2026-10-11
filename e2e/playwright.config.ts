@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const ci = !!process.env.CI
 
 export default defineConfig({
   testDir: '.',
@@ -9,11 +10,18 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // Same timeouts in CI and locally: on GitHub's ubuntu runner the slowest test
+  // took 9.1 s (local 8.9 s) and Vite was ready within 2.2 s.
   timeout: 30_000,
   expect: { timeout: 7_000 },
+  forbidOnly: ci,
   // Preserve earlier failure evidence instead of clearing it on the next run.
   outputDir: `${root}tmp/e2e-results/${Date.now()}`,
-  reporter: [['list'], ['json', { outputFile: `${root}tmp/e2e-report.json` }]],
+  reporter: [
+    ...(ci ? [['github'] as const] : []),
+    ['list'],
+    ['json', { outputFile: `${root}tmp/e2e-report.json` }],
+  ],
   use: {
     browserName: 'chromium',
     baseURL: 'http://localhost:5191',

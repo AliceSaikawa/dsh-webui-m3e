@@ -9,18 +9,46 @@ const staticFiles = new Set([...required,
   'dist/manifest.webmanifest', 'dist/sw.js', 'dist/sw-cache.js',
   'dist/apple-touch-icon.png', 'dist/icon-192.png', 'dist/icon-512.png', 'dist/icon-maskable-512.png',
 ])
+/**
+ * The tarball name from `npm pack --json`. npm 10 prints an array of results;
+ * npm 11 and later print an object keyed by package name. Exactly one result
+ * with a plain file name is accepted in either shape.
+ */
+export function packedTarballName(json: string): string {
+  const parsed: unknown = JSON.parse(json)
+  const results = Array.isArray(parsed) ? parsed
+    : typeof parsed === 'object' && parsed !== null ? Object.values(parsed) : []
+  const filename = results.length === 1 ? (results[0] as { filename?: unknown } | null)?.filename : undefined
+  if (typeof filename !== 'string' || !filename || /[\\/]/.test(filename)) throw new Error('npm pack did not produce one tarball')
+  return filename
+}
+
 export function allowedPackPath(path: string): boolean {
   // Vite's explicit [name]-[hash:8] output in vite.config.ts. No source-style dots.
   return staticFiles.has(path) || /^dist\/assets\/[\w-]+-[\w-]{8}\.(?:js|css|woff2)$/.test(path)
 }
 
 /** Validate raw tar names before removing the npm package root or reading content. */
-export function parsePackEntries(names: readonly string[]): { entries: { name: string; path: string }[]; errors: string[] } {
+export function parsePackEntries(names: readonly string[], types: readonly string[]): { entries: { name: string; path: string }[]; errors: string[] } {
   const entries: { name: string; path: string }[] = []
   const errors: string[] = []
-  for (const name of names) {
+  if (names.length !== types.length) return { entries, errors: ['archive name/type count mismatch'] }
+  for (const [index, name] of names.entries()) {
     if (!name.startsWith('package/')) { errors.push(`invalid archive root: ${name}`); continue }
-    if (!name.endsWith('/')) entries.push({ name, path: name.slice('package/'.length) })
+    const type = types[index]
+    if (type !== '-' && type !== 'd') { errors.push(`unsupported archive entry type: ${name}`); continue }
+    const path = name.slice('package/'.length)
+    const directory = type === 'd'
+    const canonical = directory && path.endsWith('/') ? path.slice(0, -1) : path
+    const checkedName = directory && name.endsWith('/') ? name.slice(0, -1) : name
+    if (/[\\\x00-\x1f\x7f]/.test(name) || checkedName.split('/').some(part => !part || part === '.' || part === '..')) {
+      errors.push(`invalid archive path: ${name}`); continue
+    }
+    if (directory) {
+      if (!['', 'lib', 'dist', 'dist/assets'].includes(canonical)) errors.push(`unexpected archive directory: ${name}`)
+    } else if (!allowedPackPath(path)) {
+      errors.push(`unexpected: ${path}`)
+    } else entries.push({ name, path })
   }
   return { entries, errors }
 }

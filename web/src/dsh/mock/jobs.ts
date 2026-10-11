@@ -1,4 +1,5 @@
 import type { IJobs, JobsSnapshot, RemoteResult, SessionJob } from '../services.ts'
+import type { JobRowsRemote } from '../job-rows.ts'
 import { observable } from './observable.ts'
 
 export type JobFrame = { type: 'opened'; text?: string; gapBefore?: boolean } | { type: 'output'; text: string; gapBefore?: boolean } | { type: 'status' } | { type: 'error'; error: string }
@@ -8,12 +9,44 @@ export function createMockJobs(readRows?: (id: string) => Promise<RemoteResult<r
   const host = new Map<string, readonly SessionJob[]>()
   const watches = new Map<string, Entry>()
   const observations = new Map<string, Entry>()
+  const rowStreams = new Map<string, Set<{ push(rows: readonly SessionJob[]): void; fail(): void; close(): void }>>()
+  const remote: JobRowsRemote = {
+    list({ sessionId }, signal) {
+      const queue: (readonly SessionJob[])[] = []
+      let wake: (() => void) | undefined
+      let closed = false, failed = false
+      const entry = {
+        push(rows: readonly SessionJob[]) { queue.push(rows); wake?.() },
+        fail() { failed = true; wake?.() },
+        close() { closed = true; rowStreams.get(sessionId)?.delete(entry); signal?.removeEventListener('abort', entry.close); wake?.() },
+      }
+      const entries = rowStreams.get(sessionId) ?? new Set()
+      rowStreams.set(sessionId, entries); entries.add(entry)
+      signal?.addEventListener('abort', entry.close, { once: true })
+      if (signal?.aborted) entry.close()
+      else void (readRows ? readRows(sessionId) : Promise.resolve({ ok: true as const, value: host.get(sessionId) ?? [] }))
+        .then(result => { if (!closed) { if (result.ok) entry.push(result.value); else entry.fail() } }, () => { if (!closed) entry.fail() })
+      return {
+        async *[Symbol.asyncIterator]() {
+          try {
+            while (!closed) {
+              if (failed) throw new Error('ジョブの購読に失敗しました。')
+              const rows = queue.shift()
+              if (rows) yield { type: 'rows' as const, jobs: rows }
+              else await new Promise<void>(resolve => { wake = resolve })
+            }
+          } finally { entry.close() }
+        },
+        dispose: entry.close,
+      }
+    },
+  }
   let disposed = false
   const drop = (id: string) => state.update(value => { const rows = { ...value.rows }; delete rows[id]; return { ...value, rows } })
   function publish(id: string, rows: readonly SessionJob[]) {
     state.update(value => { const next = { ...value.rows }; if (rows.length) next[id] = rows; else delete next[id]; return { ...value, rows: next } })
   }
-  function failRows(id: string) { const entry = watches.get(id); if (entry) entry.stopped = true; drop(id) }
+  function failRows(id: string) { for (const stream of rowStreams.get(id) ?? []) stream.fail(); const entry = watches.get(id); if (entry) entry.stopped = true; drop(id) }
   function baseline(id: string, entry: Entry) {
     const generation = ++entry.generation
     const result = readRows ? readRows(id) : Promise.resolve({ ok: true as const, value: host.get(id) ?? [] })
@@ -84,13 +117,14 @@ export function createMockJobs(readRows?: (id: string) => Promise<RemoteResult<r
     },
   }
   return {
-    jobs, host, failRows, frame,
+    jobs, host, failRows, frame, remote,
     setRows(id: string, rows: readonly SessionJob[]) {
       const value = structuredClone(rows); host.set(id, value)
+      for (const stream of rowStreams.get(id) ?? []) stream.push(value)
       const entry = watches.get(id)
       if (entry && !entry.stopped) publish(id, value)
     },
     reconnect() { for (const [id, entry] of watches) if (!entry.stopped) baseline(id, entry); for (const [id, entry] of observations) if (!entry.stopped) openObservation(id, entry) },
-    dispose() { disposed = true; for (const entry of [...watches.values(), ...observations.values()]) entry.stopped = true; watches.clear(); observations.clear(); state.set({ rows: {}, observed: {} }) },
+    dispose() { disposed = true; for (const entries of rowStreams.values()) for (const entry of entries) entry.close(); rowStreams.clear(); for (const entry of [...watches.values(), ...observations.values()]) entry.stopped = true; watches.clear(); observations.clear(); state.set({ rows: {}, observed: {} }) },
   }
 }
