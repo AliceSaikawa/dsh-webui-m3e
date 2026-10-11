@@ -256,6 +256,16 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - 親の独立レビュー後、隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の `e2e-dsh/rpc.spec.ts` からファイル一覧・テキスト・画像と対象パス監視の 2 件成功。実 Host の通常通知・範囲読み込みを確認した。古い通知の遅延順序は mock の明示的な回帰条件で検証。
 
 
+### Issue #30: 会話メニューを開く直後の横方向の広がり
+
+- M3E 2.8.2 は `showPopover()` より前にアンカーを計算する。閉じたメニューが `display:none` のため幅を 0 として右端を合わせ、開いた最初のフレームだけ画面外にはみ出していた。モバイルでは viewport の拡張とフォーカスによる横移動も起きた。
+- 会話メニューだけ固定配置にし、閉じている間を `display:block; visibility:hidden` にして実寸を測れるようにした。開いたまま画面を狭めた場合も、古いアンカー位置がモバイルの layout viewport を広げない。画面全体を追加でクリップせず、M3E の位置計算・反転・スクロール・開くアニメーション・フォーカス処理を使う。閉じる際は即時に隠れる（従来のフェードアウトは使わない）。
+- `e2e/session-menu-overflow.spec.ts` は reduced motion を無効にし、デスクトップ 390×844 とモバイル 375×812・390×844・844×390 で各3回の開閉を検証する。各操作後1秒間の rAF で innerWidth・scrollWidth・visualViewport.offsetLeft を記録し、全7操作と Enter/Escape のフォーカスも確認する。開いたまま 844→375→390px に変更しても画面内に収まり、操作できることも確認する。
+- 修正前の回帰テストはデスクトップ・モバイルとも失敗した。390px に対して最大文書幅626px（デスクトップ）、最大表示幅823px・横移動266px（モバイル）を記録した。
+- 最終検証：単体テスト1,107件すべて成功（skipなし）、型検査・ビルド・check:pack（19ファイル）成功。ブラウザ16ケースすべて成功。独立レビューで、閉じたメニューのアクセシビリティ・ヒット判定・Tab対象外、外側クリックでの終了、画面サイズ変更後の配置も確認した。ビルドの既存500kB超chunk警告は残る。
+
+
+
 ### 2026-10-08：Issue #36・#37、ジョブの停止と一覧購読の失敗
 
 - DSH 0.2.0-rc.2 の公開配布物 `dsh-api-job-controller/lib/types/client/service.d.ts` と `lib/typert.remote-client.d.ts`、`lib/types/types.d.ts` を確認した。`jobs.kill(sessionId, jobId)` は `job.kill({ sessionId, jobId })` を呼び、`requested / already-finished` を返す。0.1.5 時点の「停止 API がない」という制限は現行版には適用しない。
