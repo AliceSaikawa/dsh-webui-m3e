@@ -297,3 +297,13 @@
 - #50 がマージされた `origin/main` の `7372a2c` から、隔離した `verify/pr-52-53-review` を作り、`git merge --no-commit --no-ff fix/issue-32-tool-identity fix/issue-48-stream-settlement` を実行した。両ファイルとも自動マージ成功。未解決ファイルは0件で、`git diff --check` も成功した。main とPRブランチの履歴は変更していない。
 - この組み合わせで `pnpm typecheck`、`pnpm test`（1103件、失敗・skipなし）、`pnpm build` が成功した。既存の chunk サイズ警告のみ。DSH は起動していない。
 - 統合順は #52 → #53 を推奨する。現在のコミットには rebase・強制pushは不要。将来 main に別の変更が入った場合は、その時点の競合と統合後のテストを再確認する。
+
+### 2026-10-08：issue #49 の読書位置の保持
+
+- 指示された専用 worktree／ブランチで、`cd99f273` を基点に修正した。Codex、依頼時のモデル指定は `gpt-6-astra`。コミット・公開はせず、指示役のレビューへ渡す。
+- 非表示中も行キーと相対位置のアンカーを保持し、親のスクロール量復元後にその行へ戻す。古いページの読み込み中も読者のスクロールでアンカーを更新する。自前の位置変更後のスクロール通知は、記録済みの scrollTop と同じなら無視する。
+- 修正前の実 Chromium 試験では、非表示中の prepend で行 120 → 100、読み込み中の移動後は行 115 → 110 を再現した。通常の表示中 prepend は対照として成功した。
+- issue の回帰検証の指示に基づき、`e2e/chat-scroll-state.spec.ts` と `e2e/fixtures/chat-scroll.tsx` を追加した。本番 hook と RetainedScrollPanel を実 DOM 上で動かし、偽の固定高の行と保留可能な読み込みだけを使う。通常の prepend、非表示中の完了、読み込み中の再表示と移動、末尾追従の継続／明示再開を含め 6 件成功。再表示後の操作は、親の数値復元と hook の復元フレームが完了してから行う。
+- Node 22.23.3、`NODE_OPTIONS=--experimental-strip-types`、`TZ=Asia/Tokyo` で型検査・単体 1,108 件・ビルド成功。既存 `e2e/chat-details.spec.ts` の 8 件も成功。ビルドの既存の大きな chunk 警告は残る。
+- 実機・DSH・有料 API は未使用。共有 Git メタデータへの worktree 作成と Chromium の macOS IPC は sandbox の外で実行する承認を受けた。試験用 Vite は自分の port 5299 のみ使用し、明示された依存ディレクトリを一時設定で許可した。ログは `tmp/issue49/`。他の worktree／PR #54・#55 は未変更。
+- 親の独立レビュー後、隔離した公開 DSH 0.2.0-rc.2 と localhost 偽 LLM で `e2e-dsh/records-v4.spec.ts` 2 件成功。会話とトレースへの実記録の表示を確認した。新規のスクロール通知順序は実 DOM の専用 fixture で検証しており、iOS タッチ操作は未確認。
