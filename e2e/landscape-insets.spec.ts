@@ -15,11 +15,27 @@ for (const area of [
       const cdp = await page.context().newCDPSession(page)
       await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, bottom: 0, left: area.left, right: area.right } })
     })
+    // Classic scrollbars (Linux Chromium) take inline-end layout width in each
+    // scroll container, even without overflow under `scrollbar-gutter: stable`;
+    // overlay scrollbars (macOS, iOS, Android) take none. The safe gutter is
+    // measured from the scrollport edge, so subtract only that scrollbar width.
+    async function scrollbarsRight(node: Locator) {
+      return node.first().evaluate(el => {
+        const up = (n: Element) => n.assignedSlot ?? n.parentElement ?? (n.getRootNode() as ShadowRoot).host ?? null
+        let total = 0
+        for (let a = up(el); a; a = up(a)) {
+          const s = getComputedStyle(a)
+          if (!/auto|scroll|hidden/.test(`${s.overflowX} ${s.overflowY}`)) continue
+          total += a.getBoundingClientRect().width - a.clientLeft - a.clientWidth - parseFloat(s.borderRightWidth)
+        }
+        return total
+      })
+    }
     async function edges(node: Locator, gutter: number) {
       await expect(node.first()).toBeAttached()
       const bounds = await node.first().evaluate(el => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right } })
       expect(bounds.left).toBeCloseTo(Math.max(gutter, area.left), 0)
-      expect(bounds.right).toBeCloseTo(area.width - Math.max(gutter, area.right), 0)
+      expect(bounds.right).toBeCloseTo(area.width - await scrollbarsRight(node) - Math.max(gutter, area.right), 0)
     }
     test('chat rows, tools and latest button stay inside the safe body', async ({ page }) => {
       await visit(page, '/s/chat-samples')
@@ -33,7 +49,7 @@ for (const area of [
       await page.locator('.chat-scroll').evaluate(el => { el.scrollTop = (el.scrollHeight - el.clientHeight) / 2; el.dispatchEvent(new Event('scroll')) })
       await expect(button(page, '最新へ')).toBeVisible()
       const latest = await page.locator('.chat-latest').boundingBox()
-      expect(latest!.x + latest!.width).toBeCloseTo(area.width - Math.max(16, area.right), 0)
+      expect(latest!.x + latest!.width).toBeCloseTo(area.width - await scrollbarsRight(page.locator('.chat-latest')) - Math.max(16, area.right), 0)
       await button(page, '最新へ').click()
       await expect.poll(() => page.locator('.chat-scroll').evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(4)
     })
@@ -64,7 +80,7 @@ for (const area of [
       await expect(row).toBeVisible()
       const box = await row.boundingBox()
       expect(box!.x).toBeCloseTo(area.left + 16, 0)
-      expect(box!.x + box!.width).toBeCloseTo(area.width - area.right - 16, 0)
+      expect(box!.x + box!.width).toBeCloseTo(area.width - await scrollbarsRight(row) - area.right - 16, 0)
       expect(await page.locator('body').evaluate(el => el.scrollWidth)).toBe(area.width)
     })
   })

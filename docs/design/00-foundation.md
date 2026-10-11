@@ -613,3 +613,5 @@ web/src/
 - ドロワーは独立して左右を保護し、チャットの「最新へ」も右 inset を考慮する。inset がゼロなら既存の余白を保つ。
 - `e2e/landscape-insets.spec.ts` で Chromium CDP の safe area override を利用し、実際の `env()` と描画座標を測定する。縦向き、狭い横向きのゼロ inset、左右44/20pxと20/44px、長い改行なしテキスト、一覧・ツール・フォルダー・検索・最新へ操作を確認する。
 - 変更前は横向き8件が失敗し縦向き4件が通過。修正後の最終検証では、狭い横向きのゼロ inset を加えた新規16件と既存の操作5件が通過し、全単体テスト1107件もスキップ0件で通過した。CDPによる合成検証であり、実際のiOS Safariとノッチ端末の回転操作は未検証。
+- GitHub Actions（Linux Chromium）では新規 spec が全件失敗した。原因は試験側で、右端の期待値を viewport 幅から計算していた。測る本文は `scrollbar-gutter: stable` の `.screen-content`／`.conversation-panel` の中にあり、Linux の通常スクロールバーは内容がなくても右端に 15px を確保する。macOS などのオーバーレイ型は 0px なので通っていた。本文は scrollport の右端から `max(既存余白, inset)` 内側にあり safe area は守っている。inset ゼロの位置も main と同じで、CSS は変更していない。
+- 試験は祖先のスクロールコンテナが右端に取るスクロールバー幅だけを差し引いて比べる（オーバーレイ型では元の式と同じ）。許容差は変えていない。main の CSS に戻すと横向き 8 件が失敗し、縦向きと横向きのゼロ inset は通ることを Linux で確認した。
