@@ -507,3 +507,8 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - `scripts/check-pack.ts` で tar の通常一覧と詳細一覧から名前・種類を取得し、件数の一致を確認する。`scripts/pack-contract.ts` では通常ファイルと許可されたディレクトリ（package、lib、dist、dist/assets）だけを通し、リンクや特殊ファイル、絶対パス、`..`、`.`、空のパス要素、制御文字を内容の読み取り前に拒否する。アーカイブの展開は行わない。
 - `tests/18-pack.test.ts` で USTAR の実アーカイブを組み立てる CLI 回帰を追加した。修正前は外向き・想定外ディレクトリ、シンボリックリンク、ハードリンク、FIFO など 9 ケースを見逃した（39 件中 9 件失敗）。通常のディレクトリを含むアーカイブの成功、名前と種類の不整合、型情報不足も検査する。
 - Node 22.23.3、macOS の bsdtar で `pnpm typecheck`、`pnpm test`（1,122 件成功、失敗・スキップなし）、`pnpm build`、`pnpm run check:pack`（19 ファイル成功）を確認した。ビルドには既存の 500 kB 超チャンク警告が残る。GNU tar での実行は未確認。依存やロックファイルの変更、DSH の起動、公開は行っていない。
+
+### PR ごとの CI の調整（2026-10-11）
+
+- `ready_for_review` を workflow の起動条件から外した。draft の解除はコードを変えないが、同じ head で 2 回目の実行が始まり、その間 `all checks` が保留になってマージがブランチ保護に拒否されていた（#72・#64・#71 で発生）。draft の PR も `opened`・`synchronize`・`reopened` で検証される。
+- `scripts/check-pack.ts` の `npm pack --json` の読み取りを `packedTarballName`（`scripts/pack-contract.ts`）に分けた。npm 10 は配列を、npm 11 以降は名前をキーにしたオブジェクトを返すため、どちらでも結果がちょうど 1 件で、ファイル名が区切り文字を含まないときだけ受け付ける。`tests/18-pack.test.ts` に両形式と不正な形の検査を追加した。npm 12.2.0 の手元で `pnpm check:pack` が 19 ファイルで成功した（以前は形式の差で止まっていた）。
