@@ -55,7 +55,9 @@
 .home-actions .material-symbols-outlined { margin-right: calc(var(--app-space) * .75); }
 .home-menu { --m3e-menu-container-max-width: calc(100vw - var(--app-space) * 1.5); }
 .home-picker-explanation, .home-current-path { padding: calc(var(--app-space) / 2) calc(var(--app-space) * 1.25); margin-block: var(--app-space); font-size: 14px; color: var(--md-sys-color-on-surface-variant); }
-.home-crumbs { padding: 0 calc(var(--app-space) * 1.25); overflow-x: auto; }
+.home-crumbs { padding: 8px calc(var(--app-space) * 1.25); overflow-x: auto; }
+.home-crumbs m3e-chip-set { flex-wrap: nowrap; width: max-content; }
+.home-crumbs m3e-assist-chip { min-width: 44px; flex-shrink: 0; }
 .home-current-path { overflow-wrap: anywhere; font-size: 12px; }
 .home-folders { padding: 0 calc(var(--app-space) * .75) calc(var(--app-space) * 1.5); }
 .home-folder-row { width: 100%; min-height: 64px; padding: calc(var(--app-space) * .75); border: 0; border-radius: calc(var(--app-radius) * 4 / 7); display: flex; align-items: center; gap: var(--app-space); background: transparent; color: inherit; text-align: left; }

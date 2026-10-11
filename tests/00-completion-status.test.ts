@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { completionStatus } from '../web/src/dsh/completion-status.ts'
+import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
 import { observable } from '../web/src/dsh/mock/observable.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import type { SessionListState } from '../web/src/dsh/services.ts'
 
-test('標準画面と同じく baseline 前の完了通知を残し、表示・再開・削除で未読を消す', () => {
+test('標準画面と同じく baseline 前の完了通知を残し、表示・再開・削除で未読を消す', async () => {
   const base = createMockContext()
   const list = observable<SessionListState>({ phase: 'pending', ids: [], byId: {}, projectionsBySession: {} })
   let status!: (id: string, running: boolean) => void
@@ -15,12 +16,17 @@ test('標準画面と同じく baseline 前の完了通知を残し、表示・�
   } } }
   const store = completionStatus(ctx)
   const row = { id: 'a', displayTitle: '完了', running: false, blank: false, updatedAt: 0, retainedBy: {} }
+  base.mock.addSession(row, [])
+  const owner = conversationSelection(ctx.sessions)
   try {
     status('a', false)
     list.set({ ...list.getSnapshot(), phase: 'ready', ids: ['a'], byId: { a: row } })
     assert.equal(store.getSnapshot().byId.a?.completionUnread, true)
     list.set({ ...list.getSnapshot(), byId: { a: { ...row, retainedBy: { 'm3e.mainView': 1 } } } })
+    assert.equal(store.getSnapshot().byId.a?.completionUnread, true)
+    await owner.select('a')
     assert.equal(store.getSnapshot().byId.a?.completionUnread, false)
+    owner.clear()
     list.set({ ...list.getSnapshot(), byId: { a: row } })
     status('a', true); status('a', false)
     assert.equal(store.getSnapshot().byId.a?.completionUnread, true)
@@ -30,7 +36,7 @@ test('標準画面と同じく baseline 前の完了通知を残し、表示・�
     list.set({ ...list.getSnapshot(), ids: [], byId: {} })
     list.set({ ...list.getSnapshot(), ids: ['a'], byId: { a: row } })
     assert.equal(store.getSnapshot().byId.a?.completionUnread, false)
-  } finally { store.dispose(); base.dispose() }
+  } finally { store.dispose(); owner.dispose(); base.dispose() }
   assert.equal(unsubscribed, true)
 })
 
