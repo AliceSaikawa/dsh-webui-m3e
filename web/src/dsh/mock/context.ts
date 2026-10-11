@@ -953,10 +953,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     jobs: mockJobs.jobs,
     get mock() { return kit },
     dispose() {
+      // The completion observer subscribes to the selection owner.
+      completionStatus(ctx).dispose()
       conversationSelection(sessions).dispose()
       for (const read of projectionReads.values()) read.controller.abort()
       projectionReads.clear()
-      completionStatus(ctx).dispose()
       mockJobs.dispose()
       mockQuestions.dispose()
       connectionLifetime.abort()
