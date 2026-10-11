@@ -28,11 +28,11 @@ echo '==> 3/8 typecheck'
 pnpm typecheck
 pnpm exec tsc -p tsconfig.e2e.json --noEmit
 
-echo '==> 4/8 unit (zero skips, TZ=Asia/Tokyo as in CI)'
+echo '==> 4/8 unit (zero skips, TZ=UTC as in CI)'
 mkdir -p tmp/ci
 : > tmp/ci/unit-summary.json
 set +e
-NODE_OPTIONS=$strip TZ=Asia/Tokyo node $strip --test \
+NODE_OPTIONS=$strip TZ=UTC node $strip --test \
   --test-reporter=spec --test-reporter-destination=stdout \
   --test-reporter=./scripts/ci-summary-reporter.ts \
   --test-reporter-destination=tmp/ci/unit-summary.json tests/*.test.ts
@@ -40,9 +40,9 @@ status=$?
 set -e
 NODE_OPTIONS=$strip node scripts/check-ci-test-results.ts tmp/ci/unit-summary.json "$status"
 
-echo '==> 5/8 unit in UTC (advisory)'
-NODE_OPTIONS=$strip TZ=UTC node $strip --test tests/*.test.ts >tmp/ci/unit-utc.log 2>&1 ||
-  echo '!! TZ=UTC で失敗するテストがあります（CI でも advisory）。詳細は tmp/ci/unit-utc.log'
+echo '==> 5/8 unit in Asia/Tokyo'
+NODE_OPTIONS=$strip TZ=Asia/Tokyo node $strip --test tests/*.test.ts >tmp/ci/unit-tokyo.log 2>&1 ||
+  { echo '!! TZ=Asia/Tokyo で失敗するテストがあります。詳細は tmp/ci/unit-tokyo.log'; exit 1; }
 
 echo '==> 6/8 build / pack'
 NODE_OPTIONS=$strip pnpm build

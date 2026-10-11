@@ -28,6 +28,11 @@ function visible(value: unknown): any {
 
 export async function captureDisplay() {
   const realNow = Date.now
+  // The baseline was captured with +09:00 clocks, and date labels use the local
+  // time zone as users see them. Pin the zone for this capture only, so the
+  // comparison holds on any machine (CI runners use UTC).
+  const realTz = process.env.TZ
+  process.env.TZ = 'Asia/Tokyo'
   Date.now = () => Date.parse('2026-09-25T09:00:00+09:00')
   try {
   const result: Record<string, any> = {}
@@ -63,5 +68,9 @@ export async function captureDisplay() {
     } finally { ctx.dispose() }
   }
     return result
-  } finally { Date.now = realNow }
+  } finally {
+    Date.now = realNow
+    if (realTz === undefined) delete process.env.TZ
+    else process.env.TZ = realTz
+  }
 }

@@ -2,7 +2,9 @@ name: PR checks
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # ready_for_review is left out: marking a draft ready does not change the
+    # code, and a second run on the same head kept "all checks" pending.
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -62,10 +64,9 @@ jobs:
       - name: Unit tests (zero skips required)
         env:
           NODE_OPTIONS: --experimental-strip-types
-          # The existing display golden fixture was captured with +09:00 clocks.
-          # Remove this once display formatting receives an explicit time zone;
-          # the advisory UTC step below shows whether that is done.
-          TZ: Asia/Tokyo
+          # The tests no longer depend on the machine's time zone (the display
+          # golden helper pins its own). Run in UTC here and in Asia/Tokyo below.
+          TZ: UTC
         shell: bash
         run: |
           mkdir -p tmp/ci
@@ -79,12 +80,11 @@ jobs:
           test_status=$?
           set -e
           node scripts/check-ci-test-results.ts tmp/ci/unit-summary.json "$test_status"
-      # Keep the time zone dependency visible instead of hiding it. Advisory only.
-      - name: Unit tests in UTC (advisory)
-        continue-on-error: true
+      # Most contributors run the tests in Japan; keep that zone covered too.
+      - name: Unit tests in Asia/Tokyo
         env:
           NODE_OPTIONS: --experimental-strip-types
-          TZ: UTC
+          TZ: Asia/Tokyo
         run: node --experimental-strip-types --test tests/*.test.ts
       - name: Build
         env:

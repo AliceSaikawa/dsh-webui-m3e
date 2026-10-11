@@ -22,7 +22,7 @@ export function SettingsDetailScreen({ page }: { page: string }) {
     {definition.id === 'models' && <ModelsPanel namespaces={namespaces} state={state} store={store} />}
     {definition.id !== 'models' && namespaces.map(namespace => <section className="settings-namespace" key={namespace.ns}>
       <h2>{namespaceTitle(namespace.ns)}</h2>
-      <div className="settings-fields" key={`${namespace.ns}:${state.generation[namespace.ns] ?? 0}`}>
+      <div className="settings-fields">
         <SchemaFields fields={schemaFields(namespace, state.permissionCatalog)} namespace={namespace} state={state} store={store} />
       </div>
     </section>)}

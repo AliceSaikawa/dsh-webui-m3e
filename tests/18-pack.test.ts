@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
-import { parsePackEntries, validatePack, type PackFile } from '../scripts/pack-contract.ts'
+import { packedTarballName, parsePackEntries, validatePack, type PackFile } from '../scripts/pack-contract.ts'
 import { productionModuleErrors } from '../scripts/production-modules.ts'
 
 const assetJs = 'dist/assets/index-AbCd1234.js'
@@ -243,4 +243,15 @@ test('pack: allows production modules and the shared observable only', () => {
     'web/src/dsh/mock/observable.ts', '/project/web/src/dsh/mock/observable.ts?v=1', 'C:\\project\\web\\src\\dsh\\mock\\observable.ts',
   ]), [])
   assert.deepEqual(productionModuleErrors(['web/src/dsh/mock/observable-extra.ts']), ['mock module in production: web/src/dsh/mock/observable-extra.ts'])
+})
+
+test('pack: reads the tarball name from npm 10 arrays and npm 11+ objects', () => {
+  const result = { id: 'dsh-webui-m3e@0.0.8', filename: 'dsh-webui-m3e-0.0.8.tgz', files: [] }
+  assert.equal(packedTarballName(JSON.stringify([result])), 'dsh-webui-m3e-0.0.8.tgz')
+  assert.equal(packedTarballName(JSON.stringify({ 'dsh-webui-m3e': result })), 'dsh-webui-m3e-0.0.8.tgz')
+  for (const bad of ['[]', '{}', 'null', '"x"', JSON.stringify([result, result]), JSON.stringify({ a: result, b: result }),
+    JSON.stringify([{ filename: '' }]), JSON.stringify([{ filename: '../x.tgz' }]), JSON.stringify([{}]), JSON.stringify([null])]) {
+    assert.throws(() => packedTarballName(bad), /did not produce one tarball/, bad)
+  }
+  assert.throws(() => packedTarballName('{'))
 })
