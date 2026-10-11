@@ -66,23 +66,26 @@ test('08c 読み取り専用の設定は編集できない', async ({ page }) =>
   await shot(page, '08-readonly')
 })
 
-test('08d 設定保存の競合は再取得して次の編集を保存できる', async ({ page }) => {
+// #46: a conflict re-reads the settings but keeps the unsaved input, so the
+// user can check the saved value and save again instead of retyping.
+test('08d 設定保存の競合は再取得し、入力を残して保存し直せる', async ({ page }) => {
   await visit(page, '/settings/other', 'settings-conflict')
   const input = page.getByLabel('名前', { exact: true })
   await expect(input).toHaveValue('追加機能')
   await input.fill('競合する変更')
   await input.press('Tab')
   await expect(page.getByText('ほかの場所で設定が変わりました。読み直しました', { exact: true })).toBeVisible()
-  await expect(input).toHaveValue('追加機能')
+  await expect(page.getByText('ほかの場所で設定が変わりました。入力は残っています。保存済みの値を確認して、もう一度保存してください。', { exact: true })).toBeVisible()
+  await expect(input).toHaveValue('競合する変更')
   await shot(page, '08-conflict')
-  await input.fill('読み直した後の変更')
-  await input.press('Tab')
+  await button(page, 'もう一度保存する').click()
   await expect(page.getByText('保存しました', { exact: true })).toBeVisible()
-  await expect(input).toHaveValue('読み直した後の変更')
+  await expect(page.getByText(/入力は残っています/)).toHaveCount(0)
+  await expect(input).toHaveValue('競合する変更')
   await button(page, '戻る').click()
   await nav(page, '設定').click()
   await action(page, 'そのほか').click()
-  await expect(page.getByLabel('名前', { exact: true })).toHaveValue('読み直した後の変更')
+  await expect(page.getByLabel('名前', { exact: true })).toHaveValue('競合する変更')
 })
 
 test('08e 設定保存の拒否は項目に理由を表示して入力を保持する', async ({ page }) => {
