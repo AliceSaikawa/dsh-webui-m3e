@@ -9,6 +9,20 @@ const staticFiles = new Set([...required,
   'dist/manifest.webmanifest', 'dist/sw.js', 'dist/sw-cache.js',
   'dist/apple-touch-icon.png', 'dist/icon-192.png', 'dist/icon-512.png', 'dist/icon-maskable-512.png',
 ])
+/**
+ * The tarball name from `npm pack --json`. npm 10 prints an array of results;
+ * npm 11 and later print an object keyed by package name. Exactly one result
+ * with a plain file name is accepted in either shape.
+ */
+export function packedTarballName(json: string): string {
+  const parsed: unknown = JSON.parse(json)
+  const results = Array.isArray(parsed) ? parsed
+    : typeof parsed === 'object' && parsed !== null ? Object.values(parsed) : []
+  const filename = results.length === 1 ? (results[0] as { filename?: unknown } | null)?.filename : undefined
+  if (typeof filename !== 'string' || !filename || /[\\/]/.test(filename)) throw new Error('npm pack did not produce one tarball')
+  return filename
+}
+
 export function allowedPackPath(path: string): boolean {
   // Vite's explicit [name]-[hash:8] output in vite.config.ts. No source-style dots.
   return staticFiles.has(path) || /^dist\/assets\/[\w-]+-[\w-]{8}\.(?:js|css|woff2)$/.test(path)
