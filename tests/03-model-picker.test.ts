@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ModelCatalog } from '../web/src/features/composer/api.ts'
-import { createModelApplyController, effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
+import { createModelApplyController, modelApplyController, effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
+import { consumeDraftCommand, draftTextRevision, readDraft, writeDraft } from '../web/src/features/composer/drafts.ts'
 
 const catalog: ModelCatalog = {
   default: { provider: 'first', model: 'shared', reasoningEffort: 'high' },
@@ -55,4 +56,47 @@ test('反映要求はシートを開き直しても一つだけ進み、成功�
   await assert.rejects(controller.run(firstSelection, async () => { throw failure }), error => error === failure)
   assert.equal(controller.getSnapshot().error, failure)
   assert.deepEqual(controller.getSnapshot().selected, firstSelection)
+})
+
+test('送信中はモデル変更を開始せず、送信終了後に選べる', async () => {
+  const controller = createModelApplyController()
+  const selection = { provider: 'first', model: 'shared' }
+  let calls = 0
+  const apply = async () => { calls++; return selection }
+  controller.setComposerBusy(true)
+  await assert.rejects(controller.run(selection, apply), /送信/u)
+  assert.equal(calls, 0)
+  controller.setComposerBusy(false)
+  await controller.run(selection, apply)
+  assert.equal(calls, 1)
+})
+
+test('反映中の controller は同じサービスと下書きだけで再利用する', async () => {
+  const scope = {}, otherScope = {}
+  const first = modelApplyController(scope, 'session:shared')
+  let finish!: () => void
+  const selection = { provider: 'first', model: 'shared' }
+  const pending = first.run(selection, async () => { await new Promise<void>(resolve => { finish = resolve }); return selection })
+  assert.equal(modelApplyController(scope, 'session:shared'), first)
+  assert.equal(modelApplyController(scope, 'session:shared').getSnapshot().pending, true)
+  assert.equal(modelApplyController(scope, 'session:other').getSnapshot().pending, false)
+  assert.equal(modelApplyController(otherScope, 'session:shared').getSnapshot().pending, false)
+  finish(); await pending
+  assert.equal(modelApplyController(scope, 'session:shared').getSnapshot().pending, false)
+})
+
+test('コマンド消費は本文編集の世代を確認し、画像やエラーの更新では無効化しない', () => {
+  const key = 'session:model-command-revisions'
+  writeDraft(key, { text: ' /model ', images: [] })
+  const original = draftTextRevision(key)
+  writeDraft(key, { ...readDraft(key), preparingImages: 1, error: '画像準備中' })
+  consumeDraftCommand(key, '/model', original)
+  assert.equal(readDraft(key).text, '')
+  assert.equal(readDraft(key).preparingImages, 1)
+  writeDraft(key, { ...readDraft(key), text: '/model' })
+  const edited = draftTextRevision(key)
+  writeDraft(key, { ...readDraft(key), text: '新しい本文' })
+  writeDraft(key, { ...readDraft(key), text: '/model' })
+  consumeDraftCommand(key, '/model', edited)
+  assert.equal(readDraft(key).text, '/model')
 })

@@ -9,12 +9,49 @@ import type { PreparedImage } from '../web/src/features/composer/types.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { imageBase64 } from '../web/src/dsh/mock/fixtures.ts'
 import { conversationSelection } from '../web/src/dsh/conversation-selection.ts'
+import { modelApplyController } from '../web/src/features/composer/model-picker.ts'
 
 const image: PreparedImage = {
   id: 'picture', name: '写真.png', previewUrl: 'data:image/png;base64,aW1hZ2U=', width: 10, height: 20,
   prompt: { type: 'image', mediaType: 'image/png', data: 'aW1hZ2U=', name: '写真.png' },
   attachment: { type: 'image', value: { previewUrl: 'data:image/png;base64,aW1hZ2U=', name: '写真.png', width: 10, height: 20 } },
 }
+
+test('反映中は queue・steer・再試行の送信入口を同期的に拒否し、本文を保持する', async () => {
+  const h = harness('model-pending')
+  const selection = { provider: 'test', model: 'new', reasoningEffort: 'low' }
+  const controller = modelApplyController(h.options.sessions, h.existing().draftKey)
+  const gate = deferred<void>()
+  const pending = controller.run(selection, async value => { await gate.promise; return value })
+  writeDraft(h.existing().draftKey, { text: '送信予定', images: [], error: '再試行', retryMode: 'steer' })
+  for (const mode of ['queue', 'steer', 'queue'] as const) {
+    const result = await deliverDraft(h.existing(mode))
+    assert.match(String(result.error), /反映中/u)
+  }
+  assert.deepEqual(h.calls, [])
+  assert.equal(readDraft(h.existing().draftKey).text, '送信予定')
+  gate.resolve(); await pending
+  assert.deepEqual(await deliverDraft(h.existing()), {})
+  assert.equal(h.prompts.length, 1)
+})
+
+test('送信開始直後は再描画を待たずモデル変更を拒否し、失敗後は選び直せる', async () => {
+  const h = harness('delivery-lock')
+  const gate = deferred<void>()
+  h.waitCreate(gate.promise)
+  h.put({ text: '新しい会話' })
+  const controller = modelApplyController(h.options.sessions, h.key)
+  const delivery = deliverDraft(h.options)
+  const selection = { provider: 'test', model: 'next' }
+  let calls = 0
+  await assert.rejects(controller.run(selection, async value => { calls++; return value }), /送信/u)
+  assert.equal(calls, 0)
+  h.failPrompt()
+  gate.resolve(); await delivery
+  assert.equal(controller.getSnapshot().composerBusy, false)
+  await controller.run(selection, async value => { calls++; return value })
+  assert.equal(calls, 1)
+})
 
 function deferred<T>() {
   let resolve!: (value: T) => void

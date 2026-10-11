@@ -369,3 +369,13 @@
 - アニメーションを有効にした Playwright で、失敗時の復元、反映中の閉じ直し、順番待ちシートから編集ダイアログへの切り替えを追加した。後者は Issue #5 のシート切り替え競合に対する別の入口での回帰試験。
 - 接続回復の e2e は省いた。`scenario=disconnected` で開いたシートから再接続を試すと、偽接続の再構成に伴い会話画面とシートが閉じるため、同じシートの再有効化を検証できなかった。実 DSH の再接続でシートが維持される場合の動作も未確認。
 - 検証：`pnpm typecheck` 成功、`pnpm test` 705 件成功、`pnpm build` 成功、Playwright 全件 74 件成功。新規の失敗・反映中・シート切り替えの 3 件はそれぞれ 5 回連続で成功（15 件）。`?mock` の幅は Playwright 設定の 390px。実 DSH は起動していない。
+
+### 2026-10-08：Issue #41 モデル反映と送信・本文編集の競合
+
+- controller を session service と draft key 単位で共有し、シートを閉じたり Composer を再表示しても反映待ちを保持する。Composer は状態を購読して送信を無効化し、送信入口でも同期確認する。送信開始時はモデル変更を拒否し、完了・失敗時に解除する。
+- `/model` の消去は本文の編集世代が変わっていない場合に限る。別文へ変えた後に `/model` を書き直す場合も保持し、画像準備など本文以外の更新は消去の妨げにしない。
+- 修正前にブラウザ回帰 4 件すべて失敗、送信中の選択拒否の単体も失敗。修正後は新規 5 件＋既存 9 件の Chromium 試験成功。別会話の独立性、失敗解除、再表示、編集の ABA、現在の既定値での新規下書き再利用を含む。
+- Node 22.23.3／TZ=Asia/Tokyo の全単体 1,112 件成功、skip 0。型検査・ビルド・梱包検査も実施。公開 DSH 0.2.0-rc.2 の native 2 件を含む。独立レビューの 39 件成功、最終的な残存指摘なし。
+- 隔離公開 DSH と localhost 偽 LLM に対する I41 試験で、既存会話で変更した provider/model/reasoningEffort が次回 `request/header` に記録され、偽 LLM に選択モデルで要求が届くことを確認。実データ・有料 API・実機は使用しない。
+- 2026-10-11 追記：CI（Linux）で `e2e/model-send-race.spec.ts:75` が `6:ollamalocal` を表示して失敗した。controller の寿命が Composer から session service＋draft key に延びたため、前回の `selected` が送信後も残る。`ModelPicker` の `[applyState.selected]` effect は mount 時にも実行され、`initialCatalog` があって `observed`（現在の既定値）で初期化した後に、古い `selected` で上書きしていた。試験の期待は正しく、製品側の不具合。ローカルの Linux では毎回再現し、修正前の PR 先頭でも同じだった。
+- `Sheets.tsx` で、mount 時点の `selected` を ref に記録し、表示中に届いた新しい結果だけを `current` へ反映するようにした。反映中にシートを開き直した場合は、完了時に値が変わるため従来どおり表示する。Mac で成功した理由は未確認。推測では、カタログ取得前にシートが開くと、取得後の `observedKey` の変化で既定値に戻るため。

@@ -18,7 +18,7 @@ import { usePermissionCatalog } from './use-permission-catalog.ts'
 import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
-import { prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
+import { consumeDraftCommand, draftTextRevision, prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
 import { prepareImage } from './images.ts'
 import { errorText, ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
@@ -27,7 +27,7 @@ import { registerDeliveryDestination, handoffDeliveryDestination } from './deliv
 import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
-import { createModelApplyController } from './model-picker.ts'
+import { modelApplyController } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
 import './composer.css'
 
@@ -60,7 +60,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const catalogCache = useRef<ModelCatalog | undefined>(undefined)
   const catalogRequest = useRef<Promise<ModelCatalog> | undefined>(undefined)
   const catalogGeneration = useRef(0)
-  const modelApply = useMemo(() => createModelApplyController(), [])
+  const modelApply = useMemo(() => modelApplyController(services.sessions, draftKey), [services.sessions, draftKey])
+  const modelState = useSyncExternalStore(modelApply.subscribe, modelApply.getSnapshot, modelApply.getSnapshot)
   const [defaults, setDefaults] = useState<PermissionProjection>()
   const [cursor, setCursor] = useState(draft.text.length)
   const [suggesting, setSuggesting] = useState(false)
@@ -84,7 +85,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
-  const canSend = connected && !busy && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
+  const canSend = connected && !busy && !modelState.pending && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
   const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')
 
   function update(patch: Partial<Draft>) {
@@ -108,16 +109,19 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const applyModel = useCallback((selection: ModelSelection): Promise<ModelSelection> => modelApply.run(selection, async requested => {
     const current = latestModelContext.current
     if (current.services.connection.state.getSnapshot() !== 'connected') throw new Error('接続が戻ってからモデルを選んでください。')
-    const commandText = readDraft(draftKey).text.trim() === '/model' ? { text: '' } : {}
+    if (pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)) throw new Error('送信が終わってからモデルを選んでください。')
+    const textRevision = draftTextRevision(draftKey)
     if (current.target.kind === 'new') {
-      writeDraft(draftKey, { ...readDraft(draftKey), model: requested, ...commandText })
+      writeDraft(draftKey, { ...readDraft(draftKey), model: requested })
+      consumeDraftCommand(draftKey, '/model', textRevision)
       return requested
     }
     if (!current.face || current.snapshot.removed || current.snapshot.openState !== 'open') {
       throw new Error('会話を開いてからモデルを選んでください。')
     }
     const selected = await current.api.selectModel(current.sessionId, requested)
-    writeDraft(draftKey, { ...readDraft(draftKey), model: undefined, ...commandText })
+    writeDraft(draftKey, { ...readDraft(draftKey), model: undefined })
+    consumeDraftCommand(draftKey, '/model', textRevision)
     return selected
   }), [draftKey, modelApply])
   useLayoutEffect(() => {
@@ -209,7 +213,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     await prepareDraftImages(draftKey, files, prepareImage)
   }
   async function send(mode: 'queue' | 'steer' = draft.retryMode ?? 'queue', restoreFocus = false) {
-    if (!canSend || locked.current || services.connection.state.getSnapshot() !== 'connected') return
+    if (!canSend || modelApply.getSnapshot().pending || locked.current || services.connection.state.getSnapshot() !== 'connected') return
     // The stock /model command belongs to its UI plugin, not the Host command list.
     if (draft.text.trim() === '/model' && draft.images.length === 0) {
       setSuggesting(false)

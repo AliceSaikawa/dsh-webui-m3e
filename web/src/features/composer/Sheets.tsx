@@ -115,7 +115,14 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
     return () => { active = false }
   }, [connected])
   useEffect(() => { if (!busy) setCurrent(observed ?? applyState.selected) }, [observedKey])
-  useEffect(() => { if (applyState.selected) setCurrent(applyState.selected) }, [applyState.selected])
+  // The shared controller outlives this view; only a result that arrives while
+  // mounted may replace the observed draft or session model.
+  const seenSelection = useRef(applyState.selected)
+  useEffect(() => {
+    if (applyState.selected === seenSelection.current) return
+    seenSelection.current = applyState.selected
+    if (applyState.selected) setCurrent(applyState.selected)
+  }, [applyState.selected])
   useEffect(() => { if (!busy && applyState.error) setCurrent(observed) }, [busy, applyState.error])
   useEffect(() => {
     if (!selectedEffort) return
