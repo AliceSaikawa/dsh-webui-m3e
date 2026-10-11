@@ -30,6 +30,18 @@ test('03height 六行を表示し、八行と折り返す長文は六行で止�
   await expect.poll(async () => (await input.boundingBox())!.height).toBe(44)
 })
 
+test('03height 入力欄の高さの測り直しで、会話の末尾表示がずれない', async ({ page }) => {
+  await visit(page, '/s/chat-long')
+  const chat = page.locator('.chat-scroll')
+  const gap = () => chat.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop)
+  await expect.poll(() => chat.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(500)
+  await expect.poll(gap).toBeLessThan(1)
+  // One character keeps the field height, so only M3E's re-measurement runs.
+  await page.getByLabel('メッセージ入力欄').pressSequentially('あ')
+  await expect(page.getByLabel('メッセージ入力欄')).toHaveValue('あ')
+  expect(await gap()).toBeLessThan(1)
+})
+
 test('03height 横向きでも本文を残し、低い表示領域でも操作行を切らない', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 })
   await visit(page, '/s/readme-review')

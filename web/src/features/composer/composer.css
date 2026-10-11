@@ -6,6 +6,11 @@
    The 273px viewport reserve includes header/tabs (129), footer/frame padding
    (38), controls (48), textarea padding (10), and 48px of conversation. */
 .composer-frame textarea { position: relative; z-index: 1; display: block; box-sizing: content-box; width: calc(100% - var(--app-space) * .5); border: 0; border-radius: 0; padding: calc(var(--app-space) * .125) calc(var(--app-space) * .25) calc(var(--app-space) * .5); resize: none; line-height: 24px; min-height: 34px; max-height: min(6lh, max(34px, calc(var(--app-height, 100dvh) - 273px - env(safe-area-inset-top) - env(safe-area-inset-bottom)))); overflow-y: auto; }
+/* M3E measures synchronously with inline `height: auto; padding: 2px 0`.
+   Without this, the 6px shorter field lets the conversation clamp its
+   scrollTop above the end and no resize is observed afterwards. Margin keeps
+   the outer box unchanged and does not enter the measured scrollHeight. */
+.composer-frame textarea[style*="height: auto"] { margin-bottom: calc(var(--app-space) * .625 - 4px); }
 .composer-frame textarea:focus-visible { outline-offset: 0; border-radius: calc(var(--app-radius) * 2 / 7); }
 .composer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--app-space) * .25); min-height: 48px; }
 .composer-controls m3e-icon-button { flex: none; min-width: 44px; min-height: 44px; }

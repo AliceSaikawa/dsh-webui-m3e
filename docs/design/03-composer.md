@@ -381,3 +381,5 @@
 - 実行環境は Codex。今回依頼されたモデルは gpt-6-astra（過去の設計書のモデル指定を現在の実行証跡として転記しない）。コミット・公開は行わず、統合担当のレビューへ渡す。
 - 最終検証：単体試験 1107 件すべて成功、skip 0。typecheck・build・check:pack（19 ファイル）成功。Chromium は新規 5 件と既存 composer 6 件の計 11 件成功。build の既存の大きなチャンク警告は残る。証跡は `tmp/issue29-31/{test,typecheck,build,pack,final-browser}.log`。
 - 最後の `git status` / `git diff --check` は、この worktree の `.git` を読めず `fatal: error reading .../.git` で停止した（先行した rg は `Resource deadlock avoided`）。製品ファイルと試験は読み書き可能だが、Git の差分チェック完了とは扱わない。Git メタデータの修復・別経路での操作はせず、統合担当へ報告した。
+- main 取り込み後、既存の e2e「02b」が会話の末尾から 6px 上で止まった（main 10/10 成功、本変更 9/10 失敗）。原因は M3E の高さ測定：接続時と入力のたびに、textarea へ一時的に `height: auto; padding: 2px 0` を当てて同期で scrollHeight を読む。content-box にしたことで測定中だけ入力欄が余白の差 6px（10px→4px）縮み、会話の表示域が伸びて scrollTop が末尾から 6px 上へ切り詰められる。測定後に高さは戻るため ResizeObserver は差を見ず、末尾へ戻らない（修正前の border-box では測定中に伸びる向きで、切り詰めは起きなかった）。
+- 測定中（inline の `height: auto`）だけ縮む分の `margin-bottom` を足し、外形を変えないようにした。margin は scrollHeight に入らず測定値も変わらない。会話のスクロール処理（02 の担当）は変えていない。初回表示と 1 文字入力の回帰試験を `e2e/composer-height.spec.ts` に追加した。Firefox の測定経路（`height: 0`）は対象外で、修正前から同じ。
