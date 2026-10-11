@@ -41,6 +41,7 @@ async function instrument(page: Page) {
             return { ...exported, apply(ctx: any) {
               const result = apply(ctx)
               ;(window as any).__reasoningRemote = ctx.root.remote
+              ;(window as any).__reasoningSessions = ctx.sessions
               return result
             } }
           },
@@ -136,4 +137,37 @@ test('I45 実設定: 非対応モデルへ変更して保存・再起動・送�
     await info.attach('ローカルLLMの要求先', { body: JSON.stringify(integration.llm.requestPaths), contentType: 'application/json' })
   }
   expect(integration.llm.requests.some(request => request.model === 'plain')).toBe(true)
+})
+
+test('I41 実設定: 既存会話でモデルと深さを選び直した次の要求に反映する', async ({ page, integration }, info) => {
+  await instrument(page); await openM3e(page, integration.host)
+  if (await page.getByRole('heading', { name: 'ワークスペースがありません' }).isVisible()) {
+    await button(page, 'ワークスペースを追加').click()
+    await button(page, 'ここを追加').click()
+  }
+  await button(page, '新しいセッション').click()
+  await page.getByLabel('メッセージ入力欄').fill('モデル変更前の確認')
+  await button(page, '送信').click()
+  await expect(page).toHaveURL(/#\/s\/[^/]+$/)
+  await expect(page.getByText('こんにちは。偽のモデルです。', { exact: true })).toBeVisible()
+  await expect(button(page, '実行を停止')).toHaveCount(0)
+  const sessionId = decodeURIComponent(new URL(page.url()).hash.replace(/^#\/s\//, ''))
+  await button(page, '入力の補助を開く').click()
+  await page.locator('m3e-select[aria-label="モデル"]').click()
+  await page.locator('m3e-option').filter({ hasText: '推論なし検証 / 推論対応モデル' }).last().click()
+  const depth = page.locator('m3e-select[aria-label="考える深さ"]')
+  await expect(depth).toBeEnabled()
+  await depth.click()
+  await page.locator('m3e-option').filter({ hasText: '低' }).last().click()
+  await expect(depth).toHaveJSProperty('value', 'low')
+  await expect(depth).toBeEnabled()
+  await page.keyboard.press('Escape')
+  const before = integration.llm.requests.length
+  await page.getByLabel('メッセージ入力欄').fill('モデル変更後の確認')
+  await button(page, '送信').click()
+  await expect.poll(() => integration.llm.requests.slice(before).some(request => request.model === 'reasoning')).toBe(true)
+  const headers = () => page.evaluate(id => (window as any).__reasoningSessions.binding(id).eventSource.getSnapshot().entries
+    .flatMap((entry: any) => entry.type === 'event' && entry.event.type === 'request/header' ? [entry.event.data.header.config] : []), sessionId)
+  await expect.poll(async () => (await headers()).at(-1)).toMatchObject({ provider: 'reasoning-test', model: 'reasoning', reasoningEffort: 'low' })
+  await info.attach('選択後の要求ヘッダー', { body: JSON.stringify(await headers(), null, 2), contentType: 'application/json' })
 })

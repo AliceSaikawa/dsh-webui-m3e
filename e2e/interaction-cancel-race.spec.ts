@@ -22,7 +22,7 @@ async function setup(page: Page) {
     ;(window as any).__cancelRace = {
       sync,
       open(id: string) { presentInteraction(store.getSnapshot().find((q: any) => q.callId === id), { from: 'inbox' }) },
-      finish(index: number, success: boolean) { if (success) replies[index].resolve(true); else replies[index].reject(new Error('injected RPC failure')) },
+      finish(index: number, success: boolean) { if (success) replies[index]!.resolve(true); else replies[index]!.reject(new Error('injected RPC failure')) },
       calls: () => calls,
       count: () => store.getSnapshot().filter((q: any) => q.sessionId === 'race-fixture').length,
     }

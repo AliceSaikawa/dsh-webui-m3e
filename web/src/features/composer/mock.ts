@@ -111,10 +111,12 @@ export function extendMock(kit: MockKit): void {
     async selectModel(input: ModelSelection & { sessionId: string }) {
       const testWindow = globalThis as typeof globalThis & {
         __m3eTestSelectModelDelay?: number
+        __m3eTestSelectModelGate?: Promise<void>
         __m3eTestSelectModelFailure?: boolean
       }
       const delay = Math.min(2000, Math.max(0, testWindow.__m3eTestSelectModelDelay ?? 0))
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
+      await testWindow.__m3eTestSelectModelGate
       const unavailable = () => failure('session/model-unavailable', 'このモデルや考える深さは選べません。', { provider: input.provider, model: input.model })
       if (testWindow.__m3eTestSelectModelFailure) return unavailable()
       if (!known.has(input.sessionId)) return failure('session/not-found', '会話が見つかりません。', { sessionId: input.sessionId })

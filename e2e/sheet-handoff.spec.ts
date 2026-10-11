@@ -1,6 +1,6 @@
 import { test, expect, visit, button, shot } from './helpers'
 import type { Page, Locator } from '@playwright/test'
-import type { ModelSelectionProjection } from '../web/src/dsh/services.ts'
+import type { ModelSelectionProjection } from '../web/src/features/composer/api.ts'
 
 declare global { interface Window {
   __m3eObserveModelSelection?: (read: (id: string) => unknown) => void
