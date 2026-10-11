@@ -278,7 +278,7 @@ test('保存拒否は対象の項目だけに理由を出し、再試行が成�
     h.api.update = async () => failure('settings/rejected', 'この値は管理者の設定によって許可されていません。')
     assert.equal(await h.store.edit(ns, ['timeout'], 70), false)
     assert.deepEqual(h.store.getSnapshot().fieldErrors, {
-      [fieldKey(ns, ['timeout'])]: 'この値は設定できません。入力内容を確認してください。',
+      [fieldKey(ns, ['timeout'])]: 'この値は管理者の設定によって許可されていません。',
     })
     assert.equal(current(h.store).value.timeout, 45)
     assert.equal(h.store.getSnapshot().busy[ns], false)

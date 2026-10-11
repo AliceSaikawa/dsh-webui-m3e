@@ -23,6 +23,18 @@ export const fieldKey = (ns: string, path: SettingPath): string => JSON.stringif
 const failureMessage = '設定を読み込めませんでした。接続を確認して、もう一度お試しください。'
 const interruptedMessage = '接続が切れたため保存を中断しました。入力は残っています。接続が戻ったら保存済みの値を確認して、もう一度保存してください。'
 const changedMessage = 'ほかの場所で設定が変わりました。入力は残っています。保存済みの値を確認して、もう一度保存してください。'
+const rejectedMessage = 'この値は設定できません。入力内容を確認してください。'
+/**
+ * A rejection reason written for people (for example an administrator's
+ * policy) is shown as is. Only Japanese letters and Japanese punctuation are
+ * accepted: ASCII or full-width letters and digits, paths and other symbols may
+ * carry input values or internal details, so such reasons get a fixed message.
+ */
+export function displayableRejection(message: unknown): string {
+  return typeof message === 'string' && message.length <= 200
+    && /^[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01\uff08\uff09\uff1a\uff1f]+$/u.test(message)
+    && /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(message) ? message : rejectedMessage
+}
 const within = (path: SettingPath, parent: SettingPath) => parent.every((part, index) => path[index] === part)
 const inputValue = (field: SettingField) => ['text', 'number'].includes(field.kind)
   ? typeof field.value === 'string' || typeof field.value === 'number' ? String(field.value) : '' : field.value
@@ -232,7 +244,7 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
           if (epoch === connectionEpoch) notices.forEach(notice => notice(loaded ? 'ほかの場所で設定が変わりました。読み直しました' : 'ほかの場所で設定が変わりました。読み直せなかったため、再読み込みしてください。'))
         } else {
           const reason = result.error.code === 'settings/rejected'
-            ? 'この値は設定できません。入力内容を確認してください。' : 'この変更は保存できませんでした。入力内容と接続を確認してください。'
+            ? displayableRejection(result.error.message) : 'この変更は保存できませんでした。入力内容と接続を確認してください。'
           if (editVersion === (edits.get(key) ?? 0) && find(ns)?.revision === row.revision) publish({ fieldErrors: { ...state.fieldErrors, [key]: reason } })
         }
       } catch {

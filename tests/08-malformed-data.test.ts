@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { decodeSchema, schemaFields, type SettingsNamespace } from '../web/src/features/settings/schema.ts'
-import { createSettingsStore, fieldKey, type SettingsApi } from '../web/src/features/settings/store.ts'
+import { createSettingsStore, displayableRejection, fieldKey, type SettingsApi } from '../web/src/features/settings/store.ts'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext, type UserQuestionProjection } from '../web/src/dsh/interactions-store.ts'
 import { blocks, contentText, prettyJson, type TraceInputBlock } from '../web/src/features/trace/model.ts'
 
@@ -124,4 +124,16 @@ test('トレースの通常の本文・画像・JSONは維持する', () => {
   assert.deepEqual(blocks(content), content)
   assert.equal(contentText(blocks(content)), '本文\n試験画像\nbash {}')
   assert.equal(prettyJson({ value: [1, 2] }), JSON.stringify({ value: [1, 2] }, null, 2))
+})
+
+test('保存拒否の理由は日本語の文と句読点だけなら表示し、値・パス・記号を含むものは固定文言にする', () => {
+  const fixed = 'この値は設定できません。入力内容を確認してください。'
+  for (const shown of ['この値は管理者の設定によって許可されていません。', '「接続先」は変更できません！', '値は空にできません（必須）：確認してください？', '許可されていません　管理者に確認してください']) {
+    assert.equal(displayableRejection(shown), shown, shown)
+  }
+  for (const hidden of ['入力値 synthetic-private-value を /synthetic/internal/path で拒否', 'Update rejected', '値 42 は大きすぎます', '値４２は大きすぎます',
+    'ＡＢＣは使えません', 'C:\\secret は使えません', '<script>は使えません', '値は1〜10です', '。。。', '', ' ', 'あ'.repeat(201), undefined, null, 7]) {
+    assert.equal(displayableRejection(hidden), fixed, String(hidden))
+  }
+  assert.equal(displayableRejection('あ'.repeat(200)), 'あ'.repeat(200))
 })
