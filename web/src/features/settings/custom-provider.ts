@@ -41,7 +41,7 @@ export function customDraft(namespace: SettingsNamespace, id?: string): CustomDr
 export function customFieldWritable(namespace: SettingsNamespace, id: string, key: string): boolean {
   const path = ['providers', id, key]
   if (!settingFieldAccess(namespace, { path, kind: 'readonly', label: '', description: '', overridden: true, disabled: false, required: false }).reset) return false
-  const blocked = (node: SchemaNode) => node.meta?.disabled || node.meta?.role === 'password'
+  const blocked = (node: SchemaNode) => node.truncated || node.meta?.disabled || node.meta?.role === 'password'
   let node: SchemaNode | undefined = decodeSchema(namespace.schema)
   for (const part of path) {
     if (node && blocked(node)) return false

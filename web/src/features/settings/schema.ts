@@ -5,15 +5,24 @@ import { matchesNumberStep } from './number-step.ts'
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
 export type SettingObject = { [key: string]: SettingValue }
 export type SettingPath = readonly string[]
+export interface SchemaMeta {
+  readonly description?: string; readonly title?: string; readonly role?: string; readonly min?: number; readonly max?: number; readonly step?: number
+  readonly required?: boolean; readonly disabled?: boolean; readonly pattern?: { readonly source: string; readonly flags: string }
+}
+/**
+ * A decoded schema node. The same object is shared by every path that refers to the
+ * same definition, so it is read-only (and frozen outside production builds).
+ */
 export interface SchemaNode {
-  truncated?: boolean
-  type?: string
-  value?: SettingValue
-  dict?: Record<string, SchemaNode>
-  list?: SchemaNode[]
-  inner?: SchemaNode
-  sKey?: SchemaNode
-  meta?: { description?: string; title?: string; role?: string; min?: number; max?: number; step?: number; required?: boolean; disabled?: boolean; pattern?: { source: string; flags: string } }
+  /** The definition was not decoded (a limit, the depth or a cycle on this path). Everything at this path is unknown. */
+  readonly truncated?: boolean
+  readonly type?: string
+  readonly value?: SettingValue
+  readonly dict?: Readonly<Record<string, SchemaNode>>
+  readonly list?: readonly SchemaNode[]
+  readonly inner?: SchemaNode
+  readonly sKey?: SchemaNode
+  readonly meta?: SchemaMeta
 }
 export interface SettingsNamespace {
   autoGenerate: boolean
@@ -42,6 +51,8 @@ export interface SettingField {
   required: boolean
   options?: { label: string; value: string | number | boolean | null }[]
   children?: SettingField[]
+  /** A read-only placeholder without a value: the definition or the value exceeded a limit. */
+  omitted?: boolean
 }
 export const settingsPages = [
   { id: 'models', title: 'モデル', icon: 'smart_toy' },
@@ -70,44 +81,70 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const safeKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 const japanese = (value?: string) => value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value) ? value : undefined
 
+// Limits, checked against the bundled DSH 0.2.0-rc.2 forms (docs/design/08-settings.md, Issue #77):
+// the largest form (llm-pi-ai) has 144 nodes, 153 decode visits, depth 10, and 19 fields at most.
+// Protection and value traversals grow with user data: 10 custom providers x 10 models already
+// cost 6,612 steps in the former protection walk, so those two budgets are larger.
 const MAX_SCHEMA_NODES = 1024
-const MAX_SCHEMA_WORK = 4096
+export const MAX_SCHEMA_WORK = 4096
+const MAX_SCHEMA_DEPTH = 32
 const MAX_SCHEMA_FIELDS = 512
+const MAX_VALUE_WORK = 32768
+const MAX_VALUE_DEPTH = 64
 class SchemaTooComplex extends Error {}
+class ValueTooLarge extends Error {}
 
-/** Resolve Cordis' node table without mutating it or following cycles. */
+// Decoded nodes are shared between paths; freeze them so an accidental write fails loudly in development and tests.
+// (The cast keeps this file loadable by plain Node and the host type check, where Vite's env is absent.)
+const freezeNodes = (import.meta as { env?: { PROD?: boolean } }).env?.PROD !== true
+const seal = (node: Mutable<SchemaNode>): SchemaNode => {
+  if (freezeNodes) { Object.freeze(node.meta); Object.freeze(node.dict); Object.freeze(node.list); Object.freeze(node) }
+  return node
+}
+type Mutable<T> = { -readonly [K in keyof T]: T[K] }
+const TRUNCATED: SchemaNode = seal({ truncated: true })
+
+/**
+ * Resolve Cordis' node table without mutating it or following cycles. A node beyond a
+ * limit, too deep, or closing a cycle becomes `{ truncated: true }` on its own; the rest
+ * of the definition is still decoded.
+ */
 export function decodeSchema(input: unknown): SchemaNode {
-  if (!isObject(input)) return {}
-  if (!isObject(input.refs) || !('uid' in input)) return {}
+  if (!isObject(input)) return seal({})
+  if (!isObject(input.refs) || !('uid' in input)) return seal({})
   const refs = input.refs
   const cache = new Map<string, SchemaNode>()
   let work = 0
-  let cycles = 0
+  let pathCuts = 0
   function visit(id: unknown, ancestors: Set<string>, depth: number): SchemaNode {
-    if (++work > MAX_SCHEMA_WORK || depth > 32) throw new SchemaTooComplex()
-    if (typeof id !== 'string' && typeof id !== 'number') return {}
+    if (++work > MAX_SCHEMA_WORK) return TRUNCATED
+    if (depth > MAX_SCHEMA_DEPTH) { pathCuts++; return TRUNCATED }
+    if (typeof id !== 'string' && typeof id !== 'number') return seal({})
     const key = String(id)
-    if (!safeKey(key) || !Object.hasOwn(refs, key)) return {}
-    if (ancestors.has(key)) { cycles++; return {} }
+    if (!safeKey(key) || !Object.hasOwn(refs, key)) return seal({})
+    // A cycle cut hides the definition below it, which may hold a password role.
+    if (ancestors.has(key)) { pathCuts++; return TRUNCATED }
     const cached = cache.get(key)
     if (cached) return cached
-    if (cache.size >= MAX_SCHEMA_NODES) throw new SchemaTooComplex()
+    if (cache.size >= MAX_SCHEMA_NODES) return TRUNCATED
     const node = refs[key]
-    if (!isObject(node)) return {}
+    if (!isObject(node)) return seal({})
     const seen = new Set(ancestors).add(key)
-    const previousCycles = cycles
-    const result: SchemaNode = { type: typeof node.type === 'string' ? node.type : undefined }
+    const previousCuts = pathCuts
+    const result: Mutable<SchemaNode> = { type: typeof node.type === 'string' ? node.type : undefined }
     if ('value' in node) result.value = node.value as SettingValue
-    if (isObject(node.meta)) result.meta = node.meta as SchemaNode['meta']
+    // Copy so that freezing never touches the caller's document.
+    if (isObject(node.meta)) result.meta = { ...node.meta } as SchemaMeta
     if (isObject(node.dict)) result.dict = Object.fromEntries(Object.entries(node.dict).filter(([name]) => safeKey(name)).map(([name, child]) => [name, visit(child, seen, depth + 1)]))
     if (Array.isArray(node.list)) result.list = node.list.map(child => visit(child, seen, depth + 1))
     if ('inner' in node) result.inner = visit(node.inner, seen, depth + 1)
     if ('sKey' in node) result.sKey = visit(node.sKey, seen, depth + 1)
-    // An ancestor-truncated result depends on its path and cannot be reused elsewhere.
-    if (cycles === previousCycles) cache.set(key, result)
+    seal(result)
+    // A result cut by depth or an ancestor depends on its path and cannot be reused elsewhere.
+    if (pathCuts === previousCuts) cache.set(key, result)
     return result
   }
-  try { return visit(input.uid, new Set(), 0) } catch (error) { if (error instanceof SchemaTooComplex) return { truncated: true }; throw error }
+  return visit(input.uid, new Set(), 0)
 }
 
 export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Record<SettingsPage, SettingsNamespace[]> {
@@ -136,37 +173,105 @@ export function valueAt(value: unknown, path: SettingPath): SettingValue | undef
   return current as SettingValue | undefined
 }
 
+const tooComplex = '設定の定義が複雑なため表示できません。標準の画面で確認してください。'
+const notice = (shown: number): SettingField => ({
+  path: [], kind: 'readonly', omitted: true, label: '表示していない項目', overridden: false, disabled: true, required: false,
+  description: shown ? `設定の項目や値が多いため、先頭の ${shown} 項目だけを表示しています。残りの項目は標準の画面で確認してください。` : tooComplex,
+})
+const unknownDescription = '設定の定義を読み切れないため、値を表示しません。標準の画面で確認してください。'
+const largeValueDescription = '値が大きいため表示を省略しました。標準の画面で確認してください。'
+
+/** Paths with prefix queries in O(depth). */
+class PathSet {
+  private readonly exact = new Set<string>()
+  private readonly prefixes = new Set<string>()
+  constructor(paths: readonly SettingPath[] = []) { for (const path of paths) this.add(path) }
+  add(path: SettingPath): void {
+    this.exact.add(JSON.stringify(path))
+    for (let length = 0; length <= path.length; length++) this.prefixes.add(JSON.stringify(path.slice(0, length)))
+  }
+  /** A member is `path` or one of its ancestors. */
+  covers(path: SettingPath): boolean {
+    for (let length = 0; length <= path.length; length++) if (this.exact.has(JSON.stringify(path.slice(0, length)))) return true
+    return false
+  }
+  /** A member is `path` or one of its descendants. */
+  touches(path: SettingPath): boolean { return this.prefixes.has(JSON.stringify(path)) }
+}
+
+/**
+ * Build the field models. Top-level items are shown in order until the next one would
+ * exceed a limit; the rest is replaced by one notice pointing to the stock settings page.
+ * A node whose definition is unknown (truncated) becomes a value-less placeholder on its own.
+ */
 export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
-  try { return boundedSchemaFields(namespace, catalog) } catch (error) {
+  let fields: SettingField[]
+  try { fields = boundedSchemaFields(namespace) } catch (error) {
     if (!(error instanceof SchemaTooComplex)) throw error
     // Never show an incompletely redacted value after a traversal limit.
-    return [{ path: [], kind: 'readonly', label: '設定項目', description: '設定の定義が複雑なため表示できません。標準の画面で確認してください。', overridden: false, disabled: true, required: false }]
+    return [notice(0)]
   }
+  return fields.map(field => namespace.ns === 'permission' && field.kind !== 'masked' && !field.omitted && field.path.length === 1 && field.path[0] === 'defaultPreset'
+    ? { ...field, kind: 'select', value: field.value ?? catalog?.defaultPreset,
+        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: option.name, value: option.value })) ?? [] }
+    : field)
 }
-function boundedSchemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
+function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
   const schema = decodeSchema(namespace.schema)
-  if (schema.truncated) throw new SchemaTooComplex()
   let protectionWork = 0, valueWork = 0, fieldCount = 0
-  const protectedPaths: SettingPath[] = (namespace.secrets ?? []).map(entry => entry.path)
+  const protectedPaths = new PathSet((namespace.secrets ?? []).map(entry => entry.path))
+  const unknownPaths = new PathSet()
   const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
-  const protectedAt = (path: SettingPath) => protectedPaths.some(parent => containsPath(parent, path))
 
+  /** Members of nested intersections, each shared definition once. */
+  function members(node: SchemaNode, disabled: boolean): { node: SchemaNode; disabled: boolean }[] {
+    const result: { node: SchemaNode; disabled: boolean }[] = []
+    const seen = [new Set<SchemaNode>(), new Set<SchemaNode>()]
+    let work = 0
+    const walk = (current: SchemaNode, off: boolean): void => {
+      if (++work > MAX_SCHEMA_WORK) throw new SchemaTooComplex()
+      const visited = seen[Number(off)]!
+      if (visited.has(current)) return
+      visited.add(current)
+      if (current.type === 'intersect' && !current.truncated) for (const child of current.list ?? []) walk(child, off || current.meta?.disabled === true)
+      else result.push({ node: current, disabled: off })
+    }
+    walk(node, disabled)
+    return result
+  }
+
+  // Whether a definition contains a password role or an unknown part. Decoded nodes form a
+  // DAG without cycles (cycles are cut), so memoizing by identity keeps this linear.
+  const sensitiveNodes = new Map<SchemaNode, boolean>()
+  function sensitive(node: SchemaNode): boolean {
+    let known = sensitiveNodes.get(node)
+    if (known === undefined) {
+      known = node.truncated === true || node.meta?.role === 'password' || Object.values(node.dict ?? {}).some(sensitive)
+        || (node.list ?? []).some(sensitive) || (node.inner !== undefined && sensitive(node.inner))
+      sensitiveNodes.set(node, known)
+    }
+    return known
+  }
   // Password roles also protect values nested inside read-only arrays/dictionaries.
+  // Unknown (truncated) definitions hide every value at or below their path.
+  // Subtrees without either add nothing, so large ordinary data costs no protection work.
   function collectProtected(node: SchemaNode, path: string[], value: unknown): void {
-    if (++protectionWork > MAX_SCHEMA_WORK || path.length > 64) throw new SchemaTooComplex()
-    if (node.meta?.role === 'password') { protectedPaths.push(path); return }
+    if (!sensitive(node)) return
+    if (++protectionWork > MAX_VALUE_WORK || path.length > MAX_VALUE_DEPTH) throw new SchemaTooComplex()
+    if (node.truncated) { unknownPaths.add(path); return }
+    if (node.meta?.role === 'password') { protectedPaths.add(path); return }
     if (node.dict) for (const [key, child] of Object.entries(node.dict)) collectProtected(child, [...path, key], isObject(value) ? value[key] : undefined)
-    if (node.list) for (const child of node.list) collectProtected(child, path, value)
+    if (node.list) for (const child of new Set(node.list)) collectProtected(child, path, value)
     if (node.inner && (isObject(value) || Array.isArray(value))) {
-      for (const [key, child] of Object.entries(value)) if (safeKey(key)) collectProtected(node.inner, [...path, key], child)
+      if (node.inner.truncated) unknownPaths.add(path)
+      else for (const [key, child] of Object.entries(value)) if (safeKey(key)) collectProtected(node.inner, [...path, key], child)
     }
   }
-  collectProtected(schema, [], namespace.value)
 
   // Remove protected descendants before a read-only parent can reach JSON formatting.
-  function visibleValue(value: SettingValue | undefined, path: string[], depth = 0): SettingValue | undefined {
-    if (++valueWork > MAX_SCHEMA_WORK || depth > 64) throw new SchemaTooComplex()
-    if (protectedAt(path)) return undefined
+  function visibleValue(value: SettingValue | undefined, path: string[], depth: number): SettingValue | undefined {
+    if (++valueWork > MAX_VALUE_WORK || depth > MAX_VALUE_DEPTH) throw new ValueTooLarge()
+    if (protectedPaths.covers(path) || unknownPaths.covers(path)) return undefined
     if (Array.isArray(value)) return value.map((child, index) => visibleValue(child, [...path, String(index)], depth + 1) ?? null)
     if (isObject(value)) return Object.fromEntries(Object.entries(value).filter(([key]) => safeKey(key)).flatMap(([key, child]) => {
       const visible = visibleValue(child as SettingValue, [...path, key], depth + 1)
@@ -174,18 +279,24 @@ function boundedSchemaFields(namespace: SettingsNamespace, catalog?: PermissionC
     }))
     return value
   }
-  const visible = visibleValue(namespace.value, [])
+  function visibleAt(path: string[]): SettingValue | undefined {
+    const value = valueAt(namespace.value, path)
+    if (protectedPaths.covers(path) || unknownPaths.covers(path)) return undefined
+    // Scalars cost nothing, so one huge collection cannot hide the ordinary fields after it.
+    return value !== null && typeof value === 'object' ? visibleValue(value, path, path.length) : value
+  }
 
   function fields(node: SchemaNode, path: string[], inheritedDisabled = false): SettingField[] {
-    if (protectedAt(path)) return [field(node, path, 0, inheritedDisabled)]
-    if (node.type === 'intersect') return (node.list ?? []).flatMap(child => fields(child, path, inheritedDisabled || node.meta?.disabled === true))
-    if (node.type === 'object' && node.dict) return Object.entries(node.dict).map(([key, child], index) => field(child, [...path, key], index, inheritedDisabled || node.meta?.disabled === true))
-    return [field(node, path, 0, inheritedDisabled)]
+    return members(node, inheritedDisabled).flatMap(member => member.node.type === 'object' && member.node.dict
+      ? Object.entries(member.node.dict).map(([key, child], index) => field(child, [...path, key], index, member.disabled || member.node.meta?.disabled === true))
+      : [field(member.node, path, 0, member.disabled)])
   }
   function field(node: SchemaNode, path: string[], index: number, inheritedDisabled: boolean): SettingField {
     if (++fieldCount > MAX_SCHEMA_FIELDS) throw new SchemaTooComplex()
     const meta = node.meta ?? {}
-    let kind: SettingField['kind'] = protectedAt(path) ? 'masked'
+    const masked = protectedPaths.covers(path)
+    let kind: SettingField['kind'] = masked ? 'masked'
+      : unknownPaths.covers(path) ? 'readonly'
       : (node.type === 'object' && node.dict) || node.type === 'intersect' ? 'group'
       : node.type === 'boolean' ? 'switch' : node.type === 'string' ? 'text' : node.type === 'number' ? 'number'
       : node.type === 'union' && node.list?.length && node.list.every(child => child.type === 'const' && (child.value === null || ['string', 'boolean', 'number'].includes(typeof child.value))) ? 'select' : 'readonly'
@@ -198,14 +309,22 @@ function boundedSchemaFields(namespace: SettingsNamespace, catalog?: PermissionC
       disabled: inheritedDisabled || meta.disabled === true, required: meta.required === true,
       min: meta.min, max: meta.max, step: meta.step,
     }
+    const omit = (description: string) => Object.assign(result, { kind: 'readonly', omitted: true, disabled: true, description })
     // Masked fields never carry a stored value into the view model.
     if (kind === 'masked') {
       const status = namespace.secrets?.find(entry => containsPath(entry.path, path))
       result.registered = status ? status.set : valueAt(namespace.value, path) !== undefined
-    } else result.value = valueAt(visible, path)
+      return result
+    }
+    // An unknown definition at or below a read-only value may hide a password role.
+    if (kind !== 'group' && (unknownPaths.covers(path) || unknownPaths.touches(path))) return omit(unknownDescription)
     if (kind === 'group') {
       result.children = fields(node, path, result.disabled)
-      delete result.value
+      return result
+    }
+    try { result.value = visibleAt(path) } catch (error) {
+      if (!(error instanceof ValueTooLarge)) throw error
+      return omit(largeValueDescription)
     }
     if (kind === 'select') result.options = node.list!.map((child, optionIndex) => ({
       value: child.value as string | number | boolean | null,
@@ -213,10 +332,43 @@ function boundedSchemaFields(namespace: SettingsNamespace, catalog?: PermissionC
     }))
     return result
   }
-  return fields(schema, []).map(field => namespace.ns === 'permission' && field.kind !== 'masked' && field.path.length === 1 && field.path[0] === 'defaultPreset'
-    ? { ...field, kind: 'select', value: field.value ?? catalog?.defaultPreset,
-        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: option.name, value: option.value })) ?? [] }
-    : field)
+
+  if (schema.meta?.role === 'password') protectedPaths.add([])
+  if (protectedPaths.covers([])) return [field(schema, [], 0, false)]
+  if (schema.truncated) return [notice(0)]
+
+  // Top-level items in display order: the same walk as fields(schema, []).
+  interface Item { node: SchemaNode; path: string[]; index: number; disabled: boolean }
+  const items: Item[] = members(schema, false).flatMap(member => member.node.type === 'object' && member.node.dict
+    ? Object.entries(member.node.dict).map(([key, child], index) => ({ node: child, path: [key], index, disabled: member.disabled || member.node.meta?.disabled === true }))
+    : [{ node: member.node, path: [], index: 0, disabled: member.disabled }])
+
+  // Collect protection per top-level key (all intersection members of a key together),
+  // so a shown key never misses a password role declared by a later member.
+  const safeKeys = new Set<string>()
+  let protectionComplete = false
+  try {
+    for (const item of items) if (!item.path.length) collectProtected(item.node, [], namespace.value)
+    const byKey = new Map<string, Item[]>()
+    for (const item of items) if (item.path.length) byKey.set(item.path[0]!, [...byKey.get(item.path[0]!) ?? [], item])
+    for (const [key, group] of byKey) {
+      for (const item of group) collectProtected(item.node, item.path, valueAt(namespace.value, item.path))
+      safeKeys.add(key)
+    }
+    protectionComplete = true
+  } catch (error) { if (!(error instanceof SchemaTooComplex)) throw error }
+
+  const result: SettingField[] = []
+  for (const item of items) {
+    // A root-level member shows the whole value, so it needs every key checked.
+    const safe = item.path.length ? safeKeys.has(item.path[0]!) : protectionComplete
+    if (safe) try { result.push(field(item.node, item.path, item.index, item.disabled)); continue } catch (error) {
+      if (!(error instanceof SchemaTooComplex)) throw error
+    }
+    result.push(notice(result.length))
+    break
+  }
+  return result
 }
 
 export function selectFieldState(field: Pick<SettingField, 'options'>, value: SettingValue | undefined): { index: number; placeholder?: string } {
