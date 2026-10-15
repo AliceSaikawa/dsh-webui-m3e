@@ -1225,3 +1225,12 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 回帰は `tests/08-malformed-data.test.ts` と `e2e/malformed-data.spec.ts`、取得の直列化と最新結果の確認は `tests/08-store.test.ts`。作業証跡は `tmp/issue33-before.log`、`tmp/issue33-unit.log`、`tmp/issue33-browser-verified.log`、`tmp/issue33-real-dsh.log` に保存した。
 - 独立レビューで、循環打切りを含む復号結果のキャッシュが別パスの password マスクを失わせる退行と、JSON文字列を再帰的に解釈する表示差分を検出した。各回帰を修正前に失敗確認し、循環打切りを含む部分木はキャッシュせず、JSONの解釈は一度だけにした。通常の循環スキーマ内の兄弟項目を維持し、再検証の単体1118件は失敗・skip とも0。証跡は `tmp/issue33-review-before.log` と `tmp/issue33-review-unit.log`。
 - 2026-10-11（統合時）：保存拒否の表示は、利用者と確認して両立させた。理由がひらがな・カタカナ・漢字と日本語の句読点だけで 200 文字以内なら、そのまま表示する（管理者の設定などの理由を残す）。英数字（全角を含む）、パス、その他の記号を含むものは、固定の「この値は設定できません。入力内容を確認してください。」にする（入力値や内部パスを表示しない）。判定は `displayableRejection`（`store.ts`）。境界の単体試験を追加し、既存の e2e 08e・`settings-models`・`settings-drafts` の管理者の理由と、この PR の漏洩防止の試験がどちらも成り立つ。
+
+### 2026-10-15：Issue #16 の残りの洗い出しと、フォームのキー欄の非制御化
+
+- main `a3465a5` で Issue #16 の要件を 1 件ずつ照合した。PR #23（`71dd560`）で入口・共通フォーム・検証・path operation の差分保存・revision の競合・部分成功・キーの別保存・終了経路は実装済みで、その後の main の変更（#65、#66、#72、#73）を取り込んだ状態でも、既存の偽データ e2e 15 件は成功した。DSH の根拠は、上の節と同じく 0.2.0-rc.2 の `dsh-llm-pi-ai`（`providers` のスキーマ、`api` の const union、`apiKeyEnv` の `credential-ref`）を読んで確かめた。
+- 未対応で見つかったのは 1 点。フォームの「API キー（任意）」は React の制御された入力だったため、入力中の平文が DOM の `value` 属性（HTML）に複製されていた（偽データで合成値を入れ、`getAttribute('value')` と `html` の innerHTML に出ることを確認）。Issue #27 で一覧の `KeyEntry` だけを非制御にした際、このフォームは対象外だった。Issue #16 の「キーを残さない」「既存 M3E の方針に合わせる」に当たるため直した。
+- `CustomProviderSheet.tsx` に `KeyField` を設け、キー欄を非制御の入力にした。値は入力の value プロパティと、これまでどおり `createKeyDraft` の下書きだけに持つ。下書きが変わったとき（送信開始、切断、読み直し、外部変更、キャンセルでの消去）にプロパティを書き戻し、シートが overlay から外れたときと破棄のときにも空にする。下書き・保存・検証の store（`custom-provider-store.ts`、`providers.ts`）は変更していない。
+- 回帰試験 `I16 UI key markup`（`e2e/settings-custom-provider.spec.ts`）：追加フォームの入力・表示切替、部分成功のあとの再入力、編集フォームの入力で、`value` 属性が無く HTML に合成値が出ないこと、送信とキャンセルのあとにも残らないことを確かめる。修正前の本体で失敗することを確認した。下書きの書き戻しを外す変異では、この試験と既存の 5 件（refused、partial、late、saving M39、late registration）が入力の残留で失敗した。シートが外れたときの消去と、store が入力を受け付けなかったときの書き戻しは防御で、個別の試験は無い。
+- 今回変えなかったこと：Host の拒否は ui-spec の表どおり固定の「この変更は保存できませんでした。入力内容を確認してください。」のまま（#73 の `displayableRejection` を使う共通設定とは揃えていない。揃えるかは利用者の判断）。モデルの詳細項目（表示名、コンテキスト長、最大出力トークン数、入力種別）は 0.2.0-rc.2 のスキーマにある前提で常に出し、スキーマから有無を判定していない。
+- 未確認：iOS 実機でキーボードを出したときの操作（Issue #26）、Host 再起動をまたぐ保存内容の確認、本物の提供元への接続。実 DSH（`e2e-dsh`）は今回起動していない。
