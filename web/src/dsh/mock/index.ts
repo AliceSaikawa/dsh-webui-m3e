@@ -21,6 +21,9 @@ export function createMockContext(options: MockOptions = {}) {
     __m3eTestChildLoseResponseOnce?: boolean
     __m3eTestSelectModelGate?: Promise<void>
     __m3eTestSelectModelSessionId?: string
+    __m3eTestWorkspaceAttachGate?: Promise<void>
+    __m3eTestWorkspaceAttachFailure?: boolean
+    __m3eTestWorkspaceAttachCalls?: number
   }
   const delay = testWindow.__m3eTestModelCatalogDelay
   if (testWindow.__m3eTestSelectModelGate) {
@@ -30,6 +33,21 @@ export function createMockContext(options: MockOptions = {}) {
       testWindow.__m3eTestSelectModelSessionId = input.sessionId
       await testWindow.__m3eTestSelectModelGate
       return selectModel(input)
+    })
+  }
+  // Holds only the Workspace registration retry (create with a published
+  // sessionId) and can fail it like the Host's partial-create error.
+  if (testWindow.__m3eTestWorkspaceAttachGate) {
+    const create = ctx.sessions.create.bind(ctx.sessions)
+    ctx.mock.patch('sessions.create', async (input: Parameters<typeof create>[0] = {}) => {
+      if (!input.sessionId || !input.workspaceId) return create(input)
+      testWindow.__m3eTestWorkspaceAttachCalls = (testWindow.__m3eTestWorkspaceAttachCalls ?? 0) + 1
+      await testWindow.__m3eTestWorkspaceAttachGate
+      if (testWindow.__m3eTestWorkspaceAttachFailure) {
+        const details = { sessionId: input.sessionId, workspaceId: input.workspaceId }
+        throw Object.assign(new Error('ワークスペースへ登録できませんでした。'), { rpcError: { code: 'session/workspace-attach-failed', message: 'ワークスペースへ登録できませんでした。', details } })
+      }
+      return create(input)
     })
   }
   const gate = testWindow.__m3eTestModelCatalogGate
