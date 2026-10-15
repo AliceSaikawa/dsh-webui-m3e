@@ -26,6 +26,8 @@ export interface TraceRow {
   /** Resolved only when details read it; list rendering must not access it. */
   readonly input: TraceInputBlock[]
   arguments?: string
+  /** Formatting omitted part of the arguments or summary, so search covers only the shown text. */
+  partialText?: boolean
   callId?: string
   parentCallId?: string
   rootCallId?: string
@@ -109,33 +111,119 @@ function fillToolName(row: TraceRow, name: string | undefined): void {
   row.toolName = name
   row.title = `${row.kind === 'subtool' ? 'サブツール' : 'ツール'}：${name}`
 }
-export function prettyJson(value: unknown): string {
-  if (typeof value === 'string') {
-    try { value = JSON.parse(value) } catch { return value as string }
-  }
-  let nodes = 0
-  const parents: object[] = []
-  try {
-    return JSON.stringify(value, function(_key, child) {
-      if (++nodes > 10000) return '省略'
-      if (child === null || typeof child !== 'object') return child
-      while (parents.length && parents.at(-1) !== this) parents.pop()
-      if (parents.includes(child) || parents.length >= 64) return '省略'
-      parents.push(child)
-      return child
-    }, 2) ?? ''
-  } catch { return '内容を表示できません。' }
+/** Bounds for formatting untrusted JSON: visited values, nesting depth. */
+export const JSON_NODE_LIMIT = 10000
+export const JSON_DEPTH_LIMIT = 64
+/** Bounds for collecting searchable text from nested content blocks. */
+export const CONTENT_BLOCK_LIMIT = 10000
+export const CONTENT_DEPTH_LIMIT = 64
+export type JsonOmissionReason = 'cycle' | 'depth' | 'limit'
+/** Placeholder in a safe copy. Printed unquoted, so it cannot be mistaken for a JSON string. */
+export class JsonOmission {
+  readonly reason: JsonOmissionReason
+  constructor(reason: JsonOmissionReason) { this.reason = reason }
 }
-export function contentText(content: readonly TraceInputBlock[]): string {
+export type SafeJson = null | boolean | number | string | JsonOmission | SafeJson[] | { [key: string]: SafeJson }
+const omissionText: Record<JsonOmissionReason, string> = {
+  cycle: '〔循環参照のため省略〕',
+  depth: `〔入れ子が深すぎるため省略（${JSON_DEPTH_LIMIT} 段まで表示）〕`,
+  limit: `〔以降を省略（${countFormatter.format(JSON_NODE_LIMIT)} 要素まで表示）〕`,
+}
+const unreadableJson = '〔内容を表示できません〕'
+
+/** The value JSON.stringify would serialize: toJSON first, then boxed primitives unwrapped. */
+function jsonValue(value: unknown, key: string): unknown {
+  if ((typeof value === 'object' && value !== null) || typeof value === 'bigint') {
+    const toJSON = (value as { toJSON?: unknown }).toJSON
+    if (typeof toJSON === 'function') value = toJSON.call(value, key)
+  }
+  if (value instanceof Number || value instanceof String || value instanceof Boolean) return value.valueOf()
+  return value
+}
+/**
+ * Copy untrusted data into plain JSON values by explicit recursion. The
+ * ancestor path detects cycles (shared, acyclic references stay), recursion
+ * stops at JSON_DEPTH_LIMIT, and copying stops after JSON_NODE_LIMIT values.
+ * Each cut is a JsonOmission carrying its reason. Throws like JSON.stringify
+ * for BigInt and for failing accessors or toJSON.
+ */
+export function safeJsonCopy(input: unknown): { value: SafeJson | undefined; omissions: JsonOmissionReason[] } {
+  const omissions = new Set<JsonOmissionReason>()
+  const ancestors: { value: object; raw: unknown }[] = []
+  let nodes = 0
+  let exhausted = false
+  const omit = (reason: JsonOmissionReason) => { omissions.add(reason); return new JsonOmission(reason) }
+  const copy = (raw: unknown, key: string): SafeJson | undefined => {
+    if (++nodes > JSON_NODE_LIMIT) { exhausted = true; return omit('limit') }
+    const value = jsonValue(raw, key)
+    if (value === null || typeof value === 'boolean' || typeof value === 'string') return value
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null
+    if (typeof value === 'bigint') throw new TypeError('BigInt は JSON にできません。')
+    if (typeof value !== 'object') return undefined
+    // Compare originals as well: a toJSON result can be a fresh object that leads back to its owner.
+    const seen = (item: unknown) => item === value || item === raw
+    if (ancestors.some(frame => seen(frame.value) || seen(frame.raw))) return omit('cycle')
+    if (ancestors.length >= JSON_DEPTH_LIMIT) return omit('depth')
+    ancestors.push({ value, raw })
+    try {
+      if (Array.isArray(value)) {
+        const items: SafeJson[] = []
+        for (let index = 0; index < value.length && !exhausted; index++) items.push(copy(value[index], String(index)) ?? null)
+        return items
+      }
+      // A null prototype keeps a "__proto__" key as plain data.
+      const entries = Object.create(null) as { [key: string]: SafeJson }
+      for (const name of Object.keys(value)) {
+        if (exhausted) break
+        const child = copy((value as Data)[name], name)
+        if (child !== undefined) entries[name] = child
+      }
+      return entries
+    } finally { ancestors.pop() }
+  }
+  const value = copy(input, '')
+  return { value, omissions: [...omissions] }
+}
+/** Same layout as JSON.stringify(value, null, 2); omissions are printed as unquoted marks. */
+function printJson(value: SafeJson, indent: string): string {
+  if (value instanceof JsonOmission) return omissionText[value.reason]
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  const inner = `${indent}  `
+  if (Array.isArray(value)) {
+    return value.length ? `[\n${value.map(item => inner + printJson(item, inner)).join(',\n')}\n${indent}]` : '[]'
+  }
+  const keys = Object.keys(value)
+  return keys.length ? `{\n${keys.map(key => `${inner}${JSON.stringify(key)}: ${printJson(value[key]!, inner)}`).join(',\n')}\n${indent}}` : '{}'
+}
+/** Formatted JSON and whether any part of the original is missing from the text. */
+export function formatJson(value: unknown): { text: string; partial: boolean } {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch { return { text: value as string, partial: false } }
+  }
+  try {
+    const copy = safeJsonCopy(value)
+    return { text: copy.value === undefined ? '' : printJson(copy.value, ''), partial: copy.omissions.length > 0 }
+  } catch { return { text: unreadableJson, partial: true } }
+}
+export function prettyJson(value: unknown): string {
+  return formatJson(value).text
+}
+/** Searchable text of content blocks, and whether the bounded walk skipped any of them. */
+export function contentSearchText(content: readonly TraceInputBlock[]): { text: string; partial: boolean } {
   const text: string[] = []
-  const stack = [Array.isArray(content) ? content[Symbol.iterator]() : [][Symbol.iterator]()]
-  let remaining = 10000
-  while (stack.length && remaining-- > 0) {
-    const next = stack.at(-1)!.next()
-    if (next.done) { stack.pop(); continue }
-    const block = object(next.value)
+  const stack: { items: readonly unknown[]; index: number }[] = [{ items: Array.isArray(content) ? content : [], index: 0 }]
+  let partial = false
+  let remaining = CONTENT_BLOCK_LIMIT
+  while (stack.length) {
+    const frame = stack.at(-1)!
+    if (frame.index >= frame.items.length) { stack.pop(); continue }
+    if (remaining-- <= 0) { partial = true; break }
+    const block = object(frame.items[frame.index++])
     if (block.type === 'tool-output') {
-      if (Array.isArray(block.content) && stack.length < 64) stack.push(block.content[Symbol.iterator]())
+      if (Array.isArray(block.content)) {
+        if (stack.length < CONTENT_DEPTH_LIMIT) stack.push({ items: block.content, index: 0 })
+        else if (block.content.length) partial = true
+      }
       continue
     }
     if (!validBlock(block)) continue
@@ -145,7 +233,10 @@ export function contentText(content: readonly TraceInputBlock[]): string {
       case 'image': case 'file': text.push(block.attachment.name ?? '添付'); break
     }
   }
-  return text.join('\n')
+  return { text: text.join('\n'), partial }
+}
+export function contentText(content: readonly TraceInputBlock[]): string {
+  return contentSearchText(content).text
 }
 function usageOf(value: unknown): TokenUsage | undefined {
   const data = object(value)
@@ -421,9 +512,10 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       const sub = event.type === 'tool/ptc-dispatch-start'
       const callId = string(sub ? data.subCallId : data.callId)
       if (!callId) continue
+      const args = typeof data.arguments === 'string' ? { text: data.arguments, partial: false } : formatJson(data.arguments)
       const row: TraceRow = { ...rowOf(event, sub ? 'subtool' : 'tool', turn, `${sub ? 'サブツール' : 'ツール'}：${string(data.name) ?? '名前不明'}`),
         toolName: string(data.name), callId, parentCallId: string(data.parentCallId), rootCallId: string(data.rootCallId),
-        startedAt: event.time, running: true, arguments: typeof data.arguments === 'string' ? data.arguments : prettyJson(data.arguments), depth: sub ? 1 : 0 }
+        startedAt: event.time, running: true, arguments: args.text, ...(args.partial ? { partialText: true } : {}), depth: sub ? 1 : 0 }
       tools.set(`${turn.id}:${sub ? 'sub:' : ''}${callId}`, row)
       turn.rows.push(row)
     } else if (event.type === 'tool/result') {
@@ -456,7 +548,11 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       row.completedAt = event.time
       row.running = false
       row.content = blocks(data.content)
-      row.arguments ??= prettyJson(data.arguments)
+      if (row.arguments === undefined) {
+        const args = formatJson(data.arguments)
+        row.arguments = args.text
+        if (args.partial) row.partialText = true
+      }
       row.error = failure(data.error)
       row.failed = data.isError === true || row.error !== undefined
     } else {
@@ -470,7 +566,10 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       }
       if (event.type === 'compaction/start') { row.startedAt = event.time; row.running = true; captureInput(row, records, inputEnd) }
       if (event.type === 'compaction/summary') {
-        row.content = Array.isArray(data.summary) ? blocks(data.summary) : [{ type: 'text', text: string(data.summary) ?? prettyJson(data.summary) }]
+        const summary = Array.isArray(data.summary) ? undefined
+          : typeof data.summary === 'string' ? { text: data.summary, partial: false } : formatJson(data.summary)
+        row.content = summary ? [{ type: 'text', text: summary.text }] : blocks(data.summary)
+        if (summary?.partial) row.partialText = true
         row.usage = usageOf(data.usage)
       }
       if (event.type === 'compaction/end') { row.completedAt = event.time; row.running = false; row.error = failure(data.error); row.failed = row.error !== undefined }
@@ -519,10 +618,25 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
   return turns
 }
 
-export function filterTrace(turns: readonly TraceTurn[], query: string): TraceTurn[] {
+export interface TraceSearch {
+  turns: TraceTurn[]
+  /** Unmatched rows whose text was only partly searched because of the bounds above. */
+  partialRows: number
+}
+export function searchTrace(turns: readonly TraceTurn[], query: string): TraceSearch {
   const term = query.trim().normalize('NFKC').toLocaleLowerCase('ja-JP')
-  return turns.map(turn => ({ ...turn, rows: !term ? turn.rows : turn.rows.filter(row =>
-    `${row.title}\n${contentText(row.content)}\n${row.arguments ?? ''}`.normalize('NFKC').toLocaleLowerCase('ja-JP').includes(term)) }))
+  if (!term) return { turns: turns.map(turn => ({ ...turn })), partialRows: 0 }
+  let partialRows = 0
+  const filtered = turns.map(turn => ({ ...turn, rows: turn.rows.filter(row => {
+    const content = contentSearchText(row.content)
+    const found = `${row.title}\n${content.text}\n${row.arguments ?? ''}`.normalize('NFKC').toLocaleLowerCase('ja-JP').includes(term)
+    if (!found && (content.partial || row.partialText)) partialRows++
+    return found
+  }) }))
+  return { turns: filtered, partialRows }
+}
+export function filterTrace(turns: readonly TraceTurn[], query: string): TraceTurn[] {
+  return searchTrace(turns, query).turns
 }
 export function rowDescription(row: TraceRow): string {
   const parts = row.kind === 'user' ? [contentText(row.content).trim() || '添付のみ']

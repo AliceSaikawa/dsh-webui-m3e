@@ -5,7 +5,7 @@ import { M3eSearchBar } from '@m3e/react/search'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
-import { selectTrace, filterTrace, rowDescription, traceRowIcon, turnHeading, type TraceRow } from './model.ts'
+import { selectTrace, searchTrace, rowDescription, traceRowIcon, turnHeading, type TraceRow } from './model.ts'
 import { RecordSheet } from './RecordSheet.tsx'
 import { isTraceAtBottom, traceFollowAfterScroll, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
 import { retainTraceSession, traceEmptyMessage, type TraceSessionData } from './view-state.ts'
@@ -37,7 +37,8 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const turns = useMemo(() => selectTrace(records, stream, snapshot.running), [records, stream, snapshot.running])
-  const filtered = useMemo(() => filterTrace(turns, query), [turns, query])
+  const search = useMemo(() => searchTrace(turns, query), [turns, query])
+  const filtered = search.turns
   const count = filtered.reduce((total, turn) => total + turn.rows.length, 0)
   const scroll = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)
@@ -191,7 +192,8 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
       </div>
     </div>
     <footer className="conversation-footer trace-search" inert={!active}>
-      {query.trim() && <p className="trace-search-count" role="status">読み込み済みの記録から {count} 件</p>}
+      {query.trim() && <p className="trace-search-count" role="status">読み込み済みの記録から {count} 件{search.partialRows > 0
+        && `。ほかに大きな記録 ${search.partialRows} 件は一部だけを検索しました`}</p>}
       <M3eSearchBar clearable={active} clearLabel="検索を消す" onClear={() => changeQuery('')}>
         <Icon name="search" slot="leading" />
         <input slot="input" type="search" disabled={!active} aria-label="記録を検索" placeholder="種類・ツール名・本文で検索" value={query}

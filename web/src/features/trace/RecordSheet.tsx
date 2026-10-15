@@ -5,7 +5,7 @@ import { M3eExpandableListItem, M3eList, M3eListItem, type M3eExpandableListItem
 import { Icon } from '../../app/icons/Icon.tsx'
 import type { ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
-import { findTraceRow, formatCount, prettyJson, selectTrace, terminationLabel, type TraceInputBlock, type TraceRow } from './model.ts'
+import { findTraceRow, formatCount, formatJson, selectTrace, terminationLabel, type TraceInputBlock, type TraceRow } from './model.ts'
 import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from './record-summary.ts'
 
 function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef; face: SessionFace | undefined }) {
@@ -45,13 +45,25 @@ function Content({ content, face }: { content: readonly TraceInputBlock[]; face:
     switch (block.type) {
       case 'text': return <p className="trace-text" key={index}>{block.text}</p>
       case 'reasoning': return <details key={index}><summary>思考</summary><p className="trace-text">{block.text}</p></details>
-      case 'tool-call': return <details key={index}><summary>ツール呼び出し：{block.name}</summary><pre>{prettyJson(block.arguments)}</pre></details>
+      case 'tool-call': return <details key={index}><summary>ツール呼び出し：{block.name}</summary><Json value={block.arguments} /></details>
       case 'tool-output': return <details key={index}><summary>ツールの結果{block.isError ? '・失敗' : ''}</summary><Content content={block.content} face={face} /></details>
       case 'image': return <ImageAttachment key={`${block.attachment.attachmentId}:${index}`} attachment={block.attachment} face={face} />
       case 'file': return <p key={index}>添付ファイル：{block.attachment.name}（{formatCount(block.attachment.bytes)} バイト）</p>
       default: return <p key={index} className="muted">この内容は表示に対応していません。</p>
     }
   })}</div>
+}
+
+/**
+ * Formatted JSON. `partial` covers text the model already formatted with
+ * omission marks, which no longer parses as JSON here.
+ */
+function Json({ value, partial = false }: { value: unknown; partial?: boolean }) {
+  const json = formatJson(value)
+  return <>
+    <pre>{json.text}</pre>
+    {(json.partial || partial) && <p className="trace-note">〔〕の印は、省略した位置とその理由です。元のデータの文字列ではありません。</p>}
+  </>
 }
 
 function InfoRow({ icon, label, supporting }: { icon: string; label: string; supporting: string }) {
@@ -116,7 +128,7 @@ export function RecordSheet({ sessionId, initialRow, close }: { sessionId: strin
     </M3eList>}
     {(row.kind === 'tool' || row.kind === 'subtool') && <M3eList className="trace-record-list" aria-label="記録の内容">
       <ExpandRow icon="data_object" label="引数" supporting={row.arguments ? undefined : '記録されていません'} initiallyOpen={!!row.arguments}
-        render={() => row.arguments ? <pre>{prettyJson(row.arguments)}</pre> : <p>引数は記録されていません。</p>} />
+        render={() => row.arguments ? <Json value={row.arguments} partial={row.partialText} /> : <p>引数は記録されていません。</p>} />
       <ExpandRow icon="output" label="結果" supporting={recordResultText(row)} initiallyOpen
         render={() => row.running ? <p>結果を待っています。</p> : <Content content={row.content} face={face} />} />
       {duration}
