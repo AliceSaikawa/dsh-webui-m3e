@@ -615,3 +615,11 @@ web/src/
 - 変更前は横向き8件が失敗し縦向き4件が通過。修正後の最終検証では、狭い横向きのゼロ inset を加えた新規16件と既存の操作5件が通過し、全単体テスト1107件もスキップ0件で通過した。CDPによる合成検証であり、実際のiOS Safariとノッチ端末の回転操作は未検証。
 - GitHub Actions（Linux Chromium）では新規 spec が全件失敗した。原因は試験側で、右端の期待値を viewport 幅から計算していた。測る本文は `scrollbar-gutter: stable` の `.screen-content`／`.conversation-panel` の中にあり、Linux の通常スクロールバーは内容がなくても右端に 15px を確保する。macOS などのオーバーレイ型は 0px なので通っていた。本文は scrollport の右端から `max(既存余白, inset)` 内側にあり safe area は守っている。inset ゼロの位置も main と同じで、CSS は変更していない。
 - 試験は祖先のスクロールコンテナが右端に取るスクロールバー幅だけを差し引いて比べる（オーバーレイ型では元の式と同じ）。許容差は変えていない。main の CSS に戻すと横向き 8 件が失敗し、縦向きと横向きのゼロ inset は通ることを Linux で確認した。
+
+### Issue #77 73-9：e2e が偽の ctx を受け取るフック
+
+- `e2e/malformed-data.spec.ts` は、ブラウザーへ配信される `dsh/mock/context.ts` の `return ctx` を正規表現で書き換えて ctx を取り出していた。mock の実装の書き方に依存し、置換が外れても気づきにくい。
+- `dsh/mock/index.ts` の既存の DEV 専用フック（`__m3eTest*`）と同じ置き場に `__m3eTestMockContextReady(ctx)` を足した。他のフックの差し替えを終えた後、`return ctx` の直前に 1 回だけ呼ぶ。`main.tsx` が ctx を使う前なので、起動時の不正データや起動中の例外もここで仕込める。設定しなければ何もしない。
+- spec の `expose(page, setup?)` は `addInitScript` でこのフックを置き、ctx を従来どおり `__malformed` に出す。`setup` は文字列ではなく型検査される関数で、ページへ直列化されるため外側の変数を参照しない。与える不正データと期待は変えていない。フックがない main では 6 件すべてが失敗することを確かめた。
+- 本番に混ざらないことは、`index.ts` が `main.tsx` の `import.meta.env.DEV` 分岐からだけ読まれることと、`pnpm check:pack` の目印 `__m3eTest`（`scripts/pack-contract.ts`）で担保される。build 後の `dist/` にも名前がないことを確認した。
+- `context.ts` の配信内容の書き換えは、ほかの spec 16 件（`conversation-picker`、`settings-drafts`、`jobs-recovery` など）にも残っている。Issue の範囲は `malformed-data` だけなので今回は移していない。移すときはこのフックを使える。

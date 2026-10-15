@@ -1,4 +1,4 @@
-import { createMockContext as createContext, type MockExtension, type MockOptions } from './context.ts'
+import { createMockContext as createContext, type MockContext, type MockExtension, type MockOptions } from './context.ts'
 
 export type { MockKit, MockContext, MockOptions, MockExtension } from './context.ts'
 export { MOCK_IDS } from './fixtures.ts'
@@ -13,6 +13,10 @@ export function createMockContext(options: MockOptions = {}) {
   // delay may expire during navigation, before the sheet is even opened.
   // Ordinary ?mock has neither a gate nor a delay; this module is DEV-only.
   const testWindow = globalThis as typeof globalThis & {
+    // The one entry for e2e that needs the context itself, instead of
+    // rewriting the mock source in the browser. Called last, before main.tsx
+    // uses ctx, so a setup here also covers startup.
+    __m3eTestMockContextReady?: (ctx: MockContext) => void
     __m3eTestModelCatalogDelay?: number
     __m3eTestModelCatalogGate?: Promise<void>
     __m3eTestChildRequestIdMismatch?: boolean
@@ -66,5 +70,6 @@ export function createMockContext(options: MockOptions = {}) {
       return face
     })
   }
+  testWindow.__m3eTestMockContextReady?.(ctx)
   return ctx
 }
