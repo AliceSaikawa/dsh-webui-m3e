@@ -19,7 +19,7 @@ test('不正な質問projectionが起動時と更新時に届いても画面と�
   await expect(page.getByLabel('メッセージ入力欄')).toBeEnabled()
 })
 
-test('共有参照が指数的に広がる設定でも項目を制限し、画面から戻れる', async ({ page }) => {
+test('共有参照が指数的に広がる設定でも同じ項目を1つにまとめ、画面から戻れる', async ({ page }) => {
   await expose(page); await visit(page)
   await page.evaluate(() => {
     const ctx = (window as any).__malformed
@@ -28,10 +28,36 @@ test('共有参照が指数的に広がる設定でも項目を制限し、画�
     ctx.mock.patch('remote.settings.describe', async () => ({ ok: true, value: { writable: true, namespaces: [{ ns: 'synthetic-complex', autoGenerate: true, revision: 1, applies: 'live', schema: { uid: 0, refs }, value: { enabled: true } }] } }))
     location.hash = '/settings/other'
   })
-  await expect(page.getByText('設定の定義が複雑なため表示できません。標準の画面で確認してください。', { exact: false })).toBeVisible()
+  await expect(page.getByRole('switch', { name: '有効にする', exact: true })).toBeVisible()
   await expect(page.locator('.settings-field')).toHaveCount(1)
   await button(page, '戻る').click()
   await expect(page.getByRole('list', { name: 'セッション一覧', exact: true })).toBeVisible()
+})
+
+test('上限を超える設定は名前空間ごと消さず、超えた部分だけを省略して標準の画面へ案内する', async ({ page }) => {
+  await expose(page); await visit(page)
+  await page.evaluate(() => {
+    const ctx = (window as any).__malformed
+    const deep: Record<string, unknown> = { root: { type: 'object', dict: { name: 's', deep: 'd0', count: 'n' } }, s: { type: 'string' }, n: { type: 'number' }, d40: { type: 'string' } }
+    for (let i = 0; i < 40; i++) deep[`d${i}`] = { type: 'object', dict: { child: `d${i + 1}` } }
+    const many = Object.fromEntries(Array.from({ length: 520 }, (_, index) => [`flag${index}`, 'b']))
+    const namespaces = [
+      { ns: 'synthetic-deep', autoGenerate: true, revision: 1, applies: 'live', schema: { uid: 'root', refs: deep }, value: { name: '深い定義の隣', count: 3 }, user: {} },
+      { ns: 'synthetic-many', autoGenerate: true, revision: 1, applies: 'live', schema: { uid: 'root', refs: { root: { type: 'object', dict: many }, b: { type: 'boolean' } } }, value: {}, user: {} },
+    ]
+    ctx.mock.patch('remote.settings.describe', async () => ({ ok: true, value: { writable: true, namespaces } }))
+    location.hash = '/settings/other'
+  })
+  const deep = page.locator('.settings-namespace').filter({ has: page.getByRole('heading', { name: 'synthetic-deep', exact: true }) })
+  await expect(deep.getByLabel('名前', { exact: true })).toHaveValue('深い定義の隣')
+  await expect(deep.getByLabel('名前', { exact: true })).toBeEnabled()
+  await expect(deep.locator('input[type="number"]')).toHaveValue('3')
+  await expect(deep.locator('.settings-omitted')).toHaveCount(1)
+  await expect(deep.locator('.settings-omitted')).toContainText('設定の定義を読み切れないため、値を表示しません。標準の画面で確認してください。')
+  const many = page.locator('.settings-namespace').filter({ has: page.getByRole('heading', { name: 'synthetic-many', exact: true }) })
+  await expect(many.getByRole('switch')).toHaveCount(512)
+  await expect(many.locator('.settings-omitted')).toHaveCount(1)
+  await expect(many.locator('.settings-omitted')).toContainText('先頭の 512 項目だけを表示しています。残りの項目は標準の画面で確認してください。')
 })
 
 test('不正な画像と深い引数のトレースを開いて検索・詳細表示できる', async ({ page }) => {

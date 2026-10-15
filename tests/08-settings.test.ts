@@ -93,11 +93,12 @@ test('循環参照と欠落した参照を停止し、同じ型を使う正常�
   const decoded = decodeSchema(input)
   assert.equal(decoded.dict!.first!.type, 'string')
   assert.equal(decoded.dict!.second!.type, 'string')
-  assert.deepEqual(decoded.dict!.loop, {})
+  // The cycle cut hides an unknown definition (it may hold a password role), so it is marked rather than empty.
+  assert.deepEqual(decoded.dict!.loop, { truncated: true })
   assert.deepEqual(decoded.dict!.missing, {})
   assert.deepEqual(input, before)
-  assert.deepEqual(schemaFields(namespace({ schema: input, value: { first: '一', second: '二', loop: '循環', missing: '欠落' } }))
-    .map(field => field.kind), ['text', 'text', 'readonly', 'readonly'])
+  const fields = schemaFields(namespace({ schema: input, value: { first: '一', second: '二', loop: '循環', missing: '欠落' } }))
+  assert.deepEqual(fields.map(field => [field.kind, field.omitted === true, field.value]), [['text', false, '一'], ['text', false, '二'], ['readonly', true, undefined], ['readonly', false, '欠落']])
 })
 
 test('不正な参照表や未知の型は読み取り専用へ縮退する', () => {

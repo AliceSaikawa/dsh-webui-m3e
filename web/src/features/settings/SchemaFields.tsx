@@ -22,7 +22,16 @@ export function SchemaFields({ fields, ...props }: FieldsProps) {
       <SchemaFields fields={field.children ?? []} {...props} />
       <GroupReset field={field} {...props} />
     </fieldset>
+    : field.omitted ? <OmittedField key={`${field.path.join('/')}:${index}`} field={field} />
     : <FieldEditor key={`${field.path.join('/')}:${index}`} field={field} {...props} />)}</>
+}
+
+/** A definition or value beyond a limit: no value, no editing, only the way to the stock page. */
+function OmittedField({ field }: { field: SettingField }) {
+  return <div className="settings-field settings-omitted">
+    <h3>{field.label}</h3>
+    <p className="settings-field-help" role="note">{field.description}</p>
+  </div>
 }
 
 function GroupReset({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {

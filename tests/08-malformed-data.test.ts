@@ -111,10 +111,14 @@ test('普通の共有スキーマは別々の項目を保ち、上限で打ち�
   const fields = schemaFields({ ...row, schema, value: { first: '一', second: '二', hidden: 'synthetic-hidden' } })
   assert.deepEqual(fields.map(field => [field.path, field.kind, field.value]), [[['first'], 'text', '一'], [['second'], 'text', '二'], [['hidden'], 'masked', undefined]])
   const dict = Object.fromEntries(Array.from({ length: 5000 }, (_, index) => [`field${index}`, 1]))
-  const huge = schemaFields({ ...row, schema: { uid: 0, refs: { 0: { type: 'object', dict }, 1: { type: 'string' } } }, value: { hidden: 'synthetic-hidden' } })
-  assert.equal(huge.length, 1)
-  assert.equal(huge[0]!.disabled, true)
-  assert.equal(huge[0]!.value, undefined)
+  // Issue #77 (73-1): the first 512 items stay; one value-less notice replaces the rest.
+  const huge = schemaFields({ ...row, schema: { uid: 0, refs: { 0: { type: 'object', dict }, 1: { type: 'string' } } }, value: { hidden: 'synthetic-hidden', field0: '先頭' } })
+  assert.equal(huge.length, 513)
+  assert.equal(huge[0]!.value, '先頭')
+  assert.equal(huge[512]!.disabled, true)
+  assert.equal(huge[512]!.omitted, true)
+  assert.equal(huge[512]!.value, undefined)
+  assert.match(huge[512]!.description, /先頭の 512 項目.*標準の画面/)
   assert.ok(!JSON.stringify(huge).includes('synthetic-hidden'))
 })
 
