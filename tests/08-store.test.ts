@@ -387,12 +387,19 @@ test('保存前に開始した古い describe 応答で新しい保存結果を�
     await h.store.reload()
     const old = await h.remote.describe()
     const delayed = deferred<RemoteResult<SettingsDescription>>()
-    h.api.describe = () => delayed.promise
+    const original = h.api.describe
+    let reads = 0
+    h.api.describe = () => reads++ === 0 ? delayed.promise : original()
     const reading = h.store.reload()
     assert.equal(await h.store.edit(ns, ['timeout'], 88), true)
     assert.equal(current(h.store).revision, 1)
+    const published: number[] = []
+    h.store.subscribe(() => published.push(current(h.store).revision))
     delayed.resolve(old)
-    assert.equal(await reading, false)
+    // The old response is discarded. Since #80 the run then reads once more instead of stopping.
+    assert.equal(await reading, true)
+    assert.equal(reads, 2)
+    assert.ok(published.length > 0 && published.every(revision => revision === 1), `published ${published}`)
     assert.equal(current(h.store).revision, 1)
     assert.equal(current(h.store).value.timeout, 88)
   } finally { h.ctx.dispose() }
@@ -640,4 +647,127 @@ test('購読解除後は状態変更と通知のコールバックを呼ばな�
     assert.equal(updates, 1)
     assert.equal(notices, 0)
   } finally { h.ctx.dispose() }
+})
+
+// Issue #80 and #77 (73-4): reloads overlapping saves and notifications.
+function twoNamespaceHarness() {
+  const schema = { uid: 0, refs: { 0: { type: 'object', dict: { level: 1 } }, 1: { type: 'number' } } }
+  const rows: Record<string, SettingsNamespace> = {
+    alpha: { ns: 'alpha', autoGenerate: true, revision: 0, applies: 'live', value: { level: 1 }, user: {}, schema },
+    beta: { ns: 'beta', autoGenerate: true, revision: 0, applies: 'live', value: { level: 0 }, user: {}, schema },
+  }
+  const snapshot = () => success({ writable: true, namespaces: [rows.alpha!, rows.beta!] })
+  let hold: Promise<void> | undefined
+  let describes = 0
+  const api: SettingsApi = {
+    describe: async () => {
+      describes++
+      const gate = hold
+      hold = undefined
+      if (gate) await gate
+      return snapshot()
+    },
+    update: async (name, patch, revision) => {
+      const row = rows[name]!
+      if (revision !== row.revision) return failure('settings/conflict', 'ほかの場所で変更されました。')
+      const value = { ...row.value, ...patch }
+      // DSH keeps the revision (and sends no notification) when the saved value is unchanged.
+      const same = JSON.stringify(value) === JSON.stringify(row.value)
+      rows[name] = same ? row : { ...row, revision: row.revision + 1, value, user: { ...row.user, ...patch } }
+      return success(rows[name])
+    },
+    mutate: async () => failure('settings/rejected', 'このテストでは使いません。'),
+  }
+  const store = createSettingsStore(api)
+  return {
+    rows, api, store,
+    get describes() { return describes },
+    /** The next describe() waits for the returned release, then answers with the server state at that time. */
+    holdNextDescribe() { const gate = deferred<void>(); hold = gate.promise; return gate.resolve },
+    external(name: string, level: number) {
+      const row = rows[name]!
+      rows[name] = { ...row, revision: row.revision + 1, value: { ...row.value, level }, user: { ...row.user, level } }
+      return rows[name]!.revision
+    },
+  }
+}
+const settle = async () => { for (let i = 0; i < 20; i++) await tick() }
+
+test('同値の保存で進行中の describe を捨てても、ほかの名前空間の更新を追い読みで取り込む', async () => {
+  const h = twoNamespaceHarness()
+  assert.equal(await h.store.reload(), true)
+  const release = h.holdNextDescribe()
+  h.store.documentUpdated('beta', h.external('beta', 20))
+  await tick()
+  assert.equal(h.describes, 2)
+  assert.equal(await h.store.edit('alpha', ['level'], 1), true)
+  assert.equal(current(h.store, 'alpha').revision, 0, 'same value keeps the revision and emits no notification')
+  release()
+  await settle()
+  assert.equal(h.describes, 3, 'the discarded read is read once more')
+  assert.equal(current(h.store, 'beta').revision, 1)
+  assert.equal(current(h.store, 'beta').value.level, 20)
+  assert.equal(current(h.store, 'alpha').value.level, 1)
+})
+
+test('保存の更新通知が応答の後に届いても、ほかの名前空間の更新を取りこぼさない', async () => {
+  const h = twoNamespaceHarness()
+  assert.equal(await h.store.reload(), true)
+  const release = h.holdNextDescribe()
+  h.store.documentUpdated('beta', h.external('beta', 20))
+  await tick()
+  assert.equal(await h.store.edit('alpha', ['level'], 5), true)
+  assert.equal(current(h.store, 'alpha').revision, 1)
+  // The notification for this save arrives after its response and matches the saved revision.
+  h.store.documentUpdated('alpha', 1)
+  release()
+  await settle()
+  assert.equal(h.describes, 3)
+  assert.equal(current(h.store, 'beta').revision, 1)
+  assert.equal(current(h.store, 'beta').value.level, 20)
+  assert.equal(current(h.store, 'alpha').revision, 1)
+  assert.equal(current(h.store, 'alpha').value.level, 5)
+})
+
+test('保存を待つ再読込は、捨てた describe の代わりに追い読みした結果で解決する', async () => {
+  const h = twoNamespaceHarness()
+  assert.equal(await h.store.reload(), true)
+  const release = h.holdNextDescribe()
+  const reading = h.store.reload()
+  h.external('beta', 30)
+  assert.equal(await h.store.edit('alpha', ['level'], 1), true)
+  release()
+  assert.equal(await reading, true, 'reload() reports the final read of the merged run')
+  assert.equal(h.describes, 3)
+  assert.equal(current(h.store, 'beta').value.level, 30)
+})
+
+test('読込中に通知が続いても再読込は上限回数で解決し、残りの通知は次の 1 回へまとめる', async () => {
+  const h = twoNamespaceHarness()
+  assert.equal(await h.store.reload(), true)
+  const base = h.describes
+  // Every describe below 7 reads receives one more beta notification while it is pending.
+  const original = h.api.describe
+  let late: Promise<boolean> | undefined
+  h.api.describe = async () => {
+    const result = original()
+    const read = h.describes - base
+    await tick()
+    if (read <= 6) {
+      h.store.documentUpdated('beta', h.external('beta', 100 + read))
+      if (read === 4) late = h.store.reload()
+    }
+    return result
+  }
+  let readsAtFirst = -1
+  const first = h.store.reload().then(loaded => { readsAtFirst = h.describes - base; return loaded })
+  assert.equal(await first, true)
+  assert.equal(readsAtFirst, 4, 'one reload run stops after 4 reads')
+  assert.ok(late)
+  assert.notEqual(late, first)
+  assert.equal(await late, true, 'a caller during the last read waits for one fresh run')
+  await settle()
+  assert.equal(h.describes - base, 7)
+  assert.equal(current(h.store, 'beta').value.level, 106)
+  assert.equal(current(h.store, 'beta').revision, 6)
 })
