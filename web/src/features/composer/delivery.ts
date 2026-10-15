@@ -4,7 +4,7 @@ import { requireMatched, type composerApi, type PlanProjection } from './api.ts'
 import { clearDraft, readDraft, writeDraft } from './drafts.ts'
 import { submitMessage } from './submission.ts'
 import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-status.ts'
-import { clearWorkspaceOrigin, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
+import { clearWorkspaceOrigin, pendingWorkspaceAttachment, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
 import { modelApplyController } from './model-picker.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -43,6 +43,8 @@ export function pendingDelivery(draftKey: string): Promise<DeliveryResult> | und
 export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> {
   const active = pendingDelivery(options.draftKey)
   if (active) return active
+  // The retry may hand the body over to this draft when it settles; sending now could race that handoff.
+  if (pendingWorkspaceAttachment(options.draftKey)) return Promise.resolve({ error: new Error('ワークスペースへの登録をやり直しています。終わってから送信してください。') })
   const modelApply = modelApplyController(options.sessions, options.draftKey)
   if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new Error('モデルの選択を反映中です。') })
   modelApply.setComposerBusy(true)
