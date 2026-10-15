@@ -1235,3 +1235,12 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - 既存の「保存前に開始した古い describe 応答で新しい保存結果を上書きしない」は、古い応答の後に追い読みするようになったため、`reload()` の期待を `false` から `true` に変え、古い応答の値（revision 0）が一度も公開されないことを確かめる形にした。偽 API が 2 回目以降も古い応答を返し続けていたので、2 回目からは現在の値を返すようにした。
 - 実 DSH でこの重なりを起こす確認はしていない（偽 API の単体試験と `?mock` の e2e のみ）。
 - 検証：`pnpm typecheck`、e2e の型検査、`pnpm test`（1,206 件中 1,204 件成功、失敗 0、skip 2 件は公開 DSH 配布物が未配置のための既存の skip）、`pnpm build`、`pnpm check:pack`（19 ファイル。npm のキャッシュは `tmp/npm-cache` を指定）。`?mock` の関係する e2e 20 件（settings-broadcast・settings-drafts・settings-models・malformed-data の全件、mock の 08a/08b、edge-cases の 08c〜08e）が成功。
+
+### 2026-10-15：Issue #16 の残りの洗い出しと、フォームのキー欄の非制御化
+
+- main `a3465a5` で Issue #16 の要件を 1 件ずつ照合した。PR #23（`71dd560`）で入口・共通フォーム・検証・path operation の差分保存・revision の競合・部分成功・キーの別保存・終了経路は実装済みで、その後の main の変更（#65、#66、#72、#73）を取り込んだ状態でも、既存の偽データ e2e 15 件は成功した。DSH の根拠は、上の節と同じく 0.2.0-rc.2 の `dsh-llm-pi-ai`（`providers` のスキーマ、`api` の const union、`apiKeyEnv` の `credential-ref`）を読んで確かめた。
+- 未対応で見つかったのは 1 点。フォームの「API キー（任意）」は React の制御された入力だったため、入力中の平文が DOM の `value` 属性（HTML）に複製されていた（偽データで合成値を入れ、`getAttribute('value')` と `html` の innerHTML に出ることを確認）。Issue #27 で一覧の `KeyEntry` だけを非制御にした際、このフォームは対象外だった。Issue #16 の「キーを残さない」「既存 M3E の方針に合わせる」に当たるため直した。
+- `CustomProviderSheet.tsx` に `KeyField` を設け、キー欄を非制御の入力にした。値は入力の value プロパティと、これまでどおり `createKeyDraft` の下書きだけに持つ。下書きが変わったとき（送信開始、切断、読み直し、外部変更、キャンセルでの消去）にプロパティを書き戻し、シートが overlay から外れたときと破棄のときにも空にする。下書き・保存・検証の store（`custom-provider-store.ts`、`providers.ts`）は変更していない。
+- 回帰試験 `I16 UI key markup`（`e2e/settings-custom-provider.spec.ts`）：追加フォームの入力・表示切替、部分成功のあとの再入力、編集フォームの入力で、`value` 属性が無く HTML に合成値が出ないこと、送信とキャンセルのあとにも残らないことを確かめる。修正前の本体で失敗することを確認した。下書きの書き戻しを外す変異では、この試験と既存の 5 件（refused、partial、late、saving M39、late registration）が入力の残留で失敗した。シートが外れたときの消去と、store が入力を受け付けなかったときの書き戻しは防御で、個別の試験は無い。
+- 今回変えなかったこと：Host の拒否は ui-spec の表どおり固定の「この変更は保存できませんでした。入力内容を確認してください。」のまま（#73 の `displayableRejection` を使う共通設定とは揃えていない。揃えるかは利用者の判断）。モデルの詳細項目（表示名、コンテキスト長、最大出力トークン数、入力種別）は 0.2.0-rc.2 のスキーマにある前提で常に出し、スキーマから有無を判定していない。
+- 未確認：iOS 実機でキーボードを出したときの操作（Issue #26）、Host 再起動をまたぐ保存内容の確認、本物の提供元への接続。実 DSH（`e2e-dsh`）は今回起動していない。
