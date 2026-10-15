@@ -271,6 +271,11 @@ export class InteractionStore {
     for (const [key, card] of this.#questions) if (card.pending.sessionId === sessionId && !card.live) this.#removeQuestion(key)
   }
 
+  /** Remove one projection card; a card still bound to a live waterfall request stays. */
+  forgetQuestion(key: string): void {
+    if (this.#questions.get(key)?.live === undefined) this.#removeQuestion(key)
+  }
+
   defer(key: string): void {
     this.#questions.get(key)?.live?.setVisible(false)
     this.#replace((pending) => pending.key === key && !pending.deferred ? { ...pending, deferred: true } : pending)
@@ -356,13 +361,23 @@ export interface InteractionContext {
 
 const registrations = new WeakMap<InteractionContext, { store: InteractionStore; dispose: () => void }>()
 
-/** Bind each waterfall exactly once for a live root context. */
+/**
+ * Bind each waterfall exactly once for a live root context.
+ *
+ * The caller owns `store`. If registration throws, only what this call added
+ * is released: handlers, projection subscriptions, timed claims, and the
+ * question cards it copied from projections. The store itself is not
+ * disposed and its earlier entries stay; the owner decides what to do next.
+ * Calling the returned function is the explicit end of the registration: it
+ * also disposes the store, because no handler is left to answer its requests.
+ */
 export function registerInteractionHandlers(ctx: InteractionContext, store: InteractionStore): () => void {
   const registered = registrations.get(ctx)
   if (registered !== undefined) {
     if (registered.store !== store) throw new Error('この接続には対応待ちの受け取りがすでに登録されています。')
     return registered.dispose
   }
+  const existing = new Set(store.getSnapshot().map(pending => pending.key))
   const removeApproval = ctx.remote.$on('approval/request', function(request, next) {
     const sessionId = ctx.sessions.scopeOf(this)
     return sessionId === undefined ? next() : store.requestApproval(sessionId, request)
@@ -402,7 +417,9 @@ export function registerInteractionHandlers(ctx: InteractionContext, store: Inte
     removeQuestion?.()
     stopProjections?.()
     for (const claim of claims) claim.abort()
-    store.dispose()
+    // Cards copied before the failure would keep answering through this
+    // abandoned registration. Earlier entries belong to the owner.
+    for (const pending of store.getSnapshot()) if (pending.kind === 'question' && !existing.has(pending.key)) store.forgetQuestion(pending.key)
     throw error
   }
   let disposed = false

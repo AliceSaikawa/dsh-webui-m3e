@@ -615,3 +615,10 @@ web/src/
 - 変更前は横向き8件が失敗し縦向き4件が通過。修正後の最終検証では、狭い横向きのゼロ inset を加えた新規16件と既存の操作5件が通過し、全単体テスト1107件もスキップ0件で通過した。CDPによる合成検証であり、実際のiOS Safariとノッチ端末の回転操作は未検証。
 - GitHub Actions（Linux Chromium）では新規 spec が全件失敗した。原因は試験側で、右端の期待値を viewport 幅から計算していた。測る本文は `scrollbar-gutter: stable` の `.screen-content`／`.conversation-panel` の中にあり、Linux の通常スクロールバーは内容がなくても右端に 15px を確保する。macOS などのオーバーレイ型は 0px なので通っていた。本文は scrollport の右端から `max(既存余白, inset)` 内側にあり safe area は守っている。inset ゼロの位置も main と同じで、CSS は変更していない。
 - 試験は祖先のスクロールコンテナが右端に取るスクロールバー幅だけを差し引いて比べる（オーバーレイ型では元の式と同じ）。許容差は変えていない。main の CSS に戻すと横向き 8 件が失敗し、縦向きと横向きのゼロ inset は通ることを Linux で確認した。
+
+### 2026-10-15：Issue #77 の 73-6、登録失敗時の store の所有権
+
+- `registerInteractionHandlers` は、登録が途中で失敗しても呼び出し元の `InteractionStore` を `dispose` しない。この呼び出しが加えたもの（承認・質問の handler、projection と一覧の購読、期限つき質問の claim、失敗までに projection から写した質問カード）だけを戻し、呼び出し前からある要求やカードは残す。写したカードは捨てた登録の RPC を使うため戻す。カード 1 枚を外す `forgetQuestion(key)` を追加した（回答待ちの waterfall に結び付いたカードは外さない）。
+- store の所有者である `initializeInteractions`（`dsh/interactions.ts`）が、失敗時に自分の store を一度だけ `dispose` して例外を投げ直す。`main.tsx` の起動失敗画面への流れと、PR #73 の「購読を解除して起動失敗画面を出す」挙動は変えていない。
+- 返り値の解除関数が store も `dispose` する挙動は変えていない。呼び出し元が明示的に登録を終える操作で、答える handler がなくなる要求を終わらせる契約のため、JSDoc に明記した。
+- 回帰は `tests/00-interactions-ownership.test.ts`。修正前は「登録失敗で呼び出し元の store を dispose しない」試験が失敗した。カードを戻す処理を外すと同じ試験が失敗することも確かめた。起動側は失敗時 1 回・正常登録の解除を 2 回呼んでも 1 回だけ `dispose` すること、handler と購読が 0 に戻ることを確かめる。

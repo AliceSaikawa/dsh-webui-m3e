@@ -20,7 +20,14 @@ const store = new InteractionStore()
 
 /** Call after boot/mock creation and before rendering the application. */
 export function initializeInteractions(ctx: InteractionContext): () => void {
-  return registerInteractionHandlers(ctx, store)
+  try {
+    return registerInteractionHandlers(ctx, store)
+  } catch (error) {
+    // This module owns the store. A failed start shows the boot failure
+    // screen, so end anything the store still holds before rethrowing.
+    store.dispose()
+    throw error
+  }
 }
 
 export function usePendingInteractions(sessionId?: string): PendingInteraction[] {
