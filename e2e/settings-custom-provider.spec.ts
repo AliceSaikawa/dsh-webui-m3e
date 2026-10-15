@@ -150,6 +150,40 @@ test('I16 UI partial: 設定だけ成功したらキーだけ再試行する', a
   await expect(row(page)).toContainText('API キー：登録済み')
 })
 
+test('I16 UI key markup: 入力したキーを value 属性や HTML へ複製しない', async ({ page }) => {
+  const key = page.getByLabel('API キー（任意）', { exact: true })
+  const notCopied = async (value: string) => {
+    await expect(key).toHaveValue(value)
+    expect(await key.getAttribute('value')).toBeNull()
+    expect(await page.locator('html').innerHTML()).not.toContain(value)
+  }
+  await expose(page); await visit(page, '/settings/providers', 'custom-partial'); await fill(page)
+  await key.fill('synthetic-markup-first')
+  for (const visible of [false, true, false]) {
+    if (visible) await button(page, '入力したキーを表示する').click()
+    else if (await key.getAttribute('type') === 'text') await button(page, '入力したキーを隠す').click()
+    await notCopied('synthetic-markup-first')
+  }
+  // Settings saved, the key refused once: the retry field is empty and masked.
+  await button(page, '保存').click()
+  await expect(button(page, 'API キーを保存')).toBeVisible()
+  await expect(key).toHaveValue(''); await expect(key).toHaveAttribute('type', 'password')
+  expect(await page.locator('html').innerHTML()).not.toContain('synthetic-markup-first')
+  await key.fill('synthetic-markup-retry')
+  await button(page, '入力したキーを表示する').click()
+  await notCopied('synthetic-markup-retry')
+  await button(page, 'API キーを保存').click(); await expect(form(page)).toBeHidden()
+  await expect(row(page)).toContainText('API キー：登録済み')
+  expect(await page.locator('html').innerHTML()).not.toContain('synthetic-markup-retry')
+  // Editing an existing provider uses the same field.
+  await row(page).getByRole('button', { name: '編集', exact: true }).click()
+  await expect(key).toHaveValue('')
+  await key.fill('synthetic-markup-edit')
+  await notCopied('synthetic-markup-edit')
+  await button(page, 'キャンセル').click(); await expect(form(page)).toBeHidden()
+  expect(await page.locator('html').innerHTML()).not.toContain('synthetic-markup-edit')
+})
+
 test('I16 UI late: 二重送信せず閉じたあとからキーを送らない', async ({ page }) => {
   await expose(page); await visit(page, '/settings/providers', 'custom-slow'); await fill(page)
   await page.getByLabel('API キー（任意）', { exact: true }).fill('fake-discard')

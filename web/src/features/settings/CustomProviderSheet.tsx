@@ -22,6 +22,43 @@ function Field({ label, value, onChange, disabled, error, type = 'text', inputMo
   </M3eFormField>{error && <p id={`${id}-error`} className="settings-error" role="alert">{error}</p>}</div>
 }
 
+/**
+ * The key stays in the input's value property only (as in the list's key
+ * sheet, Issue #27): a controlled React input would also copy it into the
+ * `value` attribute, that is into the page's markup. The store's draft is
+ * written back to the property whenever it differs, so every clear by the
+ * store (send start, cancel, disconnect, reload) empties the field.
+ */
+function KeyField({ draft, visible, disabled, error, present, store }: {
+  draft: string; visible: boolean; disabled: boolean; error?: string; present: boolean
+  store: { input(value: string): void; getSnapshot(): { draft: string } }
+}) {
+  const id = useId()
+  const field = useRef<HTMLInputElement>(null)
+  useLayoutEffect(() => {
+    const element = field.current
+    if (element && element.value !== draft) element.value = draft
+  }, [draft])
+  // Closing disposes the store without publishing; empty the field as well.
+  useLayoutEffect(() => { if (!present && field.current) field.current.value = '' }, [present])
+  useLayoutEffect(() => {
+    const element = field.current
+    return () => { if (element) element.value = '' }
+  }, [])
+  return <div className="custom-field"><M3eFormField variant="outlined" error={Boolean(error)}>
+    <label slot="label" htmlFor={id}>API キー（任意）</label>
+    <input ref={field} id={id} type={visible ? 'text' : 'password'} disabled={disabled} data-custom-field="key"
+      autoComplete="off" autoCapitalize="none" spellCheck={false} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
+      onChange={event => {
+        const element = event.currentTarget
+        store.input(element.value)
+        // The store ignores input while it is busy or closed; keep the field equal to it.
+        const stored = store.getSnapshot().draft
+        if (element.value !== stored) element.value = stored
+      }} />
+  </M3eFormField>{error && <p id={`${id}-error`} className="settings-error" role="alert">{error}</p>}</div>
+}
+
 export function CustomProviderSheet({ controller, keys, close, overlayKey, released }: {
   controller: CustomProviderStore; keys: ProviderStore; close(): void; overlayKey: string; released(): void
 }) {
@@ -128,8 +165,8 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
         {state.errors.models && <p role="alert" className="settings-error">{state.errors.models}</p>}
         <M3eButton variant="outlined" disabled={fieldDisabled('models')} onClick={() => controller.change(current => ({ ...current, models: [...current.models, modelDraft()] }))}>モデルを追加</M3eButton>
       </section>
-      <Field label="API キー（任意）" fieldKey="key" value={key.draft} type={key.visible ? 'text' : 'password'} disabled={saving || !['editing', 'keyFailed'].includes(state.phase)} error={state.errors.key}
-        onChange={controller.input.input} />
+      <KeyField draft={key.draft} visible={key.visible} disabled={saving || !['editing', 'keyFailed'].includes(state.phase)} error={state.errors.key}
+        present={present} store={controller.input} />
       <p>API キー：{({ registered: '登録済み', missing: '未登録', unset: '未設定', unknown: '確認できません', unnecessary: '確認できません' })[providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown']}</p>
       {keyRefInvalid && !state.errors.key && <p className="settings-field-help">{invalidKeyReferenceMessage} キーを空欄にすると、設定だけ保存できます。</p>}
       {provider?.keyNotice && <p className="settings-field-help">{provider.keyNotice}</p>}
