@@ -122,22 +122,48 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
     inputs.set(key, { ns, path: [...path], input: controller })
     return controller
   }
-  let reloading: Promise<boolean> | undefined
+  /** Reads one reload run may chain for calls that join it (see `reload`). */
+  const reloadReadLimit = 4
+  let reloading: { promise: Promise<boolean>; reads: number } | undefined
+  let trailingReload: Promise<boolean> | undefined
   let reloadAgain = false
+  /**
+   * Reads every namespace again with `describe()`, one read at a time.
+   *
+   * A call made while a run is in progress joins it: the pending read is discarded and the run reads
+   * once more, so the result comes from a read that started after the call. A run chains at most
+   * `reloadReadLimit` reads for such calls. Calls made during its last read do not extend it; they share
+   * one fresh run that starts when it ends. A steady stream of update notifications therefore cannot
+   * keep callers waiting forever, and the last notification is still read. A successful save discards a
+   * pending read as well and always reads again (saves are finite, so this cannot loop).
+   *
+   * @returns `true` when the final read of the run this call waited for was applied. Earlier reads that
+   * were discarded or merged do not count. `false` when that read failed (the store is then in the
+   * error phase), or the connection was not connected or changed meanwhile.
+   */
   function reload(): Promise<boolean> {
-    if (reloading) { reloadAgain = true; sequence++; return reloading }
+    if (reloading) {
+      if (reloading.reads < reloadReadLimit) { reloadAgain = true; sequence++; return reloading.promise }
+      const epoch = connectionEpoch
+      return trailingReload ??= reloading.promise.then(() => {
+        trailingReload = undefined
+        return epoch === connectionEpoch ? reload() : false
+      })
+    }
     const epoch = connectionEpoch
+    const flight = { promise: Promise.resolve(false), reads: 0 }
     const run = async () => {
       let loaded = false
       do {
         reloadAgain = false
+        flight.reads++
         loaded = await loadOnce()
       } while (epoch === connectionEpoch && reloadAgain)
       return loaded
     }
-    const current = run().finally(() => { if (reloading === current) reloading = undefined })
-    reloading = current
-    return current
+    flight.promise = run().finally(() => { if (reloading === flight) reloading = undefined })
+    reloading = flight
+    return flight.promise
   }
   async function loadOnce(): Promise<boolean> {
     if (connectionState !== undefined && connectionState !== 'connected') return false
@@ -178,6 +204,7 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
     connectionState = next
     connectionEpoch++
     reloading = undefined
+    trailingReload = undefined
     reloadAgain = false
     sequence++
     revisionEpoch = -1
@@ -220,8 +247,11 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
         const result = await change.send()
         if (epoch !== connectionEpoch) return
         if (result.ok) {
-          // In-flight describes must never replace this accepted revision.
+          // In-flight describes must never replace this accepted revision. They may still carry
+          // other namespaces' updates whose notifications were already consumed, and a save of an
+          // unchanged value emits none, so the reload reads once more instead (#80).
           sequence++
+          if (reloading) reloadAgain = true
           const current = find(ns)
           if (!current || result.value.revision >= current.revision) {
             if (change.resetPath) {

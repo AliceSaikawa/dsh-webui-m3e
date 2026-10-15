@@ -98,3 +98,25 @@ bootTest('起動の成功処理中に初期化が例外になっても復帰リ�
   await expect(page.getByRole('link', { name: '今の画面に戻す' })).toHaveAttribute('href', '/?ui=classic')
   expect(unhandled).toEqual([])
 })
+
+test('打ち切った引数は理由の印で表示し、検索では一部だけ検索したことを示す', async ({ page }) => {
+  await expose(page); await visit(page)
+  await page.evaluate(() => {
+    let deep: unknown = 'synthetic-deep-leaf'
+    for (let i = 0; i < 100; i++) deep = { child: deep }
+    ;(window as any).__malformed.mock.appendEvent('approval-sheet', 'tool/call', { callId: 'deep-object-arguments', name: 'synthetic-deep-object', arguments: { path: 'synthetic-shown-path', deep } })
+    location.hash = '/s/approval-sheet/trace'
+  })
+  const search = page.getByLabel('記録を検索', { exact: true })
+  await search.fill('synthetic-deep-leaf')
+  await expect(page.locator('[data-trace-row]')).toHaveCount(0)
+  await expect(page.locator('.trace-search-count')).toHaveText('読み込み済みの記録から 0 件。ほかに大きな記録 1 件は一部だけを検索しました')
+  await search.fill('synthetic-shown-path')
+  await expect(page.locator('[data-trace-row]')).toHaveCount(1)
+  await expect(page.locator('.trace-search-count')).toHaveText('読み込み済みの記録から 1 件')
+  await page.locator('[data-trace-row]').filter({ hasText: 'synthetic-deep-object' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.locator('pre')).toContainText('〔入れ子が深すぎるため省略（64 段まで表示）〕')
+  await expect(dialog.locator('pre')).not.toContainText('"省略"')
+  await expect(dialog).toContainText('〔〕の印は、省略した位置とその理由です。元のデータの文字列ではありません。')
+})

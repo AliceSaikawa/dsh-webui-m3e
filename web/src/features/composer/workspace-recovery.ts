@@ -1,11 +1,18 @@
 import type { ISessions } from '../../dsh/services.ts'
-import { clearDraft, readDraft, writeDraft, type Draft } from './drafts.ts'
+import { clearDraft, draftRevision, readDraft, writeDraft, type Draft } from './drafts.ts'
 
 export interface WorkspaceAttachment { workspaceId: string; sessionId: string }
 export interface WorkspaceRecoveryResult { sessionId?: string; sessionReady?: boolean; error?: unknown }
 type RecoverySessions = Pick<ISessions, 'create' | 'list' | 'refresh'>
 const recoveries = new Map<string, Promise<WorkspaceRecoveryResult>>()
-export function pendingWorkspaceAttachment(draftKey: string): Promise<WorkspaceRecoveryResult> | undefined { return recoveries.get(draftKey) }
+/** One retry per created identity: the new screen and the created conversation's composer join the same Promise. */
+export function pendingWorkspaceAttachment(draftKey: string): Promise<WorkspaceRecoveryResult> | undefined {
+  const active = recoveries.get(draftKey)
+  if (active || !draftKey.startsWith('new:')) return active
+  const retained = readDraft(draftKey).workspaceAttachment
+  const valid = retained && workspaceAttachmentFrom({ code: 'session/workspace-attach-failed', details: retained }, draftKey.slice(4))
+  return valid ? recoveries.get(`session:${valid.sessionId}`) : undefined
+}
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
@@ -31,28 +38,71 @@ export async function sessionIsAddressable(sessions: Pick<ISessions, 'list' | 'r
   return sessions.list.getSnapshot().byId[sessionId] !== undefined
 }
 
+function sameContent(a: Draft, b: Draft): boolean {
+  return a.text === b.text && a.images.length === b.images.length
+    && a.images.every((image, index) => image === b.images[index])
+    && a.model?.provider === b.model?.provider && a.model?.model === b.model?.model
+    && a.model?.reasoningEffort === b.model?.reasoningEffort
+    && a.permission === b.permission && a.plan === b.plan
+}
+
 export function clearWorkspaceOrigin(attachment: WorkspaceAttachment, delivered: Draft): void {
   const originKey = `new:${attachment.workspaceId}`
   const origin = readDraft(originKey)
   // This is local draft ownership after a confirmed send/recovery, not a
   // guess about Host acceptance or a content-based submission deduplication.
-  const unchanged = origin.text === delivered.text && origin.images.length === delivered.images.length
-    && origin.images.every((image, index) => image === delivered.images[index])
-    && origin.model?.provider === delivered.model?.provider && origin.model?.model === delivered.model?.model
-    && origin.model?.reasoningEffort === delivered.model?.reasoningEffort
-    && origin.permission === delivered.permission && origin.plan === delivered.plan
-  if (origin.workspaceAttachment?.sessionId === attachment.sessionId && unchanged) clearDraft(originKey)
+  if (origin.workspaceAttachment?.sessionId === attachment.sessionId && sameContent(origin, delivered)) clearDraft(originKey)
 }
 
 /** Separate from sending: adopt the same published identity and retry only its Workspace attachment. */
 export function retryWorkspaceAttachment(options: { draftKey: string; sessions: RecoverySessions }): Promise<WorkspaceRecoveryResult> {
-  const active = recoveries.get(options.draftKey)
-  if (active) return active
+  const keys = new Set([options.draftKey])
+  const retained = readDraft(options.draftKey).workspaceAttachment
+  if (retained && usableId(retained.sessionId)) keys.add(`session:${retained.sessionId}`)
+  for (const key of keys) {
+    const active = pendingWorkspaceAttachment(key)
+    if (active) return active
+  }
   const recovery = runRecovery(options).finally(() => {
-    if (recoveries.get(options.draftKey) === recovery) recoveries.delete(options.draftKey)
+    for (const key of keys) if (recoveries.get(key) === recovery) recoveries.delete(key)
   })
-  recoveries.set(options.draftKey, recovery)
+  for (const key of keys) recoveries.set(key, recovery)
   return recovery
+}
+
+interface Baseline { revision: number; draft: Draft }
+function settle(draft: Draft): Draft {
+  const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = draft
+  return rest
+}
+
+/**
+ * Applies the registration result and moves the body as separate steps. The
+ * created conversation's draft is replaced only when nothing wrote it after
+ * the retry began; otherwise its newer input stays and only the recovery
+ * state is settled.
+ */
+function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Baseline, { settled, clearOrigin }: { settled: boolean; clearOrigin: boolean }): void {
+  const destination = `session:${attachment.sessionId}`
+  if (draftKey === destination) {
+    if (!settled) return
+    const current = readDraft(destination)
+    writeDraft(destination, settle(current))
+    clearWorkspaceOrigin(attachment, current)
+    return
+  }
+  const origin = readDraft(draftKey)
+  if (draftRevision(destination) === baseline.revision) {
+    writeDraft(destination, settled ? settle(origin) : origin)
+    if (clearOrigin) clearDraft(draftKey)
+    return
+  }
+  const current = readDraft(destination)
+  if (settled && (current.workspaceAttachment || current.workspaceAttachmentError !== undefined)) writeDraft(destination, settle(current))
+  // The origin's input was already the destination's when the retry began, so the newer edit supersedes it.
+  if (sameContent(origin, baseline.draft)) { if (clearOrigin) clearDraft(draftKey) }
+  // A different origin input is not discarded. After registration it is an ordinary draft for this Workspace.
+  else if (settled) writeDraft(draftKey, settle(origin))
 }
 
 async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions: RecoverySessions }): Promise<WorkspaceRecoveryResult> {
@@ -64,27 +114,22 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
   if ((initial.preparingImages ?? 0) > 0) {
     return { sessionId: attachment.sessionId, sessionReady: false, error: new Error('画像の準備が終わってから登録をやり直してください。') }
   }
+  const destination = `session:${attachment.sessionId}`
+  const baseline: Baseline = { revision: draftRevision(destination), draft: readDraft(destination) }
   try {
     // The Host adopts when sessionId is supplied. Never retry this operation with a fresh identity.
     const sessionId = await sessions.create({ workspaceId: attachment.workspaceId, sessionId: attachment.sessionId })
     if (sessionId !== attachment.sessionId) throw new Error('登録した会話を確認できませんでした。')
     const sessionReady = await sessionIsAddressable(sessions, sessionId)
-    const current = readDraft(draftKey)
     if (!sessionReady) {
-      writeDraft(`session:${sessionId}`, current)
+      handOff(draftKey, attachment, baseline, { settled: false, clearOrigin: false })
       return { sessionId, sessionReady, error: new Error('会話の一覧を更新できませんでした。もう一度お試しください。') }
     }
-    const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = current
-    writeDraft(`session:${sessionId}`, rest)
-    if (draftKey !== `session:${sessionId}`) clearDraft(draftKey)
-    clearWorkspaceOrigin(attachment, current)
+    handOff(draftKey, attachment, baseline, { settled: true, clearOrigin: true })
     return { sessionId, sessionReady }
   } catch (error) {
     const sessionReady = await sessionIsAddressable(sessions, attachment.sessionId)
-    if (draftKey !== `session:${attachment.sessionId}`) {
-      writeDraft(`session:${attachment.sessionId}`, readDraft(draftKey))
-      if (sessionReady) clearDraft(draftKey)
-    }
+    handOff(draftKey, attachment, baseline, { settled: false, clearOrigin: sessionReady })
     return { sessionId: attachment.sessionId, sessionReady, error }
   }
 }
