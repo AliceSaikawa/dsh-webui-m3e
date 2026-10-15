@@ -1,16 +1,16 @@
 import { test, expect, visit, button } from './helpers'
 import { test as bootTest, type Page } from '@playwright/test'
+import type { MockContext } from '../web/src/dsh/mock/index.ts'
 
-async function expose(page: Page, extra = '') {
-  await page.route('**/src/dsh/mock/context.ts*', async route => {
-    const response = await route.fetch(), body = await response.text()
-    expect(body.match(/\breturn ctx;?/g)).toHaveLength(1)
-    await route.fulfill({ response, body: body.replace(/\breturn ctx;?/, `globalThis.__malformed = ctx; ${extra} return ctx;`) })
-  })
+// Receives the finished ?mock context through the DEV-only hook in
+// web/src/dsh/mock/index.ts. `setup` runs there, before main.tsx uses the
+// context; it is serialized into the page, so it must not capture variables.
+async function expose(page: Page, setup?: (ctx: MockContext) => void) {
+  await page.addInitScript(`globalThis.__m3eTestMockContextReady = ctx => { globalThis.__malformed = ctx; (${setup ?? '() => {}'})(ctx) }`)
 }
 
 test('不正な質問projectionが起動時と更新時に届いても画面と正常な質問を維持する', async ({ page }) => {
-  await expose(page, "ctx.mock.setProjection('approval-sheet', 'userQuestions', { active: {}, settled: [] });")
+  await expose(page, ctx => ctx.mock.setProjection('approval-sheet', 'userQuestions', { active: {}, settled: [] }))
   await visit(page, '/s/approval-sheet')
   await expect(page.getByLabel('メッセージ入力欄')).toBeEnabled()
   await page.evaluate(() => (window as any).__malformed.mock.setProjection('approval-sheet', 'userQuestions', { active: [null, { state: 'continued', callId: 'valid', questions: [{ id: 'q', question: '有効な質問', options: [{ label: 'はい' }, null] }] }], settled: [] }))
@@ -92,7 +92,7 @@ test('200件の設定通知を受けてもブラウザのdescribeは同時に1�
 bootTest('起動の成功処理中に初期化が例外になっても復帰リンクを表示する', async ({ page }) => {
   const unhandled: string[] = []
   page.on('pageerror', error => unhandled.push(error.message))
-  await expose(page, "ctx.sessions.list.getSnapshot = () => { throw new Error('synthetic initialization failure'); };")
+  await expose(page, ctx => { ctx.sessions.list.getSnapshot = () => { throw new Error('synthetic initialization failure') } })
   await page.goto('/m3e/?mock')
   await expect(page.getByText('起動に失敗しました。ページを読み直してください。', { exact: false })).toBeVisible()
   await expect(page.getByRole('link', { name: '今の画面に戻す' })).toHaveAttribute('href', '/?ui=classic')

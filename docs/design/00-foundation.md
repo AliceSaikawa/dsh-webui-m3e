@@ -627,3 +627,11 @@ web/src/
 - store の所有者である `initializeInteractions`（`dsh/interactions.ts`）が、失敗時に自分の store を一度だけ `dispose` して例外を投げ直す。`main.tsx` の起動失敗画面への流れと、PR #73 の「購読を解除して起動失敗画面を出す」挙動は変えていない。
 - 返り値の解除関数が store も `dispose` する挙動は変えていない。呼び出し元が明示的に登録を終える操作で、答える handler がなくなる要求を終わらせる契約のため、JSDoc に明記した。
 - 回帰は `tests/00-interactions-ownership.test.ts`。修正前は「登録失敗で呼び出し元の store を dispose しない」試験が失敗した。カードを戻す処理を外すと同じ試験が失敗することも確かめた。起動側は失敗時 1 回・正常登録の解除を 2 回呼んでも 1 回だけ `dispose` すること、handler と購読が 0 に戻ることを確かめる。
+
+### Issue #77 73-9：e2e が偽の ctx を受け取るフック
+
+- `e2e/malformed-data.spec.ts` は、ブラウザーへ配信される `dsh/mock/context.ts` の `return ctx` を正規表現で書き換えて ctx を取り出していた。mock の実装の書き方に依存し、置換が外れても気づきにくい。
+- `dsh/mock/index.ts` の既存の DEV 専用フック（`__m3eTest*`）と同じ置き場に `__m3eTestMockContextReady(ctx)` を足した。他のフックの差し替えを終えた後、`return ctx` の直前に 1 回だけ呼ぶ。`main.tsx` が ctx を使う前なので、起動時の不正データや起動中の例外もここで仕込める。設定しなければ何もしない。
+- spec の `expose(page, setup?)` は `addInitScript` でこのフックを置き、ctx を従来どおり `__malformed` に出す。`setup` は文字列ではなく型検査される関数で、ページへ直列化されるため外側の変数を参照しない。与える不正データと期待は変えていない。フックがない main では 6 件すべてが失敗することを確かめた。
+- 本番に混ざらないことは、`index.ts` が `main.tsx` の `import.meta.env.DEV` 分岐からだけ読まれることと、`pnpm check:pack` の目印 `__m3eTest`（`scripts/pack-contract.ts`）で担保される。build 後の `dist/` にも名前がないことを確認した。
+- `context.ts` の配信内容の書き換えは、ほかの spec 16 件（`conversation-picker`、`settings-drafts`、`jobs-recovery` など）にも残っている。Issue の範囲は `malformed-data` だけなので今回は移していない。移すときはこのフックを使える。
