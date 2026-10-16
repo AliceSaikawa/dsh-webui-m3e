@@ -16,10 +16,23 @@ export const test = base.extend<{ pageErrors: string[]; browserErrors: string[];
     page.on('pageerror', error => errors.push(error.message))
     await use(errors)
   },
-  browserErrors: [async ({ page, pageErrors, expectedErrors }, use, info) => {
+  browserErrors: [async ({ page, pageErrors, expectedErrors, browserName }, use, info) => {
     const errors: string[] = []
-    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+    // Firefox's text() reduces an Error argument to "Error". Rebuild the text
+    // from the arguments there, in arrival order, so patterns match Chromium's.
+    let pending = Promise.resolve()
+    page.on('console', message => {
+      if (message.type() !== 'error') return
+      if (browserName === 'chromium') { errors.push(message.text()); return }
+      pending = pending.then(async () => {
+        const parts = await Promise.all(message.args().map(handle => handle.evaluate(value => value instanceof Error ? `${value.name}: ${value.message}` : String(value))))
+          .catch(() => undefined)
+        // Browser-generated messages have no arguments; keep their text.
+        errors.push(parts?.length ? parts.join(' ') : message.text())
+      })
+    })
     await use(errors)
+    await pending
     const { unexpected, missing } = reviewConsoleErrors(errors, expectedErrors)
     // Playwright sets the body status before fixture teardown; the type is only
     // optional. Treating a missing status as passed applies every check below.
@@ -49,6 +62,10 @@ export { expect }
 export async function visit(page: Page, route = '/', scenario?: string) {
   await page.goto(`/m3e/?mock${scenario ? `&scenario=${scenario}` : ''}#${route}`)
   await expect(page.locator('h1').first()).toBeVisible()
+  // The icon font (font-display: block) moves rows and buttons when it loads.
+  // Firefox spaces Playwright's mousedown and mouseup further apart than
+  // Chromium, so a click during that shift can land on two elements.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined))
 }
 
 export async function shot(page: Page, name: string) {

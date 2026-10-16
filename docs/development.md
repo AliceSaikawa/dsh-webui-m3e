@@ -36,6 +36,7 @@ pnpm test        # 既存のテストと、ルーター・承認/質問・セッ
 pnpm typecheck
 pnpm build       # dist/（M3E の画面）、lib/index.js（サーバー側）、lib/client.js（今の画面に入る部品）
 pnpm exec playwright test -c e2e/playwright.config.ts   # ?mock の画面。専用 Vite を自動で起動
+pnpm exec playwright test -c e2e/playwright.firefox.config.ts   # 同じ ?mock の画面を Firefox（Gecko）で
 env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts   # 実 DSH と偽の LLM
 ```
 
@@ -45,6 +46,7 @@ env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.c
 |---|---|---|
 | `pnpm test` | 変換、参照の寿命、偽 controller、各機能の単体試験 | DSH やブラウザは起動しません |
 | `e2e/playwright.config.ts` | `?mock` の画面と操作 | Vite を `127.0.0.1:5191` で起動し、ブラウザは `http://localhost:5191` を使います |
+| `e2e/playwright.firefox.config.ts` | 同じ `?mock` の spec を Firefox（Gecko）で。Android の Iceraven と同じ描画エンジンですが、実機の確認の代わりにはしません（#98） | Vite を `127.0.0.1:5193` で起動します。結果は `tmp/e2e-firefox-report.json` に出ます。初回は `pnpm exec playwright install firefox` が要ります |
 | `e2e-dsh/playwright.config.ts` | 実 DSH の Host・通信と M3E。LLM は Messages 形式の偽物です | `127.0.0.1` の空きポートを自動で使います。Vite は使いません |
 
 偽データ e2e は `reuseExistingServer: false` と `--strictPort` を使います。既定ポートが占有されている場合は、既存サーバーを流用せず、`e2e/playwright.config.ts` を継承した `tmp/e2e-alt-port.config.ts` で `use.baseURL`、`webServer.command`、`webServer.port` を同じ空きポートにそろえます。試験条件は変えません。今回の移行では、まとめ側が 5192、段階 5 の worktree が 5194 を使いました。一時設定は Git 管理外なので、新しい worktree にあるとは限りません。
@@ -52,6 +54,12 @@ env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.c
 ```bash
 pnpm exec playwright test -c tmp/e2e-alt-port.config.ts
 ```
+
+Firefox の偽データ e2e は、Chromium と同じ spec をそのまま使います。違いは次の 3 点です。
+
+- safe-area の値を上書きする `landscape-insets.spec.ts` の左右の余白がある場合と、`snackbar-position.spec.ts` の下端領域がある場合は、Chromium の CDP（`Emulation.setSafeAreaInsetsOverride`）でしか値を与えられないため、Firefox では skip します。余白が 0 の場合は Firefox でも実行します。
+- Firefox の `ConsoleMessage.text()` は `console.error` に渡した `Error` を `Error` とだけ表します。`e2e/helpers.ts` は Chromium 以外で引数を評価し、`名前: メッセージ` の形に組み立て直してから `expectedErrors` と照らします。
+- `visit()` はアイコンのフォントの読み込み完了を待ちます。読み込みの瞬間に行やボタンが動き、Firefox ではマウスを押した要素と離した要素がずれてクリックにならないことがあったためです（Chromium でも同じ位置の変化は起きます）。
 
 実 DSH の試験は、初回だけ指定版を npm から `tmp/dsh-integration/` に入れます。M3E をビルド・pack し、試験用の新しい `HOME` と `DSH_HOME` で起動します。利用者の DSH は使いません。
 
@@ -61,6 +69,7 @@ pnpm exec playwright test -c tmp/e2e-alt-port.config.ts
 | `M3E_DSH_DIR` | 入れ済みの DSH のディレクトリ（`node_modules/.bin/dsh` を含む場所） |
 | `M3E_SKIP_BUILD=1` | 既存の明示的 build だけを省きます。pack と、その prepack の build・検査は必ず行います |
 | `M3E_CHROMIUM_PATH` | Chromium の実行ファイル。偽データ e2e と実 DSH の両方で使えます |
+| `M3E_FIREFOX_PATH` | Firefox の実行ファイル。Firefox の偽データ e2e で使えます |
 
 環境変数は `env M3E_DSH_VERSION=… pnpm exec …` の形で渡します。試験用 Host の `DEEPSEEK_BASE_URL`、架空の API キー、`SSH_CONNECTION` は `e2e-dsh/dsh-host.ts` が設定します。
 

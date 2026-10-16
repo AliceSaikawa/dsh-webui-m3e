@@ -167,7 +167,7 @@ test('03g 既存会話のコマンド・ファイル候補と画像の追加削�
   await page.getByRole('button', { name: 'docs/handoff.md', exact: true }).click()
   await expect(input).toHaveValue('@docs/handoff.md ')
   await shot(page, '03-file-reference')
-  await page.locator('input[type="file"]').setInputFiles({ name: '確認.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5AAAAABJRU5ErkJggg==', 'base64') })
+  await page.locator('input[type="file"]').setInputFiles({ name: '確認.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mP4DwABAQEAHLCMmQAAAABJRU5ErkJggg==', 'base64') })
   await expect(page.locator('.composer-images img')).toBeVisible()
   await shot(page, '03-image')
   await button(page, '確認.png を外す').click()

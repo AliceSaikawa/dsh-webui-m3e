@@ -57,7 +57,7 @@ test('03height 横向きでも本文を残し、低い表示領域でも操作�
 test('03height 低い表示領域の添付画像は枠内でスクロールし、補助と送信に到達できる', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 222 })
   await visit(page, '/s/readme-review')
-  await page.locator('input[type="file"]').setInputFiles({ name: '確認.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5AAAAABJRU5ErkJggg==', 'base64') })
+  await page.locator('input[type="file"]').setInputFiles({ name: '確認.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mP4DwABAQEAHLCMmQAAAABJRU5ErkJggg==', 'base64') })
   await expect(page.locator('.composer-images img')).toHaveCount(1)
   const send = page.getByRole('button', { name: '送信', exact: true })
   await expect(send).toBeEnabled()

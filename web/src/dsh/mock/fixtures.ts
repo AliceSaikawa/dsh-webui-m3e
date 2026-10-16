@@ -19,7 +19,7 @@ export const imageAttachment: ImageAttachmentRef = {
   attachmentId: 'mock-readme-image', mediaType: 'image/png', bytes: 67,
   width: 1, height: 1, name: '手順の画像.png',
 }
-export const imageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5AAAAABJRU5ErkJggg=='
+export const imageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mP4DwABAQEAHLCMmQAAAABJRU5ErkJggg=='
 
 function events(rows: readonly [number, string, Record<string, unknown>][]): SessionWireEvent[] {
   return rows.map(([offset, type, input], seq) => {

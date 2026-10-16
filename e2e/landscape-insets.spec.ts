@@ -10,8 +10,11 @@ for (const area of [
   { name: 'landscape-right', width: 740, height: 390, left: 20, right: 44 },
 ]) {
   test.describe(area.name, () => {
-    test.beforeEach(async ({ page }) => {
+    test.beforeEach(async ({ page, browserName }) => {
+      // Only Chromium can override env(); other engines keep the real zero insets.
+      test.skip(browserName !== 'chromium' && (area.left > 0 || area.right > 0), 'safe-area の値の上書きは Chromium の CDP だけで行える')
       await page.setViewportSize({ width: area.width, height: area.height })
+      if (browserName !== 'chromium') return
       const cdp = await page.context().newCDPSession(page)
       await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, bottom: 0, left: area.left, right: area.right } })
     })

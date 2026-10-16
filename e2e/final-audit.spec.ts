@@ -130,7 +130,7 @@ for (const [id, code, message] of [
     }
   }, code)
   await page.getByLabel('メッセージ入力欄').fill('失敗しても保持する本文')
-  await page.locator('input[type="file"]').setInputFiles({ name: '保持する画像.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=', 'base64') })
+  await page.locator('input[type="file"]').setInputFiles({ name: '保持する画像.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mP4DwABAQEAHLCMmQAAAABJRU5ErkJggg==', 'base64') })
   await expect(page.locator('.composer-images img')).toHaveCount(1)
   await button(page, '送信').click()
   await expect(page.locator('.composer-error[role="alert"] p')).toHaveText(message)

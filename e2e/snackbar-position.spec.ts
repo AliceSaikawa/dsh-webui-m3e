@@ -2,6 +2,8 @@ import { test, expect, visit } from './helpers'
 import type { Page } from '@playwright/test'
 
 async function inset(page: Page, bottom: number) {
+  // Only Chromium can override env(); other engines keep the real zero insets.
+  test.skip(page.context().browser()?.browserType().name() !== 'chromium', 'safe-area の値の上書きは Chromium の CDP だけで行える')
   const client = await page.context().newCDPSession(page)
   await client.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, left: 0, right: 0, bottom } })
 }
