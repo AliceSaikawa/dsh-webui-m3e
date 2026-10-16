@@ -2,7 +2,7 @@
 
 [日本語](README.md) | English | [简体中文](README.zh-CN.md)
 
-A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH). The UI text is Japanese only.
+A Material 3 Expressive mobile Web UI plugin for DeepSeek Harness (DSH), so you can use DSH comfortably on a phone.
 
 <p>
   <img src="docs/images/home.en.png" alt="Session list" width="200">
@@ -18,41 +18,57 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 
 ## Quick Start
 
-Run this on the machine running DSH:
+1. Run this on the machine running DSH:
 
-```bash
-dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
-```
+   ```bash
+   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+   ```
 
-M3E is not published to the npm registry, so installing by name with `add dsh-webui-m3e` is unavailable.
+   `web` is an example, so select the profile that actually serves your Web UI (a misspelled name still creates a new profile, and a successful install alone does not confirm the target).
 
-`web` is an example: select the profile that actually serves your Web UI. A misspelled name can create a new profile without an error, so a successful installation alone does not confirm the target.
+2. Open the sign-in URL printed by `dsh web` to sign in to the standard interface.
 
-Only **DSH 0.2.0-rc.2** is supported. The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
+3. Open `http://<host>/m3e/` on the same address. If it returns 404, restart that profile's Host.
 
-The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
-
-M3E has no additional runtime packages to install. You do not need M3E's source, a local build, or its development dependencies.
-
-After adding the plugin, sign in through the standard interface (`http://<host>/?ui=classic`), then open `http://<host>/m3e/`. Always restart that profile's Host after an update or rollback so the Host code switches versions.
-
-Desktop has an [upstream bundled-pnpm path](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime). Desktop has not been verified for this release in this environment; the regular CLI results do not establish Desktop support.
+M3E is not published to the npm registry, so installing by name with `add dsh-webui-m3e` is unavailable. M3E has no additional runtime packages to install, and you do not need its source, a local build, or its development dependencies. Always restart the Host after an update or rollback, because that switches the Host code between versions.
 
 ## Features
 
-- **Conversations:** Read AI responses, tool results, and reasoning on a phone-sized screen. You can also switch to a chronological trace view.
-- **Responses:** Approve tools, answer AI questions, and review plans from a bottom sheet on any screen.
-- **Inbox:** See conversations that need a response alongside completed conversations.
-- **Composer:** Attach images, get file and command suggestions, and switch models and permission modes.
-- **More:** Search conversations, manage DSH settings and API keys, and add the Web app to your home screen.
+- **Conversations:** Read AI responses, tool results, and reasoning at phone width. You can also switch to a chronological trace view.
+- **Responses:** Approve tools, answer AI questions, and review plans from a bottom sheet, whatever screen you are on.
+- **Inbox:** See conversations that need a response together with completed conversations.
+- **Composer:** Attach images, reference files with `@`, get command suggestions with `/`, and switch models, reasoning effort, permission presets, and plan mode.
+- **Session tools:** Open stats, files, jobs, subagents, and goals from the conversation menu.
+- **Search:** Search conversations.
+- **Settings:** Manage DSH settings, API keys, custom providers, and this device's appearance (light or dark).
+- **Home screen:** On iPhone, choose "Add to Home Screen" in Safari to open it like an app.
 
 The existing DSH interface remains available. You can choose which interface to use on each device.
 
 ## Requirements
 
 - DeepSeek Harness **0.2.0-rc.2**
-  - Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
-- Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (regular CLI). See Quick Start above for version requirements.
+  - Only this version is supported. Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
+- Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (used by the regular npm-installed DSH CLI).
+  - DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
+- The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
+- Desktop has not been verified for this release in this environment. There is an [upstream bundled-pnpm path](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime), but keep it separate from the regular CLI results.
+
+## Usage
+
+1. Sign in to the standard interface once (open the sign-in URL printed by `dsh web`).
+2. Open `http://<host>/m3e/`.
+3. On iPhone, choose "Add to Home Screen" from Safari's Share menu to open it like an app.
+
+### Switching interfaces
+
+Choose which interface to use on this device with any of the following options. Your choice is saved separately on each device.
+
+- In the standard interface: `設定 → 一般 → この端末で M3E の画面を使う` (Settings → General → Use the M3E interface on this device)
+- In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
+- Add `?ui=m3e` or `?ui=classic` to the URL
+
+If either interface fails to load, open `http://<host>/?ui=classic` to return to the standard interface.
 
 ## Updates, installed version, and removal
 
@@ -74,37 +90,27 @@ To roll back from a future release, choose a verified compatible version's URL f
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-Before removing M3E, visit `http://<host>/?ui=classic`. After removal, `/m3e/` returns 404, so use that standard interface:
+Before removing M3E, open the standard interface (`http://<host>/?ui=classic`). After removal, `/m3e/` returns 404, so use the standard interface:
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-For a download returning 404, check the tag, asset filename and URL in the release list; for missing pnpm, check PATH; for a missing UI, check the profile and restart the Host. Failed CLI operations also print a diagnostics path.
+If something fails, check the following.
+
+- A download returning 404: check the tag, asset filename and URL in the release list.
+- Missing pnpm: check PATH.
+- A missing UI: check the profile and restart the Host.
+- Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
 
-## Usage
-
-1. Sign in once through the usual DSH interface (`http://<host>/`).
-2. Open `http://<host>/m3e/`.
-3. On iPhone, choose “Add to Home Screen” from Safari's Share menu to open it like an app.
-
-### Switching interfaces
-
-Choose which interface to use on this device with any of the following options. Your choice is saved separately on each device.
-
-- In the usual interface: `設定 → 一般 → この端末で M3E の画面を使う` (Settings → General → Use the M3E interface on this device)
-- In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
-- Add `?ui=m3e` or `?ui=classic` to the URL
-
-If either interface fails to load, open `http://<host>/?ui=classic` to return to the usual interface.
-
 ## Notes
 
-- The UI text is Japanese only.
+- The UI text is Japanese only for now. The foundation for following DSH's language setting exists ([docs/design/11-i18n.md](docs/design/11-i18n.md)), but the English and Chinese translations are not added yet.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
-- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Real LLMs and operation in iPhone Safari or as a Web app added to the Home Screen have not been verified for this supported DSH version (see [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope).
+- Real-device testing has been done only on an iPhone 17 Pro Max with Safari. Other devices and browsers are not tested.
+- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope.
 - See [docs/development.md](docs/development.md) for architecture, development instructions and verification records.
 
 ## License

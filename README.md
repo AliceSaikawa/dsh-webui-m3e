@@ -16,41 +16,57 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 
 ## Quick Start
 
-DSH が動いている端末で実行します。
+1. DSH が動いている端末で、次のコマンドを実行します。
 
-```bash
-dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
-```
+   ```bash
+   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+   ```
 
-npm レジストリには公開していないため、名前だけの `add dsh-webui-m3e` では導入できません。
+   `web` は例なので、実際に Web 画面を動かしているプロファイルを指定してください（名前を間違えても新しいプロファイルが作られるだけで、追加に成功しても接続先が正しいとは限りません）。
 
-`web` は例です。実際に Web 画面を動かしているプロファイルを指定してください。間違った名前でも新しいプロファイルが作られるため、追加成功だけでは接続先が正しいとは限りません。
+2. `dsh web` が表示したログイン用の URL を開き、標準画面にログインします。
 
-対応版は **DSH 0.2.0-rc.2 のみ**です。通常の npm インストール版 DSH CLI は **PATH 上の pnpm** を使います。DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方の要件を満たす Node を用意してください。
+3. 同じアドレスで `http://<host>/m3e/` を開きます。404 になるときは、そのプロファイルの Host を再起動します。
 
-動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 で、依存側の下限宣言を M3E の動作保証の下限とはしていません。
-
-M3E には追加で導入する実行時の依存パッケージはありません。M3E のソース取得・ビルド・開発依存の導入は不要です。
-
-追加後、いつもの標準画面（`http://<host>/?ui=classic`）でログインしてから、`http://<host>/m3e/` を開きます。更新・旧版への復帰では Host のコードを切り替えるため、必ずそのプロファイルの Host を再起動してください。
-
-Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)があります。Desktop はこの版・この環境では確かめていません。通常 CLI の確認結果と区別してください。
+M3E は npm レジストリに公開していないため、名前だけの `add dsh-webui-m3e` では導入できません。追加で導入する実行時の依存パッケージはなく、M3E のソース取得・ビルド・開発依存の導入も不要です。更新・旧版への復帰では Host のコードを切り替えるため、必ず Host を再起動してください。
 
 ## できること
 
-- **会話**：AI とのやり取り、ツールの実行結果、考えた内容を、スマートフォンの幅で読めます。記録を時間の順に並べた「トレース」にも切り替えられます。
-- **返事**：ツールの承認、AI からの質問、プランの確認に、どの画面にいても下からのシートで答えられます。
+- **会話**：AI の返事、ツールの実行結果、考えた内容を、スマートフォンの幅で読めます。時間の順に並べた「トレース」に切り替えられます。
+- **返事**：ツールの承認、AI からの質問、プランの確認に、どの画面にいても下から出るシートで答えられます。
 - **対応待ち**：返事が必要な会話と、終わった会話をまとめて見られます。
-- **入力**：画像の添付、ファイルやコマンドの候補、モデルや権限の切り替えができます。
-- **そのほか**：会話の検索、DSH の設定と API キーの登録、ホーム画面に追加して使う Web アプリ
+- **入力**：画像の添付、`@` でのファイル参照、`/` でのコマンド候補、モデルと考える深さ、権限のプリセット、計画モードを操作できます。
+- **セッションの道具**：会話のメニューから、統計、ファイル、ジョブ、サブエージェント、ゴールを開けます。
+- **検索**：会話を検索できます。
+- **設定**：DSH の設定、API キー、カスタムプロバイダー、この端末の外観（明暗）を扱えます。
+- **ホーム画面**：iPhone の Safari から「ホーム画面に追加」すると、アプリのように開けます。
 
 今の DSH の画面はそのまま残ります。端末ごとに、どちらの画面を使うかを選べます。
 
 ## 必要なもの
 
 - DeepSeek Harness **0.2.0-rc.2**
-  - 0.1.5 系への対応は外しました。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
-- DSH と pnpm の要件を満たす Node.js、および PATH 上の pnpm（通常 CLI）。版の前提は上の Quick Start を参照してください。
+  - この版だけに対応します。0.1.5 系への対応は外しました。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
+- DSH と pnpm の要件を満たす Node.js、および PATH 上の pnpm（通常の npm インストール版 DSH CLI が使います）。
+  - DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方を満たす Node を用意してください。
+- 動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 です。依存側の下限宣言を M3E の動作保証の下限とはしていません。
+- Desktop 版はこの版・この環境では確かめていません。[上流の同梱 pnpm の説明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.md#bundled-command-runtime)はありますが、通常の CLI の確認結果と区別してください。
+
+## 使い方
+
+1. 標準画面で一度ログインします（`dsh web` が表示したログイン用の URL を開きます）。
+2. `http://<host>/m3e/` を開きます。
+3. iPhone では、Safari の共有メニューから「ホーム画面に追加」すると、アプリのように開けます。
+
+### 画面を切り替える
+
+この端末でどちらの画面を使うかは、次のどれかで選べます。選んだ内容は端末ごとに保存されます。
+
+- 標準画面の「設定 → 一般 → この端末で M3E の画面を使う」
+- この画面の「設定 → 今の画面に戻す」
+- URL に `?ui=m3e` か `?ui=classic` を付けて開く
+
+どちらかの画面がうまく開かないときは、`http://<host>/?ui=classic` を開くと標準画面に戻れます。
 
 ## 更新・版の確認・削除
 
@@ -60,7 +76,7 @@ Desktop 版には [上流で同梱 pnpm を使う経路の説明](https://github
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新は、[リリースの一覧](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)から対応する版を選び、その添付 tgz の URL で追加し直します。URL の形は `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz` です。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も、同じプロファイルで実行し、Host を再起動して上の一覧を確認してください。利用者による版番号の手編集は不要です。
+更新は、[リリースの一覧](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)から対応する版を選び、その添付 tgz の URL で追加し直します。URL の形は `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz` です。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も同じプロファイルで実行し、Host を再起動して上の一覧を確認してください。版番号の手編集は不要です。
 
 ```bash
 dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
@@ -72,37 +88,27 @@ dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/relea
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
 ```
 
-削除する前に `http://<host>/?ui=classic` を開きます。削除後は `/m3e/` が 404 になるので、同じ標準画面を使います。
+削除する前に標準画面（`http://<host>/?ui=classic`）を開きます。削除後は `/m3e/` が 404 になるので、標準画面を使います。
 
 ```bash
 dsh plugin --profile web remove dsh-webui-m3e
 ```
 
-取得時に 404 ならリリースの一覧でタグ・添付ファイル名・URL、pnpm が見つからない場合は PATH、画面に現れない場合はプロファイルと Host の再起動を確認してください。失敗時には CLI が診断ログの場所も表示します。
+うまくいかないときは、次の点を確認します。
+
+- 取得時に 404 なら、リリースの一覧でタグ・添付ファイル名・URL を確認します。
+- pnpm が見つからないなら、PATH を確認します。
+- 画面に現れないなら、プロファイルと Host の再起動を確認します。
+- 失敗時には CLI が診断ログの場所も表示します。
 
 ソースからビルドする場合は [開発・配布の手順](docs/development.md#配布)を参照してください。
 
-## 使い方
-
-1. いつもの DSH の画面（`http://<host>/`）で、一度ログインします。
-2. `http://<host>/m3e/` を開きます。
-3. iPhone では、Safari の共有メニューから「ホーム画面に追加」すると、アプリのように開けます。
-
-### 画面を切り替える
-
-この端末でどちらの画面を使うかは、次のどれかで選べます。選んだ内容は端末ごとに保存されます。
-
-- いつもの画面の「設定 → 一般 → この端末で M3E の画面を使う」
-- この画面の「設定 → 今の画面に戻す」
-- URL に `?ui=m3e` か `?ui=classic` を付けて開く
-
-どちらかの画面がうまく開かないときは、`http://<host>/?ui=classic` を開くと、いつもの画面に戻れます。
-
 ## 注意
 
-- 画面の文言は日本語だけです。
+- 画面の文言は今のところ日本語だけです。言語は DSH の言語設定に従う土台（[docs/design/11-i18n.md](docs/design/11-i18n.md)）はありますが、英語と中国語の訳はまだ入っていません。
 - DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
-- 画面の試験は主に偽のデータで行い、DSH とのつながりは隔離した実物の DSH と偽の LLM で確かめています。この対応版では、本物の LLM と iPhone の Safari・ホーム画面に追加した Web アプリでの動作は未確認です（確認の範囲の詳細は [docs/dsh-compatibility.md](docs/dsh-compatibility.md)）。
+- 実機での確認は iPhone 17 Pro Max の Safari だけで行っています。ほかの端末・ブラウザは確認していません。
+- 画面の試験は主に偽のデータで行い、DSH とのつながりは隔離した実物の DSH と偽の LLM で確かめています。確認の範囲は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
 - 開発の方法と仕組み、検証の記録は [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス
