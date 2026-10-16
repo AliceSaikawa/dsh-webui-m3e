@@ -7,7 +7,7 @@ import type { InteractionContext } from './dsh/interactions-store.ts'
 import { initializeRouter } from './app/router.ts'
 import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
 import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
-import { bootMessages } from './app/messages.ts'
+import { bootMessages, errorMessages } from './app/messages.ts'
 
 startLocale()
 const element = document.getElementById('app')!
@@ -32,11 +32,16 @@ context.then(
     console.error(error)
     const kind = classifyBootFailure(error instanceof Error ? error.message : String(error))
     const text = messagesOf(bootMessages, currentLocale())
-    element.textContent = kind === 'not-host'
+    const errors = messagesOf(errorMessages, currentLocale())
+    const offline = navigator.onLine === false
+    element.textContent = offline
+      ? errors.offlineTitle
+      : kind === 'not-host'
       ? text.notHost
       : kind === 'incompatible'
       ? text.incompatible(SUPPORTED_DSH_VERSION)
       : text.failed
+    if (offline) element.append(document.createElement('br'), errors.offlineMessage)
     // A standalone PWA has no browser reload control. Keep recovery independent
     // of React and custom-element startup so it also works after loading fails.
     const retry = document.createElement('button')
