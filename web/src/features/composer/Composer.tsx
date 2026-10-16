@@ -17,7 +17,7 @@ import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
 import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
+import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { consumeDraftCommand, draftTextRevision, prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
 import { prepareImage } from './images.ts'
@@ -27,7 +27,7 @@ import { registerDeliveryDestination, handoffDeliveryDestination } from './deliv
 import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
-import { modelApplyController } from './model-picker.ts'
+import { modelApplyController, modelDisplayName } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
 import './composer.css'
 
@@ -45,6 +45,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissionValue = projection<PermissionSelection>('permissions')
+  const modelSelection = projection<ModelSelectionProjection>('modelSelection')
   const { catalog: permissionCatalog } = usePermissionCatalog()
   const permissions = permissionValue && permissionCatalog ? { ...permissionValue, options: permissionCatalog.options } : undefined
   const { connected } = useConnection()
@@ -87,6 +88,9 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
+  const permissionLabel = permission ? `権限：${permissionName}` : '権限'
+  const currentModel = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
+  const modelName = modelDisplayName(currentModel, catalog)
   const canSend = connected && !busy && !modelState.pending && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
   const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')
 
@@ -326,10 +330,11 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         <M3eTextareaAutosize ref={autosize} htmlFor={inputId} />
         {hint && <small id={hintId} className="composer-hint">{hint}</small>}
         {preparing && <small role="status">画像を準備しています…</small>}
-        <div className="composer-controls">
+        <div className={snapshot.running ? 'composer-controls composer-controls-running' : 'composer-controls'}>
           <M3eIconButton variant="outlined" aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
-          <M3eAssistChip className="composer-permission" variant="outlined" disabled={!connected || busy} title={permissionName} onClick={() => { void openPermissions() }}><Icon slot="icon" name="shield" /><span className="composer-permission-label">{permissionName}</span></M3eAssistChip>
+          <M3eIconButton className="composer-permission" variant="outlined" aria-label={permissionLabel} title={permissionLabel} disabled={!connected || busy} onClick={() => { void openPermissions() }}><Icon name="shield" /></M3eIconButton>
           <span className="composer-spacer" />
+          <M3eButton variant="text" className="composer-model" aria-label={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} title={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} disabled={!connected || busy} onClick={openModels}><span className="composer-model-label">{modelName ?? 'モデル'}</span></M3eButton>
           {snapshot.running && <M3eIconButton aria-label="実行を停止" disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}
           {snapshot.running ? <M3eSplitButton className="composer-send-group" variant="filled">
             <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}><Icon slot="icon" name="arrow_upward" />{busy ? '送信中' : '順番待ち'}</M3eButton>
