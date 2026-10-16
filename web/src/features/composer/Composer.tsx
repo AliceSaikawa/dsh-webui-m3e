@@ -238,9 +238,18 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     restoreRetryFocus.current = false
     if (!mounted.current) return
     setBusy(false)
-    if (restoreFocus) requestAnimationFrame(() => {
-      if (mounted.current && document.activeElement === document.body && !textArea.current?.disabled) textArea.current?.focus()
-    })
+    if (restoreFocus) {
+      // Gecko can run the first frame before React commits setBusy(false), so
+      // the textarea may still be disabled. Retry a few frames, never taking
+      // focus that something else has received meanwhile.
+      let frames = 8
+      const restore = () => {
+        if (!mounted.current || document.activeElement !== document.body) return
+        if (textArea.current && !textArea.current.disabled) textArea.current.focus()
+        else if (frames-- > 0) requestAnimationFrame(restore)
+      }
+      requestAnimationFrame(restore)
+    }
     if (result.createdId && result.sessionReady !== false) navigate(`/s/${encodeURIComponent(result.createdId)}`, { replace: true })
   }
   async function recoverWorkspace() {

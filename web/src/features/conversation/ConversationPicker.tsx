@@ -34,10 +34,17 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
     focusPending.current = true
     // The completion promise survives retained-content unmount. A native toggle
     // listener owned by this effect could be removed before its queued event.
-    void hideSheet(sheet).then(() => requestAnimationFrame(() => {
+    // Gecko can still keep focus inside the closing sheet, or the sheet in the
+    // DOM, on the first frame. Retry a few frames while focus is only there.
+    let frames = 8
+    const restore = () => {
       const target = document.querySelector<HTMLElement>('.conversation-picker-trigger')
-      if (focusTarget.current && target?.dataset.sessionId === focusTarget.current && document.activeElement === document.body && !getOverlays().length) target.focus({ preventScroll: true })
-    }))
+      if (!focusTarget.current || target?.dataset.sessionId !== focusTarget.current) return
+      const active = document.activeElement
+      if (active === document.body && !getOverlays().length) target.focus({ preventScroll: true })
+      else if (frames-- > 0 && (active === document.body || sheet.contains(active))) requestAnimationFrame(restore)
+    }
+    void hideSheet(sheet).then(() => requestAnimationFrame(restore))
   }
   useEffect(() => {
     active.current = true
