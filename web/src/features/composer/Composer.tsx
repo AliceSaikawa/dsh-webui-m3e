@@ -29,6 +29,7 @@ import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRec
 import { commandIcon } from './presentation.ts'
 import { modelApplyController } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
+import { CACHE_SENTINEL_UNLOCK_LABEL, useCacheSentinel } from './cache-sentinel.ts'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -186,6 +187,10 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     const unsubscribe = api.onCommandsChange(() => { void reload() })
     return () => { active = false; unsubscribe() }
   }, [api, connected, sessionId])
+  // cache-sentinel が入っている DSH だけ(コマンド一覧に /sentinel がある)で状態を取りに行く。
+  // 入っていない DSH や偽データの画面で取得口の 404 を出さないため。
+  const sentinel = useCacheSentinel(sessionId, target.kind === 'session' && connected && commands.some(command => command.name === 'sentinel'))
+  const [unlocking, setUnlocking] = useState(false)
   useEffect(() => {
     setFiles([])
     if (!suggesting || !token || !sessionId || !connected) return
@@ -297,6 +302,13 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         }
       }} />, { label: '入力の補助' })
   }
+  async function unlockCache() {
+    if (!face) return
+    setUnlocking(true)
+    try { requireMatched(await face.command('/unlock')); setAuxError('') }
+    catch (error) { setAuxError(errorText(error, '送信を許可できませんでした。もう一度お試しください。')) }
+    finally { setUnlocking(false); void sentinel.refresh() }
+  }
   async function stop() {
     if (!face) return
     try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, '停止できませんでした。もう一度お試しください。')) }
@@ -311,6 +323,10 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     </div>}
     {recovering && <p className="composer-notice" role="status">ワークスペースへの登録をやり直しています。終わるまで入力と送信はできません。</p>}
     {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? '送信結果が不明です' : '送れませんでした'}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={event => { void send(undefined, (event as MouseEvent).detail === 0) }}>もう一度送る</M3eButton></div>}
+    {sentinel.banner && <div className={`composer-sentinel composer-sentinel-${sentinel.banner.tone}`} role="status" data-testid="cache-sentinel-banner">
+      <p>{sentinel.banner.text}</p>
+      {sentinel.banner.tone === 'warning' && <M3eButton variant="outlined" disabled={!connected || unlocking} onClick={() => { void unlockCache() }}>{CACHE_SENTINEL_UNLOCK_LABEL}</M3eButton>}
+    </div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}

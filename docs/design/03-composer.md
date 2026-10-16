@@ -403,3 +403,15 @@
 - 入力欄が無効なため、画面からは再試行中に移動先を編集できない。世代の確認は、画像の準備完了などの画面外の書き込みへの備え。会話画面で始めた再試行の完了時に新規画面の重複を消す条件（`clearWorkspaceOrigin`）は変えていない。
 - e2e のため、偽データに `__m3eTestWorkspaceAttachGate`／`__m3eTestWorkspaceAttachFailure` を足した（`web/src/dsh/mock/index.ts`。既存の `__m3eTest*` と同じく、ページ読込前に置いたときだけ有効）。ID 付きの `sessions.create` だけを保留し、Host の部分失敗と同じ `session/workspace-attach-failed` で失敗させられる。
 - 修正前に、単体 6 件（共有・3 経路の上書き・別内容の呼出元・送信拒否）と e2e 2 件（会話画面の入力欄が再試行中も有効）が失敗することを確認した。実 DSH での登録失敗と、実機での表示は未確認。
+
+### cache-sentinel との連携(2026-10-15、feat/cache-sentinel-notice)
+
+- DSH の Host プラグイン cache-sentinel(プロンプトキャッシュが切れたセッションの送信を止める)の状態を、入力欄の上に出す。
+  入力禁止のときは警告と「次の 1 回を許可(/unlock)」のボタン、許可中は残り時間。規則は cache-sentinel の `docs/spec-ui.md` §E2 の写し
+  (`web/src/features/composer/cache-sentinel.ts`)。
+- 状態は `GET <M3E の 1 つ上>/api/cache-sentinel.status?sessionId=…` から、表示開始時・30 秒ごと・前面に戻ったときに取る。
+- 取得するのは、コマンド一覧に `/sentinel` があるとき(= cache-sentinel が入っている DSH)だけ。入っていない DSH では取得口が 404 になり、
+  ブラウザが console.error を出して e2e(`e2e/helpers.ts` の検査)を落とすため。偽データにも `/sentinel` は無いので取得しない。
+- ボタンは既存のコマンド経路(`face.command('/unlock')`)で実行する。結果は通常のコマンド結果として会話に出る。
+- ブロックされたこと自体の表示は cache-sentinel が会話に `command/run`/`command/done` を足して行う(M3E は既存のコマンド行として描画する)。
+- 未確認: 警告の見た目(偽データでは出ないため、実物の DSH で確認する)。e2e は既存の composer-height / mock / operations で回帰がないことのみ確認。
