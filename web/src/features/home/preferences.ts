@@ -29,3 +29,4 @@ export function useHomePreferences(): HomePreferences {
 export const setCurrentWorkspace = preferences.setCurrentWorkspace
 export const setShowSubagents = preferences.setShowSubagents
 export const setArchivedFilter = preferences.setArchivedFilter
+export const setOrderBy = preferences.setOrderBy
