@@ -20,6 +20,12 @@ export function modelValue(selection: ModelSelection | null | undefined): string
   return selection ? `${selection.provider.length}:${selection.provider}${selection.model}` : ''
 }
 
+/** Short name of the model the composer will use, for the bottom row. */
+export function modelDisplayName(selection: ModelSelection | null | undefined, catalog: ModelCatalog | undefined): string | undefined {
+  if (!selection) return undefined
+  return catalog ? modelChoices(catalog).find(choice => choice.value === modelValue(selection))?.model.name ?? selection.model : selection.model
+}
+
 export function selectionFromModelValue(value: string, choices: readonly ModelChoice[]): ModelSelection | undefined {
   const choice = choices.find(item => item.value === value)
   return choice && { provider: choice.provider, model: choice.model.id }

@@ -34,7 +34,7 @@ async function holdPermissions(page: Page, path: string) {
   })
   await visit(page, path)
   await expect(page.getByLabel('メッセージ入力欄')).toBeEnabled()
-  await expect(chip(page)).toHaveText('shield権限')
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限')
 }
 
 async function pressWhilePending(page: Page, count: number) {
