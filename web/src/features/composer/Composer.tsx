@@ -14,6 +14,7 @@ import { useSession } from '../../dsh/session.ts'
 import { sessionAccess } from '../../dsh/session-access.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { presetDisplayName } from '../../dsh/permission-presets.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
 import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
@@ -86,7 +87,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const permission = target.kind === 'new' ? defaults && { ...defaults, currentValue: draft.permission ?? defaults.currentValue } : permissions
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
-  const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
+  const permissionOption = permission?.options.find(option => option.value === permission.currentValue)
+  const permissionName = permission ? permissionOption ? presetDisplayName(permissionOption.value, permissionOption.name) : 'カスタム' : '権限'
   const canSend = connected && !busy && !modelState.pending && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
   const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')
 

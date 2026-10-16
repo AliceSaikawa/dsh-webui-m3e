@@ -8,6 +8,7 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
+import { presetDescription, presetDisplayName } from '../../dsh/permission-presets.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { InboxState, QueueAction } from '../../dsh/services.ts'
 import { queueFromInbox } from '../../dsh/inbox.ts'
@@ -194,11 +195,13 @@ export function PermissionSheet({ permissions, defaults = false, apply, close }:
   const [error, setError] = useState('')
   async function choose(value: string) {
     if (busy || !options.some(option => option.value === value)) return
+    // The stock UI does nothing when the current preset is picked again.
+    if (value === permissions.currentValue) { close(); return }
     setBusy(true); setError('')
     try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
-    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={option.description} disabled={busy} onClick={() => { void choose(option.value) }}>{option.name}</SheetRow>)}
+    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={presetDescription(option.value, option.description)} disabled={busy} onClick={() => { void choose(option.value) }}>{presetDisplayName(option.value, option.name)}</SheetRow>)}
     {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error) : '')}</p>}
   </div>
 }
