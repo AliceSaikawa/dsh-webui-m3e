@@ -26,7 +26,11 @@ async function setPinned(dsh: DshServices, row: SessionSummary, pinned: boolean)
   }
 }
 
-export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void, pinned: boolean) {
+async function unarchive(dsh: DshServices, row: SessionSummary): Promise<void> {
+  if (await attempt(() => dsh.workspaces.unarchiveSession(row.id))) showSnackbar('アーカイブを戻しました')
+}
+
+export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void, pinned: boolean, archived: boolean) {
   if (row.origin === 'subagent') return
   openSheet(close => <div className="home-actions"><h2>{row.displayTitle}</h2>
     <M3eButton onClick={() => {
@@ -37,10 +41,12 @@ export function sessionActions(dsh: DshServices, row: SessionSummary, archive: (
         })
       })
     }}><Icon name="edit" />題名を変える</M3eButton>
-    {pinned
-      ? <M3eButton onClick={() => { close(); void setPinned(dsh, row, false) }}><Icon name="keep_off" />ピン留めを外す</M3eButton>
-      : <M3eButton onClick={() => { close(); void setPinned(dsh, row, true) }}><Icon name="push_pin" />ピン留め</M3eButton>}
-    <M3eButton onClick={() => { close(); archive() }}><Icon name="inventory_2" />アーカイブ</M3eButton>
+    {archived
+      ? <M3eButton onClick={() => { close(); void unarchive(dsh, row) }}><Icon name="unarchive" />アーカイブを戻す</M3eButton>
+      : <>{pinned
+        ? <M3eButton onClick={() => { close(); void setPinned(dsh, row, false) }}><Icon name="keep_off" />ピン留めを外す</M3eButton>
+        : <M3eButton onClick={() => { close(); void setPinned(dsh, row, true) }}><Icon name="push_pin" />ピン留め</M3eButton>}
+        <M3eButton onClick={() => { close(); archive() }}><Icon name="inventory_2" />アーカイブ</M3eButton></>}
   </div>, { label: row.displayTitle })
 }
 

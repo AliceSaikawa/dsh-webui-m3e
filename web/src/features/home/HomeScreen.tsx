@@ -13,8 +13,8 @@ import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { selectWorkspace, pinnedFirst, visibleSessions } from './data.ts'
-import { useHomePreferences, setCurrentWorkspace, setShowSubagents } from './preferences.ts'
+import { selectWorkspace, pinnedFirst, visibleSessions, type ArchivedFilter } from './data.ts'
+import { useHomePreferences, setCurrentWorkspace, setShowSubagents, setArchivedFilter } from './preferences.ts'
 import { attempt, renameWorkspace, sessionActions, workspaceActions } from './actions.tsx'
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
 import { SessionRow } from './SessionRow.tsx'
@@ -26,17 +26,26 @@ import './home.css'
 
 type Mode = 'normal' | 'sort' | 'select'
 
+const ARCHIVED_FILTER_ITEMS: readonly { value: ArchivedFilter; label: string; icon: string }[] = [
+  { value: 'default', label: 'アーカイブ済みを隠す', icon: 'visibility_off' },
+  { value: 'show', label: 'アーカイブ済みも表示', icon: 'visibility' },
+  { value: 'only', label: 'アーカイブ済みだけ表示', icon: 'inventory_2' },
+]
+
 export function HomeScreen() {
   const dsh = useDsh()
   const list = useSnapshot(dsh.sessions.list)
   const snapshot = useSnapshot(dsh.workspaces.list)
   const preferences = useHomePreferences()
   const workspace = selectWorkspace(snapshot.items, preferences.workspaceId)
-  const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents)
-  const { rows, pinned } = pinnedFirst(visible, snapshot.pinnedSessionIds)
-  const unpinned = rows.filter(row => !pinned.has(row.id))
+  const archivedIds = new Set(snapshot.archivedSessionIds)
+  const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents, preferences.archivedFilter)
+  const { rows, pinned } = pinnedFirst(visible, snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
+  const unpinned = rows.filter(row => !pinned.has(row.id) && !archivedIds.has(row.id))
   const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))
   const sortCaption = pinned.size ? 'つまみをドラッグして順番を変更（ピン留めした行は固定した順に並びます）' : 'つまみをドラッグして順番を変更'
+  const listCaption = preferences.archivedFilter === 'only' ? `${rows.length} 件のアーカイブ済みセッション`
+    : preferences.archivedFilter === 'show' ? `${rows.length} 件のセッション（アーカイブ済みを含む）` : `${rows.length} 件のセッション`
   const { connected } = useConnection()
   const directory = useDirectoryAvailability(dsh.remote, connected)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -150,14 +159,17 @@ export function HomeScreen() {
           : !workspace ? <div className="home-empty"><Icon name="create_new_folder" /><h2>ワークスペースがありません</h2><p>作業するフォルダを追加してください。</p>
             {directory.canAdd && <M3eButton variant="filled" disabled={!connected} onClick={() => navigate('/workspaces/add')}>ワークスペースを追加</M3eButton>}
             {!directory.canAdd && directory.ready && <p className="muted">フォルダの選択を利用できません。</p>}</div>
-          : rows.length === 0 ? <div className="home-empty"><Icon name="chat_bubble" /><h2>まだセッションがありません</h2><p>右下の ＋ から始められます</p></div>
-          : <><p className="home-list-caption">{mode === 'sort' ? sortCaption : mode === 'select' ? 'アーカイブするセッションを選択' : `${rows.length} 件のセッション`}</p>
+          : rows.length === 0 ? (preferences.archivedFilter === 'only'
+            ? <div className="home-empty"><Icon name="inventory_2" /><h2>アーカイブ済みのセッションはありません</h2></div>
+            : <div className="home-empty"><Icon name="chat_bubble" /><h2>まだセッションがありません</h2><p>右下の ＋ から始められます</p></div>)
+          : <><p className="home-list-caption">{mode === 'sort' ? sortCaption : mode === 'select' ? 'アーカイブするセッションを選択' : listCaption}</p>
             <ul className="home-sessions" aria-label="セッション一覧">{rows.map(row => {
               const position = unpinnedIndex.get(row.id) ?? -1
-              return <SessionRow key={row.id} row={row} mode={mode} pinned={pinned.has(row.id)}
+              const archived = archivedIds.has(row.id)
+              return <SessionRow key={row.id} row={row} mode={mode} pinned={pinned.has(row.id)} archived={archived}
                 selected={selected.has(row.id)} disabled={busy} canMutate={connected} first={position === 0} last={position === unpinned.length - 1}
                 onToggle={() => { if (canEditHomeSession(row)) setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) }}
-                onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) }, pinned.has(row.id))} onArchive={() => { void archive([row.id]) }}
+                onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) }, pinned.has(row.id), archived)} onArchive={() => { void archive([row.id]) }}
                 onMove={before => { void move(row.id, before) }} onMoveUp={() => { void move(row.id, unpinned[position - 1]?.id) }}
                 onMoveDown={() => { void move(row.id, unpinned[position + 2]?.id) }} />
             })}</ul></>}
@@ -170,6 +182,11 @@ export function HomeScreen() {
       <M3eMenuItem role="menuitemcheckbox" aria-checked={preferences.showSubagents} onClick={() => { menu.current?.hide(); setShowSubagents(!preferences.showSubagents) }}>
         <Icon slot="icon" name="account_tree" />サブエージェントも表示<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>
       </M3eMenuItem>
+      {ARCHIVED_FILTER_ITEMS.map(item => <M3eMenuItem key={item.value} role="menuitemradio" aria-checked={preferences.archivedFilter === item.value ? 'true' : 'false'}
+        onClick={() => { menu.current?.hide(); setArchivedFilter(item.value) }}>
+        <Icon slot="icon" name={item.icon} />{item.label}
+        {preferences.archivedFilter === item.value && <Icon slot="trailing-icon" name="check" />}
+      </M3eMenuItem>)}
     </M3eMenu>
   </M3eDrawerContainer>
 }
