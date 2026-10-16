@@ -2,14 +2,25 @@ import { useId } from 'react'
 import { M3eRadio, M3eRadioGroup } from '@m3e/react/radio-group'
 import { M3eButton } from '@m3e/react/button'
 import { openDialog, openSheet } from '../../app/overlay/index.ts'
-import { backToClassic, setAppearance, useAppearance, type Appearance } from '../../app/theme/index.ts'
+import { Icon } from '../../app/icons/Icon.tsx'
+import {
+  THEME_COLOR_PRESETS, backToClassic, normalizeThemeColor, setAppearance, setThemeColor, useAppearance, useThemeColor,
+  type Appearance,
+} from '../../app/theme/index.ts'
 
 export const appearanceLabels: Record<Appearance, string> = {
   system: '端末の設定に合わせる', light: 'ライト', dark: 'ダーク',
 }
 
+export function themeColorLabel(color: string): string {
+  const normalized = normalizeThemeColor(color)
+  return THEME_COLOR_PRESETS.find(preset => preset.color.toLowerCase() === normalized)?.label ?? 'ほかの色'
+}
+
 function AppearanceSheet() {
   const appearance = useAppearance()
+  const color = useThemeColor()
+  const custom = !THEME_COLOR_PRESETS.some(preset => preset.color.toLowerCase() === color)
   const titleId = useId()
   return <div className="settings-sheet">
     <h2 id={titleId}>外観</h2>
@@ -21,6 +32,23 @@ function AppearanceSheet() {
         <span>{appearanceLabels[value]}</span>
       </label>)}
     </M3eRadioGroup>
+    <h3>画面の色</h3>
+    <p className="muted">選んだ色から配色を作ります。</p>
+    <div className="settings-color-options" role="group" aria-label="画面の色">
+      {THEME_COLOR_PRESETS.map(({ color: presetColor, label }) => {
+        const selected = presetColor.toLowerCase() === color
+        return <button key={presetColor} type="button" className="settings-color-swatch"
+          aria-label={label} aria-pressed={selected} title={label}
+          style={{ background: presetColor }} onClick={() => setThemeColor(presetColor)}>
+          {selected && <Icon name="check" />}
+        </button>
+      })}
+    </div>
+    <label className="settings-color-custom">
+      <span>ほかの色</span>
+      <input type="color" value={color} onChange={event => setThemeColor(event.currentTarget.value)} />
+      {custom && <Icon name="check" />}
+    </label>
   </div>
 }
 
