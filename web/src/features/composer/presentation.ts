@@ -13,5 +13,6 @@ export function modelIcon(provider: string): string {
 }
 
 export function permissionIcon(value: string): string {
-  return value === 'danger-full-access' ? 'warning' : 'shield'
+  // Full access and the experimental Auto preset both run without a sandbox.
+  return value === 'danger-full-access' || value === 'auto' ? 'warning' : 'shield'
 }

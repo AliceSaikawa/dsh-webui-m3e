@@ -1,5 +1,6 @@
 import type { ProviderState } from './providers.ts'
 import type { PermissionCatalog } from '../composer/api.ts'
+import { presetDisplayName } from '../../dsh/permission-presets.ts'
 import { matchesNumberStep } from './number-step.ts'
 
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
@@ -213,7 +214,7 @@ export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionC
   }
   return fields.map(field => namespace.ns === 'permission' && field.kind !== 'masked' && !field.omitted && field.path.length === 1 && field.path[0] === 'defaultPreset'
     ? { ...field, kind: 'select', value: field.value ?? catalog?.defaultPreset,
-        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: option.name, value: option.value })) ?? [] }
+        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: presetDisplayName(option.value, option.name), value: option.value })) ?? [] }
     : field)
 }
 function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
@@ -429,10 +430,13 @@ export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNam
   }
   if (page === 'permission') {
     const field = fieldAt('permission', 'defaultPreset')
-    const labels: Record<string, string> = { 'workspace-write': 'ワークスペース書込', 'danger-full-access': 'フル アクセス' }
     const value = field?.value
-    return field?.options?.find(option => Object.is(option.value, value))?.label
-      ?? (typeof value === 'string' && value ? labels[value] ?? 'カスタム' : 'プリセット：未設定')
+    if (typeof value !== 'string' || value === '') return 'プリセット：未設定'
+    const matched = field?.options?.find(option => Object.is(option.value, value))?.label
+    if (matched !== undefined) return matched
+    // No loaded catalog: show the built-in Japanese name, or Custom for an unmatched value.
+    const name = presetDisplayName(value, '')
+    return name === value ? 'カスタム' : name
   }
   if (page === 'agent') return join([
     labeled('プリセット', textAt('agent-preset-registry', 'selectedDefault')),
