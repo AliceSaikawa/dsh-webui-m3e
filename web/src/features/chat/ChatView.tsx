@@ -1,6 +1,9 @@
 import { memo, useMemo, useRef } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
+import { ErrorState } from '../../app/ErrorState.tsx'
+import { errorMessages } from '../../app/messages.ts'
+import { useMessages } from '../../i18n/index.ts'
 import { ChatMarkdown } from './ChatMarkdown.tsx'
 import { showSnackbar } from '../../app/overlay/index.ts'
 import { back } from '../../app/router.ts'
@@ -77,6 +80,7 @@ export function ChatView({ sessionId, active }: { sessionId: string; active: boo
 
 function SessionChat({ sessionId, active }: { sessionId: string; active: boolean }) {
   const { face, snapshot, records, stream } = useSession(sessionId)
+  const error = useMessages(errorMessages)
   const settled = useMemo(() => buildSettledChat(records), [records])
   const rows = useMemo(() => appendLiveRows(settled, stream, snapshot.pendingSubmissions), [settled, stream, snapshot.pendingSubmissions])
   const revision = useMemo(() => ({ rows, error: snapshot.lastAgentError, waiting: snapshot.awaitingFirstTurn, open: snapshot.openState }), [rows, snapshot.lastAgentError, snapshot.awaitingFirstTurn, snapshot.openState])
@@ -93,7 +97,7 @@ function SessionChat({ sessionId, active }: { sessionId: string; active: boolean
       onKeyDown={event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) scroll.stopFollowing() }}>
       <div className="chat-rows" ref={scroll.content}>
         {snapshot.openState === 'loading' || snapshot.openState === 'cold' ? <div className="chat-state"><Progress>会話を読み込んでいます…</Progress></div>
-          : snapshot.openState === 'error' ? <div className="chat-state"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><M3eButton onClick={back}>一覧に戻る</M3eButton></div>
+          : snapshot.openState === 'error' ? <div className="chat-state"><ErrorState icon="chat_error" title={error.openFailedTitle} message={remoteErrorMessage(snapshot.openError)} actions={[{ label: error.home, onClick: back }]} /></div>
             : <>
               <div className="chat-older">{snapshot.loadingOlder || scroll.requesting ? <Progress>前のメッセージを読み込んでいます…</Progress>
                 : snapshot.hasMore && <M3eButton onClick={() => void scroll.loadOlder()}>前のメッセージを読み込む</M3eButton>}</div>

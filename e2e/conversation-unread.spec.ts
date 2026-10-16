@@ -33,7 +33,7 @@ test('#42 不明な下位画面は未読を保持し前の会話のシートを�
   await page.getByLabel('入力の補助を開く', { exact: true }).click()
   await expect(page.getByRole('heading', { name: '入力の補助', exact: true })).toBeVisible()
   await page.evaluate(() => { window.location.hash = '/s/readme-review/does-not-exist' })
-  await expect(page.getByRole('heading', { name: '画面が見つかりません' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '画面が見つかりません' }).first()).toBeVisible()
   await expect(page.getByRole('heading', { name: '入力の補助', exact: true })).toHaveCount(0)
   await page.evaluate(async () => {
     const { ctx } = (window as any).__routeUnread
@@ -42,7 +42,7 @@ test('#42 不明な下位画面は未読を保持し前の会話のシートを�
   })
   await expect(page.locator('[data-session-id="readme-review"]')).toContainText('完了・未読')
   await page.evaluate(() => { window.location.hash = '/s/readme-review/does-not-exist' })
-  await expect(page.getByRole('heading', { name: '画面が見つかりません' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '画面が見つかりません' }).first()).toBeVisible()
   expect(await page.evaluate(() => {
     const p = (window as any).__routeUnread
     return { unread: p.status.getSnapshot().byId['readme-review'].completionUnread, references: p.ctx.sessions.retainInfo('readme-review').getSnapshot().retainedBy['m3e.mainView'] ?? 0 }

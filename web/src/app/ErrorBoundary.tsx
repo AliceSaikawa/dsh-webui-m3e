@@ -1,18 +1,21 @@
 import { Component, type ReactNode } from 'react'
+import { currentLocale, messagesOf } from '../i18n/index.ts'
+import { ErrorState } from './ErrorState.tsx'
+import { errorMessages } from './messages.ts'
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   override state = { hasError: false }
 
   static getDerivedStateFromError() { return { hasError: true } }
 
+  override componentDidCatch(error: Error) { console.error(error) }
+
   override render() {
     if (!this.state.hasError) return this.props.children
-    return <main className="app-error-screen">
-      <div role="alert">
-        <h1>画面を表示できませんでした</h1>
-        <p>ページを読み直して、もう一度お試しください。</p>
-      </div>
-      <button type="button" autoFocus onClick={() => window.location.reload()}>読み直す</button>
-    </main>
+    const text = messagesOf(errorMessages, currentLocale())
+    return <ErrorState fullScreen icon="error" title={text.renderTitle} message={text.renderMessage} actions={[
+      { label: text.reload, primary: true, onClick: () => window.location.reload() },
+      { label: text.home, onClick: () => { window.location.hash = '#/'; window.location.reload() } },
+    ]} />
   }
 }

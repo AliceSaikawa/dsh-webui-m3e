@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eTabs, M3eTab } from '@m3e/react/tabs'
-import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { ConnectionBanner } from '../../app/shell/ConnectionBanner.tsx'
 import { RetainedScrollPanel } from '../../app/shell/RetainedScrollPanel.tsx'
+import { ErrorState } from '../../app/ErrorState.tsx'
+import { errorMessages } from '../../app/messages.ts'
+import { useMessages } from '../../i18n/index.ts'
 import { back, navigate } from '../../app/router.ts'
 import { useOverlays } from '../../app/overlay/index.ts'
 import { useDsh } from '../../dsh/services.ts'
@@ -26,6 +28,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   const { sessions } = useDsh()
   const list = useSnapshot(sessions.list)
   const { snapshot } = useSession(sessionId)
+  const error = useMessages(errorMessages)
   const access = sessionAccess(list.byId[sessionId], snapshot)
   const pending = usePendingInteractions(sessionId)
   const current = pending.find(item => !item.deferred)
@@ -62,7 +65,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
       <M3eTab ref={element => { traceTabRef.current = element }} selected={tab === 'trace'} onClick={() => navigate(`${base}/trace`, { replace: true })}>トレース</M3eTab>
     </M3eTabs>
     <main ref={contentRef} className="screen-content conversation-content">
-      {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><div className="placeholder"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><div className="actions"><M3eButton onClick={back}>戻る</M3eButton><M3eButton onClick={() => window.location.reload()}>もう一度開く</M3eButton></div></div></div>
+      {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><ErrorState icon="chat_error" title={error.openFailedTitle} message={remoteErrorMessage(snapshot.openError)} actions={[{ label: error.back, onClick: back }, { label: error.retryOpen, primary: true, onClick: () => window.location.reload() }]} /></div>
         : <>
           <RetainedScrollPanel active={tab === 'chat'} label="チャット">
             <ChatView sessionId={sessionId} active={tab === 'chat'} />

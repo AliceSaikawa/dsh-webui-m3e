@@ -16,3 +16,26 @@ export const bootMessages = defineMessages({
   en: null,
   zh: null,
 })
+
+/**
+ * Shared error screens (web/src/app/ErrorState.tsx). The title says what
+ * happened and the message suggests the next action, without exposing the
+ * raw error, a path or a key.
+ */
+export const errorMessages = defineMessages({
+  ja: {
+    renderTitle: '画面を表示できませんでした',
+    renderMessage: '思いがけない問題が起きました。読み直すと元に戻ることがあります。',
+    notFoundTitle: '画面が見つかりません',
+    notFoundMessage: 'URL が古いか、間違っている可能性があります。',
+    openFailedTitle: '会話を開けませんでした',
+    offlineTitle: 'オフラインです',
+    offlineMessage: 'ネットワークにつながっていません。接続を確かめてから読み直してください。',
+    reload: '読み直す',
+    home: '一覧に戻る',
+    back: '戻る',
+    retryOpen: 'もう一度開く',
+  },
+  en: null,
+  zh: null,
+})
