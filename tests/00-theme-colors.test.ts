@@ -10,10 +10,10 @@ const bundled = buildSync({
   entryPoints: [fileURLToPath(new URL('../web/src/app/theme/colors.ts', import.meta.url))],
   bundle: true, platform: 'node', format: 'esm', write: false,
 }).outputFiles[0]!.text
-const { applyDocumentTheme, themeColors, themeOptions } = await import(`data:text/javascript;base64,${Buffer.from(bundled).toString('base64')}`) as typeof import('../web/src/app/theme/colors.ts')
+const { applyDocumentTheme, themeColors, themeOptions, themeOptionsFor, themeMetaColors } = await import(`data:text/javascript;base64,${Buffer.from(bundled).toString('base64')}`) as typeof import('../web/src/app/theme/colors.ts')
 
 /** Execute the installed component's pure color code, without importing or rendering its DOM class. */
-function componentColors(dark: boolean): Record<string, string> {
+function componentColors(dark: boolean, color: string = themeOptions.color): Record<string, string> {
   const source = readFileSync(new URL('../node_modules/@m3e/web/dist/theme.js', import.meta.url), 'utf8')
   const start = source.indexOf('function isColorScheme(')
   const end = source.indexOf('var _M3eThemeElement_instances,')
@@ -29,7 +29,7 @@ function componentColors(dark: boolean): Record<string, string> {
     ${variant}
     ${contrast}
     (function () { ${apply}\n return css; }).call(theme);
-  `, { theme: { ...themeOptions, isDark: dark } }, { timeout: 1000 }) as string
+  `, { theme: { ...themeOptions, color, isDark: dark } }, { timeout: 1000 }) as string
   return Object.fromEntries(css.split(';').filter(Boolean).map((declaration) => {
     const [name, value] = declaration.split(':')
     return [name!.trim(), value!.trim()]
@@ -48,6 +48,28 @@ for (const dark of [false, true]) {
     t.diagnostic(`surface=${actual['--md-sys-color-surface']}, background=${actual['--md-sys-color-background']}, roles=${Object.keys(actual).length}`)
   })
 }
+
+test('基準の色を変えると色ロールが変わり、themeOptionsFor は色だけを差し替える', () => {
+  assert.notEqual(themeColors(false, '#0b57d0')['--md-sys-color-primary'], themeColors(false)['--md-sys-color-primary'])
+  assert.deepEqual(themeOptionsFor('#0b57d0'), { ...themeOptions, color: '#0b57d0' })
+})
+
+for (const color of ['#0b57d0', '#b3261e']) {
+  for (const dark of [false, true]) {
+    test(`${color} の${dark ? 'ダーク' : 'ライト'}の全色ロールが同梱 M3eTheme の生成値と一致する`, () => {
+      assert.deepEqual(themeColors(dark, color), componentColors(dark, color))
+    })
+  }
+}
+
+test('theme-color は system で明暗の surface、明示した明暗では両方ともその surface になる', () => {
+  const system = themeMetaColors('#0b57d0', 'system')
+  assert.equal(system.light, themeColors(false, '#0b57d0')['--md-sys-color-surface'])
+  assert.equal(system.dark, themeColors(true, '#0b57d0')['--md-sys-color-surface'])
+  assert.notEqual(system.light, system.dark)
+  assert.deepEqual(themeMetaColors('#0b57d0', 'dark'), { light: system.dark, dark: system.dark })
+  assert.deepEqual(themeMetaColors('#0b57d0', 'light'), { light: system.light, dark: system.light })
+})
 
 test('明暗を切り替えると全色と color-scheme を置き換え、ほかのスタイルを維持する', () => {
   const values: Record<string, string> = { '--app-keyboard-height': '0px' }

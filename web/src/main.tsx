@@ -8,7 +8,9 @@ import { initializeRouter } from './app/router.ts'
 import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
 import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
 import { bootMessages } from './app/messages.ts'
+import { applyStoredTheme } from './app/theme/index.ts'
 
+applyStoredTheme()
 startLocale()
 const element = document.getElementById('app')!
 
