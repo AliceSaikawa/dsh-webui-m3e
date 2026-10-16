@@ -6,6 +6,8 @@ export function selectWorkspace(items: readonly WorkspaceView[], savedId?: strin
 
 export type ArchivedFilter = 'default' | 'show' | 'only'
 
+export type OrderBy = 'manual' | 'updated'
+
 export function visibleSessions(
   workspace: WorkspaceView | undefined,
   byId: Record<string, SessionSummary>,
@@ -21,6 +23,16 @@ export function visibleSessions(
     if (archivedFilter === 'default' && isArchived) return []
     if (archivedFilter === 'only' && !isArchived) return []
     return [session]
+  })
+}
+
+export function orderSessions(rows: readonly SessionSummary[], orderBy: OrderBy): SessionSummary[] {
+  if (orderBy === 'manual') return [...rows]
+  const time = (row: SessionSummary) => (Number.isFinite(row.updatedAt) ? row.updatedAt : Number.NEGATIVE_INFINITY)
+  return [...rows].sort((a, b) => {
+    const aTime = time(a), bTime = time(b)
+    if (aTime !== bTime) return aTime > bTime ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   })
 }
 
