@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { folderName, formatUpdatedAt, modelIcon, selectWorkspace, shortenHomePath, visibleSessions } from '../web/src/features/home/data.ts'
+import { folderName, formatUpdatedAt, modelIcon, pinnedFirst, selectWorkspace, shortenHomePath, visibleSessions } from '../web/src/features/home/data.ts'
 import { createHomePreferencesStore, parseHomePreferences } from '../web/src/features/home/preferences-store.ts'
 import type { SessionSummary, WorkspaceView } from '../web/src/dsh/services.ts'
 
@@ -32,6 +32,17 @@ test('visible sessions follow workspace order and omit archives, missing IDs, an
   assert.deepEqual(visibleSessions(current, byId, ['archived'], true).map(item => item.id), ['second', 'child', 'first'])
   assert.deepEqual(visibleSessions(undefined, byId, [], true), [])
   assert.deepEqual(current.sessionIds, ['second', 'missing', 'child', 'archived', 'first', 'toString'])
+})
+
+test('pinned rows move to the front in pin order, ignoring unknown IDs and keeping the rest in place', () => {
+  const rows = [session('a'), session('b'), session('c'), session('d')]
+  const ordered = pinnedFirst(rows, ['c', 'a'])
+  assert.deepEqual(ordered.rows.map(row => row.id), ['c', 'a', 'b', 'd'])
+  assert.deepEqual([...ordered.pinned].sort(), ['a', 'c'])
+  assert.deepEqual(pinnedFirst(rows, ['missing', 'c']).rows.map(row => row.id), ['c', 'a', 'b', 'd'])
+  assert.deepEqual(pinnedFirst(rows, []).rows.map(row => row.id), ['a', 'b', 'c', 'd'])
+  assert.equal(pinnedFirst(rows, []).pinned.size, 0)
+  assert.deepEqual(pinnedFirst(rows, ['d', 'd']).rows.map(row => row.id), ['d', 'a', 'b', 'c'])
 })
 
 test('updated dates use the local calendar day and two-digit times and dates', () => {
