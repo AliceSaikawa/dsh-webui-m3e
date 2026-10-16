@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { syncBuiltinESMExports } from 'node:module'
 import { sep } from 'node:path'
 import { test, type TestContext } from 'node:test'
+import vm from 'node:vm'
 import type { Context } from '@deepseek-ai/cordis'
-import { apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads } from '../src/host/index.ts'
+import {
+  apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads, unauthorizedPage,
+  type IndexAuthResponse,
+} from '../src/host/index.ts'
 import { uiChoiceScript } from '../src/shared/ui-choice.ts'
 
 const INDEX_PATHS = [
@@ -15,7 +20,19 @@ const INDEX_PATHS = [
   '/m3e/index.html/', '/m3e/%2findex.html',
 ]
 
-function createHostHarness(t: TestContext, authorized: boolean) {
+/** Writes the response Connection owns when `authorizeIndex` refuses a request. */
+type DenialWriter = (req: IncomingMessage, res: IndexAuthResponse) => void
+
+/**
+ * Connection's own refusal, restated from dsh-client-connection (DSH 0.2.0-rc.2)
+ * so a pass-through test compares against DSH's bytes rather than M3E's.
+ */
+const writeDshUnauthorized: DenialWriter = (req, res) => {
+  res.writeHead(401, { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' })
+  res.end(req.method === 'HEAD' ? undefined : 'dsh web authentication required; reopen the URL printed by dsh web.\n')
+}
+
+function createHostHarness(t: TestContext, authorized: boolean, deny: DenialWriter = writeDshUnauthorized) {
   const html = '<head><link rel="preload" as="script" href="/plugins/stock.js"></head><body>M3E</body>'
   const reads = t.mock.method(fs, 'readFile', async (_path: unknown, encoding?: string) =>
     encoding === 'utf8' ? html : Buffer.from('asset'),
@@ -28,10 +45,9 @@ function createHostHarness(t: TestContext, authorized: boolean) {
 
   type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
   let handler: Handler | undefined
-  const authorize = t.mock.fn((_req: IncomingMessage, res: ServerResponse) => {
+  const authorize = t.mock.fn((req: IncomingMessage, res: IndexAuthResponse) => {
     if (authorized) return true
-    res.writeHead(401, { 'cache-control': 'no-store' })
-    res.end('ログインしてください')
+    deny(req, res)
     return false
   })
   const render = t.mock.fn((body: string) => body.replace('</head>', '<script>boot()</script></head>'))
@@ -69,6 +85,55 @@ function createHostHarness(t: TestContext, authorized: boolean) {
   }
 }
 
+/** The one inline script of an explanation page. */
+function inlineScript(body: string): string {
+  const script = /<script>([\s\S]*?)<\/script>/.exec(body)?.[1]
+  assert.ok(script !== undefined, 'the page carries one inline script')
+  return script
+}
+
+/**
+ * Run the page's inline script against the parts of a browser it touches.
+ * @param script - the script text.
+ * @param options - the pre-existing storage value, or a storage that throws.
+ * @returns the navigations made and a way to click the retry button.
+ */
+function runUnauthorizedScript(script: string, options: { previous?: string; fails?: boolean } = {}) {
+  const navigations: string[] = []
+  const listeners: Array<() => void> = []
+  const values = new Map<string, string>()
+  if (options.previous !== undefined) values.set('m3e:unauthorized-retry', options.previous)
+  const sandbox = {
+    location: {
+      href: 'https://host.example/m3e/',
+      replace(url: string) { navigations.push(url) },
+    },
+    document: {
+      getElementById: (id: string) =>
+        id === 'm3e-retry'
+          ? { addEventListener: (_type: string, listener: () => void) => { listeners.push(listener) } }
+          : null,
+    },
+    sessionStorage: {
+      getItem(key: string) {
+        if (options.fails === true) throw new Error('storage disabled')
+        return values.get(key) ?? null
+      },
+      setItem(key: string, value: string) {
+        if (options.fails === true) throw new Error('storage disabled')
+        values.set(key, value)
+      },
+    },
+    Date,
+    Number,
+  }
+  vm.runInNewContext(script, sandbox)
+  return {
+    navigations,
+    click() { for (const listener of listeners) listener() },
+  }
+}
+
 test('the mount root and its index path serve the entry page', () => {
   for (const path of ['/m3e', '/m3e/', '/m3e/index.html']) assert.equal(resolveTarget(path), 'index')
 })
@@ -85,7 +150,7 @@ test('GET and HEAD index spellings require authorization before reading or rende
     const response = await host.request(path, method)
     assert.equal(response.status, 401, path)
     assert.equal(response.headers['cache-control'], 'no-store', path)
-    assert.equal(response.body, 'ログインしてください', path)
+    assert.equal(response.body, method === 'HEAD' ? undefined : unauthorizedPage(), path)
   }
   assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length * 2)
   assert.equal(host.reads.mock.callCount(), 0)
@@ -109,6 +174,111 @@ test('GET and HEAD authorized index spellings prevent framing and keep no-store 
   for (const call of host.reads.mock.calls) {
     assert.match(String(call.arguments[0]), /[/\\]dist[/\\]index\.html$/)
     assert.equal(call.arguments[1], 'utf8')
+  }
+})
+
+test('the unauthenticated explanation page carries fixed headers and a CSP hash of its own script', async (t) => {
+  const host = createHostHarness(t, false)
+  const response = await host.request('/m3e/')
+  assert.equal(response.status, 401)
+  assert.equal(response.headers['content-type'], 'text/html; charset=utf-8')
+  assert.equal(response.headers['cache-control'], 'no-store')
+  assert.equal(response.headers['referrer-policy'], 'no-referrer')
+  assert.equal(response.headers['x-frame-options'], 'DENY')
+  const body = response.body as string
+  const hash = createHash('sha256').update(inlineScript(body), 'utf8').digest('base64')
+  assert.equal(
+    response.headers['content-security-policy'],
+    `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${hash}'; ` +
+      "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  )
+  assert.equal(body, unauthorizedPage())
+  assert.equal(host.reads.mock.callCount(), 0)
+  assert.equal(host.render.mock.callCount(), 0)
+})
+
+test('the explanation page stays self-contained, Japanese, and free of request data', () => {
+  const page = unauthorizedPage()
+  const requestUrl = 'https://phone.example/m3e/index.html?ui=m3e'
+  assert.match(page, /<html lang="ja">/)
+  assert.match(page, /<meta name="viewport" content="width=device-width, initial-scale=1">/)
+  assert.match(page, /color-scheme: light dark/)
+  for (const text of [
+    'ログインの情報を確かめられませんでした',
+    'DSH にログインしていないか、ログインの情報がこのページに送られませんでした。',
+    'アドレスバーの URL をタップして、そのまま開き直してください。',
+    'それでも開けないときは、<code>dsh web</code> が表示した URL を開き直してください。',
+    '開き直す',
+  ]) assert.ok(page.includes(text), text)
+  // No external resource, and nothing carried over from a request.
+  assert.doesNotMatch(page, /\s(?:src|href)=/)
+  assert.doesNotMatch(page, /@import|url\(/)
+  assert.ok(!page.includes(requestUrl))
+})
+
+test('the explanation page reloads once, waits 30 seconds, and survives disabled storage', () => {
+  const script = inlineScript(unauthorizedPage())
+  const first = runUnauthorizedScript(script)
+  assert.deepEqual(first.navigations, ['https://host.example/m3e/'])
+  const recent = runUnauthorizedScript(script, { previous: String(Date.now()) })
+  assert.deepEqual(recent.navigations, [])
+  const old = runUnauthorizedScript(script, { previous: String(Date.now() - 60000) })
+  assert.deepEqual(old.navigations, ['https://host.example/m3e/'])
+  const disabled = runUnauthorizedScript(script, { fails: true })
+  assert.deepEqual(disabled.navigations, [])
+  disabled.click()
+  assert.deepEqual(disabled.navigations, ['https://host.example/m3e/'])
+})
+
+test('the retry button reloads after an automatic attempt that already ran', () => {
+  const host = runUnauthorizedScript(inlineScript(unauthorizedPage()), { previous: String(Date.now()) })
+  assert.deepEqual(host.navigations, [])
+  host.click()
+  assert.deepEqual(host.navigations, ['https://host.example/m3e/'])
+})
+
+test('a token-bearing 401 and other Connection refusals reach the browser unchanged', async (t) => {
+  const stale = createHostHarness(t, false)
+  const refused = await stale.request('/m3e/?token=stale')
+  assert.equal(refused.status, 401)
+  assert.equal(refused.headers['content-type'], 'text/plain; charset=utf-8')
+  assert.equal(refused.body, 'dsh web authentication required; reopen the URL printed by dsh web.\n')
+
+  const redirect = createHostHarness(t, false, (_req, res) => {
+    res.writeHead(303, {
+      'cache-control': 'no-store',
+      location: './',
+      'referrer-policy': 'no-referrer',
+      'set-cookie': 'dsh-example=abc; SameSite=Strict',
+    })
+    res.end()
+  })
+  const exchanged = await redirect.request('/m3e/?token=fresh')
+  assert.equal(exchanged.status, 303)
+  assert.deepEqual(exchanged.headers, {
+    'cache-control': 'no-store',
+    location: './',
+    'referrer-policy': 'no-referrer',
+    'set-cookie': 'dsh-example=abc; SameSite=Strict',
+  })
+  assert.equal(exchanged.body, undefined)
+
+  const forbidden = createHostHarness(t, false, (_req, res) => {
+    res.writeHead(403)
+    res.end()
+  })
+  const denied = await forbidden.request('/m3e/')
+  assert.equal(denied.status, 403)
+  assert.equal(denied.body, undefined)
+  assert.equal(forbidden.render.mock.callCount(), 0)
+})
+
+test('HEAD index requests receive no body for either refusal', async (t) => {
+  const host = createHostHarness(t, false)
+  for (const path of ['/m3e/', '/m3e/?token=stale']) {
+    const response = await host.request(path, 'HEAD')
+    assert.equal(response.status, 401, path)
+    assert.equal(response.body, undefined, path)
   }
 })
 
