@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { syncBuiltinESMExports } from 'node:module'
 import { sep } from 'node:path'
 import { test, type TestContext } from 'node:test'
-import vm from 'node:vm'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads, unauthorizedPage,
@@ -85,55 +83,6 @@ function createHostHarness(t: TestContext, authorized: boolean, deny: DenialWrit
   }
 }
 
-/** The one inline script of an explanation page. */
-function inlineScript(body: string): string {
-  const script = /<script>([\s\S]*?)<\/script>/.exec(body)?.[1]
-  assert.ok(script !== undefined, 'the page carries one inline script')
-  return script
-}
-
-/**
- * Run the page's inline script against the parts of a browser it touches.
- * @param script - the script text.
- * @param options - the pre-existing storage value, or a storage that throws.
- * @returns the navigations made and a way to click the retry button.
- */
-function runUnauthorizedScript(script: string, options: { previous?: string; fails?: boolean } = {}) {
-  const navigations: string[] = []
-  const listeners: Array<() => void> = []
-  const values = new Map<string, string>()
-  if (options.previous !== undefined) values.set('m3e:unauthorized-retry', options.previous)
-  const sandbox = {
-    location: {
-      href: 'https://host.example/m3e/',
-      replace(url: string) { navigations.push(url) },
-    },
-    document: {
-      getElementById: (id: string) =>
-        id === 'm3e-retry'
-          ? { addEventListener: (_type: string, listener: () => void) => { listeners.push(listener) } }
-          : null,
-    },
-    sessionStorage: {
-      getItem(key: string) {
-        if (options.fails === true) throw new Error('storage disabled')
-        return values.get(key) ?? null
-      },
-      setItem(key: string, value: string) {
-        if (options.fails === true) throw new Error('storage disabled')
-        values.set(key, value)
-      },
-    },
-    Date,
-    Number,
-  }
-  vm.runInNewContext(script, sandbox)
-  return {
-    navigations,
-    click() { for (const listener of listeners) listener() },
-  }
-}
-
 test('the mount root and its index path serve the entry page', () => {
   for (const path of ['/m3e', '/m3e/', '/m3e/index.html']) assert.equal(resolveTarget(path), 'index')
 })
@@ -177,7 +126,7 @@ test('GET and HEAD authorized index spellings prevent framing and keep no-store 
   }
 })
 
-test('the unauthenticated explanation page carries fixed headers and a CSP hash of its own script', async (t) => {
+test('the unauthenticated explanation page carries fixed headers and a CSP without scripts', async (t) => {
   const host = createHostHarness(t, false)
   const response = await host.request('/m3e/')
   assert.equal(response.status, 401)
@@ -185,14 +134,11 @@ test('the unauthenticated explanation page carries fixed headers and a CSP hash 
   assert.equal(response.headers['cache-control'], 'no-store')
   assert.equal(response.headers['referrer-policy'], 'no-referrer')
   assert.equal(response.headers['x-frame-options'], 'DENY')
-  const body = response.body as string
-  const hash = createHash('sha256').update(inlineScript(body), 'utf8').digest('base64')
   assert.equal(
     response.headers['content-security-policy'],
-    `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${hash}'; ` +
-      "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   )
-  assert.equal(body, unauthorizedPage())
+  assert.equal(response.body, unauthorizedPage())
   assert.equal(host.reads.mock.callCount(), 0)
   assert.equal(host.render.mock.callCount(), 0)
 })
@@ -205,36 +151,17 @@ test('the explanation page stays self-contained, Japanese, and free of request d
   assert.match(page, /color-scheme: light dark/)
   for (const text of [
     'ログインの情報を確かめられませんでした',
-    'DSH にログインしていないか、ログインの情報がこのページに送られませんでした。',
-    'アドレスバーの URL をタップして、そのまま開き直してください。',
-    'それでも開けないときは、<code>dsh web</code> が表示した URL を開き直してください。',
-    '開き直す',
+    'このページを再読み込みしても直りません。',
+    'アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。',
+    '<code>dsh web</code> が表示した URL を開き直してください。',
   ]) assert.ok(page.includes(text), text)
+  // A restored Safari tab drops the cookie on every reload the page could start,
+  // so the page offers no script and no button that would only fail again.
+  assert.doesNotMatch(page, /<script|<button/)
   // No external resource, and nothing carried over from a request.
   assert.doesNotMatch(page, /\s(?:src|href)=/)
   assert.doesNotMatch(page, /@import|url\(/)
   assert.ok(!page.includes(requestUrl))
-})
-
-test('the explanation page reloads once, waits 30 seconds, and survives disabled storage', () => {
-  const script = inlineScript(unauthorizedPage())
-  const first = runUnauthorizedScript(script)
-  assert.deepEqual(first.navigations, ['https://host.example/m3e/'])
-  const recent = runUnauthorizedScript(script, { previous: String(Date.now()) })
-  assert.deepEqual(recent.navigations, [])
-  const old = runUnauthorizedScript(script, { previous: String(Date.now() - 60000) })
-  assert.deepEqual(old.navigations, ['https://host.example/m3e/'])
-  const disabled = runUnauthorizedScript(script, { fails: true })
-  assert.deepEqual(disabled.navigations, [])
-  disabled.click()
-  assert.deepEqual(disabled.navigations, ['https://host.example/m3e/'])
-})
-
-test('the retry button reloads after an automatic attempt that already ran', () => {
-  const host = runUnauthorizedScript(inlineScript(unauthorizedPage()), { previous: String(Date.now()) })
-  assert.deepEqual(host.navigations, [])
-  host.click()
-  assert.deepEqual(host.navigations, ['https://host.example/m3e/'])
 })
 
 test('a token-bearing 401 and other Connection refusals reach the browser unchanged', async (t) => {

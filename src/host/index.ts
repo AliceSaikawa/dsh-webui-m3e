@@ -16,7 +16,6 @@
  * answers that single case with its own explanation page; every other decision
  * Connection makes is replayed to the socket unchanged.
  */
-import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
@@ -141,35 +140,8 @@ function hasTokenQuery(url: string | undefined): boolean {
 }
 
 /**
- * The explanation page's only script. Its sha256 is what the page's CSP admits,
- * so it stays free of request data and identical on every response. It reloads
- * once, because the reload is a same-site navigation that can send the cookie a
- * restored tab dropped, and stays put when the browser cannot remember that
- * attempt or remembers one from the last 30 seconds. The button always works.
- */
-const UNAUTHORIZED_SCRIPT = `(function () {
-  var key = 'm3e:unauthorized-retry'
-  function retry() { location.replace(location.href) }
-  var button = document.getElementById('m3e-retry')
-  if (button !== null) button.addEventListener('click', retry)
-  try {
-    var previous = sessionStorage.getItem(key)
-    var now = Date.now()
-    if (previous !== null && now - Number(previous) < 30000) return
-    sessionStorage.setItem(key, String(now))
-  } catch (error) {
-    return
-  }
-  retry()
-})()`
-
-/** sha256 of {@link UNAUTHORIZED_SCRIPT}, which the CSP's `script-src` names. */
-const UNAUTHORIZED_SCRIPT_HASH = createHash('sha256').update(UNAUTHORIZED_SCRIPT, 'utf8').digest('base64')
-
-/**
  * Response headers for the M3E explanation page. `no-store` keeps a shared cache
- * from holding a refusal, and the CSP admits only the page's own inline style
- * and the one hashed script.
+ * from holding a refusal, and the CSP admits only the page's own inline style.
  */
 export const UNAUTHORIZED_HEADERS: Readonly<Record<string, string>> = {
   'content-type': HTML_MIME,
@@ -177,14 +149,18 @@ export const UNAUTHORIZED_HEADERS: Readonly<Record<string, string>> = {
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
   'content-security-policy':
-    `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${UNAUTHORIZED_SCRIPT_HASH}'; ` +
-    "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 }
 
 /**
  * The fixed page M3E answers with when the browser holds no valid session and
  * the request carries no token. It reads in dark mode too and embeds nothing
  * from the request, so no URL, cookie or header can leak into it.
+ *
+ * It offers no reload. In a tab Safari restored, every reload and every
+ * navigation the page starts still goes out without the `SameSite=Strict`
+ * cookie (WebKit bug 200345); only a URL committed from the address bar sends
+ * it again. So the page names that one action instead of a button that fails.
  * @returns the complete HTML document.
  */
 export function unauthorizedPage(): string {
@@ -201,18 +177,15 @@ main { max-width: 36rem; margin: 0 auto; }
 h1 { font-size: 1.25rem; line-height: 1.5; margin: 0 0 1rem; }
 p { margin: 0.75rem 0; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-button { min-height: 44px; padding: 0.75rem 1.25rem; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; font: inherit; }
 </style>
 </head>
 <body>
 <main>
 <h1>ログインの情報を確かめられませんでした</h1>
-<p>DSH にログインしていないか、ログインの情報がこのページに送られませんでした。</p>
-<p>iPhone の Safari では、裏で閉じられたタブを開き直したときに、ログインの情報が送られないことがあります。アドレスバーの URL をタップして、そのまま開き直してください。</p>
-<p>それでも開けないときは、<code>dsh web</code> が表示した URL を開き直してください。</p>
-<p><button type="button" id="m3e-retry">開き直す</button></p>
+<p>iPhone の Safari では、裏で閉じられたタブに戻ったときに、ログインの情報が送られないことがあります。このページを再読み込みしても直りません。</p>
+<p><strong>アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。</strong></p>
+<p>それでも開けないときは、ログインの期限が切れたか、ログインしたときと違うアドレスで開いています。<code>dsh web</code> が表示した URL を開き直してください。</p>
 </main>
-<script>${UNAUTHORIZED_SCRIPT}</script>
 </body>
 </html>
 `

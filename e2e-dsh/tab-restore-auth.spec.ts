@@ -3,9 +3,11 @@ import { expect, login, test } from './fixtures.ts'
 
 /**
  * Issue #91: a Safari tab that the OS discarded in the background comes back
- * without its SameSite=Strict login cookie (WebKit bug 200345). A navigation
- * started from another site drops the same cookie, so these tests use one to
- * stand in for the restored tab. They do not reproduce Safari's restore itself.
+ * without its SameSite=Strict login cookie (WebKit bug 200345), and reloading
+ * it keeps dropping the cookie; only a URL committed from the address bar sends
+ * it. A navigation started from another site drops the same cookie, so these
+ * tests use one to stand in for the restored tab and `page.goto` for the
+ * address bar. They do not reproduce Safari's restore itself.
  */
 const OTHER_SITE = 'http://other-site.m3e.invalid/'
 
@@ -28,30 +30,33 @@ function indexLoads(page: Page, origin: string) {
   return loads
 }
 
-test('別のサイトから開いて Cookie が送られなくても、同じサイトから開き直して一覧を出す', async ({ page, integration }, info) => {
+test('別のサイトから開いて Cookie が送られないときは案内を出して止まり、アドレスバーから開くと一覧を出す', async ({ page, integration }, info) => {
   // The first document load is a 401 by design; the browser logs it.
   info.annotations.push({ type: 'expected-console-errors', description: 'the cross-site load of /m3e/ is a 401' })
   const { host } = integration
   await login(page, host)
   const loads = indexLoads(page, host.origin)
   await openFromOtherSite(page, `${host.origin}/m3e/`)
-  await expect(page).toHaveURL(`${host.origin}/m3e/`)
+  await expect(page.getByRole('heading', { name: 'ログインの情報を確かめられませんでした' })).toBeVisible()
+  await expect(page.getByText('アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。')).toBeVisible()
+  // Give a page that still reloads itself time to show it before counting.
+  await page.waitForTimeout(1_500)
+  expect(loads).toEqual([401])
+  expect(await page.locator('script, button, link[href], img').count()).toBe(0)
+  await page.goto(`${host.origin}/m3e/`)
   await expect(page.locator('h1').first()).toBeVisible()
   await expect(page.getByText('ログインの情報を確かめられませんでした')).toHaveCount(0)
   expect(loads).toEqual([401, 200])
 })
 
-test('ログインしていなければ、自動では 1 回だけ開き直し、日本語の案内を出す', async ({ page, integration }, info) => {
-  info.annotations.push({ type: 'expected-console-errors', description: 'both loads of /m3e/ are 401' })
+test('ログインしていなければ、開き直さずに日本語の案内を出す', async ({ page, integration }, info) => {
+  info.annotations.push({ type: 'expected-console-errors', description: 'the load of /m3e/ is a 401' })
   const { host } = integration
   const loads = indexLoads(page, host.origin)
   await page.goto(`${host.origin}/m3e/`)
   await expect(page.getByRole('heading', { name: 'ログインの情報を確かめられませんでした' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '開き直す' })).toBeVisible()
-  // Give a looping page time to show itself before counting.
   await page.waitForTimeout(1_500)
-  expect(loads).toEqual([401, 401])
-  expect(await page.locator('script[src], link[href], img').count()).toBe(0)
+  expect(loads).toEqual([401])
 })
 
 test('token 付きの /m3e/ と、ログイン後の標準の画面は DSH の応答のまま', async ({ page, integration }) => {
