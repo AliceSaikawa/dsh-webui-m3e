@@ -8,8 +8,11 @@ import { initializeRouter } from './app/router.ts'
 import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
 import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
 import { bootMessages } from './app/messages.ts'
+import { startDiagnosticsIfRequested } from './app/diagnostics-panel.ts'
 
 startLocale()
+// Before DSH boots, so the measurements also show on the failure screen (#98).
+startDiagnosticsIfRequested()
 const element = document.getElementById('app')!
 
 const context = import.meta.env.DEV && new URLSearchParams(location.search).has('mock')

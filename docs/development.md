@@ -61,6 +61,16 @@ Firefox の偽データ e2e は、Chromium と同じ spec をそのまま使い�
 - Firefox の `ConsoleMessage.text()` は `console.error` に渡した `Error` を `Error` とだけ表します。`e2e/helpers.ts` は Chromium 以外で引数を評価し、`名前: メッセージ` の形に組み立て直してから `expectedErrors` と照らします。
 - `visit()` はアイコンのフォントの読み込み完了を待ちます。読み込みの瞬間に行やボタンが動き、Firefox ではマウスを押した要素と離した要素がずれてクリックにならないことがあったためです（Chromium でも同じ位置の変化は起きます）。
 
+### 実機での計測表示（?diag、#98）
+
+実機では開発者ツールを使いにくいため、`/m3e/?diag` で開くと、画面の上に計測値を重ねて表示します。表示は DSH との接続の前に始まるので、起動に失敗した画面でも出ます。
+
+- 表示する値：画面の大きさと DPR、向き、`display-mode`、`innerWidth/innerHeight`、`visualViewport`（大きさ・位置・倍率）、`100dvh/svh/lvh`、`env(safe-area-inset-*)`、キーボードの高さの推定（layout と visual の下端の差）、アプリの枠（`.app-viewport`）、下端の部品（下のナビゲーション・入力欄）の下端、フォーカスのある要素、直近 1 秒の描画回数と最大の間隔、UA、最近の出来事（`visualViewport` と window の resize、向き、`popstate`・`hashchange`、`pageshow/pagehide`、表示状態、フォーカス、シートの開閉）を最新 10 件。
+- 一度 `?diag` で開くと端末の localStorage（`dsh-m3e-diagnostics`）に覚え、クエリのないホーム画面からの起動でも出します。止めるには表示の「計測を終える」か `?diag=0` です。
+- 表示はタップを下へ通します（ボタンだけ押せます）。シートを開くと表示をシートより上に出し直し、モーダルのシートが他の要素に付ける `inert` を表示からだけ外します。ボタンを押してもシートは閉じません。
+- 「写す」で表示中の文面をクリップボードに写します（HTTPS か localhost のときだけ使えます）。Issue に貼るときは、個人の情報が UA などに含まれていないか確かめてください。
+- 実装は `web/src/app/diagnostics.ts`（判定と文面）と `web/src/app/diagnostics-panel.ts`（DOM）、試験は `tests/98-diagnostics.test.ts` と `e2e/diagnostics.spec.ts` です。
+
 実 DSH の試験は、初回だけ指定版を npm から `tmp/dsh-integration/` に入れます。M3E をビルド・pack し、試験用の新しい `HOME` と `DSH_HOME` で起動します。利用者の DSH は使いません。
 
 | 環境変数 | 指定するもの |
