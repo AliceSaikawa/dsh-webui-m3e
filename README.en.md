@@ -24,11 +24,24 @@ Run this on the machine running DSH:
 dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
 
+> [!IMPORTANT]
+> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. **No release supports DSH 0.2.1-rc.2 yet** (support arrives with the next release). 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
+
 M3E is not published to the npm registry, so installing by name with `add dsh-webui-m3e` is unavailable.
 
 `web` is an example: select the profile that actually serves your Web UI. A misspelled name can create a new profile without an error, so a successful installation alone does not confirm the target.
 
-Only **DSH 0.2.0-rc.2** is supported. The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
+Only **DSH 0.2.1-rc.2** is supported; support for 0.2.0-rc.2 has been removed.
+
+Install DSH itself with an explicit version. The npm `latest` tag is still 0.2.0-rc.2, so installing without a version gets a release this plugin does not support (do not use `@next`: the version it points to changes over time).
+
+```bash
+npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+```
+
+Check your installed version with `dsh --version`. For DSH 0.2.0-rc.2, run `npm i -g @deepseek-ai/dsh@0.2.0-rc.2`.
+
+The regular npm-installed DSH CLI uses **pnpm on PATH**. DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
 
 The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
 
@@ -50,8 +63,8 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness **0.2.0-rc.2**
-  - Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
+- DeepSeek Harness **0.2.1-rc.2**
+  - Support for 0.2.0-rc.2 and the 0.1.5 series has been removed. If you stay on 0.2.0-rc.2, the distributed release is 0.0.8. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
 - Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (regular CLI). See Quick Start above for version requirements.
 
 ## Updates, installed version, and removal
