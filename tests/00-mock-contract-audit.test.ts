@@ -64,16 +64,26 @@ test('照合 initializeDefaultは初回だけ作成し既存データがあれ�
   assert.deepEqual(ctx.sessions.list.getSnapshot().ids, [])
 })
 
-test('照合 createは同じidを再登録しworkspace優先とcwd・子の所有権を検証する', async t => {
+test('照合 createは名指しの空きmemberだけを再利用し、それ以外は新しいidを作って登録する', async t => {
   const ctx = createMockContext(); t.after(() => ctx.dispose())
   const workspace = ctx.workspaces.list.getSnapshot().items[0]!
   await assert.rejects(ctx.sessions.create({ workspaceId: 'missing' }), /workspace\/not-found/)
-  const created = await ctx.sessions.create({ workspaceId: workspace.workspaceId, cwd: '/ignored' })
+  // The real Host rejects specifying both workspaceId and cwd (dsh-api-session-controller/lib/index.js:756).
+  await assert.rejects(ctx.sessions.create({ workspaceId: workspace.workspaceId, cwd: '/ignored' }), /gateway\/bad-request/)
+  const created = await ctx.sessions.create({ workspaceId: workspace.workspaceId })
   assert.equal(ctx.sessions.list.getSnapshot().byId[created]?.cwd, workspace.path)
+  // A session that belongs to no workspace cannot be reused (the real Host's reusable in index.js:769 requires membership).
   ctx.mock.updateWorkspace(workspace.workspaceId, { sessionIds: [] })
-  assert.equal(await ctx.sessions.create({ sessionId: created, workspaceId: workspace.workspaceId }), created)
-  assert.deepEqual(ctx.workspaces.list.getSnapshot().items[0]?.sessionIds, [created])
-  await assert.rejects(ctx.sessions.create({ sessionId: created, cwd: '/different' }), /session\/conflict/)
+  const minted = await ctx.sessions.create({ sessionId: created, workspaceId: workspace.workspaceId })
+  assert.notEqual(minted, created)
+  assert.deepEqual(ctx.workspaces.list.getSnapshot().items[0]?.sessionIds, [minted])
+  // The same id is reused only while blank, unarchived, and a member.
+  assert.equal(await ctx.sessions.create({ sessionId: minted, workspaceId: workspace.workspaceId }), minted)
+  // A session whose turn has started cannot be reused (real Host lib/types/agent.js:483).
+  ctx.mock.addSession({ id: 'started', cwd: workspace.path, displayTitle: '開始済み', running: false, blank: false, updatedAt: 0 }, [{ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }])
+  ctx.mock.updateWorkspace(workspace.workspaceId, { sessionIds: ['started'] })
+  assert.notEqual(await ctx.sessions.create({ sessionId: 'started', workspaceId: workspace.workspaceId }), 'started')
+  await assert.rejects(ctx.sessions.create({ sessionId: minted, cwd: '/different' }), /session\/conflict/)
   ctx.mock.addSession({ id: 'child', parentId: id, origin: 'subagent', displayTitle: '子', running: false, blank: false, updatedAt: 0 }, [])
   await assert.rejects(ctx.sessions.create({ sessionId: 'child' }), /session\/agent-busy/)
 })
