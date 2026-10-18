@@ -6,9 +6,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
 
 const script = fileURLToPath(new URL('../scripts/ci-local-dsh.sh', import.meta.url))
-const dsh = 'tmp/dsh-integration/dsh-0.2.0-rc.2'
+const dsh = `tmp/dsh-integration/dsh-${SUPPORTED_DSH_VERSION}`
 
 // A fake npm records each call. In "fail" mode it leaves a partial node_modules
 // behind and exits non-zero, like an install interrupted by the network.
@@ -27,7 +28,9 @@ function workspace() {
   writeFileSync(join(bin, 'npm'), fakeNpm)
   chmodSync(join(bin, 'npm'), 0o755)
   mkdirSync(join(root, '.github/ci/dsh'), { recursive: true })
-  writeFileSync(join(root, '.github/ci/dsh/package.json'), '{"dependencies":{}}\n')
+  // The script reads the target version from this manifest, so it has to carry
+  // the same dependency CI pins.
+  writeFileSync(join(root, '.github/ci/dsh/package.json'), `{"dependencies":{"@deepseek-ai/dsh":"${SUPPORTED_DSH_VERSION}"}}\n`)
   const log = join(root, 'npm.log')
   const lock = (text: string) => writeFileSync(join(root, '.github/ci/dsh/package-lock.json'), text)
   const run = (mode = 'ok') => {
