@@ -1,5 +1,8 @@
 import type { ContentBlock, SessionWireEvent, TokenUsage } from '../../dsh/services.ts'
 import type { AssistantStream } from '../../dsh/session-journal.ts'
+import { formatNumber } from '../../i18n/format.ts'
+import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
+import { traceText, type TraceMessages } from './messages.ts'
 
 type Data = Record<string, unknown>
 export type TraceKind = 'user' | 'assistant' | 'tool' | 'subtool' | 'compaction'
@@ -84,18 +87,17 @@ export function blocks(value: unknown): ContentBlock[] {
 export function elapsed(start: number | undefined, end: number | undefined): number | undefined {
   return start === undefined || end === undefined ? undefined : Math.max(0, end - start)
 }
-const countFormatter = new Intl.NumberFormat('ja-JP')
 /** Match chat's units and rounding; absent timestamps remain unmeasured. */
-export function formatDuration(ms: number | undefined): string {
-  if (ms === undefined) return '未計測'
-  if (!Number.isFinite(ms) || ms < 0) return '不明'
-  if (ms < 1000) return `${Math.round(ms)} ミリ秒`
-  if (ms < 60000) return `${Number((ms / 1000).toFixed(1))} 秒`
+export function formatDuration(ms: number | undefined, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
+  if (ms === undefined) return text.durationNotMeasured
+  if (!Number.isFinite(ms) || ms < 0) return text.durationInvalid
+  if (ms < 1000) return text.durationMilliseconds(formatNumber(locale, Math.round(ms), { useGrouping: false }))
+  if (ms < 60000) return text.durationSeconds(formatNumber(locale, Number((ms / 1000).toFixed(1)), { maximumFractionDigits: 1, useGrouping: false }))
   const minutes = Math.floor(ms / 60000)
   const seconds = Math.floor((ms % 60000) / 1000)
-  return `${minutes} 分 ${seconds} 秒`
+  return text.durationMinutesSeconds(formatNumber(locale, minutes, { useGrouping: false }), formatNumber(locale, seconds, { useGrouping: false }))
 }
-export function formatCount(value: number): string { return countFormatter.format(value) }
+export function formatCount(value: number, locale: Locale = SOURCE_LOCALE): string { return formatNumber(locale, value) }
 const rowIcons: Record<TraceKind, string> = {
   user: 'person', assistant: 'smart_toy', tool: 'terminal', subtool: 'subdirectory_arrow_right', compaction: 'summarize',
 }
@@ -106,10 +108,10 @@ export function traceRowIcon(row: TraceRow): string {
   }
   return rowIcons[row.kind]
 }
-function fillToolName(row: TraceRow, name: string | undefined): void {
+function fillToolName(row: TraceRow, name: string | undefined, text: TraceMessages): void {
   if (row.toolName !== undefined || name === undefined) return
   row.toolName = name
-  row.title = `${row.kind === 'subtool' ? 'サブツール' : 'ツール'}：${name}`
+  row.title = row.kind === 'subtool' ? text.subtoolTitle(name) : text.toolTitle(name)
 }
 /** Bounds for formatting untrusted JSON: visited values, nesting depth. */
 export const JSON_NODE_LIMIT = 10000
@@ -124,12 +126,13 @@ export class JsonOmission {
   constructor(reason: JsonOmissionReason) { this.reason = reason }
 }
 export type SafeJson = null | boolean | number | string | JsonOmission | SafeJson[] | { [key: string]: SafeJson }
-const omissionText: Record<JsonOmissionReason, string> = {
-  cycle: '〔循環参照のため省略〕',
-  depth: `〔入れ子が深すぎるため省略（${JSON_DEPTH_LIMIT} 段まで表示）〕`,
-  limit: `〔以降を省略（${countFormatter.format(JSON_NODE_LIMIT)} 要素まで表示）〕`,
+function omissionText(reason: JsonOmissionReason, text: TraceMessages, locale: Locale): string {
+  switch (reason) {
+    case 'cycle': return text.jsonOmittedCycle
+    case 'depth': return text.jsonOmittedDepth(formatNumber(locale, JSON_DEPTH_LIMIT))
+    case 'limit': return text.jsonOmittedLimit(formatNumber(locale, JSON_NODE_LIMIT))
+  }
 }
-const unreadableJson = '〔内容を表示できません〕'
 
 /** The value JSON.stringify would serialize: toJSON first, then boxed primitives unwrapped. */
 function jsonValue(value: unknown, key: string): unknown {
@@ -185,32 +188,32 @@ export function safeJsonCopy(input: unknown): { value: SafeJson | undefined; omi
   return { value, omissions: [...omissions] }
 }
 /** Same layout as JSON.stringify(value, null, 2); omissions are printed as unquoted marks. */
-function printJson(value: SafeJson, indent: string): string {
-  if (value instanceof JsonOmission) return omissionText[value.reason]
+function printJson(value: SafeJson, indent: string, text: TraceMessages, locale: Locale): string {
+  if (value instanceof JsonOmission) return omissionText(value.reason, text, locale)
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   const inner = `${indent}  `
   if (Array.isArray(value)) {
-    return value.length ? `[\n${value.map(item => inner + printJson(item, inner)).join(',\n')}\n${indent}]` : '[]'
+    return value.length ? `[\n${value.map(item => inner + printJson(item, inner, text, locale)).join(',\n')}\n${indent}]` : '[]'
   }
   const keys = Object.keys(value)
-  return keys.length ? `{\n${keys.map(key => `${inner}${JSON.stringify(key)}: ${printJson(value[key]!, inner)}`).join(',\n')}\n${indent}}` : '{}'
+  return keys.length ? `{\n${keys.map(key => `${inner}${JSON.stringify(key)}: ${printJson(value[key]!, inner, text, locale)}`).join(',\n')}\n${indent}}` : '{}'
 }
 /** Formatted JSON and whether any part of the original is missing from the text. */
-export function formatJson(value: unknown): { text: string; partial: boolean } {
+export function formatJson(value: unknown, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): { text: string; partial: boolean } {
   if (typeof value === 'string') {
     try { value = JSON.parse(value) } catch { return { text: value as string, partial: false } }
   }
   try {
     const copy = safeJsonCopy(value)
-    return { text: copy.value === undefined ? '' : printJson(copy.value, ''), partial: copy.omissions.length > 0 }
-  } catch { return { text: unreadableJson, partial: true } }
+    return { text: copy.value === undefined ? '' : printJson(copy.value, '', text, locale), partial: copy.omissions.length > 0 }
+  } catch { return { text: text.jsonUnreadable, partial: true } }
 }
-export function prettyJson(value: unknown): string {
-  return formatJson(value).text
+export function prettyJson(value: unknown, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
+  return formatJson(value, text, locale).text
 }
 /** Searchable text of content blocks, and whether the bounded walk skipped any of them. */
-export function contentSearchText(content: readonly TraceInputBlock[]): { text: string; partial: boolean } {
-  const text: string[] = []
+export function contentSearchText(content: readonly TraceInputBlock[], text: TraceMessages = traceText): { text: string; partial: boolean } {
+  const parts: string[] = []
   const stack: { items: readonly unknown[]; index: number }[] = [{ items: Array.isArray(content) ? content : [], index: 0 }]
   let partial = false
   let remaining = CONTENT_BLOCK_LIMIT
@@ -228,15 +231,15 @@ export function contentSearchText(content: readonly TraceInputBlock[]): { text: 
     }
     if (!validBlock(block)) continue
     switch (block.type) {
-      case 'text': case 'reasoning': text.push(block.text); break
-      case 'tool-call': text.push(`${block.name} ${block.arguments}`); break
-      case 'image': case 'file': text.push(block.attachment.name ?? '添付'); break
+      case 'text': case 'reasoning': parts.push(block.text); break
+      case 'tool-call': parts.push(`${block.name} ${block.arguments}`); break
+      case 'image': case 'file': parts.push(block.attachment.name ?? text.attachmentFallback); break
     }
   }
-  return { text: text.join('\n'), partial }
+  return { text: parts.join('\n'), partial }
 }
-export function contentText(content: readonly TraceInputBlock[]): string {
-  return contentSearchText(content).text
+export function contentText(content: readonly TraceInputBlock[], text: TraceMessages = traceText): string {
+  return contentSearchText(content, text).text
 }
 function usageOf(value: unknown): TokenUsage | undefined {
   const data = object(value)
@@ -255,48 +258,48 @@ function sumUsage(rows: TraceRow[]): TokenUsage | undefined {
     cacheWriteTokens: (sum.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0),
   }), { inputTokens: 0, outputTokens: 0, totalTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 }
-function failure(value: unknown): string | undefined {
+function failure(value: unknown, text: TraceMessages): string | undefined {
   if (value === undefined || value === null || value === false) return undefined
-  return string(value) ?? string(object(value).message) ?? '処理に失敗しました。'
+  return string(value) ?? string(object(value).message) ?? text.toolFailed
 }
-export function terminationLabel(termination: TraceTermination): string {
+export function terminationLabel(termination: TraceTermination, text: TraceMessages = traceText): string {
   switch (termination.kind) {
-    case 'error': return '失敗'
-    case 'aborted': case 'interrupted': return '中断'
-    case 'blocked': return '実行見送り'
-    case 'max-tokens': return '上限到達'
+    case 'error': return text.terminationError
+    case 'aborted': case 'interrupted': return text.terminationAborted
+    case 'blocked': return text.terminationBlocked
+    case 'max-tokens': return text.terminationMaxTokens
   }
 }
 /** Only raw chunk records carry the durable model finish reason. */
-function streamTermination(value: unknown): TraceTermination | undefined {
+function streamTermination(value: unknown, text: TraceMessages): TraceTermination | undefined {
   if (!Array.isArray(value)) return undefined
   for (let i = value.length - 1; i >= 0; i--) {
     const record = object(value[i]), chunk = object(record.chunk)
     if (record.type !== 'chunk' || chunk.type !== 'finish') continue
     const reason = object(chunk.reason)
     if (reason.kind === 'error' || reason.kind === 'aborted') return {
-      kind: reason.kind, message: failure(reason.failure) ?? (reason.kind === 'error' ? 'モデルの実行に失敗しました。' : 'モデルの出力が中断されました。'),
+      kind: reason.kind, message: failure(reason.failure, text) ?? (reason.kind === 'error' ? text.modelRunFailed : text.modelOutputAborted),
     }
-    if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: '出力トークンの上限に達しました。' }
+    if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: text.outputLimitReached }
     return undefined
   }
   return undefined
 }
-function turnTermination(value: unknown): TraceTermination | undefined {
+function turnTermination(value: unknown, text: TraceMessages): TraceTermination | undefined {
   const reason = object(value)
-  if (reason.kind === 'error') return { kind: 'error', message: failure(reason.error) ?? 'ターンの実行に失敗しました。' }
-  if (reason.kind === 'interrupted') return { kind: 'interrupted', message: '終了が記録されないまま、実行が中断されました。' }
-  if (reason.kind === 'blocked') return { kind: 'blocked', message: '実行前の確認で処理が見送られました。' }
-  if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: '出力トークンの上限に達しました。' }
+  if (reason.kind === 'error') return { kind: 'error', message: failure(reason.error, text) ?? text.turnRunFailed }
+  if (reason.kind === 'interrupted') return { kind: 'interrupted', message: text.turnInterrupted }
+  if (reason.kind === 'blocked') return { kind: 'blocked', message: text.turnBlocked }
+  if (reason.kind === 'max-tokens') return { kind: 'max-tokens', message: text.outputLimitReached }
   if (reason.kind !== 'aborted') return undefined
   const cause = object(reason.reason)
   const messages: Record<string, string> = {
-    user: 'ユーザーの操作で停止しました。', parent: '親セッションの操作で停止しました。',
-    disposed: 'セッションが閉じられたため停止しました。', legacy: '中断の理由は記録されていません。',
+    user: text.abortedByUser, parent: text.abortedByParent,
+    disposed: text.abortedByDispose, legacy: text.abortedLegacy,
   }
   return { kind: 'aborted', message: cause.kind === 'hook'
-    ? `フックにより停止しました。${string(cause.reason) ? ` ${cause.reason}` : ''}`
-    : messages[String(cause.kind)] ?? '実行が中断されました。' }
+    ? text.abortedByHook(string(cause.reason) ?? '')
+    : messages[String(cause.kind)] ?? text.abortedFallback }
 }
 function setTermination(row: TraceRow, termination: TraceTermination | undefined): void {
   row.termination = termination
@@ -371,13 +374,14 @@ function captureInput(row: TraceRow, records: readonly SessionWireEvent[], endEx
   })
 }
 
-const traceSelections = new WeakMap<readonly SessionWireEvent[], { stream: AssistantStream | null; running: boolean; turns: TraceTurn[] }>()
+const traceSelections = new WeakMap<readonly SessionWireEvent[], { stream: AssistantStream | null; running: boolean; text: TraceMessages; locale: Locale; turns: TraceTurn[] }>()
 /** Share only the latest projection per immutable journal window between list and sheet. */
-export function selectTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false): TraceTurn[] {
+export function selectTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false,
+  text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): TraceTurn[] {
   const cached = traceSelections.get(records)
-  if (cached?.stream === stream && cached.running === running) return cached.turns
-  const turns = buildTrace(records, stream, running)
-  traceSelections.set(records, { stream, running, turns })
+  if (cached?.stream === stream && cached.running === running && cached.text === text && cached.locale === locale) return cached.turns
+  const turns = buildTrace(records, stream, running, text, locale)
+  traceSelections.set(records, { stream, running, text, locale, turns })
   return turns
 }
 export function findTraceRow(turns: readonly TraceTurn[], id: string): TraceRow | undefined {
@@ -389,7 +393,8 @@ export function findTraceRow(turns: readonly TraceTurn[], id: string): TraceRow 
 }
 
 /** Durable records are authoritative; live chunks only fill the current request. */
-export function buildTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false): TraceTurn[] {
+export function buildTrace(records: readonly SessionWireEvent[], stream: AssistantStream | null = null, running = false,
+  text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): TraceTurn[] {
   const turns: TraceTurn[] = []
   const numbered = new Map<number, TraceTurn>()
   const assistants = new Map<string, TraceRow>()
@@ -418,7 +423,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     const key = `${turn.id}:${step}`
     let row = assistants.get(key)
     if (!row) {
-      row = { ...rowOf(event, 'assistant', turn, 'アシスタント'), step, running: true }
+      row = { ...rowOf(event, 'assistant', turn, text.assistantRow), step, running: true }
       assistants.set(key, row)
       assistantOwners.set(row, turn)
       const siblings = turnAssistants.get(turn) ?? []
@@ -463,7 +468,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
     if (event.type === 'turn/end') {
       const turn = turnFor(event)
       turn.completedAt = event.time
-      turn.termination = turnTermination(data.reason)
+      turn.termination = turnTermination(data.reason, text)
       for (const row of turnAssistants.get(turn) ?? []) closeAssistant(row, turn, event.time, turn.termination)
       for (const row of turn.rows) row.running = false
       current = undefined
@@ -479,7 +484,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
         // The checkpoint is the input replacement, not a second user row.
         continue
       }
-      turn.rows.push({ ...rowOf(event, 'user', turn, 'ユーザー'), content, completedAt: event.time })
+      turn.rows.push({ ...rowOf(event, 'user', turn, text.userRow), content, completedAt: event.time })
     } else if (event.type === 'step/start') {
       const previous = pendingAssistants.get(turn)
       if (previous && previous.step !== number(data.step)) showAssistant(previous, turn)
@@ -494,7 +499,7 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       captureInput(row, records, inputEnd)
       row.retries++
       row.attempts ??= []
-      row.attempts.push({ seq: event.seq, time: event.time, termination: streamTermination(data.stream) })
+      row.attempts.push({ seq: event.seq, time: event.time, termination: streamTermination(data.stream, text) })
     } else if (event.type === 'assistant/message') {
       const row = assistantFor(event, turn)
       showAssistant(row, turn)
@@ -507,13 +512,14 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       const first = firstOutputTime(data.stream)
       row.firstOutputMs = row.startedAt !== undefined && first !== undefined && first >= row.startedAt && first <= event.time ? first - row.startedAt : undefined
       if (data.interrupted === true) interruptedAssistants.add(row)
-      setTermination(row, streamTermination(data.stream) ?? (data.interrupted === true ? { kind: 'interrupted', message: '途中までの出力を残して中断しました。' } : undefined))
+      setTermination(row, streamTermination(data.stream, text) ?? (data.interrupted === true ? { kind: 'interrupted', message: text.interruptedPartial } : undefined))
     } else if (event.type === 'tool/call' || event.type === 'tool/ptc-dispatch-start') {
       const sub = event.type === 'tool/ptc-dispatch-start'
       const callId = string(sub ? data.subCallId : data.callId)
       if (!callId) continue
-      const args = typeof data.arguments === 'string' ? { text: data.arguments, partial: false } : formatJson(data.arguments)
-      const row: TraceRow = { ...rowOf(event, sub ? 'subtool' : 'tool', turn, `${sub ? 'サブツール' : 'ツール'}：${string(data.name) ?? '名前不明'}`),
+      const args = typeof data.arguments === 'string' ? { text: data.arguments, partial: false } : formatJson(data.arguments, text, locale)
+      const name = string(data.name) ?? text.toolNameUnknown
+      const row: TraceRow = { ...rowOf(event, sub ? 'subtool' : 'tool', turn, sub ? text.subtoolTitle(name) : text.toolTitle(name)),
         toolName: string(data.name), callId, parentCallId: string(data.parentCallId), rootCallId: string(data.rootCallId),
         startedAt: event.time, running: true, arguments: args.text, ...(args.partial ? { partialText: true } : {}), depth: sub ? 1 : 0 }
       tools.set(`${turn.id}:${sub ? 'sub:' : ''}${callId}`, row)
@@ -524,55 +530,55 @@ export function buildTrace(records: readonly SessionWireEvent[], stream: Assista
       if (message.role !== 'tool' || !callId) continue
       let row = tools.get(`${turn.id}:${callId}`)
       if (!row) {
-        row = { ...rowOf(event, 'tool', turn, `ツール：${string(data.name) ?? '名前不明'}`), id: `tool:${event.seq}:${callId}`, callId }
+        row = { ...rowOf(event, 'tool', turn, text.toolTitle(string(data.name) ?? text.toolNameUnknown)), id: `tool:${event.seq}:${callId}`, callId }
         tools.set(`${turn.id}:${callId}`, row)
         turn.rows.push(row)
       }
-      fillToolName(row, string(data.name))
+      fillToolName(row, string(data.name), text)
       row.content = blocks(message.content)
       row.completedAt = event.time
       row.running = false
-      row.error = failure(data.error)
+      row.error = failure(data.error, text)
       row.failed = message.isError === true || row.error !== undefined
     } else if (event.type === 'tool/ptc-dispatch') {
       const callId = string(data.subCallId)
       if (!callId) continue
       let row = tools.get(`${turn.id}:sub:${callId}`)
       if (!row) {
-        row = { ...rowOf(event, 'subtool', turn, `サブツール：${string(data.name) ?? '名前不明'}`), callId,
+        row = { ...rowOf(event, 'subtool', turn, text.subtoolTitle(string(data.name) ?? text.toolNameUnknown)), callId,
           parentCallId: string(data.parentCallId), rootCallId: string(data.rootCallId), depth: 1 }
         tools.set(`${turn.id}:sub:${callId}`, row)
         turn.rows.push(row)
       }
-      fillToolName(row, string(data.name))
+      fillToolName(row, string(data.name), text)
       row.completedAt = event.time
       row.running = false
       row.content = blocks(data.content)
       if (row.arguments === undefined) {
-        const args = formatJson(data.arguments)
+        const args = formatJson(data.arguments, text, locale)
         row.arguments = args.text
         if (args.partial) row.partialText = true
       }
-      row.error = failure(data.error)
+      row.error = failure(data.error, text)
       row.failed = data.isError === true || row.error !== undefined
     } else {
       const id = string(data.compactionId)
       if (!id) continue
       let row = summaries.get(id)
       if (!row) {
-        row = rowOf(event, 'compaction', turn, '要約')
+        row = rowOf(event, 'compaction', turn, text.compactionRow)
         summaries.set(id, row)
         turn.rows.push(row)
       }
       if (event.type === 'compaction/start') { row.startedAt = event.time; row.running = true; captureInput(row, records, inputEnd) }
       if (event.type === 'compaction/summary') {
         const summary = Array.isArray(data.summary) ? undefined
-          : typeof data.summary === 'string' ? { text: data.summary, partial: false } : formatJson(data.summary)
+          : typeof data.summary === 'string' ? { text: data.summary, partial: false } : formatJson(data.summary, text, locale)
         row.content = summary ? [{ type: 'text', text: summary.text }] : blocks(data.summary)
         if (summary?.partial) row.partialText = true
         row.usage = usageOf(data.usage)
       }
-      if (event.type === 'compaction/end') { row.completedAt = event.time; row.running = false; row.error = failure(data.error); row.failed = row.error !== undefined }
+      if (event.type === 'compaction/end') { row.completedAt = event.time; row.running = false; row.error = failure(data.error, text); row.failed = row.error !== undefined }
     }
   }
   inputEnd = records.length
@@ -623,34 +629,45 @@ export interface TraceSearch {
   /** Unmatched rows whose text was only partly searched because of the bounds above. */
   partialRows: number
 }
-export function searchTrace(turns: readonly TraceTurn[], query: string): TraceSearch {
-  const term = query.trim().normalize('NFKC').toLocaleLowerCase('ja-JP')
+export function searchTrace(turns: readonly TraceTurn[], query: string, text: TraceMessages = traceText): TraceSearch {
+  // Case folding independent of the page language: ja-JP folds like the default
+  // for the text the trace search sees, and only Turkish/Azeri dotted-i differs
+  // (docs/design/11-i18n.md).
+  const term = query.trim().normalize('NFKC').toLowerCase()
   if (!term) return { turns: turns.map(turn => ({ ...turn })), partialRows: 0 }
   let partialRows = 0
   const filtered = turns.map(turn => ({ ...turn, rows: turn.rows.filter(row => {
-    const content = contentSearchText(row.content)
-    const found = `${row.title}\n${content.text}\n${row.arguments ?? ''}`.normalize('NFKC').toLocaleLowerCase('ja-JP').includes(term)
+    const content = contentSearchText(row.content, text)
+    const found = `${row.title}\n${content.text}\n${row.arguments ?? ''}`.normalize('NFKC').toLowerCase().includes(term)
     if (!found && (content.partial || row.partialText)) partialRows++
     return found
   }) }))
   return { turns: filtered, partialRows }
 }
-export function filterTrace(turns: readonly TraceTurn[], query: string): TraceTurn[] {
-  return searchTrace(turns, query).turns
+export function filterTrace(turns: readonly TraceTurn[], query: string, text: TraceMessages = traceText): TraceTurn[] {
+  return searchTrace(turns, query, text).turns
 }
-export function rowDescription(row: TraceRow): string {
-  const parts = row.kind === 'user' ? [contentText(row.content).trim() || '添付のみ']
-    : row.running ? ['開始済み・実行中'] : [formatDuration(row.durationMs)]
-  if (row.kind === 'assistant' && row.usage && !row.running) parts.push(`出力 ${formatCount(row.usage.outputTokens)} トークン`)
-  if (row.retries) parts.push(`未確定の試行 ${row.retries} 回`)
-  if (row.termination) parts.push(terminationLabel(row.termination))
-  else if (row.failed) parts.push('失敗')
-  return parts.join(' ・ ')
+export function rowDescription(row: TraceRow, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
+  const parts = row.kind === 'user' ? [contentText(row.content, text).trim() || text.attachmentOnly]
+    : row.running ? [text.rowRunning] : [formatDuration(row.durationMs, text, locale)]
+  if (row.kind === 'assistant' && row.usage && !row.running) parts.push(text.outputTokens(formatCount(row.usage.outputTokens, locale)))
+  if (row.retries) parts.push(text.uncommittedAttempts(row.retries))
+  if (row.termination) parts.push(terminationLabel(row.termination, text))
+  else if (row.failed) parts.push(text.terminationError)
+  return parts.join(text.detailsSeparator)
 }
+/**
+ * The Japanese default. It takes only the turn, so it stays safe to pass
+ * straight to `Array#map` (tests/s6b-fixtures.test.ts), which supplies extra
+ * arguments; callers that have a language use `formatTurnHeading`.
+ */
 export function turnHeading(turn: TraceTurn): string {
-  const label = turn.number === null ? 'ターン番号不明' : `ターン ${turn.number}`
-  if (turn.running) return `${label} ・ 実行中`
-  const duration = turn.durationMs === undefined ? '時間未計測' : `合計 ${formatDuration(turn.durationMs)}`
-  const tokens = turn.usage ? `${formatCount(turn.usage.totalTokens ?? 0)} トークン` : 'トークン未記録'
-  return `${label} ・ ${duration} ・ ${tokens}${turn.termination ? ` ・ ${terminationLabel(turn.termination)}` : ''}`
+  return formatTurnHeading(turn, traceText, SOURCE_LOCALE)
+}
+export function formatTurnHeading(turn: TraceTurn, text: TraceMessages, locale: Locale): string {
+  const label = turn.number === null ? text.turnNumberUnknown : text.turnLabel(turn.number)
+  if (turn.running) return `${label}${text.detailsSeparator}${text.turnRunning}`
+  const duration = turn.durationMs === undefined ? text.durationUnmeasured : text.durationTotal(formatDuration(turn.durationMs, text, locale))
+  const tokens = turn.usage ? text.tokenCount(formatCount(turn.usage.totalTokens ?? 0, locale)) : text.tokensUnrecorded
+  return `${label}${text.detailsSeparator}${duration}${text.detailsSeparator}${tokens}${turn.termination ? `${text.detailsSeparator}${terminationLabel(turn.termination, text)}` : ''}`
 }

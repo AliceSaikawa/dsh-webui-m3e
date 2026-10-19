@@ -5,7 +5,9 @@ import { M3eSearchBar } from '@m3e/react/search'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { openSheet } from '../../app/overlay/index.ts'
 import { useSession } from '../../dsh/session.ts'
-import { selectTrace, searchTrace, rowDescription, traceRowIcon, turnHeading, type TraceRow } from './model.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
+import { selectTrace, searchTrace, rowDescription, traceRowIcon, formatTurnHeading, type TraceRow } from './model.ts'
+import { traceMessages } from './messages.ts'
 import { RecordSheet } from './RecordSheet.tsx'
 import { isTraceAtBottom, traceFollowAfterScroll, traceScrollAction, type TraceScrollTrigger } from './scroll-policy.ts'
 import { retainTraceSession, traceEmptyMessage, type TraceSessionData } from './view-state.ts'
@@ -32,12 +34,14 @@ function TraceSession({ sessionId, active }: { sessionId: string; active: boolea
 }
 
 const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessionId: string; active: boolean; data: TraceSessionData }) {
+  const text = useMessages(traceMessages)
+  const locale = useLocale()
   const { face, snapshot, records, stream } = data
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const turns = useMemo(() => selectTrace(records, stream, snapshot.running), [records, stream, snapshot.running])
-  const search = useMemo(() => searchTrace(turns, query), [turns, query])
+  const turns = useMemo(() => selectTrace(records, stream, snapshot.running, text, locale), [records, stream, snapshot.running, text, locale])
+  const search = useMemo(() => searchTrace(turns, query, text), [turns, query, text])
   const filtered = search.turns
   const count = filtered.reduce((total, turn) => total + turn.rows.length, 0)
   const scroll = useRef<HTMLDivElement>(null)
@@ -141,17 +145,17 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     setLoading(true)
     setLoadError('')
     try { await face.loadOlder() }
-    catch { if (mounted.current) setLoadError('前の記録を読み込めませんでした。もう一度お試しください。') }
+    catch { if (mounted.current) setLoadError(text.loadOlderFailed) }
     finally { if (mounted.current) { busy.current = false; setLoading(false) } }
   }
   const showRecord = (row: TraceRow) => {
     if (!current.current.active) return
     closeTraceSheet(closeSheet)
     closeSheet.current = openSheet(close => <RecordSheet sessionId={sessionId} initialRow={row} close={close} />,
-      { label: '記録の詳細', sessionId })
+      { label: text.recordSheetLabel, sessionId })
   }
 
-  return <section className="trace-view" aria-label="トレース">
+  return <section className="trace-view" aria-label={text.viewLabel}>
     <div className="trace-scroll" ref={scroll} data-scroll-area
       onWheel={active ? event => { if (event.deltaY < 0) stopFollowing() } : undefined}
       onTouchStart={active ? event => { touchStartY.current = event.touches[0]?.clientY ?? null } : undefined}
@@ -168,23 +172,23 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
     } : undefined}>
       <div className="trace-body" ref={body}>
         {snapshot.hasMore && <div className="trace-older"><M3eButton variant="text" disabled={!active || loading || snapshot.loadingOlder} onClick={() => { void loadOlder() }}>
-          <Icon name="expand_less" slot="icon" />{loading || snapshot.loadingOlder ? '読み込み中…' : '前の記録を読み込む'}
+          <Icon name="expand_less" slot="icon" />{loading || snapshot.loadingOlder ? text.loading : text.loadOlder}
         </M3eButton></div>}
         {loadError && <p className="trace-error" role="alert">{loadError}</p>}
-        {!turns.length && <p className="trace-empty" role="status">{traceEmptyMessage(snapshot.openState)}</p>}
-        {turns.length > 0 && query.trim() && count === 0 && <p className="trace-empty" role="status">一致する記録がありません。</p>}
-        {filtered.map(turn => <section className="trace-turn" key={turn.id} aria-label={turnHeading(turn)}>
-          <h2>{turnHeading(turn)}</h2>
+        {!turns.length && <p className="trace-empty" role="status">{traceEmptyMessage(snapshot.openState, text)}</p>}
+        {turns.length > 0 && query.trim() && count === 0 && <p className="trace-empty" role="status">{text.noMatches}</p>}
+        {filtered.map(turn => <section className="trace-turn" key={turn.id} aria-label={formatTurnHeading(turn, text, locale)}>
+          <h2>{formatTurnHeading(turn, text, locale)}</h2>
           {turn.termination && <p className={turn.termination.kind === 'error' ? 'trace-error' : 'trace-note'}>{turn.termination.message}</p>}
-          {turn.partial && <p className="trace-partial">開始前の記録は未読み込みです。</p>}
-          <M3eActionList aria-label={turn.number === null ? '記録' : `ターン ${turn.number} の記録`}>
+          {turn.partial && <p className="trace-partial">{text.partialHistory}</p>}
+          <M3eActionList aria-label={turn.number === null ? text.turnRecords : text.turnRecordsOf(turn.number)}>
             {turn.rows.map(row => <M3eListAction key={row.id} className={`trace-row${row.failed ? ' trace-row-error' : ''}`}
               disabled={!active}
               style={{ marginInlineStart: `calc(var(--app-space) * ${Math.min(row.depth, 4)})` }} data-trace-row={row.id}
-              onClick={() => showRecord(row)} aria-label={`${row.title}、${rowDescription(row)}、詳細を開く`}>
+              onClick={() => showRecord(row)} aria-label={text.rowOpenLabel(row.title, rowDescription(row, text, locale))}>
               <Icon name={traceRowIcon(row)} slot="leading" />
               <span className="trace-row-title">{row.title}</span>
-              <span slot="supporting-text" className="trace-row-description">{rowDescription(row)}</span>
+              <span slot="supporting-text" className="trace-row-description">{rowDescription(row, text, locale)}</span>
               <Icon name={row.failed ? 'error' : row.running ? 'pending' : 'chevron_right'} slot="trailing" />
             </M3eListAction>)}
           </M3eActionList>
@@ -192,11 +196,10 @@ const TracePanel = memo(function TracePanel({ sessionId, active, data }: { sessi
       </div>
     </div>
     <footer className="conversation-footer trace-search" inert={!active}>
-      {query.trim() && <p className="trace-search-count" role="status">読み込み済みの記録から {count} 件{search.partialRows > 0
-        && `。ほかに大きな記録 ${search.partialRows} 件は一部だけを検索しました`}</p>}
-      <M3eSearchBar clearable={active} clearLabel="検索を消す" onClear={() => changeQuery('')}>
+      {query.trim() && <p className="trace-search-count" role="status">{text.searchSummary(count, search.partialRows)}</p>}
+      <M3eSearchBar clearable={active} clearLabel={text.searchClear} onClear={() => changeQuery('')}>
         <Icon name="search" slot="leading" />
-        <input slot="input" type="search" disabled={!active} aria-label="記録を検索" placeholder="種類・ツール名・本文で検索" value={query}
+        <input slot="input" type="search" disabled={!active} aria-label={text.searchLabel} placeholder={text.searchPlaceholder} value={query}
           onChange={event => changeQuery(event.target.value)} />
       </M3eSearchBar>
     </footer>

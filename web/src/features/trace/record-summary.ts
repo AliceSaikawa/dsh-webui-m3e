@@ -1,40 +1,41 @@
 import type { TokenUsage } from '../../dsh/services.ts'
+import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
 import { formatCount, formatDuration, type TraceRow } from './model.ts'
+import { traceText, type TraceMessages } from './messages.ts'
 
-/** Supporting text of the record rows laid out as in Canvas `record`. */
-export const recordInputSupporting = '送ったメッセージとツールの結果'
-
-export function recordDurationText(row: Pick<TraceRow, 'running' | 'durationMs' | 'firstOutputMs'>): string {
-  if (row.running) return '開始済み・実行中'
-  const first = row.firstOutputMs === undefined ? '' : `（最初の出力まで ${formatDuration(row.firstOutputMs)}）`
-  return `${formatDuration(row.durationMs)}${first}`
+export function recordDurationText(row: Pick<TraceRow, 'running' | 'durationMs' | 'firstOutputMs'>,
+  text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
+  if (row.running) return text.rowRunning
+  const duration = formatDuration(row.durationMs, text, locale)
+  if (row.firstOutputMs === undefined) return duration
+  return text.durationWithFirstOutput(duration, formatDuration(row.firstOutputMs, text, locale))
 }
 
-function optionalCount(value: number | undefined): string {
-  return value === undefined ? '未記録' : formatCount(value)
+function optionalCount(value: number | undefined, text: TraceMessages, locale: Locale): string {
+  return value === undefined ? text.notRecorded : formatCount(value, locale)
 }
-export function recordUsageText(usage: TokenUsage | undefined): string {
-  if (!usage) return 'トークン数は記録されていません'
-  return [
-    `入力 ${formatCount(usage.inputTokens)}（キャッシュを除く）`,
-    `出力 ${formatCount(usage.outputTokens)}`,
-    `キャッシュ読み込み ${optionalCount(usage.cacheReadTokens)}`,
-    `キャッシュ書き込み ${optionalCount(usage.cacheWriteTokens)}`,
-  ].join(' ・ ')
+export function recordUsageText(usage: TokenUsage | undefined, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
+  if (!usage) return text.usageNone
+  return text.usageSummary(
+    formatCount(usage.inputTokens, locale),
+    formatCount(usage.outputTokens, locale),
+    optionalCount(usage.cacheReadTokens, text, locale),
+    optionalCount(usage.cacheWriteTokens, text, locale),
+  )
 }
 
-export function recordOutputText(row: Pick<TraceRow, 'kind' | 'running' | 'content'>): string {
-  if (row.kind === 'compaction') return row.running ? '要約を作っています' : 'まとめた要約'
-  let reasoning = 0, text = 0, calls = 0
+export function recordOutputText(row: Pick<TraceRow, 'kind' | 'running' | 'content'>, text: TraceMessages = traceText): string {
+  if (row.kind === 'compaction') return row.running ? text.compactionBuilding : text.compactionSummary
+  let reasoning = 0, textCount = 0, calls = 0
   for (const block of row.content) {
     if (block.type === 'reasoning') reasoning++
-    else if (block.type === 'text') text++
+    else if (block.type === 'text') textCount++
     else if (block.type === 'tool-call') calls++
   }
-  return `思考 ${reasoning} ・ テキスト ${text} ・ ツール呼び出し ${calls}`
+  return text.outputSummary(reasoning, textCount, calls)
 }
 
-export function recordResultText(row: Pick<TraceRow, 'running' | 'failed'>): string | undefined {
-  if (row.running) return '結果を待っています'
-  return row.failed ? '失敗' : undefined
+export function recordResultText(row: Pick<TraceRow, 'running' | 'failed'>, text: TraceMessages = traceText): string | undefined {
+  if (row.running) return text.resultWaitingSupporting
+  return row.failed ? text.terminationError : undefined
 }
