@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { M3eRadio, M3eRadioGroup } from '@m3e/react/radio-group'
 import { M3eButton } from '@m3e/react/button'
 import { openDialog, openSheet } from '../../app/overlay/index.ts'
@@ -17,9 +17,34 @@ export function themeColorLabel(color: string): string {
   return THEME_COLOR_PRESETS.find(preset => preset.color.toLowerCase() === normalized)?.label ?? 'ほかの色'
 }
 
+/**
+ * A color input reports every color the pointer passes over. Apply only the latest one per frame,
+ * and the pending one when the sheet closes, so saving and recoloring the screen keep up with the drag.
+ */
+function useFrameThrottledColor(): (color: string) => void {
+  const pending = useRef<{ frame: number; color: string }>(undefined)
+  useEffect(() => () => {
+    const last = pending.current
+    if (!last) return
+    pending.current = undefined
+    cancelAnimationFrame(last.frame)
+    setThemeColor(last.color)
+  }, [])
+  return color => {
+    if (pending.current) { pending.current.color = color; return }
+    const entry = { frame: 0, color }
+    entry.frame = requestAnimationFrame(() => { pending.current = undefined; setThemeColor(entry.color) })
+    pending.current = entry
+  }
+}
+
 function AppearanceSheet() {
   const appearance = useAppearance()
   const color = useThemeColor()
+  // The input shows the picked color right away, ahead of the throttled store.
+  const [picked, setPicked] = useState(color)
+  useEffect(() => setPicked(color), [color])
+  const chooseCustomColor = useFrameThrottledColor()
   const custom = !THEME_COLOR_PRESETS.some(preset => preset.color.toLowerCase() === color)
   const titleId = useId()
   return <div className="settings-sheet">
@@ -46,7 +71,9 @@ function AppearanceSheet() {
     </div>
     <label className="settings-color-custom">
       <span>ほかの色</span>
-      <input type="color" value={color} onChange={event => setThemeColor(event.currentTarget.value)} />
+      {/* aria-pressed is not allowed on a color input, so the selected state goes in its name. */}
+      <input type="color" value={picked} aria-label={custom ? 'ほかの色（選択中）' : 'ほかの色'}
+        onChange={event => { setPicked(event.currentTarget.value); chooseCustomColor(event.currentTarget.value) }} />
       {custom && <Icon name="check" />}
     </label>
   </div>

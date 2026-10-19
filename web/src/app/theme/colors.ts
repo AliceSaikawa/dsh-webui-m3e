@@ -9,6 +9,8 @@ export function themeOptionsFor(color: string) {
 
 const colors = new MaterialDynamicColors()
 const roles = [...colors.allColors, colors.surfaceVariant(), colors.shadow(), colors.scrim(), colors.surfaceTint()]
+/** A color picker can pass through thousands of colors in one drag; keep only the recent ones. */
+const maxCachedPalettes = 32
 const palettesByColor = new Map<string, ReturnType<typeof themeFromSourceColor>['palettes']>()
 function palettesFor(color: string) {
   const key = color.toLowerCase()
@@ -16,6 +18,8 @@ function palettesFor(color: string) {
   if (cached) return cached
   const palettes = themeFromSourceColor(argbFromHex(color)).palettes
   palettesByColor.set(key, palettes)
+  // A Map iterates in insertion order, so the first key is the oldest.
+  if (palettesByColor.size > maxCachedPalettes) palettesByColor.delete(palettesByColor.keys().next().value!)
   return palettes
 }
 
