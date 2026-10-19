@@ -1,7 +1,7 @@
 import type { ISessions } from '../../dsh/services.ts'
-import { clearDraft, draftRevision, readDraft, writeDraft, type Draft } from './drafts.ts'
+import { clearDraft, readDraft, writeDraft, type Draft, type WorkspaceAttachment, type WorkspaceAttachmentBaseline } from './drafts.ts'
 
-export interface WorkspaceAttachment { workspaceId: string; sessionId: string }
+export type { WorkspaceAttachment, WorkspaceAttachmentBaseline } from './drafts.ts'
 export interface WorkspaceRecoveryResult { sessionId?: string; sessionReady?: boolean; error?: unknown }
 type RecoverySessions = Pick<ISessions, 'create' | 'list' | 'refresh'>
 const recoveries = new Map<string, Promise<WorkspaceRecoveryResult>>()
@@ -38,12 +38,26 @@ export async function sessionIsAddressable(sessions: Pick<ISessions, 'list' | 'r
   return sessions.list.getSnapshot().byId[sessionId] !== undefined
 }
 
-function sameContent(a: Draft, b: Draft): boolean {
-  return a.text === b.text && a.images.length === b.images.length
-    && a.images.every((image, index) => image === b.images[index])
+/** The input the recovery must compare: body, images and choices, not recovery metadata. */
+export function attachmentBaseline(draft: Draft): WorkspaceAttachmentBaseline {
+  return { text: draft.text, input: { images: draft.images, model: draft.model, permission: draft.permission, plan: draft.plan } }
+}
+function sameInput(a: Pick<Draft, 'images' | 'model' | 'permission' | 'plan'>, b: Pick<Draft, 'images' | 'model' | 'permission' | 'plan'>): boolean {
+  return a.images.length === b.images.length && a.images.every((image, index) => image === b.images[index])
     && a.model?.provider === b.model?.provider && a.model?.model === b.model?.model
     && a.model?.reasoningEffort === b.model?.reasoningEffort
     && a.permission === b.permission && a.plan === b.plan
+}
+function sameContent(a: Draft, b: Draft): boolean {
+  return a.text === b.text && sameInput(a, b)
+}
+/**
+ * Whether the draft still holds the input recorded at the failure. A reload only
+ * restores the body, so an absent `input` limits the answer to the body.
+ */
+function matchesBaseline(draft: Draft, baseline: WorkspaceAttachmentBaseline | undefined): boolean {
+  if (!baseline || draft.text !== baseline.text) return false
+  return !baseline.input || sameInput(draft, baseline.input)
 }
 
 /**
@@ -99,7 +113,12 @@ export function retryWorkspaceAttachment(options: { draftKey: string; sessions: 
   return recovery
 }
 
-interface Baseline { revision: number; draft: Draft; sameAtStart: boolean }
+interface Baseline {
+  /** The Host minted a new identity, so the destination has no earlier input of its own. */
+  fresh: boolean
+  /** What the created conversation held when registration failed. Missing for states saved before it was recorded. */
+  recorded: WorkspaceAttachmentBaseline | undefined
+}
 function settle(draft: Draft): Draft {
   const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = draft
   return rest
@@ -107,45 +126,44 @@ function settle(draft: Draft): Draft {
 
 /**
  * Applies the registration result and moves the body as separate steps. The
- * created conversation's draft is replaced only when it held the same input as
- * the origin when the retry began and nothing wrote it after that; a draft the
- * user already edited on either screen is never replaced. Otherwise only the
- * recovery state is settled, and a distinct origin input stays as an ordinary
- * draft for the new screen.
+ * recorded failure-time input decides which screen holds the newer body:
+ * a conversation still holding it receives the new screen's body, a conversation
+ * the user edited keeps its own, and two edited screens are both kept. A screen
+ * whose body was already superseded does not keep the recovery notice.
  */
 function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Baseline, { settled, clearOrigin }: { settled: boolean; clearOrigin: boolean }): void {
   const destination = `session:${attachment.sessionId}`
-  // An unsettled destination keeps the recovery state for the identity this
-  // handoff actually registered, which may differ from the recorded one.
+  // The screen the retry started from: the new screen, or the recorded conversation's key.
+  const sourceKey = draftKey === destination ? `new:${attachment.workspaceId}` : draftKey
+  const source = readDraft(sourceKey)
+  // A body on the new screen belongs to this recovery only while it names the same identity.
+  const ownsSource = sourceKey === draftKey || source.workspaceAttachment?.sessionId === attachment.sessionId
+  const destinationDraft = readDraft(destination)
+  // A state saved before the failure body was recorded can only be judged by the source it still copies.
+  const destinationUnchanged = baseline.fresh
+    || matchesBaseline(destinationDraft, baseline.recorded)
+    || (baseline.recorded === undefined && sameContent(destinationDraft, source))
   const forDestination = (draft: Draft): Draft => settled ? settle(draft) : { ...settle(draft), workspaceAttachment: attachment }
-  if (draftKey === destination) {
-    if (!settled) return
-    const current = readDraft(destination)
-    writeDraft(destination, settle(current))
-    clearWorkspaceOrigin(attachment, current)
-    return
-  }
-  const origin = readDraft(draftKey)
-  if (draftRevision(destination) === baseline.revision) {
-    if (baseline.sameAtStart || sameContent(origin, baseline.draft)) {
-      writeDraft(destination, forDestination(origin))
-      if (clearOrigin) clearDraft(draftKey)
-      return
-    }
-    // The destination already held a different draft before the retry began,
-    // so registration only settles it and both inputs stay where they are.
-    if (settled) {
-      writeDraft(destination, settle(readDraft(destination)))
-      writeDraft(draftKey, settle(origin))
+  if (destinationUnchanged) {
+    // The conversation still holds the failure-time body, so the source's input is the newer one.
+    if (ownsSource && (settled || baseline.fresh)) {
+      writeDraft(destination, forDestination(source))
+      if (settled && clearOrigin) clearDraft(sourceKey)
+    } else if (settled) {
+      writeDraft(destination, settle(destinationDraft))
     }
     return
   }
-  const current = readDraft(destination)
-  if (settled && (current.workspaceAttachment || current.workspaceAttachmentError !== undefined)) writeDraft(destination, settle(current))
-  // The origin's input was already the destination's when the retry began, so the newer edit supersedes it.
-  if (sameContent(origin, baseline.draft)) { if (clearOrigin) clearDraft(draftKey) }
-  // A different origin input is not discarded. After registration it is an ordinary draft for this Workspace.
-  else if (settled) writeDraft(draftKey, settle(origin))
+  // The conversation holds an input written after the failure, so it is kept.
+  if (settled) writeDraft(destination, settle(destinationDraft))
+  if (!ownsSource) return
+  if (matchesBaseline(source, baseline.recorded)) {
+    // The source still copied the failure body, which the conversation has moved past.
+    if (clearOrigin) clearDraft(sourceKey)
+    else if (settled) writeDraft(sourceKey, settle(source))
+  } else if (settled) {
+    writeDraft(sourceKey, settle(source))
+  }
 }
 
 async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions: RecoverySessions }): Promise<WorkspaceRecoveryResult> {
@@ -157,14 +175,11 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
   if ((initial.preparingImages ?? 0) > 0) {
     return { sessionId: attachment.sessionId, sessionReady: false, error: new Error('画像の準備が終わってから登録をやり直してください。') }
   }
-  const destination = `session:${attachment.sessionId}`
-  const destinationDraft = readDraft(destination)
-  const baseline: Baseline = { revision: draftRevision(destination), draft: destinationDraft,
-    sameAtStart: sameContent(initial, destinationDraft) }
+  const baseline: Baseline = { fresh: false, recorded: attachment.baseline }
   // A fresh identity has no earlier input of its own, so the retry may move the origin there.
   const baselineFor = (sessionId: string): Baseline => sessionId === attachment.sessionId
     ? baseline
-    : { revision: draftRevision(`session:${sessionId}`), draft: readDraft(`session:${sessionId}`), sameAtStart: true }
+    : { fresh: true, recorded: undefined }
   const settleReported = (reported: WorkspaceAttachment, source: Draft): void => settleSuperseded(attachment, reported, source)
   try {
     // DSH 0.2.1 reuses the named Session only while it is an unarchived blank

@@ -20,7 +20,7 @@ type TestWindow = Window & {
 
 async function prepare(page: Page, fail: boolean) {
   await page.addInitScript(({ sessionId, workspaceId, stale, fail }) => {
-    const attachment = JSON.stringify({ workspaceId, sessionId })
+    const attachment = JSON.stringify({ workspaceId, sessionId, baseline: { text: stale } })
     for (const key of [`new:${workspaceId}`, `session:${sessionId}`]) {
       localStorage.setItem(`m3e:composer:${key}`, stale)
       localStorage.setItem(`m3e:composer:${key}:workspaceAttachment`, attachment)

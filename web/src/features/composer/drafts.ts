@@ -2,6 +2,17 @@ import type { PreparedImage } from './types.ts'
 import type { ModelSelection } from './api.ts'
 import { uncertainDeliveryMessage } from './delivery-status.ts'
 
+/** The input a draft held when its Workspace registration failed. */
+export interface WorkspaceAttachmentBaseline {
+  text: string
+  /** Images and choices stay in the tab that recorded them; a reload restores the body alone. */
+  input?: Pick<Draft, 'images' | 'model' | 'permission' | 'plan'>
+}
+export interface WorkspaceAttachment {
+  workspaceId: string
+  sessionId: string
+  baseline?: WorkspaceAttachmentBaseline
+}
 export interface Draft {
   text: string
   images: PreparedImage[]
@@ -11,7 +22,7 @@ export interface Draft {
   retryMode?: 'queue' | 'steer'
   preparingImages?: number
   imagePreparationError?: unknown
-  workspaceAttachment?: { workspaceId: string; sessionId: string }
+  workspaceAttachment?: WorkspaceAttachment
   workspaceAttachmentError?: string
   error?: string
   deliveryOutcome?: 'unknown'
@@ -25,6 +36,16 @@ const prefix = 'm3e:composer:'
 const attachmentKey = (key: string) => prefix + key + ':workspaceAttachment'
 const outcomeKey = (key: string) => prefix + key + ':deliveryOutcome'
 function storage() { return 'window' in globalThis ? globalThis.localStorage : undefined }
+
+/** Only the body is stored; the input stays in the tab to keep image bytes out of the device store. */
+function storedAttachment(attachment: WorkspaceAttachment): Record<string, unknown> {
+  return { workspaceId: attachment.workspaceId, sessionId: attachment.sessionId,
+    ...(attachment.baseline ? { baseline: { text: attachment.baseline.text } } : {}) }
+}
+function readBaseline(value: unknown): WorkspaceAttachmentBaseline | undefined {
+  const saved = typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
+  return typeof saved?.text === 'string' ? { text: saved.text } : undefined
+}
 
 export function subscribeDraft(key: string, listener: () => void): () => void {
   let subscribers = listeners.get(key)
@@ -51,7 +72,8 @@ export function readDraft(key: string): Draft {
       const value = saved as Record<string, unknown>
       if (typeof value.sessionId === 'string' && value.sessionId.trim() && typeof value.workspaceId === 'string' && value.workspaceId.trim()
         && (!key.startsWith('session:') || key === `session:${value.sessionId}`)) {
-        workspaceAttachment = { sessionId: value.sessionId, workspaceId: value.workspaceId }
+        const baseline = readBaseline(value.baseline)
+        workspaceAttachment = { sessionId: value.sessionId, workspaceId: value.workspaceId, ...(baseline ? { baseline } : {}) }
       }
     }
   } catch { /* Ignore unavailable or malformed recovery metadata. */ }
@@ -75,7 +97,7 @@ export function writeDraft(key: string, draft: Draft): void {
     else storage()?.removeItem(outcomeKey(key))
   } catch { /* Outcome metadata cannot be guaranteed when storage rejects it. */ }
   try {
-    if (draft.workspaceAttachment) storage()?.setItem(attachmentKey(key), JSON.stringify(draft.workspaceAttachment))
+    if (draft.workspaceAttachment) storage()?.setItem(attachmentKey(key), JSON.stringify(storedAttachment(draft.workspaceAttachment)))
     else storage()?.removeItem(attachmentKey(key))
   } catch { /* Preserve usable text even if recovery metadata cannot be saved. */ }
   listeners.get(key)?.forEach(listener => listener())

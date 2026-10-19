@@ -27,6 +27,13 @@ test('端末の下書きを会話ごとに復元し、送った会話だけ消�
     assert.equal(readDraft('new:partial-create').text, '登録だけ失敗した文章')
     writeDraft('session:already-created', { text: '移管した文章', images: [], workspaceAttachment: marker })
     assert.deepEqual(JSON.parse(entries.get('m3e:composer:session:already-created:workspaceAttachment')!), marker)
+    // The failure body survives a reload; the images and choices stay in the tab.
+    const recorded = { sessionId: 'recorded-conversation', workspaceId: 'workspace-two', baseline: { text: '失敗した時点の本文' } }
+    writeDraft('session:recorded-conversation', { text: '移管した文章', images: [], workspaceAttachment: recorded })
+    assert.deepEqual(JSON.parse(entries.get('m3e:composer:session:recorded-conversation:workspaceAttachment')!), recorded)
+    assert.deepEqual(readDraft('session:recorded-conversation').workspaceAttachment, recorded)
+    writeDraft('session:recorded-choices', { text: '失敗した時点の本文', images: [], workspaceAttachment: { workspaceId: 'workspace-two', sessionId: 'recorded-choices', baseline: { text: '失敗した時点の本文', input: { images: [], model: undefined, permission: 'limited', plan: true } } } })
+    assert.deepEqual(JSON.parse(entries.get('m3e:composer:session:recorded-choices:workspaceAttachment')!), { workspaceId: 'workspace-two', sessionId: 'recorded-choices', baseline: { text: '失敗した時点の本文' } })
     clearDraft('session:already-created')
     assert.equal(entries.has('m3e:composer:session:already-created:workspaceAttachment'), false)
     entries.set('m3e:composer:new:bad-marker:workspaceAttachment', '{broken')

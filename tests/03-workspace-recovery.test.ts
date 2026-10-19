@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ISessions } from '../web/src/dsh/services.ts'
-import { clearDraft, readDraft, writeDraft } from '../web/src/features/composer/drafts.ts'
+import { clearDraft, readDraft, writeDraft, type Draft, type WorkspaceAttachment, type WorkspaceAttachmentBaseline } from '../web/src/features/composer/drafts.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, workspaceAttachmentFrom } from '../web/src/features/composer/workspace-recovery.ts'
 import { deliverDraft } from '../web/src/features/composer/delivery.ts'
 
@@ -20,7 +20,10 @@ test('only the verified partial-create error with matching Workspace and a usabl
 })
 
 function setup(label: string) {
-  const attachment = { workspaceId: `recovery-${label}`, sessionId: `published-${label}` }
+  const images = [{ id: 'image-test' }] as unknown as Draft['images']
+  const model = { provider: 'local', model: 'small' } as Draft['model']
+  const baseline: WorkspaceAttachmentBaseline = { text: '保つ本文', input: { images, model, permission: 'limited', plan: true } }
+  const attachment: WorkspaceAttachment = { workspaceId: `recovery-${label}`, sessionId: `published-${label}`, baseline }
   const originKey = `new:${attachment.workspaceId}`
   const sessionKey = `session:${attachment.sessionId}`
   const calls: { workspaceId?: string; sessionId?: string }[] = []
@@ -42,10 +45,10 @@ function setup(label: string) {
     list: { subscribe: () => () => {}, getSnapshot: () => { const id = published(); return { phase: 'ready', ids: available ? [id] : [], byId: available ? { [id]: { id, retainedBy: {}, displayTitle: id, running: false, blank: true, updatedAt: 0 } } : {}, projectionsBySession: {} } } },
     async refresh() {},
   }
-  const draft = { text: '保つ本文', images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true, workspaceAttachment: attachment }
+  const draft: Draft = { text: '保つ本文', images, model, permission: 'limited', plan: true, workspaceAttachment: attachment }
   // Only identity is relevant here; encoding is covered by the image and delivery tests.
-  writeDraft(originKey, draft as Parameters<typeof writeDraft>[1])
-  writeDraft(sessionKey, draft as Parameters<typeof writeDraft>[1])
+  writeDraft(originKey, draft)
+  writeDraft(sessionKey, draft)
   return {
     attachment, originKey, sessionKey, calls, sessions, failure,
     succeed() { fail = false }, unavailable() { available = false }, waitFor(promise: Promise<void>) { wait = promise },
@@ -159,20 +162,32 @@ test('a minted ID that is not yet listed keeps the retry on the screen the user 
   }
 })
 
-// Issue #125: a draft the user edited on either screen before the retry began is
-// not a copy of the other, so the destination keeps its own input and the origin
-// stays as an ordinary draft for the new screen.
-test('a new-screen draft edited before the retry stays there when the conversation holds a different draft', async () => {
+test('a retry from the recorded conversation follows a minted ID and leaves the body only there', async () => {
+  const h = setup('minted-from-conversation')
+  h.hostMints('minted-from-conversation')
+  h.succeed()
+  const result = await retryWorkspaceAttachment({ draftKey: h.sessionKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: 'minted-from-conversation', sessionReady: true })
+  const adopted = readDraft('session:minted-from-conversation')
+  assert.equal(adopted.text, '保つ本文')
+  assert.equal(adopted.workspaceAttachment, undefined)
+  // Neither the recorded conversation nor the new screen keeps the body or a recovery.
+  assert.deepEqual(readDraft(h.sessionKey), { text: '', images: [] })
+  assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+})
+
+// Issue #125: the recorded failure-time input decides which screen holds the
+// newer body. A conversation still holding it receives the new screen's body;
+// a conversation the user edited keeps its own.
+test('new-screen recovery moves the latest edits to the existing draft, then removes the duplicate origin', async () => {
   const h = setup('new-edits')
   writeDraft(h.originKey, { ...readDraft(h.originKey), text: '登録を待つ間に編集した本文' })
   h.succeed()
   const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
   assert.equal(result.sessionReady, true)
-  assert.equal(readDraft(h.sessionKey).text, '保つ本文')
+  assert.equal(readDraft(h.sessionKey).text, '登録を待つ間に編集した本文')
   assert.equal(readDraft(h.sessionKey).workspaceAttachment, undefined)
-  const origin = readDraft(h.originKey)
-  assert.equal(origin.text, '登録を待つ間に編集した本文')
-  assert.equal(origin.workspaceAttachment, undefined)
+  assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
 })
 
 test('successful adoption without a visible catalog row preserves the original ID on the new screen', async () => {
@@ -295,11 +310,36 @@ test('a distinct origin input is kept as an ordinary draft when the destination 
   assert.equal(origin.workspaceAttachment, undefined)
 })
 
-// Issue #125: the destination can already differ before the retry begins. The
-// revision alone cannot prove that, so the start-time contents must agree too.
+// Issue #125, case 1: the conversation still holds the failure-time body, so the
+// new screen's later edit is the newer one and moves over.
 for (const outcome of ['success', 'failure'] as const) {
-  test(`${outcome}: a conversation draft edited before the retry keeps its input`, async () => {
-    const h = setup(`before-destination-${outcome}`)
+  test(`${outcome}: a new-screen edit made before the retry replaces the failure-time conversation body`, async () => {
+    const h = setup(`failure-body-${outcome}`)
+    if (outcome === 'success') h.succeed()
+    writeDraft(h.originKey, { ...readDraft(h.originKey), text: '新規画面で先に直した本文' })
+    const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+    if (outcome === 'success') {
+      assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+      assert.equal(readDraft(h.sessionKey).text, '新規画面で先に直した本文')
+      assert.equal(readDraft(h.sessionKey).workspaceAttachment, undefined)
+      assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+    } else {
+      assert.equal(result.error, h.failure)
+      const destination = readDraft(h.sessionKey)
+      assert.equal(destination.text, '保つ本文')
+      assert.deepEqual(destination.workspaceAttachment, h.attachment)
+      const origin = readDraft(h.originKey)
+      assert.equal(origin.text, '新規画面で先に直した本文')
+      assert.deepEqual(origin.workspaceAttachment, h.attachment)
+    }
+  })
+}
+
+// Issue #125, case 2: the conversation holds an edit made after the failure, so
+// it is kept; the new screen still copies the failure body and drops it.
+for (const outcome of ['success', 'failure'] as const) {
+  test(`${outcome}: a conversation edited before the retry keeps its input and drops the unchanged new-screen copy`, async () => {
+    const h = setup(`conversation-edited-${outcome}`)
     if (outcome === 'success') h.succeed()
     writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '会話側で先に書いた新しい本文' })
     const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
@@ -307,25 +347,21 @@ for (const outcome of ['success', 'failure'] as const) {
     assert.equal(destination.text, '会話側で先に書いた新しい本文')
     assert.deepEqual(destination.images, [{ id: 'image-test' }])
     assert.deepEqual(destination.model, { provider: 'local', model: 'small' })
-    assert.equal(destination.permission, 'limited')
-    assert.equal(destination.plan, true)
-    const origin = readDraft(h.originKey)
-    assert.equal(origin.text, '保つ本文')
+    assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
     if (outcome === 'success') {
       assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
       assert.equal(destination.workspaceAttachment, undefined)
-      assert.equal(origin.workspaceAttachment, undefined)
     } else {
       assert.equal(result.error, h.failure)
       assert.deepEqual(destination.workspaceAttachment, h.attachment)
-      assert.deepEqual(origin.workspaceAttachment, h.attachment)
     }
   })
 }
 
+// Issue #125, case 3: both screens hold distinct edits, so both are kept.
 for (const outcome of ['success', 'failure'] as const) {
   test(`${outcome}: drafts edited separately on both screens before the retry are both kept`, async () => {
-    const h = setup(`before-both-${outcome}`)
+    const h = setup(`both-edited-${outcome}`)
     if (outcome === 'success') h.succeed()
     writeDraft(h.originKey, { ...readDraft(h.originKey), text: '新規画面で先に直した本文' })
     writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '会話画面で先に直した本文' })
@@ -345,6 +381,17 @@ for (const outcome of ['success', 'failure'] as const) {
     }
   })
 }
+
+test('a retry that finds the same body on both screens removes the new-screen duplicate', async () => {
+  const h = setup('same-body')
+  h.succeed()
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+  const destination = readDraft(h.sessionKey)
+  assert.equal(destination.text, '保つ本文')
+  assert.equal(destination.workspaceAttachment, undefined)
+  assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+})
 
 test('sending from either screen is refused while the shared retry is pending', async () => {
   const h = setup('send-blocked')
