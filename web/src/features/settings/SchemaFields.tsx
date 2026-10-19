@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
@@ -62,9 +62,15 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
   const selection = selectFieldState(field, choice)
   const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = 'すぐ反映されます'
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
-    input.setActive(true)
-    return () => input.setActive(false)
+    clearTimeout(leaveTimer.current)
+    leaveTimer.current = undefined
+    return () => {
+      // StrictMode replays this cleanup right after mounting; defer the leave so
+      // the next setup cancels it, while a real unmount still saves the input.
+      leaveTimer.current = setTimeout(() => { void input.leave() }, 0)
+    }
   }, [input])
   function flush() { return input.flush() }
   function changeText(value: string) { input.changeDeferred(value) }

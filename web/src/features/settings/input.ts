@@ -18,7 +18,6 @@ export function createSettingInput<T>(initial: T, options: {
   let baseline = initial
   let version = 0
   let resetting = false
-  let active = true
   let pending: Promise<void> | undefined
   let epoch = 0
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -30,7 +29,7 @@ export function createSettingInput<T>(initial: T, options: {
   async function drain() {
     const lifetime = epoch
     try {
-      while (lifetime === epoch && active && state.dirty && !state.notice && options.canSave()) {
+      while (lifetime === epoch && state.dirty && !state.notice && options.canSave()) {
         const sentVersion = version
         const value = state.value
         const reset = resetting
@@ -54,7 +53,7 @@ export function createSettingInput<T>(initial: T, options: {
   function flush(): Promise<void> {
     clearTimeout(timer); timer = undefined
     if (pending) return pending
-    if (!active || !state.dirty || state.notice || !options.canSave()) return Promise.resolve()
+    if (!state.dirty || state.notice || !options.canSave()) return Promise.resolve()
     const request = drain().finally(() => { if (pending === request) pending = undefined })
     pending = request
     return pending
@@ -71,7 +70,8 @@ export function createSettingInput<T>(initial: T, options: {
   return {
     getSnapshot: () => state,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
-    setActive(value: boolean) { active = value; if (!value) { clearTimeout(timer); timer = undefined } },
+    /** The editor left the screen: save pending edits and keep following newer ones. */
+    leave() { return flush() },
     change,
     changeDeferred(value: T) { if (!change(value)) return; clearTimeout(timer); timer = setTimeout(() => { void flush() }, 600) },
     receive(value: T) {
@@ -92,7 +92,7 @@ export function createSettingInput<T>(initial: T, options: {
       listeners.forEach(listener => listener())
     },
     retry() {
-      if (!active || !options.canSave()) return Promise.resolve()
+      if (!options.canSave()) return Promise.resolve()
       if (state.notice) publish({ notice: undefined })
       return flush()
     },
