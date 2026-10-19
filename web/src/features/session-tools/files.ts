@@ -1,5 +1,11 @@
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
 import { remoteErrorMessage, remoteFailureOf, unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { compareText, formatNumber } from '../../i18n/format.ts'
+import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
+import { sessionToolsMessages, type SessionToolsText } from './messages.ts'
+
+/** Japanese texts used when no dictionary is passed (non-React calls, tests). */
+const defaultText: SessionToolsText = sessionToolsMessages.ja
 
 /** dsh-api-workspace-files/lib/types/types.d.ts uses the singular prefix. */
 export const workspaceFileErrors = {
@@ -37,9 +43,10 @@ export function workspaceFilesOf(remote: DshRemote): WorkspaceFilesRemote | unde
     ? value as WorkspaceFilesRemote : undefined
 }
 
-export function sortFileEntries(entries: readonly WorkspaceDirectoryEntry[]): WorkspaceDirectoryEntry[] {
+/** Directories first, then names compared in the page language. */
+export function sortFileEntries(entries: readonly WorkspaceDirectoryEntry[], locale: Locale = SOURCE_LOCALE): WorkspaceDirectoryEntry[] {
   return [...entries].sort((a, b) => Number(b.type === 'directory') - Number(a.type === 'directory')
-    || a.name.localeCompare(b.name, 'ja', { numeric: true }))
+    || compareText(locale, a.name, b.name, { numeric: true }))
 }
 
 // SVG stays on the text path: opening an SVG Blob can execute scripts in our origin.
@@ -54,12 +61,12 @@ export function fileKind(path: string): 'markdown' | 'image' | 'text' | 'binary'
   if (['bin', 'pdf', 'zip', 'gz', 'tar', '7z', 'exe', 'dmg', 'wasm', 'woff', 'woff2', 'ttf', 'otf', 'mp4', 'mov', 'mp3', 'wav', 'sqlite', 'db'].includes(extension)) return 'binary'
   return 'text'
 }
-export function fileName(path: string): string { return path.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? 'ファイル' }
-export function fileSize(bytes?: number): string {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '大きさ不明'
-  if (bytes < 1024) return `${bytes.toLocaleString('ja-JP')} バイト`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} KB`
-  return `${(bytes / 1024 / 1024).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} MB`
+export function fileName(path: string, text: SessionToolsText = defaultText): string { return path.replaceAll('\\', '/').split('/').filter(Boolean).at(-1) ?? text.fileFallbackName }
+export function fileSize(bytes: number | undefined, locale: Locale = SOURCE_LOCALE, text: SessionToolsText = defaultText): string {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return text.sizeUnknown
+  if (bytes < 1024) return text.sizeBytes(formatNumber(locale, bytes))
+  if (bytes < 1024 * 1024) return text.sizeKilobytes(formatNumber(locale, bytes / 1024, { maximumFractionDigits: 1 }))
+  return text.sizeMegabytes(formatNumber(locale, bytes / 1024 / 1024, { maximumFractionDigits: 1 }))
 }
 export function childFilePath(parent: string, name: string): string { return parent ? `${parent.replace(/\/+$/, '')}/${name}` : name }
 /** URLs and listing responses use an empty root, but the RPC requires a path. */
@@ -67,9 +74,9 @@ export function directoryRequestPath(path: string): string { return path || '.' 
 export function fileRoute(sessionId: string, screen: 'files' | 'file', path: string): string {
   return `/s/${encodeURIComponent(sessionId)}/${screen}${path ? `?path=${encodeURIComponent(path)}` : ''}`
 }
-export function fileBreadcrumbs(path: string): { name: string; path: string }[] {
+export function fileBreadcrumbs(path: string, text: SessionToolsText = defaultText): { name: string; path: string }[] {
   const parts = path.split('/').filter(Boolean)
-  return [{ name: '作業フォルダ', path: '' }, ...parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join('/') }))]
+  return [{ name: text.workFolder, path: '' }, ...parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join('/') }))]
 }
 const comparablePath = (path: string) => path.replaceAll('\\', '/').replace(/\/+$/, '')
 export function directoryChanged(change: WorkspaceFileChange, cwd: string | undefined, path: string): boolean {
@@ -88,26 +95,27 @@ export function fileChanged(change: WorkspaceFileChange, file: WorkspaceFileStat
 
 export class FileVersionChanged extends Error {}
 export class ImageFileTooLarge extends Error {}
-export function fileReadErrorMessage(failure: unknown): string {
-  if (failure instanceof ImageFileTooLarge) return '画像は 10 MB まで表示できます。上限内で読み込みを完了できませんでした。'
-  if (remoteFailureOf(failure)?.code === workspaceFileErrors.tooLarge) return 'ファイルが大きいため表示できません。'
-  return remoteErrorMessage(failure, 'ファイルを読み込めませんでした。')
+export function fileReadErrorMessage(failure: unknown, text: SessionToolsText = defaultText): string {
+  if (failure instanceof ImageFileTooLarge) return text.imageTooLarge
+  if (remoteFailureOf(failure)?.code === workspaceFileErrors.tooLarge) return text.tooLargeToDisplay
+  return remoteErrorMessage(failure, text.readFailed)
 }
 
-function checkFileReadAbort(signal: AbortSignal) {
-  if (signal.aborted) throw new DOMException('読み込みを取り消しました。', 'AbortError')
+/** The abort message is never rendered as-is; callers treat AbortError by name. */
+function checkFileReadAbort(signal: AbortSignal, text: SessionToolsText = defaultText) {
+  if (signal.aborted) throw new DOMException(text.readCancelled, 'AbortError')
 }
 
 /** Unknown extensions can still be binary; use the host's content verdict. */
-export async function readTextFilePage(remote: WorkspaceFilesRemote, sessionId: string, path: string, offset: number, signal: AbortSignal): Promise<
+export async function readTextFilePage(remote: WorkspaceFilesRemote, sessionId: string, path: string, offset: number, signal: AbortSignal, text: SessionToolsText = defaultText): Promise<
   { kind: 'text'; page: WorkspaceFileText } | { kind: 'binary'; metadata: WorkspaceFileStat }
 > {
-  checkFileReadAbort(signal)
+  checkFileReadAbort(signal, text)
   const result = await remote.read(sessionId, path, { offset, limit: 5000 }, signal)
-  checkFileReadAbort(signal)
+  checkFileReadAbort(signal, text)
   if (!result.ok && result.error.code === workspaceFileErrors.notText) {
     const metadata = unwrapRemoteResult(await remote.stat(sessionId, path, signal))
-    checkFileReadAbort(signal)
+    checkFileReadAbort(signal, text)
     return { kind: 'binary', metadata }
   }
   return { kind: 'text', page: unwrapRemoteResult(result) }
@@ -118,19 +126,19 @@ export interface FilePageRequest { readonly offset: number; readonly requestId: 
 export function nextFilePageRequest(previous: FilePageRequest, offset: number): FilePageRequest {
   return { offset, requestId: previous.requestId + 1 }
 }
-export function appendFilePage(previous: FileTextContent | undefined, page: WorkspaceFileText): FileTextContent {
+export function appendFilePage(previous: FileTextContent | undefined, page: WorkspaceFileText, text: SessionToolsText = defaultText): FileTextContent {
   if (previous && (previous.version !== page.version || previous.absolutePath !== page.absolutePath)) throw new FileVersionChanged()
-  if (page.offset !== (previous?.nextOffset ?? 1) || (!page.eof && page.lines === 0)) throw new Error('読み込み位置を確認できませんでした。')
+  if (page.offset !== (previous?.nextOffset ?? 1) || (!page.eof && page.lines === 0)) throw new Error(text.invalidReadPosition)
   return { absolutePath: page.absolutePath, version: page.version, bytes: page.bytes,
     text: previous ? `${previous.text}${page.lines ? '\n' : ''}${page.text}` : page.text,
     nextOffset: page.offset + page.lines, eof: page.eof }
 }
 
 /** Byte reads can be capped by the host. Only display complete, same-version images. */
-export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: string, path: string, signal: AbortSignal): Promise<WorkspaceFileStat & { data: Uint8Array<ArrayBuffer> }> {
-  checkFileReadAbort(signal)
+export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: string, path: string, signal: AbortSignal, text: SessionToolsText = defaultText): Promise<WorkspaceFileStat & { data: Uint8Array<ArrayBuffer> }> {
+  checkFileReadAbort(signal, text)
   const stat = unwrapRemoteResult(await remote.stat(sessionId, path, signal))
-  checkFileReadAbort(signal)
+  checkFileReadAbort(signal, text)
   if (stat.bytes !== undefined && stat.bytes > MAX_IMAGE_BYTES) throw new ImageFileTooLarge()
   let offset = 0
   const parts: Uint8Array<ArrayBuffer>[] = []
@@ -138,14 +146,14 @@ export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: str
     const length = Math.min(IMAGE_READ_BYTES, MAX_IMAGE_BYTES - offset)
     if (length === 0) throw new ImageFileTooLarge()
     const page = unwrapRemoteResult(await remote.readBytes(sessionId, path, { range: { offset, length } }, signal))
-    checkFileReadAbort(signal)
+    checkFileReadAbort(signal, text)
     if (page.version !== stat.version || page.absolutePath !== stat.absolutePath) throw new FileVersionChanged()
     if (page.bytes !== undefined && page.bytes > MAX_IMAGE_BYTES) throw new ImageFileTooLarge()
     const bytes = page.data
-    if (!(bytes instanceof Uint8Array)) throw new Error('画像のデータを確認できませんでした。')
+    if (!(bytes instanceof Uint8Array)) throw new Error(text.imageDataInvalid)
     if (bytes.length > length) throw new ImageFileTooLarge()
     if (bytes.length > MAX_IMAGE_BYTES - offset) throw new ImageFileTooLarge()
-    if (page.offset !== offset || (!page.eof && bytes.length === 0)) throw new Error('読み込み位置を確認できませんでした。')
+    if (page.offset !== offset || (!page.eof && bytes.length === 0)) throw new Error(text.invalidReadPosition)
     parts.push(bytes)
     offset += bytes.length
     if (page.eof) {
@@ -155,5 +163,5 @@ export async function readImageFile(remote: WorkspaceFilesRemote, sessionId: str
       return { absolutePath: page.absolutePath, version: page.version, bytes: page.bytes ?? stat.bytes, data }
     }
   }
-  throw new DOMException('読み込みを取り消しました。', 'AbortError')
+  throw new DOMException(text.readCancelled, 'AbortError')
 }

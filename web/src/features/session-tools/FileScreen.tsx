@@ -9,6 +9,8 @@ import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { appendFilePage, fileChanged, fileExtension, fileKind, fileName, fileReadErrorMessage, fileSize, FileVersionChanged, imageMediaTypes, nextFilePageRequest, readImageFile, readTextFilePage, workspaceFilesOf, type FilePageRequest, type FileTextContent, type WorkspaceFileStat } from './files.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
+import { sessionToolsMessages } from './messages.ts'
 import './files.css'
 
 export function FileScreen({ sessionId }: { sessionId: string }) {
@@ -17,13 +19,15 @@ export function FileScreen({ sessionId }: { sessionId: string }) {
 }
 
 function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
+  const text = useMessages(sessionToolsMessages)
+  const locale = useLocale()
   const { remote, connection } = useDsh()
   // Cordis returns a new traced namespace on access; keep effect dependencies stable.
   const api = useMemo(() => workspaceFilesOf(remote), [remote])
   const connectionState = useSnapshot(connection.state)
   const kind = fileKind(path)
   const [view, setView] = useState<'rendered' | 'source'>('rendered')
-  const [text, setText] = useState<FileTextContent>()
+  const [body, setText] = useState<FileTextContent>()
   const [imageUrl, setImageUrl] = useState('')
   const [metadata, setMetadata] = useState<WorkspaceFileStat>()
   const metadataRef = useRef<WorkspaceFileStat | undefined>(undefined)
@@ -52,30 +56,30 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
     }
     void (async () => {
       try {
-        if (!api || !path) throw new Error('ファイルを利用できません。')
+        if (!api || !path) throw new Error(text.fileUnavailable)
         if (kind === 'binary') {
           const stat = unwrapRemoteResult(await api.stat(sessionId, path, controller.signal))
           if (!controller.signal.aborted) markMetadata(stat)
         } else if (kind === 'image') {
-          const image = await readImageFile(api, sessionId, path, controller.signal)
+          const image = await readImageFile(api, sessionId, path, controller.signal, text)
           if (controller.signal.aborted) return
           objectUrl = URL.createObjectURL(new Blob([image.data], { type: imageMediaTypes[fileExtension(path)] }))
           markMetadata(image); setImageUrl(objectUrl)
         } else {
-          const result = await readTextFilePage(api, sessionId, path, request.offset, controller.signal)
+          const result = await readTextFilePage(api, sessionId, path, request.offset, controller.signal, text)
           if (controller.signal.aborted) return
           if (result.kind === 'binary') {
             setBinary(true); markMetadata(result.metadata)
             return
           }
-          const content = appendFilePage(textRef.current, result.page)
+          const content = appendFilePage(textRef.current, result.page, text)
           textRef.current = content
           markMetadata(content); setText(content)
         }
       } catch (failure) {
         if (controller.signal.aborted) return
-        if (failure instanceof FileVersionChanged) { setChanged(true); setError('読み込み中にファイルが変わりました。読み直してください。') }
-        else setError(fileReadErrorMessage(failure))
+        if (failure instanceof FileVersionChanged) { setChanged(true); setError(text.changedWhileLoading) }
+        else setError(fileReadErrorMessage(failure, text))
       } finally {
         if (!controller.signal.aborted) { setLoading(false); loadGuard.current = false }
       }
@@ -102,34 +106,36 @@ function FileContent({ sessionId, path }: { sessionId: string; path: string }) {
           if (current && (!result.ok || result.value.version !== current.version
             || result.value.absolutePath !== current.absolutePath)) setChanged(true)
         }
-        if (!controller.signal.aborted) setWatchError('更新の通知が途切れました。読み直して確認できます。')
+        if (!controller.signal.aborted) setWatchError(text.watchInterrupted)
       } catch (failure) {
-        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, '更新を確認できません。読み直して確認できます。'))
+        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, text.watchUnavailable))
       }
     })()
     return () => controller.abort()
   }, [api, sessionId, path, connectionState, revision, metadata?.absolutePath, metadata?.version])
 
-  return <PageScaffold title={fileName(path)} actions={<M3eIconButton aria-label="ファイルを読み直す" disabled={loading} onClick={reload}><Icon name="refresh" /></M3eIconButton>}>
+  return <PageScaffold title={fileName(path, text)} actions={<M3eIconButton aria-label={text.reloadFileButton} disabled={loading} onClick={reload}><Icon name="refresh" /></M3eIconButton>}>
     <article className="session-file-content">
-      {changed && <div className="session-file-notice" role="status"><p>ファイルが更新されました</p><M3eButton variant="tonal" disabled={loading} onClick={reload}>読み直す</M3eButton></div>}
+      {changed && <div className="session-file-notice" role="status"><p>{text.fileChanged}</p><M3eButton variant="tonal" disabled={loading} onClick={reload}>{text.reloadFile}</M3eButton></div>}
       {watchError && <p className="session-file-notice" role="status">{watchError}</p>}
-      {kind === 'markdown' && !binary && <div className="session-file-switch" role="group" aria-label="表示方法">
-        <M3eButton variant={view === 'rendered' ? 'tonal' : 'outlined'} aria-pressed={view === 'rendered'} onClick={() => setView('rendered')}>表示</M3eButton>
-        <M3eButton variant={view === 'source' ? 'tonal' : 'outlined'} aria-pressed={view === 'source'} onClick={() => setView('source')}>元の文字</M3eButton>
+      {kind === 'markdown' && !binary && <div className="session-file-switch" role="group" aria-label={text.viewMethod}>
+        <M3eButton variant={view === 'rendered' ? 'tonal' : 'outlined'} aria-pressed={view === 'rendered'} onClick={() => setView('rendered')}>{text.renderedView}</M3eButton>
+        <M3eButton variant={view === 'source' ? 'tonal' : 'outlined'} aria-pressed={view === 'source'} onClick={() => setView('source')}>{text.sourceView}</M3eButton>
       </div>}
-      {metadata && <p className="session-file-hint">{fileSize(metadata.bytes)} ・ 読み取り専用</p>}
-      {error && <div className="session-file-notice" role="alert"><p>{error}</p><M3eButton variant="outlined" disabled={loading} onClick={reload}>最初から読み直す</M3eButton></div>}
-      {loading && <p className="session-file-hint" role="status">読み込み中です…</p>}
-      {binary && metadata && <div className="placeholder"><Icon name="draft" /><p>{fileName(path)}</p><p>このファイルは表示できません</p></div>}
-      {imageUrl && <img className="session-file-image" src={imageUrl} alt={fileName(path)} onError={() => setError('画像を表示できませんでした。')} />}
-      {!binary && text && (kind === 'markdown' && view === 'rendered' ? <Markdown>{text.text}</Markdown> : <pre className="session-file-text"><code>{text.text}</code></pre>)}
-      {!binary && text && !text.eof && <div className="session-file-more"><M3eButton variant="tonal" disabled={loading || changed} onClick={() => {
+      {metadata && <p className="session-file-hint">{text.sizeAndReadOnly(fileSize(metadata.bytes, locale, text))}</p>}
+      {error && <div className="session-file-notice" role="alert"><p>{error}</p><M3eButton variant="outlined" disabled={loading} onClick={reload}>{text.reloadFromStart}</M3eButton></div>}
+      {loading && <p className="session-file-hint" role="status">{text.loading}</p>}
+      {binary && metadata && <div className="placeholder"><Icon name="draft" /><p>{fileName(path, text)}</p><p>{text.unviewableFile}</p></div>}
+      {imageUrl && <img className="session-file-image" src={imageUrl} alt={fileName(path, text)} onError={() => setError(text.imageDisplayFailed)} />}
+      {!binary && body && (kind === 'markdown' && view === 'rendered' ? <Markdown>{body.text}</Markdown> : <pre className="session-file-text"><code>{body.text}</code></pre>)}
+      {!binary && body && !body.eof && <div className="session-file-more"><M3eButton variant="tonal" disabled={loading || changed} onClick={() => {
         if (loadGuard.current) return
         loadGuard.current = true
-        setRequest(value => nextFilePageRequest(value, text.nextOffset))
-      }}>続きを読み込む</M3eButton></div>}
-      {!binary && text?.eof && text.text.length === 0 && <p className="placeholder">このファイルは空です。</p>}
+        setRequest(value => nextFilePageRequest(value, body.nextOffset))
+      }}>
+        {text.loadMore}
+      </M3eButton></div>}
+      {!binary && body?.eof && body.text.length === 0 && <p className="placeholder">{text.fileEmpty}</p>}
     </article>
   </PageScaffold>
 }

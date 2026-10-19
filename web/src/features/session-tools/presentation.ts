@@ -1,5 +1,11 @@
 import type { SessionJob, SessionSummary, SessionWireEvent, SessionProjectionSnapshot } from '../../dsh/services.ts'
+import { formatNumber } from '../../i18n/format.ts'
+import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
 import { isLiveJob } from './operations.ts'
+import { sessionToolsMessages, type SessionToolsText } from './messages.ts'
+
+/** Japanese texts used when no dictionary is passed (non-React calls, tests). */
+const defaultText: SessionToolsText = sessionToolsMessages.ja
 
 export interface ContextPressure { pressureTokens?: number | null; projectedTokens?: number | null; contextWindow?: number | null }
 export interface Usage { uncachedInputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
@@ -13,10 +19,17 @@ export function contextPercent(value?: ContextPressure | null): number | undefin
   return Math.round(tokens / window * 100)
 }
 
-export function formatTokens(value?: number): string {
-  if (value === undefined || !Number.isFinite(value) || value < 0) return '未取得'
-  if (value < 10000) return Math.floor(value).toLocaleString('ja-JP')
-  return `${(value / 10000).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} 万`
+/**
+ * Token counts. Above 10,000 the scale is 万 (10,000) for every language; the
+ * formatted value and its placement follow the page language (formatNumber).
+ * Large-number display for English/Chinese: kept as the same scale for now —
+ * a `compact` format would change the printed magnitude, and the unit text is
+ * a dictionary entry that the translation PRs can reword (docs/design/11-i18n.md).
+ */
+export function formatTokens(value: number | undefined, locale: Locale = SOURCE_LOCALE, text: SessionToolsText = defaultText): string {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return text.notRetrieved
+  if (value < 10000) return formatNumber(locale, Math.floor(value))
+  return text.tenThousandTokens(formatNumber(locale, value / 10000, { maximumFractionDigits: 1 }))
 }
 
 export function maxTurn(records: readonly SessionWireEvent[]): number {
@@ -27,9 +40,12 @@ export function maxTurn(records: readonly SessionWireEvent[]): number {
   }, 0)
 }
 
-export function reasoningLabel(effort?: string): string {
-  const labels: Record<string, string> = { none: 'なし', off: 'なし', minimal: '最小', low: '低', medium: '中', high: '高', xhigh: 'とても高い', max: '最大', ultra: '最大' }
-  return effort ? labels[effort] ?? '指定あり' : '未指定'
+export function reasoningLabel(effort: string | undefined, text: SessionToolsText = defaultText): string {
+  const labels: Record<string, string> = {
+    none: text.reasoningNone, off: text.reasoningNone, minimal: text.reasoningMinimal, low: text.reasoningLow,
+    medium: text.reasoningMedium, high: text.reasoningHigh, xhigh: text.reasoningVeryHigh, max: text.reasoningMax, ultra: text.reasoningMax,
+  }
+  return effort ? labels[effort] ?? text.reasoningConfigured : text.reasoningUnspecified
 }
 
 export type Child = { kind: 'child'; id: string; label?: string; activity: 'running' | 'inactive'; mode: 'one-shot' | 'continuable'; migrationRequired?: boolean }

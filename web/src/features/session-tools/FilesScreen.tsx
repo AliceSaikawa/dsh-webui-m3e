@@ -10,6 +10,8 @@ import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { childFilePath, directoryChanged, directoryRequestPath, fileBreadcrumbs, fileKind, fileRoute, fileSize, sortFileEntries, workspaceFilesOf, type WorkspaceDirectoryListing } from './files.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
+import { sessionToolsMessages } from './messages.ts'
 import './files.css'
 
 export function FilesScreen({ sessionId }: { sessionId: string }) {
@@ -18,6 +20,8 @@ export function FilesScreen({ sessionId }: { sessionId: string }) {
 }
 
 function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string }) {
+  const text = useMessages(sessionToolsMessages)
+  const locale = useLocale()
   const { remote, sessions, connection } = useDsh()
   // A fresh traced namespace must not restart reads and watches on each render.
   const api = useMemo(() => workspaceFilesOf(remote), [remote])
@@ -34,11 +38,11 @@ function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string 
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    if (!api) { setError('ファイルの一覧を利用できません。'); setLoading(false); return }
+    if (!api) { setError(text.listUnavailable); setLoading(false); return }
     void api.list(sessionId, directoryRequestPath(path), controller.signal).then(unwrapRemoteResult).then(value => {
       if (!controller.signal.aborted) setListing(value)
     }).catch(failure => {
-      if (!controller.signal.aborted) setError(remoteErrorMessage(failure, 'フォルダを読み込めませんでした。'))
+      if (!controller.signal.aborted) setError(remoteErrorMessage(failure, text.listFailed))
     }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [api, sessionId, path, revision, connectionState])
@@ -53,41 +57,41 @@ function DirectoryScreen({ sessionId, path }: { sessionId: string; path: string 
           if (controller.signal.aborted) break
           if (frame.kind === 'ready' || directoryChanged(frame.change, cwd, path)) refresh()
         }
-        if (!controller.signal.aborted) setWatchError('更新の通知が途切れました。読み直して確認できます。')
+        if (!controller.signal.aborted) setWatchError(text.watchInterrupted)
       } catch (failure) {
-        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, '更新を確認できません。読み直して確認できます。'))
+        if (!controller.signal.aborted) setWatchError(remoteErrorMessage(failure, text.watchUnavailable))
       }
     })()
     return () => controller.abort()
   }, [api, sessionId, path, cwd, connectionState])
 
   const currentPath = listing?.path ?? path
-  const crumbs = fileBreadcrumbs(currentPath)
-  return <PageScaffold title="ファイル" actions={<M3eIconButton aria-label="一覧を読み直す" disabled={loading} onClick={refresh}><Icon name="refresh" /></M3eIconButton>}>
+  const crumbs = fileBreadcrumbs(currentPath, text)
+  return <PageScaffold title={text.files} actions={<M3eIconButton aria-label={text.reloadList} disabled={loading} onClick={refresh}><Icon name="refresh" /></M3eIconButton>}>
     <div className="session-files">
-      <nav className="session-file-breadcrumbs" aria-label="現在のフォルダ">
+      <nav className="session-file-breadcrumbs" aria-label={text.currentFolder}>
         {crumbs.map((crumb, index) => <M3eAssistChip key={crumb.path} aria-current={index === crumbs.length - 1 ? 'location' : undefined}
           onClick={() => navigate(fileRoute(sessionId, 'files', crumb.path), { replace: true })}>
           {index === 0 && <Icon name="folder_open" slot="icon" />}{crumb.name}
         </M3eAssistChip>)}
       </nav>
-      <p className="session-file-hint">読み取り専用</p>
+      <p className="session-file-hint">{text.readOnly}</p>
       {watchError && <p role="status" className="session-file-notice">{watchError}</p>}
-      {error && <div role="alert" className="session-file-notice"><p>{error}</p><M3eButton variant="outlined" onClick={refresh}>もう一度読み込む</M3eButton></div>}
-      {loading && <p role="status" className="session-file-hint">読み込み中です…</p>}
-      {listing && <M3eActionList className="session-file-list" aria-label="フォルダの中身" aria-busy={loading}>
-        {sortFileEntries(listing.entries).map(entry => <M3eListAction key={`${entry.type}:${entry.name}`} onClick={() => {
+      {error && <div role="alert" className="session-file-notice"><p>{error}</p><M3eButton variant="outlined" onClick={refresh}>{text.reloadOnce}</M3eButton></div>}
+      {loading && <p role="status" className="session-file-hint">{text.loading}</p>}
+      {listing && <M3eActionList className="session-file-list" aria-label={text.folderContents} aria-busy={loading}>
+        {sortFileEntries(listing.entries, locale).map(entry => <M3eListAction key={`${entry.type}:${entry.name}`} onClick={() => {
           const child = childFilePath(currentPath, entry.name)
           navigate(fileRoute(sessionId, entry.type === 'directory' ? 'files' : 'file', child), { replace: entry.type === 'directory' })
         }}>
           <Icon name={entry.type === 'directory' ? 'folder' : fileKind(entry.name) === 'image' ? 'image' : 'description'} slot="leading" />
           <span className="session-file-name">{entry.name}</span>
-          <span slot="supporting-text">{entry.type === 'directory' ? 'フォルダ' : fileSize(entry.size)}</span>
+          <span slot="supporting-text">{entry.type === 'directory' ? text.directoryKind : fileSize(entry.size, locale, text)}</span>
           <Icon name="chevron_right" slot="trailing" />
         </M3eListAction>)}
       </M3eActionList>}
-      {listing && listing.entries.length === 0 && !loading && <p className="placeholder">このフォルダは空です。</p>}
-      {listing?.truncated && <p className="session-file-notice">項目が多いため、一部だけ表示しています。</p>}
+      {listing && listing.entries.length === 0 && !loading && <p className="placeholder">{text.folderEmpty}</p>}
+      {listing?.truncated && <p className="session-file-notice">{text.truncated}</p>}
     </div>
   </PageScaffold>
 }

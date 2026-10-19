@@ -1,4 +1,8 @@
 import type { RemoteResult, SessionJob } from '../../dsh/services.ts'
+import { sessionToolsMessages, type SessionToolsText } from './messages.ts'
+
+/** Japanese texts used when no dictionary is passed (non-React calls, tests). */
+const defaultText: SessionToolsText = sessionToolsMessages.ja
 
 /** Browser RPC shapes verified against the installed dsh-goal package. */
 export interface GoalRef { readonly id: string; readonly revision: number }
@@ -94,9 +98,9 @@ export async function performGoalOperation(
   return { ok: false, refreshed: false }
 }
 
-export function goalPhaseLabel(phase: GoalPhase, activation?: GoalActivation): string {
-  if (phase === 'active') return activation === 'disarmed' ? '停止中' : activation === 'armed' ? '進行中' : '状態未確認'
-  return { active: '進行中', paused: '一時停止', blocked: '行き詰まり', complete: '完了' }[phase]
+export function goalPhaseLabel(phase: GoalPhase, activation?: GoalActivation, text: SessionToolsText = defaultText): string {
+  if (phase === 'active') return activation === 'disarmed' ? text.goalPhaseStopping : activation === 'armed' ? text.goalPhaseRunning : text.goalPhaseUnknown
+  return { active: text.goalPhaseRunning, paused: text.goalPhasePaused, blocked: text.goalPhaseBlocked, complete: text.goalPhaseComplete }[phase]
 }
 
 export function goalPrimaryAction(goal: GoalSnapshot, activation?: GoalActivation): 'pause' | 'resume' | undefined {
@@ -119,22 +123,22 @@ export function sortJobs(jobs: readonly SessionJob[]): SessionJob[] {
   })
 }
 
-export function jobStatusLabel(status: SessionJob['status']): string {
-  return { running: '実行中', stopping: '停止中', completed: '完了', killed: '停止済み', failed: '失敗' }[status]
+export function jobStatusLabel(status: SessionJob['status'], text: SessionToolsText = defaultText): string {
+  return { running: text.jobStatusRunning, stopping: text.jobStatusStopping, completed: text.jobStatusCompleted, killed: text.jobStatusKilled, failed: text.jobStatusFailed }[status]
 }
 
 /** Kinds actually produced by DSH 0.2.1 (dsh-tool-bash/lib/index.js:395, dsh-tool-pwsh/lib/index.js:369,
     dsh-tool-workflow/lib/index.js:225, dsh-tool-terminal/lib/index.js:404). `subagent` no longer exists. */
-export function jobKindLabel(kind: string): string {
-  return kind === 'bash' ? 'シェル（bash）' : kind === 'pwsh' ? 'シェル（pwsh）'
-    : kind === 'workflow' ? 'ワークフロー' : kind === 'pty-send' ? '端末送信' : 'ジョブ'
+export function jobKindLabel(kind: string, text: SessionToolsText = defaultText): string {
+  return kind === 'bash' ? text.jobKindBash : kind === 'pwsh' ? text.jobKindPwsh
+    : kind === 'workflow' ? text.jobKindWorkflow : kind === 'pty-send' ? text.jobKindPtySend : text.jobKindOther
 }
 
-export function jobDurationLabel(job: SessionJob, now: number): string {
+export function jobDurationLabel(job: SessionJob, now: number, text: SessionToolsText = defaultText): string {
   const end = isLiveJob(job) ? now : job.finishedAt ?? job.startedAt
   const seconds = Math.max(0, Math.floor((end - job.startedAt) / 1000))
-  if (!Number.isFinite(seconds)) return '時間不明'
-  if (seconds < 60) return `${seconds} 秒`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
-  return `${Math.floor(seconds / 3600)} 時間 ${Math.floor(seconds % 3600 / 60)} 分`
+  if (!Number.isFinite(seconds)) return text.durationUnknown
+  if (seconds < 60) return text.durationSeconds(seconds)
+  if (seconds < 3600) return text.durationMinutesSeconds(Math.floor(seconds / 60), seconds % 60)
+  return text.durationHoursMinutes(Math.floor(seconds / 3600), Math.floor(seconds % 3600 / 60))
 }
