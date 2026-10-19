@@ -26,6 +26,7 @@ export const errorMessages = defineMessages({
   ja: {
     renderTitle: '画面を表示できませんでした',
     renderMessage: '思いがけない問題が起きました。読み直すと元に戻ることがあります。',
+    notFoundBarTitle: 'エラー',
     notFoundTitle: '画面が見つかりません',
     notFoundMessage: 'URL が古いか、間違っている可能性があります。',
     openFailedTitle: '会話を開けませんでした',

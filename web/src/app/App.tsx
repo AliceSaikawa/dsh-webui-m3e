@@ -25,7 +25,7 @@ function Frame() {
   return <div className="app-viewport" style={{ top: viewport.top, height: viewport.height, '--app-height': `${viewport.height}px` } as CSSProperties}>
     <ConversationSelection pathname={route.pathname} />
     <OverlayRouteScope path={`${route.pathname}${route.query.size ? `?${route.query.toString()}` : ''}`} />
-    <div ref={routeRef} className="route-layer" inert={overlays.length > 0}><EdgeSwipeBack>{route.definition?.render(route.params) ?? <PageScaffold title={error.notFoundTitle}><ErrorState icon="travel_explore" title={error.notFoundTitle} message={error.notFoundMessage} actions={[{ label: error.home, primary: true, onClick: () => navigate('/', { replace: true }) }]} /></PageScaffold>}</EdgeSwipeBack></div>
+    <div ref={routeRef} className="route-layer" inert={overlays.length > 0}><EdgeSwipeBack>{route.definition?.render(route.params) ?? <PageScaffold title={error.notFoundBarTitle}><ErrorState icon="travel_explore" title={error.notFoundTitle} message={error.notFoundMessage} actions={[{ label: error.home, primary: true, onClick: () => navigate('/', { replace: true }) }]} /></PageScaffold>}</EdgeSwipeBack></div>
     <OverlayHost />
   </div>
 }

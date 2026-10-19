@@ -36,9 +36,10 @@ label { display: block; margin-block: 8px; }
 .app-viewport { position: fixed; left: 0; right: 0; height: 100dvh; overflow: hidden; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); }
 .route-layer, .edge-swipe-root { height: 100%; min-height: 0; }
 .error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 220px; text-align: center; color: var(--md-sys-color-on-surface, #1d1b20); padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
-.error-state-full { position: fixed; inset: 0; overflow: auto; background: var(--md-sys-color-surface, #fef7ff); }
+.error-state-full { position: fixed; inset: 0; overflow: auto; display: flex; flex-direction: column; background: var(--md-sys-color-surface, #fef7ff); }
+.error-state-full > .error-state { flex: 1; }
 .error-state-icon { font-size: 48px; color: var(--md-sys-color-error, #b3261e); }
-.error-state h2 { margin: 0; }
+.error-state h1, .error-state h2 { margin: 0; font-size: 1.5em; font-weight: bold; }
 .error-state p { margin: 0; color: var(--md-sys-color-on-surface-variant, #49454f); }
 .error-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
 .error-state-actions button { min-height: 48px; padding: 10px 24px; border: 1px solid var(--md-sys-color-outline, #79747e); border-radius: 999px; background: transparent; color: var(--md-sys-color-primary, #6750a4); }

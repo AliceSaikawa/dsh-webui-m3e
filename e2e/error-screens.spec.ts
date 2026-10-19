@@ -8,7 +8,8 @@ test.describe('描画の失敗', () => {
 
   test('93a 描画エラーは理由と読み直し・一覧に戻るを出す', async ({ page }) => {
     await page.goto('/m3e/?mock#/__mock/render-error')
-    await expect(page.getByRole('heading', { name: '画面を表示できませんでした' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '画面を表示できませんでした', level: 1 })).toBeVisible()
+    await expect(page.getByRole('main').getByRole('heading', { name: '画面を表示できませんでした' })).toBeVisible()
     await expect(page.getByRole('button', { name: '読み直す', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '一覧に戻る', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '一覧に戻る', exact: true }).click()
@@ -19,7 +20,9 @@ test.describe('描画の失敗', () => {
 
 test('93b 存在しない画面は理由と一覧に戻るを出す', async ({ page }) => {
   await visit(page, '/__mock/not-found')
-  await expect(page.getByRole('heading', { name: '画面が見つかりません' }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '画面が見つかりません' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '画面が見つかりません', level: 2 })).toHaveCount(1)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('エラー')
   await expect(page.getByText('URL が古いか、間違っている可能性があります。', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '一覧に戻る', exact: true }).click()
   await expect(page).toHaveURL(/#\/$/)
