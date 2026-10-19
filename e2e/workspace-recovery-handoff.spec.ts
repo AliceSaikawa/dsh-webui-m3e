@@ -20,7 +20,7 @@ type TestWindow = Window & {
 
 async function prepare(page: Page, fail: boolean) {
   await page.addInitScript(({ sessionId, workspaceId, stale, fail }) => {
-    const attachment = JSON.stringify({ workspaceId, sessionId })
+    const attachment = JSON.stringify({ workspaceId, sessionId, baseline: { text: stale } })
     for (const key of [`new:${workspaceId}`, `session:${sessionId}`]) {
       localStorage.setItem(`m3e:composer:${key}`, stale)
       localStorage.setItem(`m3e:composer:${key}:workspaceAttachment`, attachment)
@@ -118,7 +118,7 @@ test('79b 再試行が再び失敗しても、Host が作った会話で下書�
   const created = await movedToAnotherSession(page, recordedId)
   // The failed attach reports the identity the Host made and leaves it unregistered,
   // so that is the identity the next retry names.
-  await expect(await storedRetryTarget(page)).toEqual({ workspaceId, sessionId: created })
+  await expect(await storedRetryTarget(page)).toEqual({ workspaceId, sessionId: created, baseline: { text: stale } })
   await expect(retrying(page)).toHaveCount(0)
   await expect(unfinished(page)).toBeVisible()
   await expect(input(page)).toBeEnabled()
@@ -127,7 +127,7 @@ test('79b 再試行が再び失敗しても、Host が作った会話で下書�
   await button(page, 'ワークスペースへ登録し直す').click()
   const second = await movedToAnotherSession(page, created)
   await expect.poll(() => attachCalls(page)).toBe(2)
-  await expect(await storedRetryTarget(page)).toEqual({ workspaceId, sessionId: second })
+  await expect(await storedRetryTarget(page)).toEqual({ workspaceId, sessionId: second, baseline: { text: stale } })
   await expect(unfinished(page)).toBeVisible()
   await expect(input(page)).toBeEnabled()
   await expect(input(page)).toHaveValue(stale)

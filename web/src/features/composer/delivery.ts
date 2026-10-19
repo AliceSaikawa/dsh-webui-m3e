@@ -4,7 +4,7 @@ import { requireMatched, type composerApi, type PlanProjection } from './api.ts'
 import { clearDraft, readDraft, writeDraft } from './drafts.ts'
 import { submitMessage } from './submission.ts'
 import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-status.ts'
-import { clearWorkspaceOrigin, pendingWorkspaceAttachment, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
+import { attachmentBaseline, clearWorkspaceOrigin, pendingWorkspaceAttachment, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
 import { modelApplyController } from './model-picker.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -140,7 +140,8 @@ async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: D
       const attachment = attachmentFailure
       if (attachment) {
         createdId = attachment.sessionId
-        sending = { ...sending, workspaceAttachment: attachment }
+        // The failure-time input lets a later retry tell which screen the user edited meanwhile.
+        sending = { ...sending, workspaceAttachment: { ...attachment, baseline: sending.workspaceAttachment?.baseline ?? attachmentBaseline(sending) } }
       }
     }
     if (createdId && sending.workspaceAttachment) sessionReady = await sessionIsAddressable(sessions, createdId)

@@ -514,7 +514,9 @@ test('wrapped partial-creation failure recovers the existing identity and keeps 
   assert.deepEqual(retained.model, model)
   assert.equal(retained.permission, 'limited')
   assert.equal(retained.plan, true)
-  assert.deepEqual(retained.workspaceAttachment, { workspaceId: 'partial', sessionId: h.id })
+  // The failure records the body, images and choices a retry must compare against.
+  assert.deepEqual(retained.workspaceAttachment, { workspaceId: 'partial', sessionId: h.id,
+    baseline: { text: 'まだ送っていない内容', input: { images: [image], model, permission: 'limited', plan: true } } })
   assert.match(retained.error ?? '', /まだ送信されていません/u)
   assert.deepEqual(await deliverDraft(h.existing()), {})
   assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 1)
@@ -530,7 +532,8 @@ test('a recovered ID remains on the new screen while its scope is missing, and r
   assert.equal(first.sessionReady, false)
   assert.equal(first.createdId, h.id)
   assert.ok(h.calls.includes('refresh'))
-  assert.deepEqual(readDraft(h.key).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id })
+  assert.deepEqual(readDraft(h.key).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id,
+    baseline: { text: '一覧を待つ', input: { images: [image], model: undefined, permission: 'limited', plan: undefined } } })
   assert.deepEqual(readDraft(h.key).images, [image])
   assert.equal((await deliverDraft(h.options)).sessionReady, false)
   assert.equal(h.calls.filter(call => call.startsWith('create:')).length, 1)
@@ -540,7 +543,8 @@ test('a recovered ID remains on the new screen while its scope is missing, and r
   assert.equal(h.prompts.length, 1)
   assert.deepEqual(readDraft(h.key), { text: '', images: [] })
   assert.equal(readDraft(`session:${h.id}`).text, '')
-  assert.deepEqual(readDraft(`session:${h.id}`).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id })
+  assert.deepEqual(readDraft(`session:${h.id}`).workspaceAttachment, { workspaceId: 'partial-delayed', sessionId: h.id,
+    baseline: { text: '一覧を待つ', input: { images: [image], model: undefined, permission: 'limited', plan: undefined } } })
 })
 
 test('unknown failures and missing published IDs remain creation failures without inventing an identity', async () => {
