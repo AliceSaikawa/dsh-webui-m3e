@@ -19,7 +19,8 @@ DeepSeek Harness（DSH）のスマートフォン向け Web 画面を、Material
 - 完了の前に `pnpm typecheck`、`pnpm test`、`pnpm build` を通します。
 - 段階 1 と 2 では DSH を起動しません。確かめるのは `?mock` の偽データだけです。
 - 拒否された操作や禁じられた操作を、別のコマンドや別のツールで回避しません。止めて、設計書の「実装メモ」に書いて報告します。
-- `git push --force` と `git reset --hard` は使いません。
+- worktree・ブランチ・コミット・PR・マージは [docs/git-workflow.md](docs/git-workflow.md) に従います。
+- `--force-with-lease` を付けない `git push --force` と、`git reset --hard` は使いません。`--force-with-lease` は自分のブランチには許可なしで使え、人と共有しているブランチでは許可を取ります（詳しくは docs/git-workflow.md の §1）。
 
 ## コマンド
 
