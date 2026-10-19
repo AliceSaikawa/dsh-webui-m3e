@@ -34,6 +34,16 @@ test('visible sessions follow workspace order and omit archives, missing IDs, an
   assert.deepEqual(current.sessionIds, ['second', 'missing', 'child', 'archived', 'first', 'toString'])
 })
 
+test('visible sessions take the archived filter into account', () => {
+  const byId = { first: session('first'), archived: session('archived'), child: session('child', { origin: 'subagent', parentId: 'first' }) }
+  const current = workspace('current', ['first', 'archived', 'missing', 'child'])
+  assert.deepEqual(visibleSessions(current, byId, ['archived'], false, 'show').map(item => item.id), ['first', 'archived'])
+  assert.deepEqual(visibleSessions(current, byId, ['archived'], false, 'only').map(item => item.id), ['archived'])
+  assert.deepEqual(visibleSessions(current, byId, ['archived'], true, 'only').map(item => item.id), ['archived'])
+  assert.deepEqual(visibleSessions(current, byId, [], false, 'only'), [])
+  assert.deepEqual(visibleSessions(current, byId, ['archived'], false, 'default').map(item => item.id), ['first'])
+})
+
 test('pinned rows move to the front in pin order, ignoring unknown IDs and keeping the rest in place', () => {
   const rows = [session('a'), session('b'), session('c'), session('d')]
   const ordered = pinnedFirst(rows, ['c', 'a'])
@@ -86,9 +96,12 @@ test('model icons use DeepSeek identity, a Unicode initial, or a generic fallbac
 })
 
 test('stored preferences accept only the supported values and tolerate damaged JSON', () => {
-  assert.deepEqual(parseHomePreferences('{"workspaceId":"saved","showSubagents":true}'), { workspaceId: 'saved', showSubagents: true })
+  assert.deepEqual(parseHomePreferences('{"workspaceId":"saved","showSubagents":true}'), { workspaceId: 'saved', showSubagents: true, archivedFilter: 'default' })
+  assert.deepEqual(parseHomePreferences('{"archivedFilter":"show"}').archivedFilter, 'show')
+  assert.equal(parseHomePreferences('{"archivedFilter":"only"}').archivedFilter, 'only')
+  assert.equal(parseHomePreferences('{"archivedFilter":"other"}').archivedFilter, 'default')
   for (const value of [null, 'broken', 'null', '[]', 'false', '{"workspaceId":12,"showSubagents":"true"}']) {
-    assert.deepEqual(parseHomePreferences(value), { workspaceId: null, showSubagents: false })
+    assert.deepEqual(parseHomePreferences(value), { workspaceId: null, showSubagents: false, archivedFilter: 'default' })
   }
 })
 
@@ -100,27 +113,30 @@ test('preferences persist both choices, reuse unchanged snapshots, and notify on
   const unsubscribe = store.subscribe(() => { notifications++ })
   const initial = store.getSnapshot()
   assert.equal(store.getSnapshot(), initial)
-  assert.deepEqual(initial, { workspaceId: 'saved', showSubagents: true })
+  assert.deepEqual(initial, { workspaceId: 'saved', showSubagents: true, archivedFilter: 'default' })
   store.setCurrentWorkspace('next')
   store.setShowSubagents(false)
   store.setShowSubagents(false)
-  assert.equal(notifications, 2)
-  assert.deepEqual(JSON.parse(saved!), { workspaceId: 'next', showSubagents: false })
+  store.setArchivedFilter('show')
+  store.setArchivedFilter('show')
+  assert.equal(notifications, 3)
+  assert.deepEqual(JSON.parse(saved!), { workspaceId: 'next', showSubagents: false, archivedFilter: 'show' })
   saved = '{"workspaceId":"another-tab","showSubagents":true}'
   store.refresh()
-  assert.deepEqual(store.getSnapshot(), { workspaceId: 'another-tab', showSubagents: true })
+  assert.deepEqual(store.getSnapshot(), { workspaceId: 'another-tab', showSubagents: true, archivedFilter: 'default' })
   unsubscribe()
   store.setCurrentWorkspace(null)
-  assert.equal(notifications, 3)
+  assert.equal(notifications, 4)
 })
 
 test('blocked device storage does not prevent changing or retaining local preferences', () => {
   const store = createHomePreferencesStore(() => { throw new Error('保存できません') })
-  assert.deepEqual(store.getSnapshot(), { workspaceId: null, showSubagents: false })
+  assert.deepEqual(store.getSnapshot(), { workspaceId: null, showSubagents: false, archivedFilter: 'default' })
   store.setCurrentWorkspace('current')
   store.setShowSubagents(true)
+  store.setArchivedFilter('only')
   store.refresh()
-  assert.deepEqual(store.getSnapshot(), { workspaceId: 'current', showSubagents: true })
+  assert.deepEqual(store.getSnapshot(), { workspaceId: 'current', showSubagents: true, archivedFilter: 'only' })
   const saved = '{"workspaceId":"saved","showSubagents":false}'
   const writeBlocked = createHomePreferencesStore(() => ({ getItem: () => saved, setItem: () => { throw new Error('保存できません') } }))
   writeBlocked.setCurrentWorkspace('current')

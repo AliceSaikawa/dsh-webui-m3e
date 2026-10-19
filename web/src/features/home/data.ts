@@ -4,16 +4,23 @@ export function selectWorkspace(items: readonly WorkspaceView[], savedId?: strin
   return items.find(item => item.workspaceId === savedId) ?? items[0]
 }
 
+export type ArchivedFilter = 'default' | 'show' | 'only'
+
 export function visibleSessions(
   workspace: WorkspaceView | undefined,
   byId: Record<string, SessionSummary>,
   archived: readonly string[],
   showSubagents: boolean,
+  archivedFilter: ArchivedFilter = 'default',
 ): SessionSummary[] {
   const archivedIds = new Set(archived)
   return (workspace?.sessionIds ?? []).flatMap(id => {
     const session = Object.hasOwn(byId, id) ? byId[id] : undefined
-    return session && !archivedIds.has(id) && (showSubagents || session.origin !== 'subagent') ? [session] : []
+    if (!session || (!showSubagents && session.origin === 'subagent')) return []
+    const isArchived = archivedIds.has(id)
+    if (archivedFilter === 'default' && isArchived) return []
+    if (archivedFilter === 'only' && !isArchived) return []
+    return [session]
   })
 }
 
