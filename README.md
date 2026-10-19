@@ -16,6 +16,9 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 
 ## Quick Start
 
+> [!IMPORTANT]
+> いま配布している 0.0.8 は **DSH 0.2.0-rc.2 用**です。**DSH 0.2.1-rc.2 に対応したリリースはまだありません**（次のリリースから対応します）。0.0.8 は DSH 0.2.1-rc.2 では動きません。DSH 0.2.0-rc.2 を使い続ける場合の戻し先も 0.0.8 です。
+
 1. DSH が動いている端末で、次のコマンドを実行します。
 
    ```bash
@@ -45,8 +48,15 @@ M3E は npm レジストリに公開していないため、名前だけの `add
 
 ## 必要なもの
 
-- DeepSeek Harness **0.2.0-rc.2**
-  - この版だけに対応します。0.1.5 系への対応は外しました。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
+- DeepSeek Harness **0.2.1-rc.2**
+  - 0.2.0-rc.2 と 0.1.5 系への対応は外しました。0.2.0-rc.2 を使い続ける場合の配布版は 0.0.8 です。確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
+  - DSH 本体を入れるときは版を付けます。npm の `latest` タグは 0.2.0-rc.2 のままで、版を付けないと対応版とずれます（`@next` は将来指す版が変わるので使いません）。
+
+    ```bash
+    npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+    ```
+
+    手元の版は `dsh --version` で確かめられます。DSH 0.2.0-rc.2 を使う場合は `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` とします。
 - DSH と pnpm の要件を満たす Node.js、および PATH 上の pnpm（通常の npm インストール版 DSH CLI が使います）。
   - DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方を満たす Node を用意してください。
 - 動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 です。依存側の下限宣言を M3E の動作保証の下限とはしていません。

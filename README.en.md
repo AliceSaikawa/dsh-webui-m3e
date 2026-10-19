@@ -18,6 +18,9 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 
 ## Quick Start
 
+> [!IMPORTANT]
+> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. **No release supports DSH 0.2.1-rc.2 yet** (support arrives with the next release). 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
+
 1. Run this on the machine running DSH:
 
    ```bash
@@ -47,8 +50,15 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness **0.2.0-rc.2**
-  - Only this version is supported. Support for the 0.1.5 series has been removed. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
+- DeepSeek Harness **0.2.1-rc.2**
+  - Support for 0.2.0-rc.2 and the 0.1.5 series has been removed. If you stay on 0.2.0-rc.2, the distributed release is 0.0.8. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
+  - Install DSH itself with an explicit version. The npm `latest` tag is still 0.2.0-rc.2, so installing without a version gets a release this plugin does not support (do not use `@next`: the version it points to changes over time).
+
+    ```bash
+    npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+    ```
+
+    Check your installed version with `dsh --version`. For DSH 0.2.0-rc.2, run `npm i -g @deepseek-ai/dsh@0.2.0-rc.2`.
 - Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (used by the regular npm-installed DSH CLI).
   - DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
 - The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.

@@ -201,19 +201,21 @@ test('S5 設定の35入力と辞書キー2入力を実DSHへ書き込み受理�
   expect(outcomes).toEqual(expectedWrites(cases))
 })
 
-test('S5 モデルと提供元は実物の一覧を表示し環境由来のキーは変更できない', async ({ page, integration }) => {
+test('S5 モデルと提供元は実物の一覧を表示し環境由来のキーも変更できる', async ({ page, integration }) => {
   await setup(page, integration.host, '/settings/models')
   const model = page.locator('m3e-select[aria-label="モデル"]')
   await expect(model).toHaveJSProperty('disabled', false)
   await model.click()
-  await expect(page.locator('m3e-option').filter({ hasText: /^DeepSeek \/ DeepSeek-V41-Flash$/ }).last()).toBeVisible()
+  await expect(page.locator('m3e-option').filter({ hasText: /^DeepSeek \/ DeepSeek-V4\.1-Flash$/ }).last()).toBeVisible()
   await expect(page.locator('m3e-option').filter({ hasText: /^DeepSeek \/ DeepSeek-V4-Pro$/ }).last()).toBeVisible()
   await page.keyboard.press('Escape')
   await page.goto(`${integration.host.origin}/m3e/#/settings/providers`)
   const provider = action(page, /DeepSeek/)
   await expect(provider).toHaveCount(1)
-  await expect(provider).toContainText('API キー：登録済み（変更できません）')
-  await expect(provider).toHaveJSProperty('disabled', true)
+  // 0.2.1-rc.2 resolves a saved value ahead of the environment, so the key an
+  // environment layer supplies stays writable and the row stays open to change.
+  await expect(provider).toContainText('API キー：登録済み')
+  await expect(provider).toHaveJSProperty('disabled', false)
   await expect(page.getByText('DeepSeek Account', { exact: true })).toHaveCount(0)
   await expect(page.locator('.settings-namespace')).toHaveCount(0)
 })

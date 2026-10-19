@@ -17,6 +17,16 @@ export function visibleSessions(
   })
 }
 
+export function pinnedFirst(rows: readonly SessionSummary[], pinnedIds: readonly string[]): { rows: SessionSummary[]; pinned: ReadonlySet<string> } {
+  const byId = new Map(rows.map(row => [row.id, row]))
+  const ordered = [...new Set(pinnedIds)].flatMap(id => {
+    const row = byId.get(id)
+    return row ? [row] : []
+  })
+  const pinned = new Set(ordered.map(row => row.id))
+  return { rows: [...ordered, ...rows.filter(row => !pinned.has(row.id))], pinned }
+}
+
 export function formatUpdatedAt(timestamp: number, now = new Date()): string {
   const date = new Date(timestamp)
   if (!Number.isFinite(timestamp) || Number.isNaN(date.getTime())) return '日時不明'

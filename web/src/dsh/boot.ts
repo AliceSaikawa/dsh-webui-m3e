@@ -9,6 +9,7 @@
 import * as cordis from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import * as clientStore from '@deepseek-ai/dsh-client-store'
+import * as zod from 'zod'
 import { type BootGraph, narrowBootGraph } from './boot-graph.ts'
 import { missingContractMembers } from './contract.ts'
 import { classifyBootFailure } from '../../../src/shared/dsh-compat.ts'
@@ -46,6 +47,7 @@ export const TRANSPORT_PLUGINS = [
 const STATIC_MODULES: Record<string, unknown> = {
   '@deepseek-ai/cordis': cordis,
   '@deepseek-ai/dsh-client-store': clientStore,
+  zod,
 }
 
 /**
