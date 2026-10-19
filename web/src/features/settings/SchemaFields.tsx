@@ -4,6 +4,7 @@ import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eOption } from '@m3e/react/option'
 import { M3eFormField } from '@m3e/react/form-field'
+import { showSnackbar } from '../../app/overlay/index.ts'
 import { formatSetting, selectFieldState, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
 import { settingFieldAccess } from './field-access.ts'
@@ -69,7 +70,14 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
     return () => {
       // StrictMode replays this cleanup right after mounting; defer the leave so
       // the next setup cancels it, while a real unmount still saves the input.
-      leaveTimer.current = setTimeout(() => { void input.leave() }, 0)
+      leaveTimer.current = setTimeout(() => {
+        void input.leave().then(() => {
+          const left = input.getSnapshot()
+          if (left.dirty || store.getSnapshot().fieldErrors[fieldKey(namespace.ns, field.path)]) {
+            showSnackbar(`『${field.label}』を保存できませんでした。設定を開き直して確かめてください。`)
+          }
+        })
+      }, 0)
     }
   }, [input])
   function flush() { return input.flush() }

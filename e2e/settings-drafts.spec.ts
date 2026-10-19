@@ -1,4 +1,4 @@
-import { test, expect, visit, action } from './helpers'
+import { test, expect, visit, action, nav } from './helpers'
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/src/dsh/mock/context.ts*', async route => {
@@ -155,6 +155,8 @@ test('#126 離脱時の保存が失敗しても入力を保ち、開き直して
   await expect(page.getByRole('heading', { name: '設定', exact: true })).toBeVisible()
   await page.clock.runFor(1000)
   expect(await page.evaluate(() => (window as any).__settingsDrafts.calls.length)).toBe(1)
+  await expect(page.locator('m3e-snackbar:popover-open').last())
+    .toContainText('『待機時間』を保存できませんでした。設定を開き直して確かめてください。')
   await action(page, 'そのほか').click()
   await expect(field).toHaveValue('80')
   await expect(page.getByText('試験用の拒否', { exact: true })).toBeVisible()
@@ -163,6 +165,30 @@ test('#126 離脱時の保存が失敗しても入力を保ち、開き直して
     const result = await (window as any).__settingsDrafts.ctx.remote.settings.describe()
     return result.value.namespaces.find((row: any) => row.ns === 'example-extension').value.timeout
   })).toBe(80)
+})
+
+test('#126 設定画面を閉じている間の切断と再接続を store が受け取り、開き直すと保存できる', async ({ page }) => {
+  await visit(page, '/settings')
+  await action(page, 'そのほか').click()
+  const field = page.getByLabel('待機時間', { exact: true })
+  await expect(field).toHaveValue('45')
+  await page.evaluate(() => { (window as any).__settingsDrafts.delayValue = 80 })
+  await field.fill('80'); await field.press('Tab')
+  await expect.poll(() => page.evaluate(() => Boolean((window as any).__settingsDrafts.release))).toBe(true)
+  await page.evaluate(() => { location.hash = '#/' })
+  await expect(page.getByLabel('新しいセッション', { exact: true })).toBeVisible()
+  await page.evaluate(() => { (window as any).__settingsDrafts.ctx.mock.setConnectionState('disconnected') })
+  await page.evaluate(() => { (window as any).__settingsDrafts.ctx.mock.setConnectionState('connected') })
+  await nav(page, '設定').click()
+  await action(page, 'そのほか').click()
+  const reopened = page.getByLabel('待機時間', { exact: true })
+  await expect(reopened).toBeEnabled()
+  await expect(page.locator('.settings-saving')).toHaveCount(0)
+  await reopened.fill('90'); await reopened.press('Tab')
+  await expect.poll(() => page.evaluate(async () => {
+    const result = await (window as any).__settingsDrafts.ctx.remote.settings.describe()
+    return result.value.namespaces.find((row: any) => row.ns === 'example-extension').value.timeout
+  })).toBe(90)
 })
 
 test('#46 保存拒否のエラーは入力を元に戻すと消え、外部更新にも残らない', async ({ page }) => {
