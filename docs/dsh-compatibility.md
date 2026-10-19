@@ -143,10 +143,6 @@ Issue #128 の各担当の報告に基づきます。根拠は `tmp/dsh-integrat
 
 ピン留めは `workspaces.pinSession` / `unpinSession` と `workspaces.list` の `pinnedSessionIds`（新しい順、全ワークスペース共通）で扱います。Host の購読で更新されるので、他の Client の変更も届きます。アーカイブ済みはピン留めできず、アーカイブでピン留めが外れます。偽データも同じ規則です。実 DSH では未確認です。
 
-### ピン留め（全ワークスペース共通）
-
-ピン留めは `workspaces.pinSession` / `unpinSession` と `workspaces.list` の `pinnedSessionIds`（新しい順、全ワークスペース共通）で扱います。Host の購読で更新されるので、他の Client の変更も届きます。アーカイブ済みはピン留めできず、アーカイブでピン留めが外れます。偽データも同じ規則です。実 DSH では未確認です。
-
 ### 総点検で分かった本体の不具合
 
 偽物が実物より寛容なために見逃していた問題と、実 DSH 試験で見つかった問題です。修正の取り込み状況を分けて記します。
