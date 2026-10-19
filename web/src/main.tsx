@@ -8,6 +8,7 @@ import { initializeRouter } from './app/router.ts'
 import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
 import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
 import { bootMessages, errorMessages } from './app/messages.ts'
+import { applyStoredTheme } from './app/theme/index.ts'
 import { markTabShowedM3e } from '../../src/shared/ui-choice.ts'
 
 // Mark the tab before any boot work, so even a failed boot marks the tab.
@@ -18,6 +19,7 @@ try {
   // The mark is optional; boot continues without it.
 }
 
+applyStoredTheme()
 startLocale()
 const element = document.getElementById('app')!
 

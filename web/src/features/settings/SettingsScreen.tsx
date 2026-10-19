@@ -3,8 +3,8 @@ import { M3eActionList, M3eListAction } from '@m3e/react/list'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { TabScaffold } from '../../app/shell/TabScaffold.tsx'
 import { navigate } from '../../app/router.ts'
-import { useAppearance } from '../../app/theme/index.ts'
-import { appearanceLabels, confirmClassic, openAppearance } from './AppearanceSheet.tsx'
+import { useAppearance, useThemeColor } from '../../app/theme/index.ts'
+import { appearanceLabels, confirmClassic, openAppearance, themeColorLabel } from './AppearanceSheet.tsx'
 import { groupNamespaces, pageSummary, settingsPages } from './schema.ts'
 import { useSettings } from './use-settings.ts'
 import { useProviderSummary } from './use-provider-summary.ts'
@@ -21,6 +21,7 @@ export function SettingsStatus({ state, reload }: { state: SettingsState; reload
 
 export function SettingsScreen() {
   const appearance = useAppearance()
+  const color = useThemeColor()
   const { state, store } = useSettings()
   const providers = useProviderSummary()
   const groups = groupNamespaces(state.namespaces)
@@ -35,7 +36,7 @@ export function SettingsScreen() {
         </M3eListAction>
         <M3eListAction onClick={openAppearance}>
           <span slot="leading"><Icon name="dark_mode" /></span>外観
-          <span slot="supporting-text">{appearanceLabels[appearance]}</span>
+          <span slot="supporting-text">{appearanceLabels[appearance]}・{themeColorLabel(color)}</span>
           <span slot="trailing"><Icon name="chevron_right" /></span>
         </M3eListAction>
       </M3eActionList>
