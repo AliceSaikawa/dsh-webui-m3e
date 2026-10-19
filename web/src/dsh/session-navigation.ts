@@ -15,7 +15,9 @@ function refresh(sessions: Pick<ISessions, 'list' | 'refreshProjections'>, id: s
 export function subagentCatalogAddress(list: SessionListState, parentSessionId: string, childSessionId: string): SubagentAddress | undefined {
   const projection = list.projectionsBySession[parentSessionId]
   if (!projection || projection.state === 'error' || projection.state === 'loading') return undefined
+  // 'migration-required' keeps cached values applied, so the catalog is still readable here.
   const entry = projection.values.subagentCatalog?.find(value => value.id === childSessionId)
+  // The client library does not address external children from the catalog either (manager.js:92).
   if (entry?.mode !== 'one-shot' && entry?.mode !== 'continuable') return undefined
   return { parentSessionId, childSessionId, mode: entry.mode }
 }

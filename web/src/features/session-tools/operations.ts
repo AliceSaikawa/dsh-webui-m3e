@@ -123,8 +123,11 @@ export function jobStatusLabel(status: SessionJob['status']): string {
   return { running: '実行中', stopping: '停止中', completed: '完了', killed: '停止済み', failed: '失敗' }[status]
 }
 
+/** Kinds actually produced by DSH 0.2.1 (dsh-tool-bash/lib/index.js:395, dsh-tool-pwsh/lib/index.js:369,
+    dsh-tool-workflow/lib/index.js:225, dsh-tool-terminal/lib/index.js:404). `subagent` no longer exists. */
 export function jobKindLabel(kind: string): string {
-  return kind === 'bash' ? 'bash' : kind === 'subagent' ? 'サブエージェント' : 'ジョブ'
+  return kind === 'bash' ? 'シェル（bash）' : kind === 'pwsh' ? 'シェル（pwsh）'
+    : kind === 'workflow' ? 'ワークフロー' : kind === 'pty-send' ? '端末送信' : 'ジョブ'
 }
 
 export function jobDurationLabel(job: SessionJob, now: number): string {

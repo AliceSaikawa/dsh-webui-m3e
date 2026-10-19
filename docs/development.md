@@ -36,7 +36,7 @@ pnpm test        # 既存のテストと、ルーター・承認/質問・セッ
 pnpm typecheck
 pnpm build       # dist/（M3E の画面）、lib/index.js（サーバー側）、lib/client.js（今の画面に入る部品）
 pnpm exec playwright test -c e2e/playwright.config.ts   # ?mock の画面。専用 Vite を自動で起動
-env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts   # 実 DSH と偽の LLM
+env M3E_DSH_VERSION=0.2.1-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts   # 実 DSH と偽の LLM
 ```
 
 ## 試験の使い分け
@@ -67,10 +67,10 @@ pnpm exec playwright test -c tmp/e2e-alt-port.config.ts
 期限つき質問の spec は `e2e-dsh/timed-questions-fixtures.ts` を使います。`startDsh(llm.url, { timedQuestionSeconds: 2 })` が隔離ホームの `cordis.patch.yml` に専用 preset を置き、`dsh-tool-ask-user` の `mode: 'timed'` と `timeout: 2` を起動前に設定します。この項目は公開設定ではなく、設定 RPC からの変更ではありません。通常の legacy 質問とは別の Host を使い、追加の環境変数は不要です。全体実行にも含まれ、対象だけなら次のように実行します。
 
 ```bash
-env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts e2e-dsh/timed-questions.spec.ts e2e-dsh/timed-questions-hidden.spec.ts e2e-dsh/timed-questions-race.spec.ts
+env M3E_DSH_VERSION=0.2.1-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts e2e-dsh/timed-questions.spec.ts e2e-dsh/timed-questions-hidden.spec.ts e2e-dsh/timed-questions-race.spec.ts
 ```
 
-`fixture-contract.spec.ts` は偽記録と不正入力を、実物の V4・Session・commands・compaction の検査関数で照合します。この spec は既定の `tmp/dsh-integration/dsh-<版>/` から関数を読み込むため、`M3E_DSH_DIR` を指定しても、全体実行には既定の場所に同じ版が必要です。Host 上で全 fixture の会話を生成したという確認ではありません。
+`fixture-contract.spec.ts` は偽記録と不正入力を、実物の V4 admission・V4 restorer（relationships）・Session・compaction の payload semantics の検査関数で照合します。0.2.1-rc.2 では `dsh-commands` と `dsh-compaction` の `invariant.js` が無くなったため、compaction の payload は `dsh-session-format-v0-to-v1` の検査を借りています。この spec は既定の `tmp/dsh-integration/dsh-<版>/` から関数を読み込むため、`M3E_DSH_DIR` を指定しても、全体実行には既定の場所に同じ版が必要です。Host 上で全 fixture の会話を生成したという確認ではありません。
 
 **フォルダ選択の方式に注意してください。** macOS / Windows の loopback 起動では、Host が OS のダイアログを使う `native` を選ぶ場合があります。統合試験は SSH 起動の印で `browse` を選び、ブラウザのフォルダ一覧を操作します。実際に SSH 接続するわけではなく、bind は `127.0.0.1` のままです。この構成では open-in-app の候補が空になるため、native のフォルダ選択や外部アプリ起動の確認には使えません。
 
@@ -96,7 +96,7 @@ DSH に入れる手順は README の「Quick Start」にあります。
 
 ## 配布
 
-当面は **GitHub Releases の添付 tgz の URL** で配ります。パッケージ名は `dsh-webui-m3e`、版は **0.0.8**、対応する DSH は **0.2.0-rc.2 のみ**です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開と CI の追加は行っていません。
+当面は **GitHub Releases の添付 tgz の URL** で配ります。公開済みの版は `dsh-webui-m3e` の **0.0.8**（当時の対応 DSH は **0.2.0-rc.2 のみ**）です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。現在の main は DSH **0.2.1-rc.2** に対応していますが、この版のリリースはまだ出していません（**次のリリースから対応**）。npm 公開と CI の追加は行っていません。
 
 **2026-10-05 に v0.0.8 をリリースしました。** 指示役が PR #20 を通常のマージで取り込み、main の先頭 `d00515e0776f46608a5c3ffe70eb529974ecf744` で確認を通した後、同じコミットを対象にタグ `v0.0.8` と [GitHub Release](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を作成しました。添付は pnpm で作った `dsh-webui-m3e-0.0.8.tgz`（4,465,060 バイト）、SHA-256 は `1d77d0ac8cc85333c1937927f879d5c83774c00ee3519080f584f7120b9bae24` です。
 
@@ -488,8 +488,8 @@ pnpm test
 pnpm build
 pnpm run check:pack
 pnpm exec playwright test -c e2e/playwright.config.ts --global-timeout=600000
-env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
-env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
+env M3E_DSH_VERSION=0.2.1-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
+env M3E_DSH_VERSION=0.2.1-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts --global-timeout=600000
 pnpm pack --pack-destination tmp/release
 node scripts/check-pack.ts "tmp/release/dsh-webui-m3e-$M3E_RELEASE_VERSION.tgz"
 mkdir -p tmp/release-npm
@@ -515,13 +515,13 @@ export default {
 すべての確認後、題名は `M3E v<版>` とします。説明は `tmp/release-notes.md` に次の形で保存します。版と URL は対象の版に揃え、作者名・メール・ローカルパス・操作ログなどの個人情報は書きません。
 
 ```markdown
-DSH 0.2.0-rc.2 向けのビルド済み Web UI プラグインです。
+DSH 0.2.1-rc.2 向けのビルド済み Web UI プラグインです。
 
 - ソース取得・ビルド・version の手編集は不要です。
-- 導入: `dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz`
+- 導入: `dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<版>/dsh-webui-m3e-<版>.tgz`
 - 更新・旧版への復帰後は、対象プロファイルの Host を再起動してください。
 - 本物の LLM と iPhone Safari・ホーム画面の Web アプリ、Desktop での動作は未確認です。
-- 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v0.0.8/README.md
+- 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v<版>/README.md
 ```
 
 公開する人は `read M3E_RELEASE_COMMIT` に、検査した main の先頭の完全な SHA を入力します。リリース直前にも HEAD とリモート main が同じであることを照合し、違う場合は停止して更新後の main で確認し直します。対象版のタグが既に表示された場合も停止し、再利用しません。

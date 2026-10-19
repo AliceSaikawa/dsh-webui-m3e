@@ -41,7 +41,7 @@
 | 権限 | `#/settings/permission` | `permission` |
 | エージェント | `#/settings/agent` | `agent-presets`、`agent-loop` |
 | 提供元と API キー | `#/settings/providers` | `llm-*`（`llm-deepseek`、`llm-pi-ai`、`llm-retry` など、`llm-` で始まるもの全部）と認証情報 |
-| Web 検索とシェル | `#/settings/tools` | `web-search-deepseek`、`shell`、`locale` |
+| Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`、`locale` |
 
 - `ui-` で始まる名前空間と `ui-onboarding` は、今の画面向けなので出しません。上の表にない名前空間が `describe()` にあれば、「そのほか」の行を足し、名前空間の名前をそのまま見出しにしたページで出します。
 - 一番下に、この UI の版（`package.json` の `version`）と、接続先の DSH の版（取れれば）を小さく出します。
@@ -382,7 +382,7 @@ URL は Issue の明示要件を優先する。`http://` / `https://` のプレ�
 
 一覧からの後付け登録、明示名が残った状態の再オープン、標準 OpenAI/Google/Moonshot の既定名との衝突は、先に現行本体で落ちる試験 3 件を作成した（全 3 件が誤った保存成功で失敗）。修正後は成功した。M08/M22/M24/M39 は保存要求の revision、欄エラーと送信 0 件、Host 成功値の確定、設定・キーの各待機中の無効ボタンを直接検査する。
 
-実 DSH の競合試験はクライアントへの設定通知を保留し、旧 revision の要求を実 Host へ送る。応答が `settings/conflict`、書込みが 1 回、Host の revision・全提供元の値が別ページの変更のままであることを検査する。部分成功の再試行は Host の値に加え、設定 RPC の要求列が増えないことを検査する。同値の no-op 再送も検出する。RPC 本体や Host は置き換えていない。キー失敗用の参照には、この試験で渡す読み取り専用環境名 `M3E_DSH_VERSION` を使う（他の提供元のキーと共有させない）。
+実 DSH の競合試験はクライアントへの設定通知を保留し、旧 revision の要求を実 Host へ送る。応答が `settings/conflict`、書込みが 1 回、Host の revision・全提供元の値が別ページの変更のままであることを検査する。部分成功の再試行は Host の値に加え、設定 RPC の要求列が増えないことを検査する。同値の no-op 再送も検出する。RPC 本体や Host は置き換えていない。キーの参照には、この試験で渡す環境名 `M3E_DSH_VERSION` を使う（他の提供元のキーと共有させない）。0.2.1-rc.2 では環境変数由来の参照も読み取り専用ではなく `writable: true` になり、`set` は成功して保存した値が環境変数より優先される（`unset` の後は再び環境変数が有効になる）。このため、この試験はキー保存が成功する経路を確かめ、「キーの保存だけが恒常的に拒否される」部分失敗は単体試験の注入で確認する。
 
 M47 は当時の通常の apply_patch が拒否されたため `tmp/handoff-issue16-03.md` に引き継いだ。その後、指示役が `e187882` で `tests/08-provider-reference-close.test.ts` を適用済み。正常実行、M47 と案内を除去する変異の検出も確認済みとの引き継ぎを受けた。今回も正常実行を確認した。
 

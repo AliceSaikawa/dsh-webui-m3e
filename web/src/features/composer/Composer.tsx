@@ -305,7 +305,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
     {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
-      <p>会話は作成済みです。登録の再試行では新しい会話を作りません。メッセージは送信ボタンから送れます。</p>
+      <p>会話は作成済みです。登録し直すと新しい会話が作られることがあり、そのときは入力中の本文もそちらへ移ります。メッセージは送信ボタンから送れます。</p>
       {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
       <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
     </div>}

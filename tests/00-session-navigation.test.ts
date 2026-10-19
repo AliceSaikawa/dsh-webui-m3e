@@ -150,10 +150,11 @@ test('取得中に別の会話へ離れたら取得成功も失敗もその会�
   }
 })
 
-test('未知 mode・別の種類・親の変更・取得エラーでは子も通常会話も選ばない', async (t) => {
+test('未知・external の mode、別の種類、親の変更、取得エラーでは子も通常会話も選ばない', async (t) => {
   const cases: Array<{ catalog: SessionProjectionSnapshot; changeParent?: boolean }> = [
     { catalog: ready('unknown') },
     { catalog: { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'other-child', createdAt: 0, label: '子', mode: 'continuable' }] } } },
+    { catalog: { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'child', createdAt: 0, label: '子', mode: 'external' }] } } },
     { catalog: ready(), changeParent: true },
     { catalog: { state: 'error', error: { code: 'gateway/internal', message: '失敗', details: {} }, values: { subagentCatalog: [] } } },
   ]
@@ -173,6 +174,31 @@ test('未知 mode・別の種類・親の変更・取得エラーでは子も通
       assert.equal(child.mock.callCount(), 0)
     } finally { ctx.dispose() }
   }
+})
+
+test('移行待ちの応答でもキャッシュ値にカタログが入っていれば子を開ける', async (t) => {
+  const ctx = setup()
+  t.mock.method(ctx.sessions, 'refreshProjections', async () => {
+    ctx.mock.updateList(state => { state.projectionsBySession = { parent: { state: 'migration-required', error: null, values: { subagentCatalog: [{ id: 'child', createdAt: 0, mode: 'one-shot' }] } } } })
+  })
+  const select = t.mock.method(ctx.sessions, 'retain')
+  try {
+    assert.equal(await conversationSelection(ctx.sessions).select('child'), true)
+    assert.equal(select.mock.callCount(), 1)
+    assert.deepEqual(ctx.sessions.binding('child')?.session.getSnapshot().subagent?.address, address)
+  } finally { ctx.dispose() }
+})
+
+test('移行待ちでカタログが読めなければ子の選択は決まらない', async (t) => {
+  const ctx = setup()
+  t.mock.method(ctx.sessions, 'refreshProjections', async () => {
+    ctx.mock.updateList(state => { state.projectionsBySession = { parent: { state: 'migration-required', error: null, values: {} } } })
+  })
+  const retain = t.mock.method(ctx.sessions, 'retain')
+  try {
+    await assert.rejects(conversationSelection(ctx.sessions).select('child'))
+    assert.equal(retain.mock.callCount(), 0)
+  } finally { ctx.dispose() }
 })
 
 test('取得の例外を呼び出し元へ返し、次回は取得をやり直せる', async (t) => {
