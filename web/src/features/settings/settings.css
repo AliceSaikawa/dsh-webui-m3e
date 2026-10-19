@@ -67,3 +67,18 @@
 .custom-provider-actions > * { flex: 1; min-width: 0; }
 .custom-provider-row { padding: var(--app-space); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .custom-provider-row span { display: block; font-size: 14px; overflow-wrap: anywhere; }
+.settings-preset-intro { color: var(--md-sys-color-on-surface-variant); font-size: 14px; }
+.settings-preset-group { margin-bottom: calc(var(--app-space) * 1.75); }
+.settings-preset-group > h2 { margin: var(--app-space) calc(var(--app-space) / 4); font-size: 15px; color: var(--md-sys-color-primary); }
+.settings-preset-list { display: grid; gap: calc(var(--app-space) / 2); margin: 0; padding: 0; list-style: none; }
+.settings-preset-card { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
+.settings-preset-card[data-default='true'] { border-color: var(--md-sys-color-primary); background: var(--md-sys-color-secondary-container); }
+.settings-preset-select { display: flex; flex-direction: column; gap: calc(var(--app-space) / 4); width: 100%; min-height: 48px; padding: var(--app-space); border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.settings-preset-select:disabled { cursor: default; }
+.settings-preset-name { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--app-space) / 2); font-weight: 550; }
+.settings-preset-badge { border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 500; }
+.settings-preset-badge-broken { color: var(--md-sys-color-error); }
+.settings-preset-description { font-size: 13px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.settings-preset-broken { font-size: 12px; color: var(--md-sys-color-error); overflow-wrap: anywhere; }
+.settings-preset-actions { display: flex; justify-content: flex-end; padding: 0 var(--app-space) calc(var(--app-space) / 2); }
+.settings-preset-code { max-height: 60vh; overflow: auto; margin: var(--app-space) 0; padding: var(--app-space); border-radius: calc(var(--app-radius) / 2); background: var(--md-sys-color-surface-container); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }

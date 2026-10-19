@@ -6,6 +6,7 @@ import { settingsFixtures } from './mock-fixtures.ts'
 import { applyMockOperations, mockSettingsChanged } from './mock-mutations.ts'
 import { mockProviderRegistry, registerMockModelWriter } from './mock-models.ts'
 import { installCustomScenarios } from './mock-custom.ts'
+import { AGENT_PRESET_NS } from './agent-presets.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -20,6 +21,25 @@ const isObject = (value: SettingValue | undefined): value is SettingObject => ty
 const allowedKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 const validRef = (ref: unknown): ref is string =>
   typeof ref === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
+
+/** Shipped ids have no name, so the page supplies their Japanese copy. */
+const mockAgentPresets = [
+  { id: 'standard' },
+  { id: 'ptc' },
+  { id: 'minimal' },
+  { id: 'cordis' },
+  { id: 'review', name: 'レビュー用', description: '変更内容を確認し、テストと指摘をまとめるモードです。' },
+  { id: 'no-description', name: '説明なし' },
+  { id: 'broken-team', name: 'チーム用', broken: 'プリセットの読み込みに失敗しました。' },
+] as const
+const mockPresetContent = (row: { readonly id: string; readonly name?: string }): string => [
+  `agentPreset: ${row.id}`,
+  `name: ${row.name ?? row.id}`,
+  'tools:',
+  '  - search',
+  '  - edit',
+  '  - terminal',
+].join('\n')
 
 /** Merge user overrides without sharing mutable objects with callers. */
 function merge(base: SettingObject, patch: SettingObject): SettingObject {
@@ -53,6 +73,7 @@ export function extendMock(kit: MockKit): void {
   let rejectWrites = false
   let keysWritable = true
   let keyLookupFails = false
+  let presetListFails = false
   // Keep registration booleans only, never the submitted key material.
   const registeredKeys = new Set(['DEEPSEEK_API_KEY'])
 
@@ -110,6 +131,26 @@ export function extendMock(kit: MockKit): void {
     },
   }
   kit.addRemote('settings', remote)
+  if (!kit.isScenario('agent-presets-unavailable')) {
+    kit.addRemote('agentPresets', {
+      async list() {
+        if (presetListFails) return failure('gateway/internal', 'モードの一覧を取得できませんでした。')
+        const stored = namespaces.get(AGENT_PRESET_NS)?.value.selectedDefault
+        const selected = typeof stored === 'string' && stored ? stored : 'standard'
+        return success({ presets: mockAgentPresets.map(row => ({ ...row, isDefault: row.id === selected })) })
+      },
+      async read(id: string) {
+        const row = mockAgentPresets.find(item => item.id === id)
+        if (!row) return failure('agent-preset/not-found', 'このモードは見つかりません。')
+        return success({
+          agentPreset: row.id,
+          content: mockPresetContent(row),
+          ...('name' in row ? { name: row.name } : {}),
+          ...('description' in row ? { description: row.description } : {}),
+        })
+      },
+    })
+  }
   const custom = installCustomScenarios(kit, remote, namespaces)
   registerMockModelWriter(kit, async selection => {
     const result = checkWrite('agent-default-model')
@@ -164,4 +205,6 @@ export function extendMock(kit: MockKit): void {
   })
   kit.scenario('settings-keys-readonly', () => { keysWritable = false })
   kit.scenario('settings-keys-unavailable', () => { keyLookupFails = true })
+  kit.scenario('agent-presets-error', () => { presetListFails = true })
+  kit.scenario('agent-presets-unavailable', () => {})
 }

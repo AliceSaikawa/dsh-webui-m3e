@@ -55,7 +55,7 @@ test('エージェントとツールは確認済みの主要設定値だけを�
     namespace('agent-loop', { enabled: false, maxParallelToolCalls: 4 }),
     namespace('agent-preset-registry', { name: 'ダミー名', selectedDefault: 'default' }),
   ]
-  assert.equal(pageSummary('agent', agent), 'プリセット：default・ツールの同時実行数：4')
+  assert.equal(pageSummary('agent', agent), 'ツールの同時実行数：4')
   const tools = [namespace('web-search-deepseek', { name: 'ダミー名', model: 'deepseek-chat', maxUses: 5 })]
   assert.equal(pageSummary('tools', tools), '検索モデル：deepseek-chat・検索の上限回数：5')
 })
