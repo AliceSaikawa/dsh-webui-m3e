@@ -158,7 +158,7 @@ test('交差の中のpassword属性付きの交差も、そのメンバーの項
   assert.ok(!JSON.stringify(fields).includes('synthetic-password'))
 })
 
-test('共有された定義が無保護のメンバーとpasswordの交差の両方に現れても値を出さない', () => {
+test('無保護のメンバーとpasswordの交差が同じ定義を共有しても、passwordの経路の項目を伏せる', () => {
   const schema = { uid: 0, refs: {
     0: { type: 'intersect', list: [1, 2] },
     1: { type: 'intersect', list: [3] },
@@ -169,6 +169,54 @@ test('共有された定義が無保護のメンバーとpasswordの交差の両
   const fields = schemaFields(row(schema, { token: 'synthetic-password' }))
   assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [[['token'], 'masked', undefined]])
   assert.ok(!JSON.stringify(fields).includes('synthetic-password'))
+})
+
+test('passwordの交差から共有された定義を先に歩いても、その項目の値を出さない', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [1, 2] },
+    1: { type: 'object', dict: { token: 3, key: 4 } },
+    2: { type: 'intersect', meta: { role: 'password' }, list: [1] },
+    3: { type: 'string' }, 4: { type: 'string', meta: { role: 'password' } },
+  } }
+  const fields = schemaFields(row(schema, { token: 'synthetic-token', key: 'synthetic-key' }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [
+    [['token'], 'masked', undefined],
+    [['key'], 'masked', undefined],
+  ])
+  assert.doesNotMatch(JSON.stringify(fields), /synthetic-(token|key)/)
+})
+
+test('入れ子の交差の無保護の枝から歩いた定義も、後からpasswordの交差で歩き直して伏せる', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [5, 2] },
+    5: { type: 'intersect', list: [1, 6] },
+    6: { type: 'object', dict: { other: 4 } },
+    1: { type: 'object', dict: { token: 3 } },
+    2: { type: 'intersect', meta: { role: 'password' }, list: [1] },
+    3: { type: 'string' }, 4: { type: 'string', meta: { role: 'password' } },
+  } }
+  const fields = schemaFields(row(schema, { token: 'synthetic-token', other: 'synthetic-other' }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [
+    [['token'], 'masked', undefined],
+    [['other'], 'masked', undefined],
+  ])
+  assert.doesNotMatch(JSON.stringify(fields), /synthetic-(token|other)/)
+})
+
+test('passwordのメンバーを先に歩かず、交差の項目を定義の順に並べる', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [1, 2] },
+    1: { type: 'object', dict: { a: 3, b: 3 } },
+    2: { type: 'object', dict: { apiKey: 4 } },
+    3: { type: 'string' }, 4: { type: 'string', meta: { role: 'password' } },
+  } }
+  const fields = schemaFields(row(schema, { a: '一', b: '二', apiKey: 'synthetic-api-key' }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [
+    [['a'], 'text', '一'],
+    [['b'], 'text', '二'],
+    [['apiKey'], 'masked', undefined],
+  ])
+  assert.doesNotMatch(JSON.stringify(fields), /synthetic-api-key/)
 })
 
 test('復号したノードは読み取り専用で、共有されたまま変更できない（73-2）', () => {
