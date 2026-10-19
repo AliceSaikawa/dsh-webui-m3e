@@ -34,7 +34,15 @@ test('組み込みの説明は標準の英語のときだけ日本語にする',
   assert.equal(presetDescription('workspace-write', 'Write inside the workspace and permitted temporary directories; wider retries require approval.'),
     '作業フォルダと許可された一時フォルダの中に書き込めます。範囲を広げるときは確認します。')
   assert.equal(presetDescription('danger-full-access', 'Full file access without approval prompts.'), '確認なしで、すべてのファイルにアクセスできます。')
-  assert.equal(presetDescription('read-only', 'Read files only.'), 'ファイルの読み取りだけを許可します。書き込みやコマンドの実行は確認します。')
+  assert.equal(presetDescription('danger-full-access', ' Full file access without approval prompts.\n'), '確認なしで、すべてのファイルにアクセスできます。')
+})
+
+test('標準の英語と違う説明は、英語でも名前が組み込みのままでもそのまま出す', () => {
+  assert.equal(presetDescription('workspace-write', 'Edits stay inside the checkout; installs need review.'), 'Edits stay inside the checkout; installs need review.')
+  assert.equal(presetDescription('danger-full-access', 'Full file access without approval prompts, except for deletions.'),
+    'Full file access without approval prompts, except for deletions.')
+  assert.equal(presetDescription('read-only', 'Read files only.'), 'Read files only.')
+  assert.equal(presetDescription('workspace-write', 'Full file access without approval prompts.'), 'Full file access without approval prompts.')
 })
 
 test('日本語の説明とホスト固有の説明はそのままにする', () => {

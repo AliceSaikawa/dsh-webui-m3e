@@ -29,7 +29,7 @@ const renameToKeys = `
 `
 
 const sheet = (page: Page) => page.locator('m3e-bottom-sheet[aria-label="権限の選び直し"]')
-const chip = (page: Page) => page.locator('.composer-permission-label')
+const chip = (page: Page) => page.locator('.composer-permission')
 
 function commandRuns(page: Page): Promise<number> {
   return page.evaluate(() => {
@@ -41,7 +41,7 @@ function commandRuns(page: Page): Promise<number> {
 test('#103 キーのままのプリセット名と標準の英語の説明を日本語にして出す', async ({ page }) => {
   await expose(page, renameToKeys)
   await visit(page, '/s/readme-review')
-  await expect(chip(page)).toHaveText('ワークスペース書込')
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限：ワークスペース書込')
   await chip(page).click()
   await expect(sheet(page)).toBeVisible()
   const rows = sheet(page).locator('.composer-sheet-row')
@@ -63,19 +63,19 @@ test('#103 キーのままのプリセット名と標準の英語の説明を日
 test('#103 今と同じプリセットを選び直しても /permission を送らない', async ({ page }) => {
   await expose(page)
   await visit(page, '/s/readme-review')
-  await expect(chip(page)).toHaveText('ワークスペース書込')
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限：ワークスペース書込')
   await chip(page).click()
   await expect(sheet(page)).toBeVisible()
   const before = await commandRuns(page)
   await sheet(page).locator('.composer-sheet-row[aria-pressed="true"]').click()
   await expect(sheet(page)).toHaveCount(0)
-  await expect(chip(page)).toHaveText('ワークスペース書込')
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限：ワークスペース書込')
   // The buggy path awaited the command before closing, so this is already settled.
   expect(await commandRuns(page)).toBe(before)
   // A different preset still switches and sends the command.
   await chip(page).click()
   await expect(sheet(page)).toBeVisible()
   await sheet(page).locator('.composer-sheet-row', { hasText: 'フル アクセス' }).click()
-  await expect(chip(page)).toHaveText('フル アクセス')
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限：フル アクセス')
   await expect.poll(() => commandRuns(page)).toBe(before + 1)
 })

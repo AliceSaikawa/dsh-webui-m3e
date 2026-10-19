@@ -16,14 +16,17 @@ const STOCK_NAMES: Record<string, readonly string[]> = {
   'workspace-write': ['Workspace Write'],
   'danger-full-access': ['Full access'],
 }
+/** Stock English descriptions from the Host's default config. It ships none for read-only. */
+const STOCK_DESCRIPTIONS: Record<string, string> = {
+  'workspace-write': 'Write inside the workspace and permitted temporary directories; wider retries require approval.',
+  'danger-full-access': 'Full file access without approval prompts.',
+}
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
-  'read-only': 'ファイルの読み取りだけを許可します。書き込みやコマンドの実行は確認します。',
   'workspace-write': '作業フォルダと許可された一時フォルダの中に書き込めます。範囲を広げるときは確認します。',
   'danger-full-access': '確認なしで、すべてのファイルにアクセスできます。',
 }
 const AUTO_NAME = '自動レビュー（実験的）'
 const AUTO_DESCRIPTION = 'サンドボックスなしで動きます。ツールを呼び出すたびに、同じモデルが実験的に確認します。'
-const HAS_JAPANESE = /[ぁ-んァ-ン一-龥]/
 
 function isStockName(value: string, hostName: string): boolean {
   if (hostName === '' || hostName === value) return true
@@ -39,10 +42,10 @@ export function presetDisplayName(value: string, hostName: string): string {
   return hostName || value
 }
 
-/** Built-in Japanese description for a default English one; Host copy is kept as-is. */
+/** Built-in Japanese description when the Host sent exactly the stock English one; any other Host copy is kept as-is. */
 export function presetDescription(value: string, hostDescription: string | undefined): string | undefined {
   if (value === 'auto') return AUTO_DESCRIPTION
   const label = BUILTIN_DESCRIPTIONS[value]
-  if (label !== undefined && hostDescription !== undefined && !HAS_JAPANESE.test(hostDescription)) return label
+  if (label !== undefined && hostDescription?.trim() === STOCK_DESCRIPTIONS[value]) return label
   return hostDescription
 }
