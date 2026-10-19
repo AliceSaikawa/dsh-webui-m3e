@@ -34,12 +34,18 @@ export interface AskUserQuestionAnswer {
   answers: AskUserQuestionAnswerItem[]
 }
 
+/** Localized approval copy; the audit `reason` stays unchanged (Issue #122). */
+export interface ApprovalDisplayReason {
+  readonly en: string
+  readonly [locale: string]: string
+}
+
 export interface ApprovalRequestEvent {
   agent?: unknown
   toolName: string
   callId?: string
   reason?: string
-  displayReason?: { en: string; [locale: string]: string }
+  displayReason?: ApprovalDisplayReason
   signal?: AbortSignal
 }
 
@@ -61,6 +67,13 @@ export interface UserQuestionsRemote {
 }
 
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+/** Wire data is untrusted: keep a localized copy only when `en` exists and every kept value is a string. */
+function approvalDisplayReason(value: unknown): ApprovalDisplayReason | undefined {
+  const source = record(value)
+  if (typeof source.en !== 'string') return undefined
+  const locales = Object.entries(source).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  return { ...Object.fromEntries(locales), en: source.en }
+}
 function questionItems(value: unknown): AskUserQuestionItem[] {
   if (!Array.isArray(value)) return []
   return value.flatMap(value => {
@@ -101,6 +114,7 @@ export interface PendingApproval extends PendingBase {
   readonly toolName: string
   readonly callId?: string
   readonly reason?: string
+  readonly displayReason?: ApprovalDisplayReason
   answer(outcome: ApprovalOutcome): Promise<void>
 }
 
@@ -141,10 +155,12 @@ export class InteractionStore {
   }
 
   requestApproval(sessionId: string, request: ApprovalRequestEvent): Promise<ApprovalOutcome> {
+    const displayReason = approvalDisplayReason(request.displayReason)
     return this.#request<ApprovalOutcome>(
       (key, answer) => ({
         key, kind: 'approval', sessionId, deferred: false,
-        toolName: request.toolName, callId: request.callId, reason: request.reason, answer,
+        toolName: request.toolName, callId: request.callId, reason: request.reason,
+        displayReason, answer,
       }),
       request.signal,
       () => request.signal?.reason ?? new Error('承認の要求が取り消されました。'),

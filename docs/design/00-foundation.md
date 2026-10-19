@@ -635,3 +635,7 @@ web/src/
 - spec の `expose(page, setup?)` は `addInitScript` でこのフックを置き、ctx を従来どおり `__malformed` に出す。`setup` は文字列ではなく型検査される関数で、ページへ直列化されるため外側の変数を参照しない。与える不正データと期待は変えていない。フックがない main では 6 件すべてが失敗することを確かめた。
 - 本番に混ざらないことは、`index.ts` が `main.tsx` の `import.meta.env.DEV` 分岐からだけ読まれることと、`pnpm check:pack` の目印 `__m3eTest`（`scripts/pack-contract.ts`）で担保される。build 後の `dist/` にも名前がないことを確認した。
 - `context.ts` の配信内容の書き換えは、ほかの spec 16 件（`conversation-picker`、`settings-drafts`、`jobs-recovery` など）にも残っている。Issue の範囲は `malformed-data` だけなので今回は移していない。移すときはこのフックを使える。
+
+### 2026-10-19：Issue #122 承認の displayReason を待ち行列に残す
+
+- `ApprovalRequestEvent.displayReason` の型を `ApprovalDisplayReason` として切り出し、`PendingApproval` にも `displayReason` を足して `requestApproval` が写すようにした。表示する訳の選択は 05 の `approvalReason` が行う。詳細は [05 の実装メモ](05-interactions.md)。

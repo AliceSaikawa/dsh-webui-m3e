@@ -8,7 +8,8 @@ import { Markdown } from '../../app/Markdown.tsx'
 import { openSheet, openFullSheet, showSnackbar, type CloseOverlay } from '../../app/overlay/index.ts'
 import { navigate } from '../../app/router.ts'
 import { defer, presentQuestion, usePendingInteractions, type PendingInteraction, type PendingQuestion, type AskUserQuestionItem } from '../../dsh/interactions.ts'
-import { currentLocale, messagesOf, useMessages } from '../../i18n/index.ts'
+import { currentLocale, messagesOf, useLocale, useMessages } from '../../i18n/index.ts'
+import { approvalReason } from './approval-reason.ts'
 import { buildPlanApproval, buildQuestionAnswers, hasAnswer, hasPlanReview, questionDraft, selectOption, type QuestionDraft } from './answers.ts'
 import { interactionMessages } from './messages.ts'
 import { PresentationQueue } from './presentation-queue.ts'
@@ -53,12 +54,14 @@ function ToolRun({ sentence, toolName }: { sentence: string; toolName: string })
 
 function InteractionSheet({ pending, from, close, plan }: { pending: PendingInteraction; from: Origin; close: CloseOverlay; plan: boolean }) {
   const text = useMessages(interactionMessages)
+  const locale = useLocale()
   const allPending = usePendingInteractions()
   const active = allPending.some(item => item.key === pending.key)
   const sending = useRef(false)
   const cancelled = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const reason = pending.kind === 'approval' ? approvalReason(pending, locale) : undefined
   useLayoutEffect(() => presentQuestion(pending.key), [pending.key])
   useLayoutEffect(() => {
     const keys = new Set(allPending.map(item => item.key))
@@ -103,7 +106,7 @@ function InteractionSheet({ pending, from, close, plan }: { pending: PendingInte
     {pending.kind === 'approval' ? <>
       <div className="interaction-heading"><h2>{text.approvalTitle}</h2></div>
       <p className="interaction-question"><ToolRun sentence={text.toolRun(pending.toolName)} toolName={pending.toolName} /></p>
-      {pending.reason && <p className="interaction-detail">{pending.reason}</p>}
+      {reason && <p className="interaction-detail">{reason}</p>}
       {pending.callId && <M3eButton variant="text" disabled={busy || !active} onClick={trace}>{text.viewTrace}</M3eButton>}
       {error && <p className="interaction-error" role="alert">{error}</p>}
       <div className="interaction-actions"><M3eButton variant="outlined" disabled={busy || !active} onClick={() => { void submit(() => pending.answer('rejected')) }}>{text.reject}</M3eButton>

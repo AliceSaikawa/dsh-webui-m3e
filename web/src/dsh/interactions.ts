@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { InteractionStore, registerInteractionHandlers, type InteractionContext, type PendingInteraction } from './interactions-store.ts'
 
 export type {
+  ApprovalDisplayReason,
   ApprovalOutcome,
   ApprovalRequestEvent,
   AskUserQuestionAnswer,
