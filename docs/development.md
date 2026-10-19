@@ -7,7 +7,7 @@
 ## 端末ごとの切り替え
 
 - この端末の選択は、Cookie `dsh-webui`（値は `m3e` か `classic`）に入っています。iPhone のホーム画面に追加した PWA は Safari と別の Cookie を持つので、別々に選べます。
-- サーバーは、DSH が返すすべての index の `<head>` の先頭に、小さなスクリプトを差し込みます（`tapIndex`）。今の画面の index（`/` と `/index.html`）で Cookie が `m3e` なら、今の画面のコードを読み込む前に `/m3e/` へ移動します。判定は [src/shared/ui-choice.ts](../src/shared/ui-choice.ts) にあります。ただし、M3E の画面を表示したタブは `sessionStorage` に印を残し、そのタブで `/` を開いたときは移動しません（Cookie は変わりません）。
+- サーバーは、DSH が返すすべての index の `<head>` の先頭に、小さなスクリプトを差し込みます（`tapIndex`）。今の画面の index（`/` と `/index.html`）で Cookie が `m3e` なら、今の画面のコードを読み込む前に `/m3e/` へ移動します。判定は [src/shared/ui-choice.ts](../src/shared/ui-choice.ts) にあります。ただし、M3E の画面を表示したタブは `sessionStorage` に印を残し、そのタブで `/` を開いたときは移動しません（Cookie は変わりません）。パソコン（主な入力がマウスやトラックパッド、`(hover: hover) and (pointer: fine)`）では `/` から自動で移動しません。M3E は `/m3e/` を直接開けば使えます。`?ui=m3e` は明示の指定なので、パソコンでも移動します。
 - 切り替える方法は 3 つあります。
   - 今の画面の「設定 → 一般 → この端末で M3E の画面を使う」
   - M3E の画面の「今の画面に戻す」ボタン

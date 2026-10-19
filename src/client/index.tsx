@@ -49,7 +49,7 @@ function UiChoiceRow() {
     <label style={styles.row}>
       <span style={styles.text}>
         <span style={styles.title}>この端末で M3E の画面を使う</span>
-        <span style={styles.note}>M3E を選んだ端末では、新しく / を開くと M3E に切り替わります。M3E を表示していたタブで URL から /m3e/ を消すと、そのタブでは今の画面のままです。戻すときは M3E の画面のボタンか、/?ui=classic を開きます。</span>
+        <span style={styles.note}>M3E を選んだ端末では、新しく / を開くと M3E に切り替わります。パソコンでは / は今の画面のままで、M3E は /m3e/ を直接開くと使えます。M3E を表示していたタブで URL から /m3e/ を消すと、そのタブでは今の画面のままです。戻すときは M3E の画面のボタンか、/?ui=classic を開きます。</span>
       </span>
       {/* `switch` renders a native switch on Safari 17.4+ and a checkbox elsewhere. */}
       <input type="checkbox" role="switch" {...{ switch: '' }} checked={on} onChange={change} style={styles.toggle} />
