@@ -79,6 +79,6 @@
 .settings-preset-badge { border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 500; }
 .settings-preset-badge-broken { color: var(--md-sys-color-error); }
 .settings-preset-description { font-size: 13px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
-.settings-preset-broken { font-size: 12px; color: var(--md-sys-color-error); overflow-wrap: anywhere; }
+.settings-preset-broken { font-size: 12px; color: var(--md-sys-color-error); overflow-wrap: anywhere; white-space: pre-line; }
 .settings-preset-actions { display: flex; justify-content: flex-end; padding: 0 var(--app-space) calc(var(--app-space) / 2); }
 .settings-preset-code { max-height: 60vh; overflow: auto; margin: var(--app-space) 0; padding: var(--app-space); border-radius: calc(var(--app-radius) / 2); background: var(--md-sys-color-surface-container); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }

@@ -33,11 +33,14 @@ export function SettingsScreen() {
   const { remote } = useDsh()
   const presetText = useMessages(agentPresetMessages)
   const presets = useAgentPresetRoster(remote)
-  const selectedPreset = presets.state.phase === 'ready' ? presets.state.rows.find(row => row.isDefault) : undefined
-  const modeSummary = presets.state.phase === 'loading' ? '読み込み中…'
-    : presets.state.phase === 'unavailable' ? 'この DSH では利用できません'
-    : presets.state.phase === 'error' ? 'モードを確認できません'
-    : selectedPreset ? presetDisplayText(selectedPreset, presetText).name : presetText.empty
+  const modeSummary = presets.state.phase === 'loading' ? presetText.summaryLoading
+    : presets.state.phase === 'unavailable' ? presetText.summaryUnavailable
+    : presets.state.phase === 'error' ? presetText.summaryError
+    : (() => {
+        const selected = presets.state.rows.find(row => row.isDefault)
+        if (selected) return presetDisplayText(selected, presetText).name
+        return presets.state.rows.length === 0 ? presetText.empty : presetText.missingDefault
+      })()
   return <TabScaffold title="設定" tab="settings"><div className="settings-content">
     <section className="settings-section" aria-labelledby="settings-device">
       <h2 id="settings-device">この端末</h2>
@@ -65,7 +68,7 @@ export function SettingsScreen() {
             <span slot="trailing"><Icon name="chevron_right" /></span>
           </M3eListAction>
           return page.id === 'agent' ? [row, <M3eListAction key="modes" onClick={() => navigate('/settings/modes')}>
-            <span slot="leading"><Icon name="tune" /></span>モード
+            <span slot="leading"><Icon name="tune" /></span>{presetText.title}
             <span slot="supporting-text">{modeSummary}</span>
             <span slot="trailing"><Icon name="chevron_right" /></span>
           </M3eListAction>] : [row]

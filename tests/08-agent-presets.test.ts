@@ -57,16 +57,24 @@ test('偽データの一覧は設定の既定を読み、保存した既定と�
   try {
     const api = agentPresetsApi(ctx.remote)
     assert.equal(api.available, true)
-    assert.equal((await api.list())?.find(row => row.isDefault)?.id, 'standard')
+    const initial = await api.list()
+    assert.equal(initial?.find(row => row.isDefault)?.id, 'standard')
+    assert.deepEqual(initial?.map(row => row.id), ['standard', 'ptc', 'minimal', 'cordis', 'broken-team', 'no-description', 'review'])
     const settings = ctx.remote.settings as SettingsMockRemote
     const registry = unwrapRemoteResult(await settings.describe()).namespaces.find(row => row.ns === AGENT_PRESET_NS)!
     unwrapRemoteResult(await settings.update(AGENT_PRESET_NS, { selectedDefault: 'review' }, registry.revision))
     const rows = await api.list()
     assert.equal(rows?.find(row => row.isDefault)?.id, 'review')
-    assert.equal(rows?.find(row => row.id === 'broken-team')?.broken, 'プリセットの読み込みに失敗しました。')
+    assert.match(rows?.find(row => row.id === 'broken-team')?.broken ?? '', /team-tools .*Cannot find module .*team-tools\.js/)
+    assert.match(rows?.find(row => row.id === 'broken-team')?.broken ?? '', /\npersona /)
     const document = await api.read('review')
-    assert.match(document.content, /agentPreset: review/)
+    assert.match(document.content, /^- id: persona\n  name: '@deepseek-ai\/dsh-persona'/)
     assert.equal(document.name, 'レビュー用')
+    const brokenDocument = await api.read('broken-team')
+    assert.match(brokenDocument.content, /- id: team-tools\n  name: '\.\/plugins\/team-tools\.js'/)
+    const current = unwrapRemoteResult(await settings.describe()).namespaces.find(row => row.ns === AGENT_PRESET_NS)!
+    unwrapRemoteResult(await settings.update(AGENT_PRESET_NS, { selectedDefault: '' }, current.revision))
+    assert.equal((await api.list())?.some(row => row.isDefault), false)
   } finally { ctx.dispose() }
 })
 

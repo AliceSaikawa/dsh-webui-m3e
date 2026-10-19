@@ -118,17 +118,20 @@ function PresetGroup({ title, rows, text, canWrite, saving, makeDefault, view }:
       {rows.map(row => {
         const display = presetDisplayText(row, text)
         const broken = row.broken !== undefined
+        const descriptionId = `preset-${row.id}-description`
+        const brokenId = `preset-${row.id}-broken`
         const label = broken ? `${text.brokenBadge}: ${display.name}`
           : row.isDefault ? `${text.inUse}: ${display.name}` : `${text.setDefault}: ${display.name}`
         return <li className="settings-preset-card" data-default={row.isDefault ? 'true' : undefined} key={row.id}>
           <button type="button" className="settings-preset-select" aria-label={label} aria-pressed={row.isDefault}
+            aria-describedby={broken ? `${descriptionId} ${brokenId}` : descriptionId}
             disabled={broken || row.isDefault || !canWrite || saving} onClick={() => makeDefault(row)}>
             <span className="settings-preset-name">{display.name}
               {row.isDefault && <span className="settings-preset-badge">{text.inUse}</span>}
               {broken && <span className="settings-preset-badge settings-preset-badge-broken">{text.brokenBadge}</span>}
             </span>
-            <span className="settings-preset-description">{display.description ?? text.noDescription}</span>
-            {broken && <span className="settings-preset-broken">{row.broken}</span>}
+            <span className="settings-preset-description" id={descriptionId}>{display.description ?? text.noDescription}</span>
+            {broken && <span className="settings-preset-broken" id={brokenId}>{row.broken}</span>}
           </button>
           <div className="settings-preset-actions">
             <M3eButton variant="text" aria-label={`${text.view}: ${display.name}`} onClick={() => view(row, display.name)}>{text.view}</M3eButton>
