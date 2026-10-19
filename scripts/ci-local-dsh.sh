@@ -5,7 +5,10 @@
 # previous `npm ci` finished for exactly this lockfile.
 set -euo pipefail
 
-dsh=tmp/dsh-integration/dsh-0.2.0-rc.2
+# The release under test comes from the fixture manifest, the same place CI
+# reads it, so a version bump moves the install directory everywhere at once.
+dsh_version=$(node -p "require('./.github/ci/dsh/package.json').dependencies['@deepseek-ai/dsh']")
+dsh="tmp/dsh-integration/dsh-$dsh_version"
 lock=.github/ci/dsh/package-lock.json
 marker="$dsh/.ci-local-lock-sha256"
 hash=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex'))" "$lock")

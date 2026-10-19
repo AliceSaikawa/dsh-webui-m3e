@@ -5,6 +5,24 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+/** Request facts browser authentication reads (dsh-client-connection's ConnectionIndexRequest). */
+interface ConnectionIndexRequest {
+  readonly method?: string | undefined
+  readonly url?: string | undefined
+  readonly headers: IncomingMessage['headers']
+}
+
+/**
+ * Response operations browser authentication owns while it refuses an index
+ * request (dsh-client-connection's ConnectionIndexResponse). It writes at most
+ * one `writeHead` and one `end` before returning false, so a caller may pass a
+ * substitute and replay those two calls itself.
+ */
+interface ConnectionIndexResponse {
+  writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown
+  end(body?: string): unknown
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     webServer: {
@@ -17,7 +35,13 @@ declare module '@deepseek-ai/cordis' {
       tapIndex(transform: (html: string) => string): () => void
     }
     connection: {
-      authorizeIndex(req: IncomingMessage, res: ServerResponse): boolean
+      /**
+       * Authenticate one frontend index request, owning a token redirect or 401.
+       * @param request - root or configured-index HTTP request.
+       * @param response - response owned when the result is false.
+       * @returns true only when the frontend may serve index.html.
+       */
+      authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
     }
   }
 }

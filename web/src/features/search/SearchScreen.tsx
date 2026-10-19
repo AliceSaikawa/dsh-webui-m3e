@@ -8,6 +8,8 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { navigate } from '../../app/router.ts'
 import { useDsh, type SessionSummary } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { formatDateTime, useLocale, useMessages, type Locale } from '../../i18n/index.ts'
+import { searchMessages } from './messages.ts'
 import { isSearchBusy, searchControllerFor } from './search-controller.ts'
 import { findMatchRanges, normalizeQuery } from './search-utils.ts'
 import { filterVisibleSearchItems, selectVisibleRecentSessions } from './search-visibility.ts'
@@ -26,18 +28,23 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return <>{parts}{text.slice(end)}</>
 }
 
-function sessionDetails(row: SessionSummary | undefined): string {
-  const folder = row?.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || '作業フォルダ未設定'
+/** The source (Japanese) messages; `en`/`zh` keep the same shape. */
+type SearchText = (typeof searchMessages)['ja']
+
+function sessionDetails(row: SessionSummary | undefined, text: SearchText, locale: Locale): string {
+  const folder = row?.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || text.noFolder
   const date = row && Number.isFinite(row.updatedAt) ? new Date(row.updatedAt) : null
-  const updated = date && !Number.isNaN(date.getTime())
-    ? new Intl.DateTimeFormat('ja-JP', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
-    : '更新日時不明'
-  return `${folder} ・ ${updated}`
+  const updated = date
+    ? (formatDateTime(locale, date, { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) ?? text.unknownUpdatedAt)
+    : text.unknownUpdatedAt
+  return text.sessionDetails(folder, updated)
 }
 
 export function SearchScreen() {
+  const text = useMessages(searchMessages)
+  const locale = useLocale()
   const { sessions, workspaces } = useDsh()
-  const controller = searchControllerFor(sessions)
+  const controller = searchControllerFor(sessions, text)
   const state = useSnapshot(controller)
   const list = useSnapshot(sessions.list)
   const workspaceList = useSnapshot(workspaces.list)
@@ -88,47 +95,47 @@ export function SearchScreen() {
     controller.setInput(value, isComposing)
   }
 
-  return <TabScaffold title="検索">
+  return <TabScaffold title={text.title}>
     <div ref={root} className="search-screen">
       <div className="search-bar-area">
-        <M3eSearchBar clearable clearLabel="検索語を消去" onClear={() => { composing.current = false; change('', false) }}>
+        <M3eSearchBar clearable clearLabel={text.clearLabel} onClear={() => { composing.current = false; change('', false) }}>
           <Icon name="search" slot="leading" />
-          <input slot="input" type="search" aria-label="セッションを検索" placeholder="セッションを検索"
+          <input slot="input" type="search" aria-label={text.searchField} placeholder={text.searchField}
             autoComplete="off" enterKeyHint="search" value={state.input}
             onChange={event => change(event.currentTarget.value)}
             onCompositionStart={event => { composing.current = true; change(event.currentTarget.value, true) }}
             onCompositionEnd={event => { composing.current = false; change(event.currentTarget.value, false) }} />
         </M3eSearchBar>
         <div className="search-progress">
-          {busy && <M3eLinearProgressIndicator mode="indeterminate" aria-label="検索中" />}
+          {busy && <M3eLinearProgressIndicator mode="indeterminate" aria-label={text.busyLabel} />}
         </div>
       </div>
       <div className="search-results" aria-busy={busy}>
-        <h2>{state.query ? `「${state.query}」の検索結果` : '最近のセッション'}</h2>
+        <h2>{state.query ? text.resultsFor(state.query) : text.recentSessions}</h2>
         <div role="status" aria-live="polite" aria-atomic="true" className="search-status">
-          {busy && <p>検索しています…</p>}
-          {state.phase === 'composing' && <p>入力を確定すると検索します</p>}
-          {state.phase === 'ready' && rows.length === 0 && <p>{list.phase === 'pending' ? 'セッションを読み込んでいます…' : '見つかりませんでした'}</p>}
-          {state.phase === 'ready' && rows.length > 0 && <span className="search-visually-hidden">{rows.length} 件見つかりました</span>}
-          {!state.query && rows.length === 0 && <p>{list.phase === 'pending' ? 'セッションを読み込んでいます…' : '最近のセッションはありません'}</p>}
+          {busy && <p>{text.searching}</p>}
+          {state.phase === 'composing' && <p>{text.composingHint}</p>}
+          {state.phase === 'ready' && rows.length === 0 && <p>{list.phase === 'pending' ? text.loadingSessions : text.noResults}</p>}
+          {state.phase === 'ready' && rows.length > 0 && <span className="search-visually-hidden">{text.resultCount(rows.length)}</span>}
+          {!state.query && rows.length === 0 && <p>{list.phase === 'pending' ? text.loadingSessions : text.noRecentSessions}</p>}
         </div>
         {state.phase === 'error' && <div role="alert" className="search-error">
-          <p>検索できませんでした</p><p>{state.error}</p>
-          {state.retryable && <M3eButton variant="tonal" onClick={() => controller.retry()}>もう一度検索</M3eButton>}
+          <p>{text.failed}</p><p>{state.error}</p>
+          {state.retryable && <M3eButton variant="tonal" onClick={() => controller.retry()}>{text.retry}</M3eButton>}
         </div>}
-        {rows.length > 0 && <M3eActionList aria-label={state.query ? '検索結果' : '最近のセッション'}>
+        {rows.length > 0 && <M3eActionList aria-label={state.query ? text.results : text.recentSessions}>
           {rows.map(item => {
             const row = list.byId[item.sessionId]
             return <M3eListAction key={item.sessionId} onClick={() => navigate(`/s/${encodeURIComponent(item.sessionId)}`)}>
               <SearchModelIcon row={row} />
-              <span className="search-title">{row?.displayTitle || row?.title || '題名のないセッション'}</span>
+              <span className="search-title">{row?.displayTitle || row?.title || text.untitled}</span>
               <span slot="supporting-text" className="search-snippet">
-                {item.snippet?.trim() ? <Highlight text={item.snippet} query={state.query} /> : sessionDetails(row)}
+                {item.snippet?.trim() ? <Highlight text={item.snippet} query={state.query} /> : sessionDetails(row, text, locale)}
               </span>
             </M3eListAction>
           })}
         </M3eActionList>}
-        {state.phase === 'ready' && state.hasMore && <p className="search-more">さらに結果があります。語を増やして絞り込んでください</p>}
+        {state.phase === 'ready' && state.hasMore && <p className="search-more">{text.more}</p>}
       </div>
     </div>
   </TabScaffold>

@@ -1,6 +1,11 @@
 import type { ISessions } from '../../dsh/services.ts'
 import { remoteErrorMessage, remoteFailureOf } from '../../dsh/remote-result.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { searchMessages } from './messages.ts'
 import { normalizeQuery, shouldSearch } from './search-utils.ts'
+
+/** The source (Japanese) messages; `en`/`zh` keep the same shape. */
+type SearchText = (typeof searchMessages)['ja']
 
 export type SearchItem = { sessionId: string; snippet: string }
 export interface SearchState {
@@ -19,22 +24,22 @@ export function isSearchBusy(state: Pick<SearchState, 'phase' | 'composing'>): b
 }
 
 /** The host counts the trimmed query in UTF-16 code units, like String.length. */
-function queryError(query: string): string | null {
-  if (query.length > 500) return '検索語は500文字以内にしてください。絵文字などは2文字分として数えます。'
-  if (query.includes('\0')) return '検索語に使えない文字が含まれています。貼り付けた内容を見直してください。'
+function queryError(query: string, text: SearchText): string | null {
+  if (query.length > 500) return text.queryTooLong
+  if (query.includes('\0')) return text.queryInvalid
   return null
 }
 
-function searchError(error: unknown): Pick<SearchState, 'error' | 'retryable'> {
+function searchError(error: unknown, text: SearchText): Pick<SearchState, 'error' | 'retryable'> {
   const code = remoteFailureOf(error)?.code
-  if (code === 'gateway/bad-request') return { error: '検索語を受け付けられませんでした。文字数や貼り付けた内容を見直してください。', retryable: false }
+  if (code === 'gateway/bad-request') return { error: text.badRequest, retryable: false }
   // This code also covers provider failures; permit a retry after the host recovers.
-  if (code === 'gateway/internal') return { error: '検索機能を利用できません。DSH の検索機能の設定や動作状態を確認してください。', retryable: true }
-  return { error: remoteErrorMessage(error, '検索サービスから結果を取得できませんでした。時間をおいて、もう一度お試しください。'), retryable: true }
+  if (code === 'gateway/internal') return { error: text.serviceUnavailable, retryable: true }
+  return { error: remoteErrorMessage(error, text.serviceFailed), retryable: true }
 }
 
 /** Kept per controller connection so returning from a conversation restores the tab. */
-export function createSearchController(sessions: Pick<ISessions, 'search'>) {
+export function createSearchController(sessions: Pick<ISessions, 'search'>, text: SearchText = messagesOf(searchMessages, 'ja')) {
   let state: SearchState = { input: '', query: '', phase: 'idle', composing: false, items: [], hasMore: false, error: null, retryable: false }
   const listeners = new Set<() => void>()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -63,10 +68,10 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>) {
       const result = await sessions.search(query, current.signal)
       if (current.signal.aborted || version !== revision) return
       if (result.ok) publish({ phase: 'ready', items: result.value.items, hasMore: result.value.hasMore })
-      else publish({ phase: 'error', ...searchError(result.error) })
+      else publish({ phase: 'error', ...searchError(result.error, text) })
     } catch (error) {
       if (current.signal.aborted || version !== revision) return
-      publish({ phase: 'error', ...searchError(error) })
+      publish({ phase: 'error', ...searchError(error, text) })
     } finally {
       if (request === current) request = undefined
     }
@@ -83,13 +88,13 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>) {
       if (!changed && !confirmed) { publish({ input, composing: isComposing }); return }
       cancel()
       if (changed) scrollTop = 0
-      const error = isComposing ? null : queryError(query)
+      const error = isComposing ? null : queryError(query, text)
       const phase = isComposing ? 'composing' : error ? 'error' : shouldSearch(query) ? 'waiting' : 'idle'
       publish({ input, query, composing: isComposing, phase, items: [], hasMore: false, error, retryable: false })
       if (phase === 'waiting') schedule()
     },
     retry() {
-      if (!shouldSearch(state.query) || state.composing || !state.retryable || queryError(state.query)) return
+      if (!shouldSearch(state.query) || state.composing || !state.retryable || queryError(state.query, text)) return
       cancel()
       publish({ phase: 'waiting', error: null, retryable: false })
       schedule()
@@ -109,8 +114,8 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>) {
 }
 
 const controllers = new WeakMap<ISessions, ReturnType<typeof createSearchController>>()
-export function searchControllerFor(sessions: ISessions) {
+export function searchControllerFor(sessions: ISessions, text: SearchText = messagesOf(searchMessages, 'ja')) {
   let controller = controllers.get(sessions)
-  if (!controller) { controller = createSearchController(sessions); controllers.set(sessions, controller) }
+  if (!controller) { controller = createSearchController(sessions, text); controllers.set(sessions, controller) }
   return controller
 }
