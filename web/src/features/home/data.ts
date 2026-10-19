@@ -6,6 +6,8 @@ export function selectWorkspace(items: readonly WorkspaceView[], savedId?: strin
 
 export type ArchivedFilter = 'default' | 'show' | 'only'
 
+export type OrderBy = 'manual' | 'updated'
+
 export function visibleSessions(
   workspace: WorkspaceView | undefined,
   byId: Record<string, SessionSummary>,
@@ -24,6 +26,16 @@ export function visibleSessions(
   })
 }
 
+export function orderSessions(rows: readonly SessionSummary[], orderBy: OrderBy): SessionSummary[] {
+  if (orderBy === 'manual') return [...rows]
+  const time = (row: SessionSummary) => (Number.isFinite(row.updatedAt) ? row.updatedAt : Number.NEGATIVE_INFINITY)
+  return [...rows].sort((a, b) => {
+    const aTime = time(a), bTime = time(b)
+    if (aTime !== bTime) return aTime > bTime ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+}
+
 export function pinnedFirst(rows: readonly SessionSummary[], pinnedIds: readonly string[]): { rows: SessionSummary[]; pinned: ReadonlySet<string> } {
   const byId = new Map(rows.map(row => [row.id, row]))
   const ordered = [...new Set(pinnedIds)].flatMap(id => {
@@ -32,6 +44,13 @@ export function pinnedFirst(rows: readonly SessionSummary[], pinnedIds: readonly
   })
   const pinned = new Set(ordered.map(row => row.id))
   return { rows: [...ordered, ...rows.filter(row => !pinned.has(row.id))], pinned }
+}
+
+/** Keep the given order inside each partition; used when recency already sorts pins. */
+export function pinnedFirstInOrder(rows: readonly SessionSummary[], pinnedIds: readonly string[]): { rows: SessionSummary[]; pinned: ReadonlySet<string> } {
+  const known = new Set(rows.map(row => row.id))
+  const pinned = new Set([...new Set(pinnedIds)].filter(id => known.has(id)))
+  return { rows: [...rows.filter(row => pinned.has(row.id)), ...rows.filter(row => !pinned.has(row.id))], pinned }
 }
 
 export function formatUpdatedAt(timestamp: number, now = new Date()): string {

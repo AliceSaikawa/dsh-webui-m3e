@@ -13,8 +13,8 @@ import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { selectWorkspace, pinnedFirst, visibleSessions, type ArchivedFilter } from './data.ts'
-import { useHomePreferences, setCurrentWorkspace, setShowSubagents, setArchivedFilter } from './preferences.ts'
+import { selectWorkspace, orderSessions, pinnedFirst, pinnedFirstInOrder, visibleSessions, type ArchivedFilter, type OrderBy } from './data.ts'
+import { useHomePreferences, setCurrentWorkspace, setShowSubagents, setArchivedFilter, setOrderBy } from './preferences.ts'
 import { attempt, renameWorkspace, sessionActions, workspaceActions } from './actions.tsx'
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
 import { SessionRow } from './SessionRow.tsx'
@@ -32,6 +32,11 @@ const ARCHIVED_FILTER_ITEMS: readonly { value: ArchivedFilter; label: string; ic
   { value: 'only', label: 'アーカイブ済みだけ表示', icon: 'inventory_2' },
 ]
 
+const ORDER_ITEMS: readonly { value: OrderBy; label: string; icon: string }[] = [
+  { value: 'updated', label: '最近の更新順', icon: 'schedule' },
+  { value: 'manual', label: '手動の順', icon: 'format_list_numbered' },
+]
+
 export function HomeScreen() {
   const dsh = useDsh()
   const list = useSnapshot(dsh.sessions.list)
@@ -40,13 +45,16 @@ export function HomeScreen() {
   const workspace = selectWorkspace(snapshot.items, preferences.workspaceId)
   const archivedIds = new Set(snapshot.archivedSessionIds)
   const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents, preferences.archivedFilter)
-  const { rows, pinned } = pinnedFirst(visible, snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
+  const { rows, pinned } = preferences.orderBy === 'updated'
+    ? pinnedFirstInOrder(orderSessions(visible, 'updated'), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
+    : pinnedFirst(orderSessions(visible, 'manual'), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
   const unpinned = rows.filter(row => !pinned.has(row.id) && !archivedIds.has(row.id))
   const operable = rows.some(row => canEditHomeSession(row) && !archivedIds.has(row.id))
   const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))
   const sortCaption = pinned.size ? 'つまみをドラッグして順番を変更（ピン留めした行は固定した順に並びます）' : 'つまみをドラッグして順番を変更'
-  const listCaption = preferences.archivedFilter === 'only' ? `${rows.length} 件のアーカイブ済みセッション`
-    : preferences.archivedFilter === 'show' ? `${rows.length} 件のセッション（アーカイブ済みを含む）` : `${rows.length} 件のセッション`
+  const orderSuffix = preferences.orderBy === 'updated' ? '・最近の更新順' : ''
+  const listCaption = (preferences.archivedFilter === 'only' ? `${rows.length} 件のアーカイブ済みセッション`
+    : preferences.archivedFilter === 'show' ? `${rows.length} 件のセッション（アーカイブ済みを含む）` : `${rows.length} 件のセッション`) + orderSuffix
   const { connected } = useConnection()
   const directory = useDirectoryAvailability(dsh.remote, connected)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -86,6 +94,7 @@ export function HomeScreen() {
     if (snapshot.phase === 'ready' && preferences.workspaceId !== (workspace?.workspaceId ?? null)) setCurrentWorkspace(workspace?.workspaceId ?? null)
   }, [snapshot.phase, workspace?.workspaceId, preferences.workspaceId])
   useEffect(() => { setMode('normal'); setSelected(new Set()) }, [workspace?.workspaceId])
+  useEffect(() => { if (preferences.orderBy !== 'manual') setMode(mode => mode === 'sort' ? 'normal' : mode) }, [preferences.orderBy])
   const selectedIds = rows.filter(row => selected.has(row.id) && canEditHomeSession(row)).map(row => row.id)
   async function archive(ids: readonly string[]) {
     ids = ids.filter(id => canEditHomeSession(dsh.sessions.list.getSnapshot().byId[id]))
@@ -177,7 +186,12 @@ export function HomeScreen() {
       </div>
     </TabScaffold>
     <M3eMenu ref={menu} aria-label="一覧のメニュー" className="home-menu" positionX="before">
-      <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />並べ替え</M3eMenuItem>
+      {ORDER_ITEMS.map(item => <M3eMenuItem key={item.value} role="menuitemradio" aria-checked={preferences.orderBy === item.value ? 'true' : 'false'}
+        onClick={() => { menu.current?.hide(); setOrderBy(item.value) }}>
+        <Icon slot="icon" name={item.icon} />{item.label}
+        {preferences.orderBy === item.value && <Icon slot="trailing-icon" name="check" />}
+      </M3eMenuItem>)}
+      {preferences.orderBy === 'manual' && <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />並べ替え</M3eMenuItem>}
       <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />選んでアーカイブ</M3eMenuItem>
       <M3eMenuItem disabled={!workspace || !connected || loading} onClick={() => { menu.current?.hide(); if (workspace) renameWorkspace(dsh, workspace) }}><Icon slot="icon" name="edit" />名前を変える</M3eMenuItem>
       <M3eMenuItem role="menuitemcheckbox" aria-checked={preferences.showSubagents} onClick={() => { menu.current?.hide(); setShowSubagents(!preferences.showSubagents) }}>
