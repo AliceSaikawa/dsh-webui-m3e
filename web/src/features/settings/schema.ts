@@ -240,20 +240,33 @@ function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
   const unknownPaths = new PathSet()
   const containsPath = (parent: SettingPath, child: SettingPath) => parent.length <= child.length && parent.every((key, index) => key === child[index])
 
-  /** Members of nested intersections, each shared definition once. */
-  function members(node: SchemaNode, disabled: boolean): { node: SchemaNode; disabled: boolean }[] {
-    const result: { node: SchemaNode; disabled: boolean }[] = []
-    const seen = [new Set<SchemaNode>(), new Set<SchemaNode>()]
+  /**
+   * Members of nested intersections, each shared definition once per disabled state. A password
+   * role on an intersection protects all of its members, like `disabled` it travels down the nesting.
+   */
+  function members(node: SchemaNode, disabled: boolean): { node: SchemaNode; disabled: boolean; password: boolean }[] {
+    const result: { node: SchemaNode; disabled: boolean; password: boolean }[] = []
+    // Per disabled state: the strongest password flag a node was walked with, and its entry.
+    const seen = [new Map<SchemaNode, boolean>(), new Map<SchemaNode, boolean>()]
+    const entries = [new Map<SchemaNode, { node: SchemaNode; disabled: boolean; password: boolean }>(), new Map<SchemaNode, { node: SchemaNode; disabled: boolean; password: boolean }>()]
     let work = 0
-    const walk = (current: SchemaNode, off: boolean): void => {
+    const walk = (current: SchemaNode, off: boolean, pw: boolean): void => {
       if (++work > MAX_SCHEMA_WORK) throw new SchemaTooComplex()
+      pw = pw || current.meta?.role === 'password'
       const visited = seen[Number(off)]!
-      if (visited.has(current)) return
-      visited.add(current)
-      if (current.type === 'intersect' && !current.truncated) for (const child of current.list ?? []) walk(child, off || current.meta?.disabled === true)
-      else result.push({ node: current, disabled: off })
+      const before = visited.get(current)
+      // A node first walked without a password role is walked again once a password path
+      // reaches it, so the entry below cannot keep the value that the later path protects.
+      if (before === true || (before === false && !pw)) return
+      visited.set(current, pw)
+      if (current.type === 'intersect' && !current.truncated) for (const child of current.list ?? []) walk(child, off || current.meta?.disabled === true, pw)
+      else {
+        const known = entries[Number(off)]!.get(current)
+        if (known) known.password = true
+        else { const entry = { node: current, disabled: off, password: pw }; entries[Number(off)]!.set(current, entry); result.push(entry) }
+      }
     }
-    walk(node, disabled)
+    walk(node, disabled, false)
     return result
   }
 
@@ -355,21 +368,31 @@ function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
   if (schema.truncated) return [notice(0)]
 
   // Top-level items in display order: the same walk as fields(schema, []).
-  interface Item { node: SchemaNode; path: string[]; index: number; disabled: boolean }
-  const items: Item[] = members(schema, false).flatMap(member => member.node.type === 'object' && member.node.dict
-    ? Object.entries(member.node.dict).map(([key, child], index) => ({ node: child, path: [key], index, disabled: member.disabled || member.node.meta?.disabled === true }))
-    : [{ node: member.node, path: [], index: 0, disabled: member.disabled }])
+  interface Item { node: SchemaNode; path: string[]; index: number; disabled: boolean; password: boolean }
+  // A password role on the flattened member object protects its own children, so it must
+  // survive the flattening: every member of the object inherits the protection.
+  const items: Item[] = members(schema, false).flatMap(member => {
+    if (member.node.type === 'object' && member.node.dict)
+      return Object.entries(member.node.dict).map(([key, child], index) => ({ node: child, path: [key], index, disabled: member.disabled || member.node.meta?.disabled === true, password: member.password }))
+    return [{ node: member.node, path: [], index: 0, disabled: member.disabled, password: member.password }]
+  })
 
   // Collect protection per top-level key (all intersection members of a key together),
   // so a shown key never misses a password role declared by a later member.
   const safeKeys = new Set<string>()
   let protectionComplete = false
   try {
-    for (const item of items) if (!item.path.length) collectProtected(item.node, [], namespace.value)
+    for (const item of items) if (!item.path.length) {
+      if (item.password) protectedPaths.add([])
+      else collectProtected(item.node, [], namespace.value)
+    }
     const byKey = new Map<string, Item[]>()
     for (const item of items) if (item.path.length) byKey.set(item.path[0]!, [...byKey.get(item.path[0]!) ?? [], item])
     for (const [key, group] of byKey) {
-      for (const item of group) collectProtected(item.node, item.path, valueAt(namespace.value, item.path))
+      for (const item of group) {
+        if (item.password) protectedPaths.add(item.path)
+        else collectProtected(item.node, item.path, valueAt(namespace.value, item.path))
+      }
       safeKeys.add(key)
     }
     protectionComplete = true
