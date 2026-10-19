@@ -37,8 +37,10 @@ test('ジョブは実行中と停止中を先にし、各群は新しい順で�
 test('全状態と種類に日本語の表示を用意し、完了後の経過時間は増えない', () => {
   assert.deepEqual(['running', 'stopping', 'completed', 'killed', 'failed'].map(status => jobStatusLabel(status as SessionJob['status'])),
     ['実行中', '停止中', '完了', '停止済み', '失敗'])
-  assert.equal(jobKindLabel('bash'), 'bash')
-  assert.equal(jobKindLabel('subagent'), 'サブエージェント')
+  assert.equal(jobKindLabel('bash'), 'シェル（bash）')
+  assert.equal(jobKindLabel('pwsh'), 'シェル（pwsh）')
+  assert.equal(jobKindLabel('workflow'), 'ワークフロー')
+  assert.equal(jobKindLabel('pty-send'), '端末送信')
   assert.equal(jobKindLabel('other'), 'ジョブ')
   assert.equal(jobDurationLabel(job('live', 'running', 1000), 62_000), '1 分 1 秒')
   assert.equal(jobDurationLabel(job('done', 'completed', 1000, 5000), 100_000), '4 秒')

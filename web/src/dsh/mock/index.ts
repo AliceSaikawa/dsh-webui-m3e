@@ -40,18 +40,26 @@ export function createMockContext(options: MockOptions = {}) {
     })
   }
   // Holds only the Workspace registration retry (create with a published
-  // sessionId) and can fail it like the Host's partial-create error.
+  // sessionId) and can fail it like the Host's partial-create error. The real
+  // Host creates or reuses the Session first and attaches it afterwards, so the
+  // failure reports the identity it actually made and leaves it out of the
+  // Workspace (dsh-api-session-controller/lib/index.js:774-782,
+  // dsh-workspace/lib/index.js:102-129).
   if (testWindow.__m3eTestWorkspaceAttachGate) {
     const create = ctx.sessions.create.bind(ctx.sessions)
     ctx.mock.patch('sessions.create', async (input: Parameters<typeof create>[0] = {}) => {
-      if (!input.sessionId || !input.workspaceId) return create(input)
+      const sessionId = input.sessionId
+      const workspaceId = input.workspaceId
+      if (!sessionId || !workspaceId) return create(input)
       testWindow.__m3eTestWorkspaceAttachCalls = (testWindow.__m3eTestWorkspaceAttachCalls ?? 0) + 1
       await testWindow.__m3eTestWorkspaceAttachGate
-      if (testWindow.__m3eTestWorkspaceAttachFailure) {
-        const details = { sessionId: input.sessionId, workspaceId: input.workspaceId }
-        throw Object.assign(new Error('ワークスペースへ登録できませんでした。'), { rpcError: { code: 'session/workspace-attach-failed', message: 'ワークスペースへ登録できませんでした。', details } })
-      }
-      return create(input)
+      if (!testWindow.__m3eTestWorkspaceAttachFailure) return create(input)
+      const created = await create(input)
+      // A named Session the Host could not reuse is the one a failed attach
+      // leaves out of the Workspace.
+      if (created !== sessionId) ctx.mock.updateWorkspace(workspaceId, workspace => ({ sessionIds: workspace.sessionIds.filter(id => id !== created) }))
+      const details = { sessionId: created, workspaceId }
+      throw Object.assign(new Error('ワークスペースへ登録できませんでした。'), { rpcError: { code: 'session/workspace-attach-failed', message: 'ワークスペースへ登録できませんでした。', details } })
     })
   }
   const gate = testWindow.__m3eTestModelCatalogGate

@@ -37,21 +37,36 @@ test('メニューは子とゴールが存在するときだけ7項目になる'
 })
 test('子カタログを絞り込み、会話へ mode を保ったアドレスを渡す', () => {
   const child = { kind: 'child', id: 'child', activity: 'inactive', mode: 'continuable', label: '調査' } as const
-  const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: child.id, mode: child.mode, label: child.label, createdAt: 0 }, { id: 'bad', mode: 'unknown', createdAt: 0 }, { id: 'malformed' }] } } as SessionProjectionSnapshot
-  assert.equal(catalogEntries(catalog).length, 2)
-  assert.deepEqual(catalogEntries(catalog), [child, { kind: 'diagnostic', id: 'bad' }])
+  const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: child.id, mode: child.mode, label: child.label, createdAt: 0 }, { id: 'bad', mode: 'unknown', createdAt: 0 }, { id: 'malformed' }, { id: 'outside', mode: 'external', label: '別の実行先', createdAt: 0 }] } } as SessionProjectionSnapshot
+  assert.equal(catalogEntries(catalog).length, 3)
+  assert.deepEqual(catalogEntries(catalog), [child, { kind: 'diagnostic', id: 'bad' }, { kind: 'external', id: 'outside', label: '別の実行先' }])
   const converted = catalogEntries(catalog)[0]!
   assert.equal(converted.kind, 'child')
   if (converted.kind === 'child') assert.deepEqual(childAddress('parent', converted), { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
   const once = catalogEntries({ ...catalog, values: { subagentCatalog: [{ id: 'once', mode: 'one-shot', label: '一度限り', createdAt: 0 }] } })[0]!
   assert.deepEqual(once, { kind: 'child', id: 'once', mode: 'one-shot', label: '一度限り', activity: 'inactive' })
   if (once.kind === 'child') assert.deepEqual(childAddress('parent', once), { parentSessionId: 'parent', childSessionId: 'once', mode: 'one-shot' })
+  assert.equal(catalogEntries(catalog)[2]!.kind, 'external')
   assert.equal(hasChildren('parent', catalog, {}), true)
   assert.deepEqual(childAddress('parent', child), { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' })
   assert.equal(hasChildren('parent', { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'bad', mode: 'unknown', createdAt: 0 }] } }, {}), false)
   const summary: SessionSummary = { id: 'child', displayTitle: '子', origin: 'subagent', parentId: 'parent', retainedBy: {}, running: false, blank: false, updatedAt: 0 }
   assert.equal(hasChildren('parent', undefined, { child: summary }), true)
   assert.equal(hasChildren('another', undefined, { child: summary }), false)
+})
+test('external の行はラベル欠けで既定語に落ち、開かせる Child にはならない', () => {
+  const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'no-label', mode: 'external', createdAt: 0 }, { id: 'labeled', mode: 'external', label: '外部での実行', createdAt: 0 }] } } as SessionProjectionSnapshot
+  assert.deepEqual(catalogEntries(catalog), [{ kind: 'external', id: 'no-label' }, { kind: 'external', id: 'labeled', label: '外部での実行' }])
+  assert.deepEqual(catalogRows(catalogEntries(catalog)), { children: [], externals: [{ kind: 'external', id: 'no-label' }, { kind: 'external', id: 'labeled', label: '外部での実行' }], diagnosticCount: 0 })
+  assert.equal(hasChildren('parent', catalog, {}), true)
+})
+test('移行待ちの形式は子の行に印を付け、開ける子の型は変わらない', () => {
+  const summary: SessionSummary = { id: 'child', displayTitle: '子', origin: 'subagent', parentId: 'parent', retainedBy: {}, running: false, blank: false, updatedAt: 0, formatStatus: 'migration-required' }
+  const catalog = { state: 'ready', error: null, values: { subagentCatalog: [{ id: 'child', mode: 'one-shot', label: '調査', createdAt: 0 }] } } as SessionProjectionSnapshot
+  assert.deepEqual(catalogEntries(catalog, { child: summary }), [{ kind: 'child', id: 'child', mode: 'one-shot', label: '調査', activity: 'inactive', migrationRequired: true }])
+  assert.deepEqual(catalogEntries(catalog), [{ kind: 'child', id: 'child', mode: 'one-shot', label: '調査', activity: 'inactive' }])
+  const entry = catalogEntries(catalog, { child: summary })[0]!
+  if (entry.kind === 'child') assert.deepEqual(childAddress('parent', entry), { parentSessionId: 'parent', childSessionId: 'child', mode: 'one-shot' })
 })
 test('ジョブのメニュー件数は一覧と同じ実行中・停止中を数える', () => {
   const jobs = ['running', 'stopping', 'completed', 'failed', 'killed'].map((status, index) => ({ id: String(index), kind: 'bash', label: '処理', status, startedAt: 0 })) as SessionJob[]
@@ -64,8 +79,8 @@ test('複数の読めない記録は件数にまとめ、子の行と順序は�
     { kind: 'child', id: 'child-1', activity: 'running', mode: 'continuable' },
     { kind: 'child', id: 'child-2', activity: 'inactive', mode: 'one-shot' },
   ] as const
-  assert.deepEqual(catalogRows([children[0], { kind: 'diagnostic', id: 'bad-1' }, children[1], { kind: 'diagnostic', id: 'bad-2' }]),
-    { children, diagnosticCount: 2 })
-  assert.deepEqual(catalogRows([{ kind: 'diagnostic', id: 'bad' }]), { children: [], diagnosticCount: 1 })
-  assert.deepEqual(catalogRows([]), { children: [], diagnosticCount: 0 })
+  assert.deepEqual(catalogRows([children[0], { kind: 'diagnostic', id: 'bad-1' }, { kind: 'external', id: 'x' }, children[1], { kind: 'diagnostic', id: 'bad-2' }]),
+    { children, externals: [{ kind: 'external', id: 'x' }], diagnosticCount: 2 })
+  assert.deepEqual(catalogRows([{ kind: 'diagnostic', id: 'bad' }]), { children: [], externals: [], diagnosticCount: 1 })
+  assert.deepEqual(catalogRows([]), { children: [], externals: [], diagnosticCount: 0 })
 })

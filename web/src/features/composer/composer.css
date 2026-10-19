@@ -12,12 +12,16 @@
    the outer box unchanged and does not enter the measured scrollHeight. */
 .composer-frame textarea[style*="height: auto"] { margin-bottom: calc(var(--app-space) * .625 - 4px); }
 .composer-frame textarea:focus-visible { outline-offset: 0; border-radius: calc(var(--app-radius) * 2 / 7); }
-.composer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--app-space) * .25); min-height: 48px; }
+.composer-controls { container-type: inline-size; display: flex; flex-wrap: nowrap; align-items: center; gap: calc(var(--app-space) * .25); min-height: 48px; }
 .composer-controls m3e-icon-button { flex: none; min-width: 44px; min-height: 44px; }
 .composer-controls m3e-button { --m3e-button-leading-space: calc(var(--app-space) * .625); --m3e-button-trailing-space: calc(var(--app-space) * .625); }
-.composer-permission { min-width: 0; max-width: calc(var(--app-space) * 10); --m3e-chip-label-text-font-size: 12px; --m3e-chip-spacing: calc(var(--app-space) * .25); --m3e-chip-with-icon-padding-start: calc(var(--app-space) * .5); --m3e-chip-padding-end: calc(var(--app-space) * .5); --m3e-chip-container-shape: calc(var(--app-radius) * 2 / 7); }
-.composer-permission-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composer-spacer { flex: 1; }
+.composer-model { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; }
+.composer-model-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* While running, stop and the split button take about 300px. Below this width
+   the model name would shrink to a sliver that cannot be read or tapped, so the
+   row drops it; it comes back when the run ends, and the + sheet still has it. */
+@container (max-width: 379px) { .composer-controls-running .composer-model { display: none; } }
+.composer-spacer { flex: 1; min-width: 0; }
 .composer-send-group { flex: none; margin-inline-start: auto; }
 .composer-hint { display: block; padding: 0 calc(var(--app-space) * .25) calc(var(--app-space) * .25); color: var(--md-sys-color-on-surface-variant); }
 .composer-queue { display: flex; justify-content: flex-end; margin-bottom: calc(var(--app-space) * .5); }
@@ -49,3 +53,8 @@
 .composer-new-intro { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; min-height: 100%; padding: calc(var(--app-space) * 1.5); }
 .composer-new-intro h2 { margin-bottom: calc(var(--app-space) * .5); }
 .composer-new-intro p { color: var(--md-sys-color-on-surface-variant); }
+/* cache-sentinel(DSH の Host プラグイン)の警告。入力禁止のセッションで、送る前に出す。 */
+.composer-sentinel { display: flex; align-items: center; gap: var(--app-space); padding: calc(var(--app-space) * .5) var(--app-space); border-radius: var(--md-sys-shape-corner-medium, 12px); font-size: 13px; }
+.composer-sentinel p { flex: 1; margin: 0; }
+.composer-sentinel-warning { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
+.composer-sentinel-info { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }

@@ -73,9 +73,9 @@ test('S6C B2 保存済み投影の後でAgentが準備されるまで操作を�
 test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な設定で候補と操作が復帰する', async ({ page }) => {
   await expose(page)
   await visit(page, '/s/readme-review')
-  const chip = page.locator('.composer-permission-label')
-  await expect(chip).toHaveText('ワークスペース書込')
-  await button(page, 'ワークスペース書込').click()
+  const chip = page.locator('.composer-permission')
+  await expect(chip).toHaveAttribute('aria-label', '権限：ワークスペース書込')
+  await button(page, '権限：ワークスペース書込').click()
   const fullAccess = page.getByRole('button', { name: /^フル アクセス/ })
   await expect(fullAccess).toBeEnabled()
   const result = await page.evaluate(async () => {
@@ -86,7 +86,7 @@ test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な�
     return ctx.remote.settings.update('permission', { defaultPreset: 'unknown-preset' }, row.revision)
   })
   expect(result.ok).toBe(true)
-  await expect(chip).toHaveText('権限')
+  await expect(chip).toHaveAttribute('aria-label', '権限')
   await expect(page.locator('.composer-sheet').getByRole('alert')).toHaveText('サーバーでエラーが発生しました。しばらく待ってから、もう一度お試しください。')
   await expect(fullAccess).toHaveCount(0)
   // Keep this same composer and sheet mounted: remounting would perform an
@@ -99,12 +99,12 @@ test('S6C M7 権限設定の通知で古いカタログを破棄し、正常な�
     return ctx.remote.settings.update('permission', { defaultPreset: 'workspace-write' }, row.revision)
   })
   expect(restored.ok).toBe(true)
-  await expect(chip).toHaveText('ワークスペース書込')
+  await expect(chip).toHaveAttribute('aria-label', '権限：ワークスペース書込')
   await expect(page.locator('.composer-sheet').getByRole('alert')).toHaveCount(0)
   await expect(fullAccess).toBeEnabled()
   await fullAccess.click()
   await expect(page.getByRole('heading', { name: '権限の選び直し' })).toHaveCount(0)
-  await expect(chip).toHaveText('フル アクセス')
+  await expect(chip).toHaveAttribute('aria-label', '権限：フル アクセス')
 })
 
 test('S6C B2 会話の準備失敗で待機を止め、状態の回復から操作を再開する', async ({ page }) => {

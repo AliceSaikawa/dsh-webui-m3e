@@ -44,7 +44,7 @@ export function extendMock(kit: MockKit): void {
   }
   kit.setJobs(parent, [
     { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.running, kind: 'bash', label: '型を確認しています', status: 'running', startedAt: now - 65000 },
-    { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.complete, kind: 'subagent', label: 'テストの確認', status: 'completed', startedAt: now - 130000, finishedAt: now - 80000 },
+    { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.complete, kind: 'workflow', label: 'テストの確認', status: 'completed', startedAt: now - 130000, finishedAt: now - 80000 },
     { output: { total: 0, earliest: 0 }, id: SESSION_TOOLS_MOCK_IDS.jobs.failed, kind: 'bash', label: '承認シートのテスト', status: 'failed', startedAt: now - 200000, finishedAt: now - 185000 },
   ])
   kit.setProjection(parent, 'subagentCatalog', children)

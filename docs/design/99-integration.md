@@ -532,3 +532,22 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
   - `helpers.ts` の `info.status` の未定義を `'passed'` とみなす（後処理の時点では Playwright が必ず設定する。未定義を成功とみなすと検査がすべて適用される側に倒れる）
 - 変更した spec と `browser-errors.spec.ts` の 91 件を実行した。`mock.spec.ts` の 05c が 1 回だけ失敗したが、単独で 5 回繰り返すと 5 回とも成功した。並行して別の e2e を 3 つ実行していた負荷による、時間依存の失敗と考えている（この変更は型だけ）。
 - `e2e-dsh/` は対象外にした。`rpc.spec.ts` に `page.evaluate` の型の展開が深すぎるエラー（TS2589）などがあり、実 DSH の e2e は CI で実行していないため。後続で扱う。
+
+### Issue #91：復元したタブでの 401（2026-10-16）
+
+- 症状：iPhone の Safari で、裏に回して OS にタブを破棄されたあと、タブに戻ったときの自動の読み直しだけが `dsh web authentication required; reopen the URL printed by dsh web.`（HTTP 401、英語の平文 1 行）になる。アドレスバーから手で開き直すと直る。標準の画面 `/` と `/m3e/` の両方で起こりうる。
+- 考えている原因（**未確認**）：DSH のログインは Cookie だけで、発行時に `SameSite=Strict` を付ける（`dsh-client-connection` の `sessionCookie`）。WebKit には、復元したタブを別サイトから `window.open` で開いたタブと同じ扱いにして SameSite の Cookie を送らない不具合がある（bugs.webkit.org 200345）。手で URL を開き直すと直る、という報告とも一致する。実機と実ログでは確かめていない。
+- 直し方（`src/host/index.ts`）：`/m3e/` の index 要求で、`authorizeIndex` に本物の `res` を渡さず、`writeHead` と `end` を記録するだけの代わりのオブジェクトを渡す（`captureIndexAuthResponse`）。認証できたときは今までどおり index を返す。**401 で、要求の URL に `token` の query がないとき**だけ、M3E の説明ページを返す。`token` 付きの 401、303 の転送、403 などは、記録した `writeHead` と `end` を同じ引数のまま本物の `res` へ流し、DSH の判断を変えない。`HEAD` では本文を送らない。
+- 説明ページ（`unauthorizedPage()` が本文、`UNAUTHORIZED_HEADERS` がヘッダーの定数）：状態は 401。`content-type`・`cache-control: no-store`・`referrer-policy: no-referrer`・`x-frame-options: DENY`・`content-security-policy`（`default-src 'none'`、`style-src 'unsafe-inline'`、`script-src` は本文の `<script>` の `sha256` を読み込み時に `node:crypto` で計算した値、`frame-ancestors 'none'`、`base-uri 'none'`、`form-action 'none'`）。外部の CDN・フォント・画像・別ファイルの CSS/JS は読まず、`<html lang="ja">`・`<meta name="viewport">`・`color-scheme: light dark` だけを持つ。要求から来た文字列（URL・Cookie・ヘッダー）は埋め込まない。
+- 説明ページの動き：読み込み時に同じサイトからの `location.replace(location.href)` を 1 回だけ試す（復元したタブでも Cookie が送られる場合があるため）。繰り返しを防ぐため `sessionStorage` に試した時刻を置き、30 秒以内にもう試していたら自動では動かない。`sessionStorage` が例外を投げるときは自動では動かない。ボタン「開き直す」は常に使える。
+- 確かめたこと：`tests/host-routes.test.ts` に 6 試験を追加した。401・5 つのヘッダー・本文が説明ページであること・CSP の `sha256` が本文の `<script>` の中身から計算した値と一致することを確かめる。`token` 付きの 401・303・403 が DSH の書いたとおりに流れること、`HEAD` で本文がないこと、ページが外部資源を読まず要求の URL を含まないことも確かめる。インラインスクリプトは `node:vm` で走らせ、1 回だけの再読み込み・30 秒の抑止・`sessionStorage` の例外時の停止・ボタンの動作を確かめる。既存の 401 試験は、平文の 401 をそのまま流す前提だったため、本文の期待値だけを説明ページ（`HEAD` は本文なし）に合わせた。他の既存試験は変更していない。
+- `pnpm typecheck`、`pnpm test`（1,262 件、成功 1,260、失敗 0、skip 2 件は DSH 配布コード未配置による既存）、`pnpm build`、`git diff --check` が成功した。既存の 500 kB 超 chunk 警告は残る。
+- 実 DSH（隔離した Host、偽 LLM、Chromium）：`e2e-dsh/tab-restore-auth.spec.ts` の 3 件が成功した。復元したタブの代わりに、別のサイトのページのリンクから `/m3e/` を開いて `SameSite=Strict` の Cookie を落とす。ログイン済みなら 401 の説明ページから自動の開き直しで 200 になり一覧が出ること、ログインしていなければ自動の開き直しは 1 回だけで日本語の案内が出ること、`token` 付きの `/m3e/` は DSH の平文の 401 のままであることを確かめる。WebKit はこの環境に必要なシステムのライブラリが無く、流せなかった。
+- 残り：実機の iPhone の復元したタブそのものでは確かめていない。WebKit の復元したタブで、ページの中からの開き直しに Cookie が付くかは分からない。付かなければ、案内の文に従ってアドレスバーから開き直すことになる。原因は WebKit の不具合と推定しているが未確認。標準画面 `/` の 401 は DSH 本体が返すもので、M3E では変えられない。
+
+#### 自動の開き直しをやめる（2026-10-17）
+
+- 実機の iPhone の Safari で、この説明ページが出たまま自動の開き直しでは直らず、アドレスバーの URL をタップして「開く」を押すと直ることを利用者が確かめた。WebKit bug 200345 の報告（復元したタブは何度再読み込みしても SameSite の Cookie を送らない。アドレスバーから URL を確定すると直る）と一致する。
+- ページの中から始める `location.replace` もボタンも同じ理由で効かないため、説明ページからスクリプトとボタン「開き直す」を外した。CSP は `script-src` の `sha256` を外し、`default-src 'none'` でスクリプトをすべて止める。文言は「再読み込みしても直らない」「アドレスバーの URL をタップし、そのままキーボードの『開く』を押す」を中心にし、それでも開けないときは期限切れか別のアドレスと書く。
+- 試験：`tests/host-routes.test.ts` からスクリプトの動作を `node:vm` で確かめる 2 件を外し、ページに `<script>` と `<button>` が無いこと、CSP がスクリプトを許さないことを確かめるようにした。`e2e-dsh/tab-restore-auth.spec.ts` は、別のサイトから開くと案内が出て読み直さないこと（401 の 1 回だけ）、そのあと `page.goto`（アドレスバーから開く代わり）で 200 と一覧が出ることを確かめるようにした。
+- 根本の対策は DSH 本体の Cookie の `SameSite` で、M3E からは変えられない（DSH の Discussion #9096 に同じ要望がある）。

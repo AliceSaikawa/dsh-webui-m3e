@@ -44,9 +44,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.host.json --noEmit"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.4",
-    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.6",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.2",
     "@m3e/react": "2.8.2",
     "@m3e/web": "2.8.2",
     "@material/material-color-utilities": "0.4.0",
@@ -62,7 +62,8 @@
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12"
+    "vite": "^7.1.12",
+    "zod": "4.4.3"
   },
   "dsh": {
     "bundle": {
