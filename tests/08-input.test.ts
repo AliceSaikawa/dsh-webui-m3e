@@ -135,16 +135,18 @@ test('競合や再接続で保存の権限が変わった場合、古い画面�
   assert.equal(h.input.getSnapshot().saving, false)
 })
 
-test('画面を離れた後は待機中の入力を続けて送らない', async () => {
+test('画面を離れたときは待機中の入力を保存し、保存中の追加入力も続けて送る', async () => {
   const h = harness('元の値')
-  h.input.change('最初の変更')
-  const saving = h.input.flush()
-  h.input.change('次の変更')
-  h.input.setActive(false)
-  h.calls[0]!.response.resolve({ ok: true, value: '最初の変更' })
-  await saving
+  h.input.changeDeferred('最初の変更')
+  const leaving = h.input.leave()
   assert.equal(h.calls.length, 1)
-  assert.equal(h.input.getSnapshot().value, '次の変更')
+  h.input.change('次の変更')
+  h.calls[0]!.response.resolve({ ok: true, value: '最初の変更' })
+  await tick()
+  assert.deepEqual(h.calls.map(call => call.value), ['最初の変更', '次の変更'])
+  h.calls[1]!.response.resolve({ ok: true, value: '次の変更' })
+  await leaving
+  assert.deepEqual(h.input.getSnapshot(), { value: '次の変更', dirty: false, saving: false, saved: true })
 })
 
 test('通信例外を処理し、未保存の入力を保つ', async () => {

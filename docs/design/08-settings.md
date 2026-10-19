@@ -1264,3 +1264,18 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **担当範囲外を触った経緯**：外観シートに色の選択を足す機能のため、次の担当外のファイルを変更した。設計書の「担当するファイル」は `web/src/features/settings/` と `tests/08-*.test.ts` だが、画面全体の配色は `web/src/app/theme/`（`appearance.ts`、`colors.ts`、`Theme.tsx`、`apply.ts`、`index.ts`）が持ち、起動直後に保存済みの配色を当てるには `web/src/main.tsx` の先頭で呼ぶ必要があった。ほかに、外観の仕様を `docs/ui-spec.md` の設定タブの節へ、e2e を `e2e/mock.spec.ts`（08a）と `tests/00-theme-colors.test.ts` へ足した。いずれも色の入力を `themeOptions` 固定から引数にする変更で、他の機能の挙動は変えない。担当外のため統合の担当は差分を確認してほしい。
 - **PR #110 のレビューへの対応**：(1) `<input type="color">` の連続更新は、`AppearanceSheet.tsx` で 1 フレームに 1 回だけ `setThemeColor` を呼ぶ（requestAnimationFrame。シートを閉じるときは保留中の最後の色を反映する）。入力欄は保存の遅れに引きずられないよう、手元の状態で選択中の色を表示する。`colors.ts` のパレットの作り置きは直近 32 色までにした。(2) 「ほかの色」の選択状態は、`aria-pressed` を付けられない（色の入力に許される ARIA 属性ではない）ため、入力の名前を「ほかの色（選択中）」にして伝える。(3) `applyStoredTheme` と `meta[name=theme-color]` の更新を `web/src/app/theme/apply.ts` に移し、DOM のない単体試験（`tests/08-theme-apply.test.ts`）で明暗・端末設定・タグなし・失敗時を確かめる。実ブラウザーでは 08a で `theme-color` の内容と「ほかの色」の名前を確かめる。
 - **PR #110 の 2 回目のレビューへの対応**：「ほかの色」の変更で予約したフレーム、またはシートを閉じたときの反映が、あとから選んだプリセットを捨てたはずのカスタム色で上書きしていた（プリセットのタップが保留中の色を取り消していなかった。OverlayHost は閉じるアニメーションのあいだシートを残すため、Escape の直後でも起きる）。間引きを `web/src/features/settings/frame-throttle.ts` の `createFrameThrottledWriter` に分け、プリセットは `immediate` で保留中のフレームを取り消して保留の色を捨ててから書く。閉じるときの `flush` は保留が残っているとき、つまり最新の意図がカスタム色のときだけ書く。プリセットが保存済みの色と同じでも入力欄にカスタム色が残らないよう、プリセットのタップで入力欄の表示もその色に戻す。試験は `tests/08-frame-throttle.test.ts`（同じフレームの custom → preset → 閉じるを含む 5 件）と `e2e/mock.spec.ts` の 08c（同じタスクで「ほかの色」→ プリセット、および「ほかの色」→ プリセット → Escape）。08c は修正前のコードで失敗することを確かめた。
+
+### 2026-10-19：Issue #126、履歴移動で自動保存前に離れても入力を失わない
+
+- 原因は `SchemaFields.tsx` のアンマウント時の `input.setActive(false)` が `input.ts` の保存待ちタイマーを解除し、`use-settings.ts` の store も画面ごとに作り直されていたこと。`setActive` を `leave()` に置き換え、`createSettingInput` は画面を離れるときに `flush()` する。`drain` は画面の有無で打ち切らないため、最初の保存中に追加入力して離れた場合も最新値を続けて保存する。
+- `useSettings` は `createSettingsStore` の結果を remote ごとの `WeakMap` に保持し、画面をまたいで下書き・保存結果・欄エラーを復元する。設定画面を開き直したときは `reload()` して、購読していない間に届かなかった変更を読む。`FieldEditor` の離脱は 0ms 後に遅らせ、StrictMode の疑似アンマウントでは保存しない。
+- 試験：`tests/08-input.test.ts` の離脱の期待を新しい契約へ変更。`e2e/settings-drafts.spec.ts` に、600ms 以内の `page.goBack()`、最初の保存中の追加入力、離脱時の保存拒否から開き直して再保存の 3 件を追加し、修正前に失敗することを確認した。
+- 検証：`pnpm typecheck`、`tsc -p tsconfig.e2e.json --noEmit`、`pnpm test`（1,321 件中 1,319 件成功・失敗 0、skip 2 件は既存）、`pnpm build`、`git diff --check`。`?mock` の e2e は `e2e/settings-*.spec.ts` 38 件と、`operations`・`edge-cases`・`mock` の 08 系 9 件が成功。
+
+### 2026-10-20：Issue #126 レビュー対応、設定画面を閉じている間も接続と通知を受け取る
+
+- 回帰の原因は、store を remote ごとに残した一方、`connection.state` と `settings/document-updated` の購読を `useSettings` の effect に残したこと。設定画面が 1 つも出ていない間の切断・再接続が store に届かず、応答の返らない保存が queue と `saving` を止めたままになった。
+- `settings-lifetime.ts` の `settingsStoreFor` で、store の生成時に購読を 1 回だけ張り、remote と同じ寿命にした。画面ごとに残すのは `subscribeNotice(showSnackbar)` だけにし、`opened()` で設定画面を開いたときの `reload()` を行う。
+- `SchemaFields.tsx` の離脱時は `input.leave()` の完了後に `dirty` または欄のエラーが残っていれば、`showSnackbar` で「『<項目の名前>』を保存できませんでした。設定を開き直して確かめてください。」と知らせる。
+- 試験：`tests/08-settings-lifetime.test.ts` 3 件（開くたびの reload、画面を閉じている間の切断・再接続、`document-updated`）。`e2e/settings-drafts.spec.ts` に、応答を止めた保存のまま `#/` へ移り、切断・再接続後に開き直して 90 を保存する 1 件を追加。修正前の `use-settings.ts` で「保存しています…」が残って失敗することを確認した。離脱時の拒否の試験にはスナックバーの確認を足し、修正前の `SchemaFields.tsx` で失敗することを確認した。`e2e/settings-broadcast.spec.ts` の S5 は、画面を閉じた後の `document-updated` でも読む期待（1 回）に変えた。
+- 検証：`pnpm typecheck`、`tsc -p tsconfig.e2e.json --noEmit`、`pnpm test`（1,324 件中 1,322 件成功・失敗 0、skip 2 件は既存）、`pnpm build`、`git diff --check`。`?mock` の `e2e/settings-drafts.spec.ts` 9 件が成功。

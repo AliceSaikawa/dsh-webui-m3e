@@ -6,7 +6,7 @@ declare global { interface Window {
   __s5SettingsProbe: { ctx: MockContext; describes: number }
 } }
 
-test('S5 偽の複数引数放送から useSettings へ版を渡し、同じ版の再取得と解除後の更新を防ぐ', async ({ page }) => {
+test('S5 偽の複数引数放送から useSettings へ版を渡し、同じ版を無視して画面を閉じた後も更新を読む', async ({ page }) => {
   await page.route('**/src/dsh/mock/context.ts*', async route => {
     const response = await route.fetch()
     const body = await response.text()
@@ -36,5 +36,7 @@ test('S5 偽の複数引数放送から useSettings へ版を渡し、同じ版�
   expect(await emitAndCount(revision + 1)).toBe(1)
   await page.evaluate(() => { window.location.hash = '/' })
   await expect(page.locator('.home-session').first()).toBeVisible()
-  expect(await emitAndCount(revision + 1)).toBe(0)
+  // The store and its subscription live with the remote, not the screen, so a
+  // change broadcast while no settings screen is open is read as well.
+  expect(await emitAndCount(revision + 1)).toBe(1)
 })
