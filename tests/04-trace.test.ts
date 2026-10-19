@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
-import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, rowDescription, selectTrace, traceRowIcon, turnHeading } from '../web/src/features/trace/model.ts'
-import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from '../web/src/features/trace/record-summary.ts'
+import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, formatTurnHeading, rowDescription, selectTrace, terminationLabel, traceRowIcon, turnHeading } from '../web/src/features/trace/model.ts'
+import { traceMessages, type TraceMessages } from '../web/src/features/trace/messages.ts'
+import { recordDurationText, recordOutputText, recordResultText, recordUsageText } from '../web/src/features/trace/record-summary.ts'
+import { traceEmptyMessage } from '../web/src/features/trace/view-state.ts'
+import { catalogProblems, messagesOf, untranslatedLocales } from '../web/src/i18n/catalog.ts'
 import { formatDuration as chatFormatDuration } from '../web/src/features/chat/model.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { foldSessionWindow } from '../web/src/dsh/session-journal.ts'
@@ -752,7 +755,7 @@ test('record detail rows summarize time, tokens, input and output as in Canvas',
   assert.equal(recordUsageText({ inputTokens: 11668, outputTokens: 812, cacheReadTokens: 9200 }),
     '入力 11,668（キャッシュを除く） ・ 出力 812 ・ キャッシュ読み込み 9,200 ・ キャッシュ書き込み 未記録')
   assert.equal(recordUsageText(undefined), 'トークン数は記録されていません')
-  assert.equal(recordInputSupporting, '送ったメッセージとツールの結果')
+  assert.equal(traceMessages.ja.recordInputSupporting, '送ったメッセージとツールの結果')
   assert.equal(recordOutputText({ kind: 'assistant', running: false, content: [
     { type: 'reasoning', text: '考え' }, { type: 'text', text: '答え' }, { type: 'tool-call', id: 'a', name: 'bash', arguments: '{}' },
     { type: 'tool-call', id: 'b', name: 'read_file', arguments: '{}' },
@@ -761,4 +764,47 @@ test('record detail rows summarize time, tokens, input and output as in Canvas',
   assert.equal(recordResultText({ running: true, failed: false }), '結果を待っています')
   assert.equal(recordResultText({ running: false, failed: true }), '失敗')
   assert.equal(recordResultText({ running: false, failed: false }), undefined)
+})
+
+test('the trace dictionary has every Japanese key and no translations yet', () => {
+  assert.deepEqual(catalogProblems(traceMessages), [])
+  assert.deepEqual(untranslatedLocales(traceMessages), ['en', 'zh'])
+  for (const [key, message] of Object.entries(traceMessages.ja)) {
+    assert.ok(typeof message === 'string' ? message.length > 0 : typeof message === 'function', key)
+  }
+  assert.equal(messagesOf(traceMessages, 'en'), traceMessages.ja)
+})
+
+test('trace text helpers assemble their words from the dictionary', () => {
+  const [turn] = buildTrace([
+    record(1, 'turn/start', 1000, { turn: 1 }),
+    record(2, 'step/start', 1000, { turn: 1, step: 1 }),
+    record(3, 'assistant/message', 2500, {
+      turn: 1, step: 1, message: { content: [text('done')] }, usage: { inputTokens: 10, outputTokens: 20 },
+    }),
+    record(4, 'turn/end', 2500, { turn: 1 }),
+  ])
+  assert.ok(turn)
+  const row = turn.rows[0]
+  assert.ok(row)
+  assert.equal(formatTurnHeading(turn, traceMessages.ja, 'ja'), 'ターン 1 ・ 合計 1.5 秒 ・ 30 トークン')
+  assert.equal(rowDescription(row, traceMessages.ja, 'ja'), '1.5 秒 ・ 出力 20 トークン')
+
+  const localized: TraceMessages = {
+    ...traceMessages.ja,
+    detailsSeparator: ' | ',
+    turnLabel: (number: number) => `T${number}`,
+    durationSeconds: (value: string) => `${value}s`,
+    durationTotal: (duration: string) => `total ${duration}`,
+    tokenCount: (count: string) => `${count} tok`,
+    outputTokens: (count: string) => `out ${count} tok`,
+    durationNotMeasured: 'n/a',
+    emptyLoaded: 'EMPTY',
+    terminationError: 'ERR',
+  }
+  assert.equal(formatTurnHeading(turn, localized, 'en'), 'T1 | total 1.5s | 30 tok')
+  assert.equal(rowDescription(row, localized, 'en'), '1.5s | out 20 tok')
+  assert.equal(formatDuration(undefined, localized, 'en'), 'n/a')
+  assert.equal(traceEmptyMessage('open', localized), 'EMPTY')
+  assert.equal(terminationLabel({ kind: 'error', message: 'x' }, localized), 'ERR')
 })

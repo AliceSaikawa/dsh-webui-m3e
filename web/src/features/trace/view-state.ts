@@ -1,4 +1,5 @@
 import type { useSession } from '../../dsh/session.ts'
+import { traceText, type TraceMessages } from './messages.ts'
 
 export type TraceSessionData = Pick<ReturnType<typeof useSession>, 'face' | 'snapshot' | 'records' | 'stream'>
 
@@ -10,6 +11,6 @@ export function retainTraceSession(previous: TraceSessionData | null, next: Trac
   return next
 }
 
-export function traceEmptyMessage(openState: TraceSessionData['snapshot']['openState']): string {
-  return openState === 'open' ? 'まだ記録がありません。' : '会話を読み込んでいます…'
+export function traceEmptyMessage(openState: TraceSessionData['snapshot']['openState'], text: TraceMessages = traceText): string {
+  return openState === 'open' ? text.emptyLoaded : text.emptyLoading
 }

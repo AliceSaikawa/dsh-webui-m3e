@@ -5,10 +5,14 @@ import { M3eExpandableListItem, M3eList, M3eListItem, type M3eExpandableListItem
 import { Icon } from '../../app/icons/Icon.tsx'
 import type { ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
 import { useSession } from '../../dsh/session.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
 import { findTraceRow, formatCount, formatJson, selectTrace, terminationLabel, type TraceInputBlock, type TraceRow } from './model.ts'
-import { recordDurationText, recordInputSupporting, recordOutputText, recordResultText, recordUsageText } from './record-summary.ts'
+import { traceMessages } from './messages.ts'
+import { recordDurationText, recordOutputText, recordResultText, recordUsageText } from './record-summary.ts'
 
 function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef; face: SessionFace | undefined }) {
+  const text = useMessages(traceMessages)
+  const locale = useLocale()
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -25,31 +29,34 @@ function ImageAttachment({ attachment, face }: { attachment: ImageAttachmentRef;
     try {
       const result = await face.readAttachment(attachment.attachmentId)
       if (!alive.current) return
-      if (!result.ok) { setError('画像を読み込めませんでした。'); return }
+      if (!result.ok) { setError(text.imageLoadFailed); return }
       const blob = new Blob([new Uint8Array(result.value.data)], { type: result.value.attachment.mediaType })
       objectUrl.current = URL.createObjectURL(blob)
       setUrl(objectUrl.current)
-    } catch { if (alive.current) setError('画像を読み込めませんでした。') }
+    } catch { if (alive.current) setError(text.imageLoadFailed) }
     finally { if (alive.current) setLoading(false) }
   }
+  const name = attachment.name ?? text.imageFallbackName
   return <div className="trace-attachment">
-    <p>{attachment.name ?? '添付画像'}（{attachment.width} × {attachment.height}、{formatCount(attachment.bytes)} バイト）</p>
-    {url ? <img src={url} alt={attachment.name ?? '添付画像'} /> : <M3eButton variant="text" disabled={loading || !face} onClick={() => { void load() }}>{loading ? '読み込み中…' : '画像を表示'}</M3eButton>}
+    <p>{text.imageInfo(name, attachment.width, attachment.height, formatCount(attachment.bytes, locale))}</p>
+    {url ? <img src={url} alt={name} /> : <M3eButton variant="text" disabled={loading || !face} onClick={() => { void load() }}>{loading ? text.loading : text.imageShow}</M3eButton>}
     {error && <p role="alert" className="trace-error">{error}</p>}
   </div>
 }
 
 function Content({ content, face }: { content: readonly TraceInputBlock[]; face: SessionFace | undefined }) {
-  if (!content.length) return <p className="muted">本文は記録されていません。</p>
+  const text = useMessages(traceMessages)
+  const locale = useLocale()
+  if (!content.length) return <p className="muted">{text.contentEmpty}</p>
   return <div className="trace-blocks">{content.map((block, index) => {
     switch (block.type) {
       case 'text': return <p className="trace-text" key={index}>{block.text}</p>
-      case 'reasoning': return <details key={index}><summary>思考</summary><p className="trace-text">{block.text}</p></details>
-      case 'tool-call': return <details key={index}><summary>ツール呼び出し：{block.name}</summary><Json value={block.arguments} /></details>
-      case 'tool-output': return <details key={index}><summary>ツールの結果{block.isError ? '・失敗' : ''}</summary><Content content={block.content} face={face} /></details>
+      case 'reasoning': return <details key={index}><summary>{text.reasoningSummary}</summary><p className="trace-text">{block.text}</p></details>
+      case 'tool-call': return <details key={index}><summary>{text.toolCallSummary(block.name)}</summary><Json value={block.arguments} /></details>
+      case 'tool-output': return <details key={index}><summary>{text.toolOutputSummary(block.isError === true)}</summary><Content content={block.content} face={face} /></details>
       case 'image': return <ImageAttachment key={`${block.attachment.attachmentId}:${index}`} attachment={block.attachment} face={face} />
-      case 'file': return <p key={index}>添付ファイル：{block.attachment.name}（{formatCount(block.attachment.bytes)} バイト）</p>
-      default: return <p key={index} className="muted">この内容は表示に対応していません。</p>
+      case 'file': return <p key={index}>{text.fileInfo(block.attachment.name, formatCount(block.attachment.bytes, locale))}</p>
+      default: return <p key={index} className="muted">{text.contentUnsupported}</p>
     }
   })}</div>
 }
@@ -59,10 +66,12 @@ function Content({ content, face }: { content: readonly TraceInputBlock[]; face:
  * omission marks, which no longer parses as JSON here.
  */
 function Json({ value, partial = false }: { value: unknown; partial?: boolean }) {
-  const json = formatJson(value)
+  const text = useMessages(traceMessages)
+  const locale = useLocale()
+  const json = formatJson(value, text, locale)
   return <>
     <pre>{json.text}</pre>
-    {(json.partial || partial) && <p className="trace-note">〔〕の印は、省略した位置とその理由です。元のデータの文字列ではありません。</p>}
+    {(json.partial || partial) && <p className="trace-note">{text.jsonNote}</p>}
   </>
 }
 
@@ -102,38 +111,40 @@ function ExpandRow({ icon, label, supporting, initiallyOpen = false, lazy = fals
 }
 
 export function RecordSheet({ sessionId, initialRow, close }: { sessionId: string; initialRow: TraceRow; close: () => void }) {
+  const text = useMessages(traceMessages)
+  const locale = useLocale()
   const { face, records, stream, snapshot } = useSession(sessionId)
-  const row = useMemo(() => findTraceRow(selectTrace(records, stream, snapshot.running), initialRow.id) ?? initialRow,
-    [records, stream, snapshot.running, initialRow])
-  const duration = <InfoRow icon="timer" label="所要時間" supporting={recordDurationText(row)} />
+  const row = useMemo(() => findTraceRow(selectTrace(records, stream, snapshot.running, text, locale), initialRow.id) ?? initialRow,
+    [records, stream, snapshot.running, text, locale, initialRow])
+  const duration = <InfoRow icon="timer" label={text.durationLabel} supporting={recordDurationText(row, text, locale)} />
   return <article className="trace-record">
-    <h2>{row.title}{row.turn === null ? '' : `（ターン ${row.turn}）`}</h2>
-    {row.termination ? <p className={row.failed ? 'trace-error' : 'muted'} role="status">{terminationLabel(row.termination)}：{row.termination.message}</p>
-      : row.failed && <p className="trace-error" role="status">失敗{row.error ? `：${row.error}` : ''}</p>}
-    {row.depth > 0 && <p className="trace-note">入れ子の深さ：{row.depth}</p>}
-    {(row.kind === 'assistant' || row.kind === 'compaction') && <M3eList className="trace-record-list" aria-label="記録の内容">
+    <h2>{text.recordHeading(row.title, row.turn)}</h2>
+    {row.termination ? <p className={row.failed ? 'trace-error' : 'muted'} role="status">{text.terminationStatus(terminationLabel(row.termination, text), row.termination.message)}</p>
+      : row.failed && <p className="trace-error" role="status">{row.error ? text.failureWithReason(row.error) : text.terminationError}</p>}
+    {row.depth > 0 && <p className="trace-note">{text.nestedDepth(row.depth)}</p>}
+    {(row.kind === 'assistant' || row.kind === 'compaction') && <M3eList className="trace-record-list" aria-label={text.recordContentLabel}>
       {duration}
-      <InfoRow icon="data_usage" label="トークン" supporting={recordUsageText(row.usage)} />
+      <InfoRow icon="data_usage" label={text.tokensLabel} supporting={recordUsageText(row.usage, text, locale)} />
       {row.retries > 0 && (row.attempts?.length
-        ? <ExpandRow icon="history" label="確定しなかった試行" supporting={`未確定の試行 ${row.retries} 回`} render={() =>
-          <ol>{row.attempts?.map((attempt, index) => <li key={attempt.seq}>試行 {index + 1}：{attempt.termination
-            ? `${terminationLabel(attempt.termination)}・${attempt.termination.message}`
-            : '終了理由は記録されていません。'}</li>)}</ol>} />
-        : <InfoRow icon="history" label="確定しなかった試行" supporting={`未確定の試行 ${row.retries} 回`} />)}
-      <ExpandRow key={`input:${row.id}`} icon="input" label="入力" supporting={recordInputSupporting} lazy render={() => <>
-        <p className="trace-note">読み込み済みの入力記録です。未読み込みの履歴や内部の指示は含みません。</p>
+        ? <ExpandRow icon="history" label={text.uncommittedAttemptsLabel} supporting={text.uncommittedAttemptsSupporting(row.retries)} render={() =>
+          <ol>{row.attempts?.map((attempt, index) => <li key={attempt.seq}>{attempt.termination
+            ? text.attemptFailed(index + 1, terminationLabel(attempt.termination, text), attempt.termination.message)
+            : text.attemptNoReason(index + 1)}</li>)}</ol>} />
+        : <InfoRow icon="history" label={text.uncommittedAttemptsLabel} supporting={text.uncommittedAttemptsSupporting(row.retries)} />)}
+      <ExpandRow key={`input:${row.id}`} icon="input" label={text.inputLabel} supporting={text.recordInputSupporting} lazy render={() => <>
+        <p className="trace-note">{text.inputNote}</p>
         <Content content={row.input} face={face} />
       </>} />
-      <ExpandRow icon="output" label="出力" supporting={recordOutputText(row)} render={() => <Content content={row.content} face={face} />} />
+      <ExpandRow icon="output" label={text.outputLabel} supporting={recordOutputText(row, text)} render={() => <Content content={row.content} face={face} />} />
     </M3eList>}
-    {(row.kind === 'tool' || row.kind === 'subtool') && <M3eList className="trace-record-list" aria-label="記録の内容">
-      <ExpandRow icon="data_object" label="引数" supporting={row.arguments ? undefined : '記録されていません'} initiallyOpen={!!row.arguments}
-        render={() => row.arguments ? <Json value={row.arguments} partial={row.partialText} /> : <p>引数は記録されていません。</p>} />
-      <ExpandRow icon="output" label="結果" supporting={recordResultText(row)} initiallyOpen
-        render={() => row.running ? <p>結果を待っています。</p> : <Content content={row.content} face={face} />} />
+    {(row.kind === 'tool' || row.kind === 'subtool') && <M3eList className="trace-record-list" aria-label={text.recordContentLabel}>
+      <ExpandRow icon="data_object" label={text.argumentsLabel} supporting={row.arguments ? undefined : text.notRecordedSupporting} initiallyOpen={!!row.arguments}
+        render={() => row.arguments ? <Json value={row.arguments} partial={row.partialText} /> : <p>{text.argumentsNotRecorded}</p>} />
+      <ExpandRow icon="output" label={text.resultLabel} supporting={recordResultText(row, text)} initiallyOpen
+        render={() => row.running ? <p>{text.resultWaitingBody}</p> : <Content content={row.content} face={face} />} />
       {duration}
     </M3eList>}
-    {row.kind === 'user' && <><h3>本文と添付</h3><Content content={row.content} face={face} /></>}
-    <div className="actions"><M3eButton variant="text" onClick={close}>閉じる</M3eButton></div>
+    {row.kind === 'user' && <><h3>{text.bodyAndAttachments}</h3><Content content={row.content} face={face} /></>}
+    <div className="actions"><M3eButton variant="text" onClick={close}>{text.close}</M3eButton></div>
   </article>
 }
