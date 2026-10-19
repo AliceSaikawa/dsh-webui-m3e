@@ -12,7 +12,7 @@ import { presetDescription, presetDisplayName } from '../../dsh/permission-prese
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { InboxState, QueueAction } from '../../dsh/services.ts'
 import { queueFromInbox } from '../../dsh/inbox.ts'
-import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection } from './api.ts'
+import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection, PermissionSelection } from './api.ts'
 import type { ComposerTarget } from './Composer.tsx'
 import { readDraft, subscribeDraft } from './drafts.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
@@ -182,11 +182,16 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
   </div>
 }
 
-export function PermissionSheet({ permissions, defaults = false, apply, close }: {
-  permissions: PermissionProjection; defaults?: boolean; apply(value: string): Promise<void>; close(): void
+export function PermissionSheet({ permissions, defaults = false, sessionId = '', apply, close }: {
+  permissions: PermissionProjection; defaults?: boolean; sessionId?: string; apply(value: string): Promise<void>; close(): void
 }) {
   const catalogState = usePermissionCatalog()
   const { catalog } = catalogState
+  const { projection } = useSession(sessionId)
+  // Another client can change the preset while this sheet stays open, so compare
+  // against the live projection rather than the value captured when it opened.
+  const liveValue = defaults ? undefined : projection<PermissionSelection>('permissions')?.currentValue
+  const currentValue = liveValue ?? permissions.currentValue
   // The caller already loaded these rows. Keep the pre-migration sheet while
   // refreshing; an actual failed read invalidates them and uses the alert.
   const options = catalogState.status === 'error' ? []
@@ -196,12 +201,12 @@ export function PermissionSheet({ permissions, defaults = false, apply, close }:
   async function choose(value: string) {
     if (busy || !options.some(option => option.value === value)) return
     // The stock UI does nothing when the current preset is picked again.
-    if (value === permissions.currentValue) { close(); return }
+    if (value === currentValue) { close(); return }
     setBusy(true); setError('')
     try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
   }
   return <div className="composer-sheet"><h2>権限の選び直し</h2>
-    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === permissions.currentValue} detail={presetDescription(option.value, option.description)} disabled={busy} onClick={() => { void choose(option.value) }}>{presetDisplayName(option.value, option.name)}</SheetRow>)}
+    {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === currentValue} detail={presetDescription(option.value, option.description)} disabled={busy} onClick={() => { void choose(option.value) }}>{presetDisplayName(option.value, option.name)}</SheetRow>)}
     {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error) : '')}</p>}
   </div>
 }

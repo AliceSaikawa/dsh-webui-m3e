@@ -284,7 +284,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
       if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
       if (!mounted.current) return
-      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} close={close} apply={async value => {
+      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} sessionId={sessionId} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
         else if (face) { requireMatched(await face.command(`/permission ${value}`)); update({ permission: undefined }) }
       }} />, { label: '権限の選び直し' })

@@ -3,8 +3,10 @@ import type { Page } from '@playwright/test'
 
 /**
  * Expose the mock context and let one test pretend the Host names the built-in
- * presets after their machine key with the stock English descriptions, which is
- * what a real DSH sends.
+ * presets after their machine key with no description, which is what a real
+ * DSH 0.2.1-rc.2 sends: dsh-base's cordis.patch.yml defines the three built-ins
+ * without a name or description. The fake also attaches the plugin's stock
+ * English descriptions so this covers both forms a Host can send.
  */
 async function expose(page: Page, extra = '') {
   await page.route('**/src/dsh/mock/context.ts*', async route => {

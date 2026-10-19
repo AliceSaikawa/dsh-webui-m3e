@@ -16,7 +16,11 @@ const STOCK_NAMES: Record<string, readonly string[]> = {
   'workspace-write': ['Workspace Write'],
   'danger-full-access': ['Full access'],
 }
-/** Stock English descriptions from the Host's default config. It ships none for read-only. */
+/**
+ * Stock English descriptions from the plugin's default config, for a Host that
+ * passes that config through unchanged. dsh-base's layout has no descriptions,
+ * so these never match there. It ships none for read-only.
+ */
 const STOCK_DESCRIPTIONS: Record<string, string> = {
   'workspace-write': 'Write inside the workspace and permitted temporary directories; wider retries require approval.',
   'danger-full-access': 'Full file access without approval prompts.',
