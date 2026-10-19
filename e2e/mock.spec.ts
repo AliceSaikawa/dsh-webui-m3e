@@ -430,6 +430,44 @@ test('08a 設定の各ページ・保存・既定値・外観・標準画面の�
   await expect(page).toHaveURL(/#\/settings$/)
 })
 
+test('08c 「ほかの色」の直後に選んだプリセットが、同じフレームで閉じても残る', async ({ page }) => {
+  await visit(page, '/settings')
+  await action(page, '外観').click()
+  const customColor = page.locator('.settings-color-custom input[type="color"]')
+  const primary = () => page.evaluate(() => document.documentElement.style.getPropertyValue('--md-sys-color-primary'))
+  const storedColor = () => page.evaluate(() => localStorage.getItem('dsh-m3e-theme-color'))
+  const defaultPrimary = await primary()
+  /** Pick a custom color, then a preset (and optionally close) in one task, so the throttled frame is still pending. */
+  const customThenPreset = (preset: string, close: boolean) => page.evaluate(({ preset, close }) => {
+    const input = document.querySelector<HTMLInputElement>('.settings-color-custom input[type="color"]')!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '#00aa44')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>(`.settings-color-swatch[aria-label="${preset}"]`)!.click()
+    if (close) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  }, { preset, close })
+  const nextFrames = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  // The preset equals the stored color, so only the pending frame could change the store.
+  await customThenPreset('紫（既定）', false)
+  await nextFrames()
+  await expect(page.getByRole('button', { name: '紫（既定）', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(customColor).toHaveAttribute('aria-label', 'ほかの色')
+  await expect(customColor).toHaveValue('#6750a4')
+  expect(await storedColor()).toBe('#6750a4')
+  expect(await primary()).toBe(defaultPrimary)
+  // Closing in the same task keeps the sheet mounted through its close animation; neither the frame nor the unmount may restore the custom color.
+  await customThenPreset('青', true)
+  await expect(page.locator('.settings-color-options')).toHaveCount(0)
+  await nextFrames()
+  expect(await storedColor()).toBe('#0b57d0')
+  const bluePrimary = await primary()
+  expect(bluePrimary).not.toBe(defaultPrimary)
+  await action(page, '外観').click()
+  await expect(page.getByRole('button', { name: '青', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(customColor).toHaveAttribute('aria-label', 'ほかの色')
+  await expect(customColor).toHaveValue('#0b57d0')
+  expect(await primary()).toBe(bluePrimary)
+})
+
 test('08b APIキーの登録状況・架空値の保存・空の再表示・削除', async ({ page }) => {
   await visit(page, '/settings/providers')
   await expect(action(page, 'ディープシーク')).toContainText('登録済み')
