@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { existsSync } from 'node:fs'
+import { SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock as composer, mockModelCatalog } from '../web/src/features/composer/mock.ts'
 import { extendMock as settings, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
@@ -52,13 +53,13 @@ test('固定の指定なし設定式だけを偽RPCが受け付け、任意の�
 
 // Optional contract check against the already installed rc.2 distribution.
 // Imports public code only; no host, adapter, configuration file or DSH process is started.
-const nativeRoot = ['../tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/',
-  '../../dsh-webui-m3e/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/']
+const nativeRoot = [`../tmp/dsh-integration/dsh-${SUPPORTED_DSH_VERSION}/node_modules/@deepseek-ai/`,
+  `../../dsh-webui-m3e/tmp/dsh-integration/dsh-${SUPPORTED_DSH_VERSION}/node_modules/@deepseek-ai/`]
   .map(path => new URL(path, import.meta.url))
   .find(root => existsSync(new URL('dsh-agent-default-model/lib/index.js', root)))
 
 test('DSH rc.2 の mutate・設定解決・モデル検証で継承と指定なしを区別する', {
-  skip: nativeRoot ? false : 'DSH 0.2.0-rc.2 の公開配布コードが未配置',
+  skip: nativeRoot ? false : `DSH ${SUPPORTED_DSH_VERSION} の公開配布コードが未配置`,
 }, async () => {
   const { AgentDefaultModelConfig } = await import(new URL('dsh-agent-default-model/lib/index.js', nativeRoot).href)
   const { SettingsForms } = await import(new URL('dsh-settings/lib/index.js', nativeRoot).href)

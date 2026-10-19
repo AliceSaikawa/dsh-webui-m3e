@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildPatch, buildReset, decodeSchema, formatSetting, groupNamespaces, pageSummary, parseFieldInput, schemaFields, selectFieldState, valueAt,
+  buildPatch, buildReset, decodeSchema, formatSetting, groupNamespaces, namespaceTitle, pageSummary, parseFieldInput, schemaFields, selectFieldState, valueAt,
   type SettingField, type SettingsNamespace,
 } from '../web/src/features/settings/schema.ts'
 
@@ -288,7 +288,7 @@ test('上書き層が省略された応答を扱い、まとまり全体が伏�
 test('名前空間を 5 ページとその他に分け、従来の画面用設定を除外する', () => {
   const ids = [
     'agent-default-model', 'subagent-model-selection-settings', 'permission', 'agent-preset-registry', 'agent-loop',
-    'llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future', 'web-search-deepseek', 'bash-sandbox', 'locale',
+    'llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future', 'web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'locale',
     'new-plugin', 'llm', 'ui', 'ui-theme', 'ui-onboarding', 'ui-future',
   ]
   const rows = ids.map(ns => namespace({ ns }))
@@ -296,11 +296,59 @@ test('名前空間を 5 ページとその他に分け、従来の画面用設�
   assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([page, values]) => [page, values.map(row => row.ns)])), {
     models: ['agent-default-model', 'subagent-model-selection-settings'], permission: ['permission'],
     agent: ['agent-preset-registry', 'agent-loop'], providers: ['llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future'],
-    tools: ['web-search-deepseek', 'bash-sandbox', 'locale'], other: ['new-plugin', 'llm', 'ui'],
+    tools: ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'locale'], other: ['new-plugin', 'llm', 'ui'],
   })
   assert.equal(groups.models[0], rows[0])
   assert.deepEqual(rows.map(row => row.ns), ids)
   assert.deepEqual(groupNamespaces([]), { models: [], permission: [], agent: [], providers: [], tools: [], other: [] })
+})
+
+test('0.2.1-rc.2 の web と web-deepseek-api を Web 検索のページへ置き項目に和名を付ける', () => {
+  // Shapes taken from the 0.2.1-rc.2 settings.describe() reply (tmp/s5-public-settings.json):
+  // both namespaces became volatile, so both reach the generic form.
+  const web = namespace({
+    ns: 'web',
+    schema: { uid: 3, refs: {
+      1: { type: 'string', meta: {} }, 2: { type: 'string', meta: {} },
+      3: { type: 'object', meta: { default: {} }, dict: { searchProvider: 1, fetchProvider: 2 } },
+    } },
+    value: { searchProvider: 'deepseek-official', fetchProvider: 'http' },
+  })
+  const api = namespace({
+    ns: 'web-deepseek-api',
+    schema: { uid: 6, refs: {
+      1: { type: 'string', meta: { role: 'secret' } },
+      2: { type: 'string', meta: { role: 'credential-ref', default: 'DEEPSEEK_API_KEY' } },
+      3: { type: 'string', meta: { default: 'https://api.deepseek.com/v1/tools' } },
+      4: { type: 'number', meta: { step: 1, min: 1, max: 50, default: 10 } },
+      5: { type: 'boolean', meta: { default: true } },
+      6: { type: 'object', meta: { default: {} }, dict: { apiKey: 1, apiKeyEnv: 2, baseURL: 3, count: 4, sendOriginalQuestion: 5 } },
+    } },
+    value: { apiKey: 'literal-must-not-appear', apiKeyEnv: 'DEEPSEEK_API_KEY', baseURL: 'https://api.deepseek.com/v1/tools', count: 10, sendOriginalQuestion: true },
+    secrets: [{ path: ['apiKey'], set: true }],
+  })
+  const groups = groupNamespaces([web, api])
+  assert.deepEqual(groups.tools.map(row => row.ns), ['web', 'web-deepseek-api'])
+  assert.deepEqual(groups.other, [])
+  assert.equal(namespaceTitle('web'), 'Web の提供元')
+  assert.equal(namespaceTitle('web-deepseek-api'), 'Web 検索と取得 API')
+
+  const webFields = schemaFields(web)
+  assert.deepEqual(webFields.map(field => [field.path[0], field.kind, field.label]), [
+    ['searchProvider', 'text', '検索の提供元'], ['fetchProvider', 'text', '取得の提供元'],
+  ])
+  assert.match(webFields[0]!.description, /deepseek-official.*deepseek-search-api/)
+  assert.match(webFields[1]!.description, /http.*deepseek-fetch-api/)
+
+  const apiFields = schemaFields(api)
+  assert.deepEqual(apiFields.map(field => [field.path[0], field.kind, field.label]), [
+    ['apiKey', 'masked', 'API キー'], ['apiKeyEnv', 'text', 'API キーの環境変数'], ['baseURL', 'text', '接続先'],
+    ['count', 'number', '回数'], ['sendOriginalQuestion', 'switch', '元の質問を送る'],
+  ])
+  // The host lists role('secret') fields in `secrets`; the value never reaches the model.
+  assert.equal(Object.hasOwn(apiFields[0]!, 'value'), false)
+  assert.equal(apiFields[0]!.registered, true)
+  assert.doesNotMatch(JSON.stringify(apiFields), /literal-must-not-appear/)
 })
 
 test('保存差分は指定した葉だけを含み、既定値への復帰は unset 操作を作る', () => {

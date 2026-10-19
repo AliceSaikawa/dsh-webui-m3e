@@ -5,11 +5,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import type { RemoteResult } from '../web/src/dsh/services.ts'
 import { extendMock, type SettingsMockRemote } from '../web/src/features/settings/mock.ts'
-import { DISPLAY_LOCALES, LOCALES, displayLocale, documentLanguage, matchLocale, requestedLocale, type Locale } from '../web/src/i18n/locale.ts'
+import { DISPLAY_LOCALES, LOCALES, displayLocale, documentLanguage, isLocaleTag, matchLocale, requestedLocale, type Locale } from '../web/src/i18n/locale.ts'
 import { compareText, formatDateTime, formatNumber, intlLocale, numberFormat } from '../web/src/i18n/format.ts'
 import { catalogProblems, defineMessages, isCatalog, messagesOf, untranslatedLocales, type Catalog, type Messages, type Translation } from '../web/src/i18n/catalog.ts'
 import { createLocaleStore } from '../web/src/i18n/store.ts'
 import { connectLocalePreference, localePreferenceOf } from '../web/src/i18n/dsh.ts'
+import { bootMessages } from '../web/src/app/messages.ts'
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
 
@@ -63,6 +64,23 @@ test('訳がそろうまでは、英語・中国語を求められても画面�
   assert.equal(displayLocale('ja'), 'ja')
   assert.equal(displayLocale('en', LOCALES), 'en')
   assert.equal(displayLocale('zh', ['ja', 'en']), 'ja')
+})
+
+test('DSH が受け付ける形の未知の言語タグでも、画面はキー名を出さず日本語に落ちる（Issue #128 の確かめ）', () => {
+  // Same shape as dsh-client-locale's LOCALE_ID_PATTERN (web/src/i18n/locale.ts LOCALE_TAG).
+  // The heading in e2e-dsh/real-dsh.spec.ts shows the DSH workspace record directly, so even
+  // if the dictionary's language resolution breaks on unknown values, no key name may appear on screen.
+  for (const preference of ['fr', 'ko-KR', 'de-CH', 'zz', 'xx-3', 'qq-Q']) {
+    assert.ok(isLocaleTag(preference), `${preference}: DSH の preference の形と同じパターン`)
+    const store = createLocaleStore({ languages: ['ja-JP'], preference })
+    assert.equal(displayLocale(store.getSnapshot().requested), 'ja', preference)
+    assert.equal(store.getSnapshot().lang, 'ja', preference)
+    const messages = messagesOf(bootMessages, store.getSnapshot().active)
+    for (const key of Object.keys(bootMessages.ja) as (keyof typeof bootMessages.ja)[]) {
+      assert.notEqual(messages[key], key, `${preference}: キー名 ${String(key)} をそのまま出さない`)
+      assert.equal(messages[key], bootMessages.ja[key], preference)
+    }
+  }
 })
 
 test('lang 属性の値：日本語は今と同じ ja、中国語は DSH の標準画面と同じ zh-CN', () => {

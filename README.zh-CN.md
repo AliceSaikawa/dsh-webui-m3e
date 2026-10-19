@@ -24,11 +24,24 @@
 dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
 ```
 
+> [!IMPORTANT]
+> 当前发布的 0.0.8 面向 **DSH 0.2.0-rc.2**。**目前还没有支持 DSH 0.2.1-rc.2 的版本**（将从下一个版本开始支持）。0.0.8 无法在 DSH 0.2.1-rc.2 上运行。如果你继续使用 DSH 0.2.0-rc.2，回退目标同样是 0.0.8。
+
 M3E 未发布到 npm registry，因此不能只用名称执行 `add dsh-webui-m3e` 来安装。
 
 `web` 只是示例，请选择实际提供 Web 界面的配置档案。名称拼错时也可能直接创建新档案，不会报错，因此安装成功不代表目标正确。
 
-仅支持 **DSH 0.2.0-rc.2**。通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。
+仅支持 **DSH 0.2.1-rc.2**，已取消对 0.2.0-rc.2 的支持。
+
+安装 DSH 本体时需要指定版本。npm 的 `latest` 标签仍指向 0.2.0-rc.2，不指定版本会装到与插件不匹配的版本（请不要使用 `@next`，它指向的版本会随时间变化）。
+
+```bash
+npm i -g @deepseek-ai/dsh@0.2.1-rc.2
+```
+
+可用 `dsh --version` 确认本机版本。使用 DSH 0.2.0-rc.2 时请执行 `npm i -g @deepseek-ai/dsh@0.2.0-rc.2`。
+
+通过 npm 安装的普通 DSH CLI 使用 **PATH 中的 pnpm**。DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。
 
 验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
 
@@ -50,8 +63,8 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.0-rc.2**
-  - 已移除对 0.1.5 系列的支持。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
+- DeepSeek Harness **0.2.1-rc.2**
+  - 已取消对 0.2.0-rc.2 和 0.1.5 系列的支持。继续使用 0.2.0-rc.2 时，可用的发行版是 0.0.8。验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
 - 满足 DSH 和 pnpm 要求的 Node.js，以及 PATH 中的 pnpm（普通 CLI）。版本要求见上面的 Quick Start。
 
 ## 更新、版本确认与卸载

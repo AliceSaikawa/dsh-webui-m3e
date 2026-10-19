@@ -47,6 +47,7 @@ export function HomeScreen() {
   const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents, preferences.archivedFilter)
   const { rows, pinned } = pinnedFirst(orderSessions(visible, preferences.orderBy), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
   const unpinned = rows.filter(row => !pinned.has(row.id) && !archivedIds.has(row.id))
+  const operable = rows.some(row => canEditHomeSession(row) && !archivedIds.has(row.id))
   const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))
   const sortCaption = pinned.size ? 'つまみをドラッグして順番を変更（ピン留めした行は固定した順に並びます）' : 'つまみをドラッグして順番を変更'
   const orderSuffix = preferences.orderBy === 'updated' ? '・最近の更新順' : ''
@@ -188,8 +189,8 @@ export function HomeScreen() {
         <Icon slot="icon" name={item.icon} />{item.label}
         {preferences.orderBy === item.value && <Icon slot="trailing-icon" name="check" />}
       </M3eMenuItem>)}
-      {preferences.orderBy === 'manual' && <M3eMenuItem disabled={!workspace || !rows.length || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />並べ替え</M3eMenuItem>}
-      <M3eMenuItem disabled={!workspace || !rows.length || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />選んでアーカイブ</M3eMenuItem>
+      {preferences.orderBy === 'manual' && <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />並べ替え</M3eMenuItem>}
+      <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />選んでアーカイブ</M3eMenuItem>
       <M3eMenuItem disabled={!workspace || !connected || loading} onClick={() => { menu.current?.hide(); if (workspace) renameWorkspace(dsh, workspace) }}><Icon slot="icon" name="edit" />名前を変える</M3eMenuItem>
       <M3eMenuItem role="menuitemcheckbox" aria-checked={preferences.showSubagents} onClick={() => { menu.current?.hide(); setShowSubagents(!preferences.showSubagents) }}>
         <Icon slot="icon" name="account_tree" />サブエージェントも表示<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>

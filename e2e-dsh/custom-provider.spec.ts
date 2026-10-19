@@ -201,7 +201,15 @@ test('I16 real lifecycle: キーあり・なしの作成と編集を再読込し
   expect((await snapshot(page)).default).toEqual(before.default)
 })
 
-test('I16 real failures: 別ページの競合と設定だけ成功したキー保存を確認する', async ({ page, context, integration }) => {
+test('I16 real conflicts: 別ページの競合と環境由来の参照へのキー保存を確認する', async ({ page, context, integration }) => {
+  // DSH 0.2.1-rc.2 changed the key registry: a stored value shadows an
+  // environment variable and set no longer refuses while an environment value
+  // covers the reference. Measured on this release (environment name kept from
+  // the old scenario, still present in the integration Host):
+  // credentials.describe → { configured, source: 'env', writable: true },
+  // set → ok (source turns 'file'), unset → ok and source returns to 'env'.
+  // The old「設定だけ成功したキー保存」cannot be produced on the real Host
+  // anymore; see tmp/issue128/report-keys.md.
   await instrument(page); await openM3e(page, integration.host, '/settings/providers')
   await create(page, 'i16-conflict', false)
   await row(page, 'i16-conflict').getByRole('button', { name: '編集', exact: true }).click()
@@ -231,32 +239,33 @@ test('I16 real failures: 別ページの競合と設定だけ成功したキー�
   await page.evaluate(() => { const w = window as any; w.__holdSettings = false; w.__heldSettings.splice(0).forEach((deliver: () => void) => deliver()) })
   await button(page, '再読み込み').click()
   await expect(page.getByLabel('ベース URL', { exact: true })).toHaveValue('http://localhost:4567/v1')
-  await page.getByLabel('表示名（任意）', { exact: true }).fill('設定だけ成功')
-  await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-rejected-key')
+  await page.getByLabel('表示名（任意）', { exact: true }).fill('環境の上に保存')
+  await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-over-env')
   await button(page, '保存').click()
-  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。 設定が変わったか、このキーは変更できません。入力画面を開き直してください。')
-  const saved = await snapshot(page)
-  const writesBeforeRetry = await page.evaluate(() => (window as any).__settingsWrites)
-  expect(writesBeforeRetry).toHaveLength(2)
-  expect(saved.providers['i16-conflict'].displayName).toBe('設定だけ成功')
-  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
-  await page.getByLabel('API キー（任意）', { exact: true }).fill('synthetic-retry')
-  await button(page, 'API キーを保存').click()
-  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
-  // Observe either completion or a forbidden settings request, including a
-  // no-op request whose Host response has not arrived yet.
-  await expect.poll(async () => (await page.evaluate(() => (window as any).__settingsWrites.length)) > writesBeforeRetry.length
-    || await page.getByLabel('API キー（任意）', { exact: true }).isEnabled()).toBe(true)
-  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
-  await expect(button(page, 'API キーを保存')).toBeVisible()
-  await expect(button(page, 'API キーを保存')).toBeDisabled()
-  await expect(form(page).getByRole('alert')).toHaveText('提供元の設定は保存しましたが、API キーを保存できませんでした。 設定が変わったか、このキーは変更できません。入力画面を開き直してください。')
-  expect((await snapshot(page)).revision).toBe(saved.revision)
-  expect(await snapshot(page)).toEqual(saved)
-  expect(await page.evaluate(() => (window as any).__settingsWrites)).toEqual(writesBeforeRetry)
-  await form(page).getByRole('button', { name: '閉じる', exact: true }).click()
-  await row(page, '設定だけ成功').getByRole('button', { name: '編集', exact: true }).click()
-  await expect(page.getByLabel('API キー（任意）', { exact: true })).toHaveValue('')
+  // On 0.2.1-rc.2 the same save completes: no partial-failure alert, the form
+  // closes and the row shows the reference as registered.
+  await expect(form(page)).toBeHidden()
+  await expect(row(page, '環境の上に保存')).toContainText('API キー：登録済み')
+  expect((await snapshot(page)).providers['i16-conflict'].displayName).toBe('環境の上に保存')
+  const describeKey = async () => {
+    const remote = (window as any).__customRemote
+    const answer = await remote.credentials.describe(['M3E_DSH_VERSION'])
+    return answer.ok ? answer.value.M3E_DSH_VERSION : undefined
+  }
+  const shadowed = await page.evaluate(describeKey)
+  expect(shadowed).toMatchObject({ configured: true, writable: true, source: 'file' })
+  // Removing the stored key hands the destination back to the environment
+  // value, so the row stays「登録済み」(the environment key still applies).
+  await row(page, '環境の上に保存').getByRole('button', { name: 'API キー', exact: true }).click()
+  await button(page, '登録を消す').click()
+  await button(page, '登録を消す').click()
+  await expect(page.locator('.settings-sheet')).toBeHidden()
+  await expect(row(page, '環境の上に保存')).toContainText('API キー：登録済み')
+  const restored = await page.evaluate(describeKey)
+  expect(restored).toMatchObject({ configured: true, writable: true, source: 'env' })
+  // Key save and removal never rewrote the provider settings: only the two
+  // settings writes above (conflict and the retry) are in the log.
+  expect(await page.evaluate(() => (window as any).__settingsWrites)).toHaveLength(2)
   await second.close()
 })
 

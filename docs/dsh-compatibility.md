@@ -1,6 +1,6 @@
 # DSH との互換性
 
-**対応する版は DSH 0.2.0-rc.2 です。0.1.5 系への対応は外しました。** 会話の参照、一覧と投影、V4 記録、設定・ファイルの RPC が変わったため、旧版へ切り替えるだけでは動きません。後方互換の分岐はありません。
+**対応する版は DSH 0.2.1-rc.2 です。0.2.0-rc.2 と 0.1.5 系への対応は外しました。** 会話の参照、一覧と投影、V4 記録、設定・ファイルの RPC が変わったため、旧版へ切り替えるだけでは動きません。後方互換の分岐はありません。0.2.0-rc.2 を使い続ける場合の配布版は 0.0.8 です。
 
 対応版と同梱ライブラリの固定版は [src/shared/dsh-compat.ts](../src/shared/dsh-compat.ts) にあります。この文書は移行後の境界、確認範囲、次に版を上げる手順をまとめます。作業の経過は [99 の実装メモ](design/99-integration.md#2026-10-04dsh-020-rc2-への移行) にあります。
 
@@ -28,16 +28,19 @@ Node の要件は DSH 自身（engines 無し）、CLI の commander 15（`>=22.
 
 ## 版ごとの確認結果
 
+Issue #128 で、対応版を DSH 0.2.0-rc.2 から 0.2.1-rc.2 へ上げました。0.2.0-rc.2 への対応は外し、0.2.0-rc.2 を使い続ける場合の配布版は 0.0.8 のままにしています。0.2.1-rc.2 に対応したリリースはまだ出していません（次のリリースから対応します）。個別の差と直し方は「[0.2.0 から 0.2.1 で壊れた境界と、どう直したか](#020-から-021-で壊れた境界とどう直したか)」にあります。
+
 2026-10-05 時点のまとめ用ブランチ `46ec172`（本体と試験）と、文書を取り込んだ `ab5c09d` を基準にしています。**段階 1〜6、最終レビューと最後の全体監査への本体修正、修正後の独立した読むレビューは完了しました。追加試験の独立した変異の当て直しも完了し、生存した変異は 0 件でした。指示役は、文書を取り込んだ `ab5c09d` で、型検査・単体・ビルド・偽データ e2e と、実 DSH の 3 回連続の実行を確かめました。** この移行は、PR #19 として main にマージ済みです（`b895500`）。件数は合算せず、検証ごとの実行時点と根拠を区別します。
 
 | DSH の版・確認時点 | 対応と確認結果 | 型検査・ビルド | 単体試験 | 偽データ e2e |
 |---|---|---|---:|---:|
 | 移行前 `413a857` | 0.2.0-rc.2 への接続は起動で失敗。実 DSH の内訳は [下表](#実-dsh-の統合試験) | 成功 | 747 件成功 | 119 件成功 |
-| 0.2.0-rc.2・追加試験込み `46ec172` | 対応版。実 DSH の内訳は [下表](#実-dsh-の統合試験) | 成功 | 1,011 件成功 | 159 件成功 |
+| 0.2.0-rc.2・追加試験込み `46ec172` | 対応対象外（0.0.8 まで）。実 DSH の内訳は [下表](#実-dsh-の統合試験) | 成功 | 1,011 件成功 | 159 件成功 |
+| 0.2.1-rc.2（Issue #128） | 対応版。実 DSH の内訳は [下表](#実-dsh-の統合試験) | 成功 | 1,268 件成功（skip 0） | 316 件成功 |
 | 0.1.5 系 | 対応対象外。移行後のコードでは再検証していません | ― | ― | ― |
 | 上記以外 | 対応を保証しません。移行後のコードでは未検証です | ― | ― | ― |
 
-移行前は共通の作業記録に基づきます。移行後の型検査・単体・ビルド・偽データ e2e は、指示役が文書を取り込んだ `ab5c09d`（本体と試験は `46ec172` と同じ）で実行した結果です。既存のチャンクサイズ警告は残っています。
+移行前は共通の作業記録に基づきます。移行後の型検査・単体・ビルド・偽データ e2e は、指示役が文書を取り込んだ `ab5c09d`（本体と試験は `46ec172` と同じ）で実行した結果です。既存のチャンクサイズ警告は残っています。0.2.1-rc.2 の行は、2026-10-18 にブランチ `chore/issue-128-dsh-0.2.1`（起点 `3ed333f`）で指示役が実行した結果です。型検査は `pnpm typecheck` と `pnpm exec tsc -p tsconfig.e2e.json` の両方を通し、CI の検査 `node scripts/check-ci-dsh.ts` も成功しています。環境は Linux・Node 26.10.0・pnpm 12.4.1 です。
 
 ## 依存の境界
 
@@ -48,22 +51,23 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | 起動グラフ | `__DSH_BOOT__`、`__ModuleLoader__.create()`、相対の `plugins/…`。通信用プラグインと依存だけを個別 URL で読みます | `web/src/dsh/boot.ts`、`boot-graph.ts` |
 | 通信の宛先と `<base>` | M3E の index に `<base href="/">`。プラグイン、RPC、WebSocket、画像送信を Host の `/plugins/…`、`/api/…`、`/api/remote.mux` へ解決します | `src/host/index.ts` の `prepareM3eIndex` |
 | 画面の URL | 通信の基準を変えても画面は `/m3e/` に残します。空のリンク先、hash、検索文字列、戻る操作、PWA scope に注意します | `web/src/app/route-match.ts` の `pageHref`、`router.ts`、`Markdown.tsx` |
-| 共有ライブラリ | cordis 4.0.4、cordis-plugin-loader 1.0.5、dsh-client-store 0.2.0-rc.2 | `package.json`、`src/shared/dsh-compat.ts`、`boot.ts` の `STATIC_MODULES` |
+| 共有ライブラリ | cordis 4.0.5、cordis-plugin-loader 1.0.6、dsh-client-store 0.2.1-rc.2。0.2.1 から通信用プラグインが外部の `zod` 4.4.3 を要求するため、これも同梱します | `package.json`、`src/shared/dsh-compat.ts`、`boot.ts` の `STATIC_MODULES` |
 | 稼働状態 | `loader.await()` の完了だけでは成功を保証しません。`FiberState.ACTIVE = 2`、`importError(id)`、`fiber.await()` で状態と原因を確認します | `boot.ts` の `assertPluginsActive` |
 | 会話の参照 | `retain(target, { source, signal? })`、`using`、`SessionReference.ready/release`。最後の参照を解放すると scope は即時破棄されます | `conversation-selection.ts`、`session-navigation.ts`、`features/composer/delivery.ts` |
+| 会話の作成と登録 | `create` は指定 id を「未アーカイブで、要求したワークスペースの member かつ空」のときだけ再利用します。再利用できないときは新しい id を発行して返すため、戻り値の id に従います。0.2.0 の「指定 id を必ず採用」とは違います | `features/composer/workspace-recovery.ts`、`delivery.ts` |
 | 参照の借用と失敗 | `scope` / `binding` は保持中だけ使えます。Host 拒否では `ready` が解決しても `openState: 'error'`、中断・解放では拒否になります。signal の中断と明示解放は別です | `web/src/dsh/services.ts`、会話選択・送信処理 |
-| 一覧と子の会話 | 一覧は `ids/byId/phase/projectionsBySession`。子カタログは投影 `subagentCatalog`、行は `id/mode/label` など。`byId` だけにある子と親 ID も扱います | `web/src/dsh/session-navigation.ts`、`session-rows.ts`、`features/session-tools/presentation.ts` |
+| 一覧と子の会話 | 一覧は `ids/byId/phase/projectionsBySession`。子カタログは投影 `subagentCatalog`、行は `id/mode/label` など。0.2.1 では子カタログに `mode: 'external'` が加わり、`SessionSummary.formatStatus` と投影の `kind: 'migration-required'` も増えました（`external` の子は一覧の行にもならず、アドレスを発行しません）。`byId` だけにある子と親 ID も扱います | `web/src/dsh/session-navigation.ts`、`session-rows.ts`、`features/session-tools/presentation.ts` |
 | 順番待ち・割り込み | 投影 `inbox` の `next-turn` と利用者由来の `next-step`。編集・削除のメッセージ ID と送信照合の `source.rpcId` を区別します | `web/src/dsh/inbox.ts`、`features/composer/Sheets.tsx` |
-| ジョブ | 一覧から専用の `ctx.jobs.state`、`watchRows` へ移りました。起動グラフにジョブの controller を含めます | `web/src/dsh/jobs.ts`、`boot.ts`、`features/session-tools/JobsScreen.tsx` |
+| ジョブ | 一覧から専用の `ctx.jobs.state`、`watchRows` へ移りました。起動グラフにジョブの controller を含めます。0.2.1 では種別 `subagent` が無くなり、`bash`・`pwsh`・`pty-send`・`workflow` などになります | `web/src/dsh/jobs.ts`、`boot.ts`、`features/session-tools/JobsScreen.tsx` |
 | 完了して未読 | Host の保存値ではなく、標準画面と同じ観測規則で画面側の `completionUnread` を計算します。永続化しません | `web/src/dsh/completion-status.ts` |
 | V4 記録 | `tool/result` の `message.role` は `tool`。`toolCallId/content/isError` はメッセージ直下です。旧記録は Host が変換します | `features/chat/model.ts`、`tool-output.ts`、`features/trace/model.ts`、`RecordSheet.tsx` |
 | V4 の出どころ・拡張 | `source.kind` に `runtime-context`、`compact-checkpoint`、`plugin:<名前>` など。未知のイベント・ブロックにも `plugin:` が付きます | チャット・トレースの読み取り、`web/src/dsh/session-journal.ts` |
-| 設定の名前空間と保存 | profile の entry id。`subagent-model-selection-settings`、`bash-sandbox`（Windows は `pwsh-sandbox`）、`agent-preset-registry.selectedDefault`。Host の `dsh-settings` と `dsh-config-editor` が profile の `cordis.patch.yml` を編集します | `features/settings/schema.ts`、`store.ts`、`ModelsPanel.tsx`。M3E は RPC を使い、設定ファイルを直接編集しません |
+| 設定の名前空間と保存 | profile の entry id。`subagent-model-selection-settings`、`bash-sandbox`（Windows は `pwsh-sandbox`）、`agent-preset-registry.selectedDefault`。0.2.1 では Web 検索の `web` と `web-deepseek-api` も `.volatile()` により公開されます。Host の `dsh-settings` と `dsh-config-editor` が profile の `cordis.patch.yml` を編集します | `features/settings/schema.ts`、`store.ts`、`ModelsPanel.tsx`。M3E は RPC を使い、設定ファイルを直接編集しません |
 | 設定の公開範囲 | `.volatile()` の項目だけ公開・編集可能です。`autoGenerate` を尊重し、`applies` は `live` のみ。`revision` は Host のプロセス内で管理します。書込み時の拒否条件と、設定を利用するときの検証を区別します | `features/settings/`。`settings.describe/update/mutate`、通知 `(ns, revision)`。`tests/support/settings-write-cases.ts` を偽 RPC と実 DSH で共有します |
 | 設定の数値 | 整数付近の許容誤差で判定せず、実物の Schemastery と同じ十進移動・刻み判定を使います。画面は非有限数も拒否します | `features/settings/number-step.ts` の `matchesNumberStep`、`schema.ts`。偽 RPC も同じ刻み判定を使います |
 | ゴールと Agent の準備 | 保存済み投影があっても Agent の準備前は `goals.get` が失敗し得ます。準備・接続・投影などの通知で読み直し、準備失敗通知で古い応答を無効にします。タイマーでは再取得しません。同時読取りは 1 件で、進行中の通知を次の 1 回にまとめます | `features/session-tools/goal-activation.ts` の `watchGoalActivation`、`GoalScreen.tsx`。通知集約は M3E 側の制御です |
 | 権限の候補 | 投影 `permissions` は `currentValue` のみ。候補は `permissionPresets.catalog()` と `permission-presets/catalog-changed`。既定値は `defaultOptions/defaultPreset` を使い、`settings.mutate` で `permission` の `defaultPreset` を保存します | `features/composer/api.ts`、`Sheets.tsx`、`features/settings/` |
-| モデル・提供元・API キー | モデルのある提供元だけが利用候補です。キーの照会は登録状態、登録・削除の戻り値は `void`。アカウントに架空のキー参照を作りません。未登録と管理サービスの利用不能を分けて案内します | `features/settings/providers.ts`、`features/composer/api.ts`。保存内部と更新放送の正確な引数は未検証です。購読側は引数を使わず再取得し、`record-updated` 単独の画面更新は偽通知で確認します |
+| モデル・提供元・API キー | モデルのある提供元だけが利用候補です。キーの照会は登録状態、登録・削除の戻り値は `void`。0.2.1 では保存したキーが環境変数より優先され、照会は環境由来でも `writable: true` を返し、`unset` の後は環境変数が再び有効になります。アカウントに架空のキー参照を作りません。未登録と管理サービスの利用不能を分けて案内します | `features/settings/providers.ts`、`features/composer/api.ts`。保存内部と更新放送の正確な引数は未検証です。購読側は引数を使わず再取得し、`record-updated` 単独の画面更新は偽通知で確認します |
 | ファイル RPC | `readBytes(sid, path, { range: { offset, length }, baseFile? }, signal)` のバイト列は `Uint8Array`。`changes(sid, path, signal)` は `RemoteStreamHandle`。通知は監視対象自身のパス・版で、`ready` の後にも過去の通知が届き得ます | `features/session-tools/files.ts`、`FileScreen.tsx`、`FilesScreen.tsx`。実 DSH 試験は操作直後の `stat` と一致する版まで読みます |
 | 期限つきの質問 | 表示中だけ `userQuestions.attachWait` で待機を保持します。期限後は `userQuestions` 投影からカードを復元し、`answer` で次ステップへ回答を送ります | `web/src/dsh/interactions-store.ts`、`features/interactions/InteractionSheet.tsx`。取消・再接続・後着応答の世代を区別します |
 | その他の RPC・通知 | `commands.list`、`fileReferences.list`、`session.modelCatalog/selectModel`、`directoryPicker`、`goals`、承認・質問の返答 | 各機能の `api.ts`、`operations.ts`、`web/src/dsh/remote-events.ts`、`interactions-store.ts` |
@@ -71,6 +75,30 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | Host・標準画面 | `webServer.register/renderIndex/tapIndex`、`connection.authorizeIndex`、`settings.general.item`。preload の除去は相対 URL にも対応します | `src/host/index.ts`、`src/client/index.tsx` |
 | Host のフォルダ選択 | macOS / Windows の loopback 起動は条件により `native`、SSH 起動の印があれば `browse` になります | `features/home/directory.ts`、`e2e-dsh/dsh-host.ts` |
 | 偽 LLM との接続 | `/v1/messages` と Messages 形式の SSE、`tool_use/tool_result`、画像の `image` ブロック。ブラウザに届く V4 記録とは別の形式です | `e2e-dsh/fake-llm.ts` |
+
+### 0.2.0 から 0.2.1 で壊れた境界と、どう直したか
+
+Issue #128 の各担当の報告に基づきます。根拠は `tmp/dsh-integration/dsh-0.2.1-rc.2/node_modules/@deepseek-ai/` の実物と、隔離した実 DSH 0.2.1-rc.2 の実行です。件数の内訳と未解決は[版ごとの確認結果](#版ごとの確認結果)、[実 DSH の統合試験](#実-dsh-の統合試験)、[偽データでしか確かめていないもの](#偽データでしか確かめていないもの)にあります。
+
+| 壊れた境界 | 根拠 | 直したこと |
+|---|---|---|
+| 通信プラグインの起動（外部 `zod`） | 新 `dsh-typert-registry/lib/client.browser.js:8` と新 `dsh-api-remotes/lib/client.js:7` が `require("zod")` を要求し、M3E の module table に `zod` が無かった | `zod` 4.4.3 を devDependencies と `PINNED_DSH_LIBRARIES` に足し、`boot.ts` の `STATIC_MODULES` に登録しました。`classifyBootFailure` は module table の欠落を「版が合わない」と案内します |
+| ワークスペースへの会話の登録リトライ | 新 `dsh-api-session-controller/lib/index.js:769-782` の `reusable` と新 `lib/types/agent.js:472-495`、新 `dsh-workspace/lib/index.js:102-129`。指定 id は要求したワークスペースの member で空のときだけ再利用され、それ以外は新しい id が発行されます。登録に失敗したときも Host は作った会話を残さずワークスペースから外し、失敗の details には「実際に作った」id を載せます | `workspace-recovery.ts` は Host が返した（または失敗の details に載った）id を採用して続行し、入力中の本文はその id へ移します。偽 controller の attach 失敗の注入も、実際に作った id を details に載せて登録から外す形にしました。`e2e/workspace-recovery-handoff.spec.ts` は本文が新しい会話へ移る動きに替え、`Composer.tsx` の未完了の案内も「登録し直すと新しい会話が作られることがあり、本文もそちらへ移る」と直しました |
+| ジョブの種別 | 新 `dsh-tool-bash/lib/index.js:395`、新 `dsh-tool-pwsh/lib/index.js:369`、新 `dsh-tool-workflow/lib/index.js:225`、新 `dsh-tool-terminal/lib/index.js:404`。0.2.1 のジョブは `bash`・`pwsh`・`pty-send`・`workflow` などになり、0.2.0 の `subagent` は作られません | `operations.ts` の `jobKindLabel` を実物の種別に合わせ（`bash`→「シェル（bash）」、`pwsh`→「シェル（pwsh）」、`workflow`→「ワークフロー」、`pty-send`→「端末送信」）、`JobsScreen.tsx` のアイコンも `workflow` と `pty-send` で変えました。偽データの `subagent` も `workflow` へ替えました。標準画面は種別をそのまま出すため、この表示名は M3E が独自に決めたものです |
+| 子のカタログと投影の状態 | 新 `dsh-subagent/lib/types/projection-types.d.ts:15-17` の `mode: 'external'`、新 `dsh-api-session-controller/lib/types/client/sessions/manager.d.ts:38` の `migration-required`、新 `lib/types/types.d.ts:160-165` の `formatStatus` | `services.ts` の型に 3 つを足し、`presentation.ts` と `SubagentsScreen.tsx` は外部タスクと移行待ちを表示します。`session-navigation.ts` は `external` をアドレス化しません |
+| 設定の写し（モデル名・`ui-theme`） | 新 `dsh-llm-deepseek/lib/index.js:44` の `DeepSeek-V4.1-Flash`、新 `dsh-client-ui-theme/lib/index.js:35-57` の項目増加 | `mock-fixtures.ts` の写しを取り直し、`e2e-dsh/rpc.spec.ts` の期待値も実物に合わせました |
+| API キーの保存 | 実測で、環境変数由来の参照も `credentials.describe` は `writable: true` を返し、`set` は環境変数の覆いの上でも成功します（`unset` の後は環境変数が再び有効） | `e2e-dsh/custom-provider.spec.ts` の I16 を新仕様に書き替えました。画面の文言は変更していません |
+| V4 記録の検査（`invariant` の削除） | 新 `dsh-commands` と `dsh-compaction` の `package.json` に `./invariant` が無く、`lib/invariant.js` も削除されました（`pkgdiff.txt` の `REMOVED dsh-invariants`） | `e2e-dsh/fixture-contract.spec.ts` の読み込み先を `dsh-session-format-v0-to-v1` に変え、`compaction/*` の 4 種だけ `assertReleasedPayloadSemantics(event, 4)` を掛けます。規則の大半は `dsh-session-format-v3-to-v4` の relationships に移りました |
+| e2e の順序依存（版の差ではありません） | `e2e-dsh/jobs-kill.spec.ts` が作ったワークスペースが同じ実行内の次の spec（`real-dsh.spec.ts`）に残り、見出しが「一覧」でなく「home」になりました。`defaultWorkspaceTitle` はパスの basename で 0.2.0 も同じです | 製品コードは変更していません。`jobs-kill.spec.ts` が後片付けで DSH の公開 RPC `workspace/delete` を呼び、追加したワークスペースの登録を解除するようにしました（フォルダと会話は残します）。同じ実行の後にある `real-dsh.spec.ts` も「一覧」から始まります |
+| 設定の公開範囲（`web` 系） | 新 `dsh-web/lib/index.js:49-50` が `.volatile()` になり `web` が公開、新 `dsh-web-deepseek-api` が加わりました | `schema.ts` の `names` と `groupNamespaces` に `web` と `web-deepseek-api` を足し、`tests/08-settings.test.ts` で確かめます |
+
+今回の差のうち、動きを変えないものは次のとおりです。次の版上げでも同じ形で現れ得ます。
+
+- client バンドルが `client.browser.js` / `client.node.js` に分かれました。`exports["./client"].default` を採るため browser 側が配信され、M3E はこの分岐に依存しません。
+- typert の生成形が `descriptors` から `createTypertRemoteInfo`（`TypertRemoteInfo` / `TypertRemoteMethod`）に変わり、zod に `.describe()` が付きました。M3E は記述子を読みません。
+- client-modules に release gate（`ctx.modules.entries.releaseChange`）が加わりました。M3E は起動グラフを再送しないため働きません。
+- Host に `dsh-api-remote-access`（メソッド単位のアクセス制御）が加わりました。M3E の起動閉包には入りません。
+- `dsh-client-store` は 0.2.1 の DSH ツリーに単体では入らず、frontend に同梱される形へ移りました。同梱されるコードは 0.2.0-rc.2 と一致しているため、M3E の同梱版はそのまま使っています。
 
 ### 0.1.5 から 0.2.0 で壊れた境界と、どう直したか
 
@@ -90,7 +118,7 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 
 ### RPC の照合結果
 
-「同じ」は引数・公開型・呼び出す側の実装を照合した結果で、すべてを実 DSH の画面から実行した意味ではありません。実行した経路は [統合試験の表](#確かめた経路) で区別します。根拠となる DSH パッケージは `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/` の下です。
+「同じ」は引数・公開型・呼び出す側の実装を照合した結果で、すべてを実 DSH の画面から実行した意味ではありません。実行した経路は [統合試験の表](#確かめた経路) で区別します。**この表は 0.2.0-rc.2 時点の照合で、当時の記録です。** 根拠となる DSH パッケージは `tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/` の下です。0.2.1-rc.2 での差と直し方は「[0.2.0 から 0.2.1 で壊れた境界と、どう直したか](#020-から-021-で壊れた境界とどう直したか)」と「[依存の境界](#依存の境界)」にあります。
 
 | RPC・通知 | 判定 | 確認範囲・実物の根拠 |
 |---|---|---|
@@ -109,6 +137,11 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | キー保存内部・`record-updated` の自然発火 | 未検証 | 保存側は保護対象のため未読です。実 DSH で購読登録、偽通知で単独の更新処理を確認しましたが、自然発火・引数・順序・回数は保証しません |
 | 承認・legacy 質問、timed 質問 | 同じ・timed を追加 | `dsh-user-approval`、`dsh-user-questions`。既存の返答を維持し、`attachWait`・投影・`answer` の経路を段階 6-B で接続しました |
 | `RemoteResult/RemoteFailure` | 同じ・案内を追加 | `dsh-typert-protocol/lib/types/types.d.ts`。モデル・投影・監視不能や実行中アーカイブの案内を追加しました。個々の実障害の再現とは別です |
+| `pluginInventory.list`、`pluginManager.listBundles`、`plugin-manager/changed` | 未検証（任意） | 読み取り専用のプラグイン一覧（`web/src/features/plugins`、Issue #96）。DSH 0.2.0-rc.2 のプラグイン管理の公開型を写しました。どちらの名前空間も Host に無いことがあり、起動の契約（`web/src/dsh/contract.ts`）には含めません。名前空間が無いときは画面に「この Host ではプラグインの一覧を取得できません。」と出します。実 DSH では未確認で、偽データ（`?mock`）だけで確かめています。`plugin-manager/changed` は CLI や設定ファイルの変更を HMR が拾った場合には届かないため、画面は読み直しと再接続でも取り直します |
+
+### ピン留め（全ワークスペース共通）
+
+ピン留めは `workspaces.pinSession` / `unpinSession` と `workspaces.list` の `pinnedSessionIds`（新しい順、全ワークスペース共通）で扱います。Host の購読で更新されるので、他の Client の変更も届きます。アーカイブ済みはピン留めできず、アーカイブでピン留めが外れます。偽データも同じ規則です。実 DSH では未確認です。
 
 ### ピン留め（全ワークスペース共通）
 
@@ -143,12 +176,17 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | モデル選択シート | 開いている間に提供元やモデルの設定が変わっても、開いた時点の一覧を表示します。移行前からの動きで、今回は直していません。閉じて開き直すと更新されます | シートを開いたまま候補を更新するかを決めます |
 | 期限つきの質問 | 待機保持と期限後の回答は対応済みですが、残り秒数・期限は表示しません。いつ AI が続行するかが分からず、`continued` と未続行の質問が同じカードに見えます | 残り時間、AI の続行状態、入力後の待機延長をどう案内するかを決めます |
 | native のフォルダ選択 | OS のダイアログを選ぶ Host では、ブラウザのフォルダ一覧を使う経路が拒否されました。統合試験は browse に限定します | ローカルの native 方式も M3E で扱うかを決めます |
+| 既定のワークスペース名 | 標準画面は DSH の辞書 `workspace.defaultName`（en: Default workspace、zh: 默认工作区）を出しますが、M3E はワークスペース記録の `title`（パスを追加したときは basename）をそのまま出します | M3E も標準画面と同じ既定名を出すかを決めます |
+| 外部実行主体の子 | 0.2.1 の子カタログに `mode: 'external'` が加わりました。この子は client がアドレスを発行せず、一覧の行にもならないため、M3E は開けない「外部タスク」の行として出します | 外部タスクを開けるようにするか、表示だけにするかを決めます |
+| ジョブの種別の表示名 | 0.2.1 のジョブは `bash`・`pwsh`・`pty-send`・`workflow` などです。標準画面は種別をそのまま出しますが、M3E は読みやすさのため `bash`→「シェル（bash）」、`pwsh`→「シェル（pwsh）」、`workflow`→「ワークフロー」、`pty-send`→「端末送信」と独自の名前にしています（未知の種別は「ジョブ」） | この表示名をそのまま使うか、標準画面と同じ生の種別に合わせるかを決めます |
 
 `?mock&scenario=disconnected` は状態を直接作る偽データです。実 DSH の Host 停止時に同じ状態へ移る証拠にはなりません。認証失効時の接続状態も未検証です。
 
 ### 既知の制限と最後に確認すること
 
 **ゴールの読取りの応答が止まったままになると、そのあとの通知でも復帰しません。ゴール画面に入り直すと回復します。** 同時読取りを 1 件に制限しており、次の読取りは先行する応答を待つためです。偽 RPC の応答を保留して再現しました。実 DSH のネットワーク障害での再現は未検証です。画面終了時は遅い応答を適用せず待ちを破棄しますが、開始済みの通信自体の取消は追加していません。
+
+0.2.1-rc.2 では API キーの保存の仕様が変わり、保存した値が環境変数より優先されて `set` は拒否されません。そのため「設定は保存できたがキーの保存だけが失敗する」状況を、実 Host の正当な操作では作れなくなりました。部分失敗（`keyFailed`）の UI 経路は、注入した失敗を使う単体試験だけの確認になっています。接続切断や照会失敗のような一時的な条件では今も起こり得ます。
 
 段階 6-C の数値・ゴールの本体修正、旧プロフィール項目 `maxRetries` / `provider` / `maxRetryDelayMs` の拒否、設定と一覧の連動・配列・版の偽契約は取り込み済みです。停止後の通知、読取り失敗後の待ち、外部のゴール更新を見逃す試験も強化し、独立した再確認を通しました。
 
@@ -164,10 +202,13 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 |---|---:|---:|---|
 | 移行前 `413a857` から 0.2.0-rc.2 へ接続 | 0 件 | 0 件 | 全 15 件のうち最初の 1 件が起動で失敗し、残り 14 件は実行されませんでした。期待失敗として扱ったものではありません |
 | 追加試験込み `46ec172`（文書の取り込み後の `ab5c09d` で実行） | 33 件 | 1 件 | 全 34 件。指示役が 3 回続けて実行し、毎回同じ内訳でした |
+| 0.2.1-rc.2（Issue #128） | 48 件 | 1 件 | 全 49 件。指示役が 2 回続けて実行し、毎回同じ内訳でした。予期しない失敗・skip・flaky はなく、各回およそ 3.6 分でした |
 
-指示役は、その前の `52c2297` と `ecffe8b` でも実 DSH を 3 回ずつ続けて流し、毎回同じ通常成功と期待失敗の内訳を確認しています。
+指示役は、その前の `52c2297` と `ecffe8b` でも実 DSH を 3 回ずつ続けて流し、毎回同じ通常成功と期待失敗の内訳を確認しています。0.2.0-rc.2 の時点の 34 件との差は、その後に増えた spec（`jobs-kill.spec.ts` など）によるもので、件数そのものは比較しません。
 
 期待失敗は Host 停止中のバナーの既知の差です。Playwright の `passed` には「失敗すると宣言した試験が失敗した」場合も入るため、通常の成功と分けて読みます。
+
+`jobs-kill.spec.ts` は後片付けで、自分が追加したワークスペースの登録を解除します（DSH の公開 RPC `workspace/delete`。フォルダと会話は残し、ワークスペースの記録だけを消します）。1 回の実行では `DSH_HOME` を共有するためで、解除しないと同じ実行の後にある `real-dsh.spec.ts` が「一覧」でなく「home」から始まります（0.2.1 で新しく起きた差ではありません）。ワークスペースを追加する spec を足すときは、同じように後片付けで登録を解除します。
 
 ### 仕組みと実行
 
@@ -179,7 +220,7 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 - 期限つき質問の spec は [timed-questions-fixtures.ts](../e2e-dsh/timed-questions-fixtures.ts) から別の Host を起動し、`startDsh(llm.url, { timedQuestionSeconds: 2 })` を使います。隔離ホームの `cordis.patch.yml` に専用 preset を作り、`dsh-tool-ask-user` を `mode: 'timed'`、`timeout: 2` にします。これらは公開設定ではないので起動前に設定します。追加の環境変数は不要で、通常の legacy 質問の Host と分けます。
 
 ```bash
-env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts
+env M3E_DSH_VERSION=0.2.1-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.config.ts
 ```
 
 | 環境変数 | 用途 |
@@ -210,9 +251,9 @@ env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.c
 | 設定・モデル | 公開スキーマの独立照合、共有入力の受理・拒否、辞書キー、整数付近の小数・旧プロフィール項目の拒否、シェル設定の保存・再読、提供元・モデル一覧 | `rpc.spec.ts`。画面の数値検証と RPC への直接入力は別です |
 | 権限 | 既定値の保存、新規会話への適用、会話内の切り替え、自動候補の追加・削除通知で開いたシートが更新されること | 同上 |
 | ファイル | 一覧、本文、分割読込みした画像の全バイトと寸法、範囲の引数、負数範囲の拒否、ファイル・フォルダ自身の変更後の版 | 同上。`ready` 後の最初の通知だけで成功扱いにしません |
-| API キー | 隔離ホームの架空値の登録・削除と再読み込み、別ページへの `reference-updated`、環境由来の変更不可表示 | 同上。`record-updated` は購読登録までで、自然発火は未検証です |
+| API キー | 隔離ホームの架空値の登録・削除と再読み込み、別ページへの `reference-updated`、環境由来の参照への保存（保存値が優先）と `unset` 後の環境変数の復帰 | 同上。`record-updated` は購読登録までで、自然発火は未検証です。キー保存だけが失敗する状況は実 Host で作れません |
 | 発言の重複除去 | 送信中の表示を実際に観測し、確定まで DOM 更新・描画フレームごとに自分の発言が重ならないこと | `submission-overlap.spec.ts`。準備済みの通常会話への送信です |
-| 偽記録の実物照合 | 全 fixture と不正入力を V4 admission、復元、Session、commands / compaction の検査で照合 | `fixture-contract.spec.ts`。実物の検査関数を使いますが、偽記録の全経路を Host 上で生成する試験ではありません |
+| 偽記録の実物照合 | 全 fixture と不正入力を V4 admission、V4 restorer（relationships）、Session、compaction の payload semantics で照合 | `fixture-contract.spec.ts`。実物の検査関数を使いますが、偽記録の全経路を Host 上で生成する試験ではありません |
 | timed の保持・期限後の回答 | 表示中は Host の期限を越えて保持し、回答はツール結果として届くこと。ページ離脱後の期限切れでは、戻って回答が利用者メッセージとして届くこと | `timed-questions.spec.ts` |
 | 非表示の timed 質問 | 「あとで」と別会話への切替で保持を解放し、期限後に復元して回答できること | `timed-questions-hidden.spec.ts` |
 | timed 回答と取消の競合 | Host 受付後の応答だけを保留し、別 Client からキューを取り消してカードを復帰。旧応答の到着後も行が残り、答え直しがモデルへ届くこと | `timed-questions-race.spec.ts`。対応待ちの行から回答します。取消自体は別ページの実 RPC で行います |
@@ -224,7 +265,7 @@ env M3E_DSH_VERSION=0.2.0-rc.2 pnpm exec playwright test -c e2e-dsh/playwright.c
 | 偽物 | 写している実物と確認方法 |
 |---|---|
 | `web/src/dsh/mock/context.ts` と周辺 | session controller と gateway の参照・scope・cold/loading/open、保存済み会話と Agent の分離、送信観測と退役、通知の Context・取消寿命、inbox、ジョブの所有者を写します。`questions.ts` は実物の timed の保持・期限・遅延回答、`fork.ts` は開いた tool/step/turn の補完を写します |
-| 各機能の偽記録 | V4 の値・参照・前後関係、commands と compaction の規則を写します。静的な表示見本だけでなく動的なコマンド・モデル選択・fork も検査します。[V4 規則の対応表](../tests/helpers/s6b-v4-rules.md)、独立した不正入力、実物による検査を使います。履歴が欠けて検査対象が空になることも拒否します |
+| 各機能の偽記録 | V4 の値・参照・前後関係、V4 relationships（lifecycle）と compaction の payload semantics を写します。静的な表示見本だけでなく動的なコマンド・モデル選択・fork も検査します。[V4 規則の対応表](../tests/helpers/s6b-v4-rules.md)、独立した不正入力、実物による検査を使います。履歴が欠けて検査対象が空になることも拒否します |
 | 設定の `mock-fixtures.ts` / `mock-validation.ts` と偽 RPC | 実在する名前空間の公開 schema・主要制約・`autoGenerate`、書込みの受理・拒否を写します。架空の汎用フォーム見本は `example-extension` に分離します。期待側を本体の decoder と共有せず、実 DSH と同じ入力表で比較します。配列操作は全操作後の値を検査し、初期版 0・無変更保存・版指定の省略、設定と提供元・モデル・権限の連動も写します |
 | `features/session-tools/mock-files.ts` / `mock-goals.ts` | ファイルは保存済み会話の作業フォルダを解決し、範囲の省略と `null` を区別します。ゴールは Agent の利用可能性を確認し、activation の変化があるときだけ通知します。両者の準備条件を同一視しません |
 
@@ -318,6 +359,8 @@ C-m4 のパンくずは、統合後の `features/home/directory-mock.ts` で `hi
 - `record-updated` 単独での画面更新、質問の複数同時待ち・再接続相当の channel 交換、各種の失敗・遅延注入。実 DSH の質問の取消競合を確認しても、通信断中の回答配送全体まで確認したことにはなりません。
 - `developer/message`、`forked`、未知の `plugin:` 拡張、compaction の発生時の表示。古い記録の移行・検索 index・ページング全体も未検証です。
 - 監視非対応、writer-held、投影不能、モデル不能などの実際のエラー発生。再接続後に生成途中の応答が続く経路も、復帰後の新規送信とは別に残っています。
+- 外部実行主体の子（`mode: 'external'`）が実データで現れる条件と、`formatStatus: 'migration-required'` と投影の `state: 'migration-required'` が並んで返る場面。どちらも型と client 実装から写したもので、実 Host の応答では確認していません。
+- fixture の compaction payload 検査は `dsh-session-format-v0-to-v1` の関数を借りています。V4 世代の公開入口だけでは `shadowedTokenCount` の非負整数と compaction id の非空を確かめられないためです。DSH 側が V4 用の payload semantics を呼ぶ形に戻れば、そちらへ寄せます。
 
 偽 controller と実物の差は [意図した簡略化の一覧](#偽データの決まりと意図した簡略化) を参照してください。ゴールの準備失敗・遅延、通知の集中、読取り応答の停止も、実 Host に故障を注入した確認は未実施です。
 
@@ -332,7 +375,7 @@ C-m4 のパンくずは、統合後の `features/home/directory-mock.ts` で `hi
 ## 版を上げるときの手順
 
 1. 対応版、起点コミット、既知の差、通常成功と期待失敗を記録します。利用者の DSH を使わず、`e2e-dsh` の隔離環境で新しい版を試し、最初に止まる境界を記録します。
-2. 共有ライブラリを照合し、`package.json` と `src/shared/dsh-compat.ts` を同時に更新します。loader の待機・失敗処理も確認します。
+2. 共有ライブラリを照合し、`package.json` と `src/shared/dsh-compat.ts` を同時に更新します。loader の待機・失敗処理も確認します。**通信プラグインの閉包が `require` するモジュール名を、実物の frontend dist の static module 表と照合します。** 0.2.1 では通信用プラグインが外部の `zod` を要求するようになり、M3E の module table に無いと起動が止まりました。
 3. 起動グラフ、preload、`<base>`、RPC・WebSocket・画像の宛先を確認します。`/m3e/` の遷移、空の Markdown リンク、戻る・再読み込み、PWA scope も確認します。
 4. 実 DSH 試験の前提を確認します。LLM の接続形式、SSE、ツールと画像の形式を実物に合わせ、フォルダ選択の native / browse を確認します。環境の差を API の破損と取り違えないようにします。
 5. セッション controller の型・実装を照合し、参照の所有、ready の成功・失敗、解放、一覧と投影、ジョブを移行します。偽 controller も公開契約に合わせ、非同期の準備・中断・後着応答を確認します。
@@ -340,5 +383,6 @@ C-m4 のパンくずは、統合後の `features/home/directory-mock.ts` で `hi
 7. 実物を読むときは対象パッケージ・ファイルを限定します。保護対象のパスにあるパッケージは読まず、許可された呼び出し側と隔離環境の動作で確認できる範囲を記録します。内部の保存形式や通知の引数を推測で埋めません。
 8. 偽 controller・全機能の記録・設定を分けて総点検し、実物の拒否・寿命・通知を照合します。偽記録には独立した不正入力と実物の検査を当て、設定は共有入力を両方へ送ります。意図した簡略化と、そのために見逃す誤りを一覧に残します。
 9. 読むレビューに加え、上の[試験の強さの確かめ方](#試験の強さの確かめ方)を実行します。成功件数が維持されても、確認が失われていないかを壊して確かめます。blocking の修正後は独立した再確認を受け、統合後にも全体から抜き取って監査します。
-10. 統合したコードで `pnpm typecheck`、`pnpm test`、`pnpm build`、偽データ e2e を通し、実 DSH を連続して確認します。コマンドは [development.md](development.md#試験の使い分け) を参照します。期限つき質問は専用 preset の Host で確認します。削除・skip・条件の緩和で件数をそろえません。
+10. 統合したコードで `pnpm typecheck`、`pnpm test`、`pnpm build`、偽データ e2e を通し、実 DSH を連続して確認します。**実 DSH の e2e は 1 回の実行を直列にまとめ、同時には実行しません。** ワークスペースを追加する spec は、後片付けで登録を解除します（`jobs-kill.spec.ts` と同じにします）。それでも初期状態を前提にする spec と並べられないときは、別の Host に分けます。コマンドは [development.md](development.md#試験の使い分け) を参照します。期限つき質問は専用 preset の Host で確認します。削除・skip・条件の緩和で件数をそろえません。
 11. この文書の集計表を更新し、README の各言語と引き継ぎから参照します。仕様との差、未検証、実機で利用者が判断することを残します。文書だけの修正では試験・ビルドを再実行せず、根拠・リンク・差分を確認します。
+12. CI と固定したフィクスチャの版は `SUPPORTED_DSH_VERSION` から導きます。`.github/ci/dsh/package.json`、`.github/workflows/pr-checks.yml` の cache の path と key、`scripts/ci-local-dsh.sh`、`scripts/check-ci-dsh.ts` が同じ値を読みます。`check-ci-dsh.ts` の dsh 本体の integrity だけは版から導けないため、公開 npm の `npm view @deepseek-ai/dsh@<版> dist.integrity` と照合してから定数を更新します。lock の各項目は `resolved` と `integrity` を持つことを検査します。

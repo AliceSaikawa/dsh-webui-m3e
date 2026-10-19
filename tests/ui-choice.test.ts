@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { planIndexVisit, readUiChoice, uiChoiceScript } from '../src/shared/ui-choice.ts'
+import { markTabShowedM3e, planIndexVisit, readUiChoice, TAB_MARK_KEY, uiChoiceScript } from '../src/shared/ui-choice.ts'
 
 const at = (pathname: string, search = '', hash = '') => ({ pathname, search, hash })
 
@@ -32,16 +32,45 @@ test('pages other than the stock index are never moved', () => {
   assert.deepEqual(planIndexVisit(at('/other'), 'dsh-webui=m3e'), {})
 })
 
+test('a tab that showed m3e keeps the stock UI on /, but an explicit ?ui= still wins', () => {
+  assert.deepEqual(planIndexVisit(at('/'), 'dsh-webui=m3e', true), {})
+  assert.deepEqual(planIndexVisit(at('/index.html'), 'dsh-webui=m3e', true), {})
+  assert.deepEqual(planIndexVisit(at('/', '', '#x'), 'dsh-webui=m3e', true), {})
+  assert.deepEqual(planIndexVisit(at('/', '?ui=m3e'), '', true), { store: 'm3e', redirect: '/m3e/' })
+  assert.deepEqual(planIndexVisit(at('/', '?ui=classic'), 'dsh-webui=m3e', true), { store: 'classic' })
+})
+
+test('markTabShowedM3e writes the tab mark and tolerates broken storage', () => {
+  const writes: Array<[string, string]> = []
+  markTabShowedM3e({ setItem: (key, value) => writes.push([key, value]) })
+  assert.deepEqual(writes, [[TAB_MARK_KEY, '1']])
+  assert.doesNotThrow(() => markTabShowedM3e({ setItem: () => { throw new Error('blocked') } }))
+  assert.doesNotThrow(() => markTabShowedM3e(undefined))
+})
+
+const runScript = (
+  pathname: string,
+  search: string,
+  cookie: string,
+  sessionStorage: Pick<Storage, 'getItem'> | null = null,
+) => {
+  const doc = { cookie }
+  const replaced: string[] = []
+  const location = { pathname, search, hash: '', replace: (url: string) => replaced.push(url) }
+  new Function('location', 'document', 'sessionStorage', uiChoiceScript())(location, doc, sessionStorage)
+  return { cookie: doc.cookie, replaced }
+}
+
 test('the inline script applies the plan: stores the cookie and replaces the location', () => {
-  const run = (pathname: string, search: string, cookie: string) => {
-    const doc = { cookie }
-    const replaced: string[] = []
-    const location = { pathname, search, hash: '', replace: (url: string) => replaced.push(url) }
-    new Function('location', 'document', uiChoiceScript())(location, doc)
-    return { cookie: doc.cookie, replaced }
-  }
-  const moved = run('/', '?ui=m3e', '')
+  const moved = runScript('/', '?ui=m3e', '')
   assert.match(moved.cookie, /^dsh-webui=m3e; Path=\/; Max-Age=\d+; SameSite=Strict$/)
   assert.deepEqual(moved.replaced, ['/m3e/'])
-  assert.deepEqual(run('/', '', 'dsh-webui=classic').replaced, [])
+  assert.deepEqual(runScript('/', '', 'dsh-webui=classic').replaced, [])
+})
+
+test('the inline script honors the tab mark and tolerates broken storage', () => {
+  const mark = { getItem: (key: string) => (key === TAB_MARK_KEY ? '1' : null) }
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', mark).replaced, [])
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', null).replaced, ['/m3e/'])
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', { getItem: () => { throw new Error('blocked') } }).replaced, ['/m3e/'])
 })

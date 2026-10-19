@@ -20,6 +20,7 @@ export interface RemoteEventMap {
     readonly sessionId: string
     readonly goal?: { readonly id: string; readonly revision: number; readonly activation: 'armed' | 'disarmed' }
   }]
+  'plugin-manager/changed': [payload: { readonly reason: 'plugin' | 'bundle' | 'install' | 'remove' }]
 }
 export type RemoteEventName = keyof RemoteEventMap
 

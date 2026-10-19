@@ -56,8 +56,10 @@ function JobRow({ sessionId, job, now, available }: { sessionId: string; job: Se
       if (generation === lifetime.current) { pending.current = false; setBusy(false) }
     }
   }
+  // Icons follow the kinds produced by DSH 0.2.1 (dsh-tool-bash, dsh-tool-pwsh, dsh-tool-workflow,
+  // dsh-tool-terminal); unknown kinds keep the generic terminal icon.
   return <li className="st-row">
-    <Icon name={job.kind === 'subagent' ? 'account_tree' : 'terminal'} />
+    <Icon name={job.kind === 'workflow' ? 'account_tree' : job.kind === 'pty-send' ? 'keyboard' : 'terminal'} />
     <div className="st-row-main">
       <p className="st-title">{job.label}</p>
       <p className="st-muted">{jobKindLabel(job.kind)} ・ {jobStatusLabel(job.status)} ・ {jobDurationLabel(job, now)}</p>
