@@ -7,8 +7,11 @@ import { useSessionJobs } from '../../dsh/jobs.ts'
 import { useDsh, type SessionJob } from '../../dsh/services.ts'
 import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { isLiveJob, jobDurationLabel, jobKindLabel, jobStatusLabel, sortJobs } from './operations.ts'
+import { useMessages } from '../../i18n/index.ts'
+import { sessionToolsMessages } from './messages.ts'
 
 export function JobsScreen({ sessionId }: { sessionId: string }) {
+  const text = useMessages(sessionToolsMessages)
   const roster = useSessionJobs(sessionId)
   const jobs = sortJobs(roster.rows)
   const live = jobs.some(isLiveJob)
@@ -20,16 +23,17 @@ export function JobsScreen({ sessionId }: { sessionId: string }) {
     return () => window.clearInterval(timer)
   }, [live, sessionId])
 
-  return <PageScaffold title="ジョブ"><div className="st-content">
-    {roster.status === 'loading' && <p className="st-muted" role="status">ジョブを読み込み中です…</p>}
-    {roster.status === 'error' && <div className="st-error" role="alert"><p>ジョブを読み込めませんでした。表示中の情報は最新ではない可能性があります。</p><M3eButton onClick={roster.retry}>もう一度読み込む</M3eButton></div>}
-    {jobs.length === 0 ? roster.status === 'ready' && <p className="st-muted">ジョブはありません。</p> : <ul className="st-list" aria-label="ジョブの一覧">
+  return <PageScaffold title={text.jobs}><div className="st-content">
+    {roster.status === 'loading' && <p className="st-muted" role="status">{text.jobsLoading}</p>}
+    {roster.status === 'error' && <div className="st-error" role="alert"><p>{text.jobsListFailed}</p><M3eButton onClick={roster.retry}>{text.jobsRetryLoad}</M3eButton></div>}
+    {jobs.length === 0 ? roster.status === 'ready' && <p className="st-muted">{text.jobsEmpty}</p> : <ul className="st-list" aria-label={text.jobsListLabel}>
       {jobs.map(job => <JobRow key={`${sessionId}:${job.id}`} sessionId={sessionId} job={job} now={now} available={roster.status === 'ready'} />)}
     </ul>}
   </div></PageScaffold>
 }
 
 function JobRow({ sessionId, job, now, available }: { sessionId: string; job: SessionJob; now: number; available: boolean }) {
+  const text = useMessages(sessionToolsMessages)
   const { jobs } = useDsh()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -49,9 +53,9 @@ function JobRow({ sessionId, job, now, available }: { sessionId: string; job: Se
     try {
       const result = unwrapRemoteResult(await jobs.kill(sessionId, job.id))
       if (generation !== lifetime.current) return
-      setMessage(result.outcome === 'requested' ? '停止を要求しました。' : 'このジョブはすでに終了しています。')
+      setMessage(result.outcome === 'requested' ? text.stopRequested : text.stopAlreadyEnded)
     } catch (failure) {
-      if (generation === lifetime.current) setError(remoteErrorMessage(failure, 'ジョブを停止できませんでした。もう一度お試しください。'))
+      if (generation === lifetime.current) setError(remoteErrorMessage(failure, text.stopFailed))
     } finally {
       if (generation === lifetime.current) { pending.current = false; setBusy(false) }
     }
@@ -62,11 +66,11 @@ function JobRow({ sessionId, job, now, available }: { sessionId: string; job: Se
     <Icon name={job.kind === 'workflow' ? 'account_tree' : job.kind === 'pty-send' ? 'keyboard' : 'terminal'} />
     <div className="st-row-main">
       <p className="st-title">{job.label}</p>
-      <p className="st-muted">{jobKindLabel(job.kind)} ・ {jobStatusLabel(job.status)} ・ {jobDurationLabel(job, now)}</p>
+      <p className="st-muted">{text.jobLine(jobKindLabel(job.kind, text), jobStatusLabel(job.status, text), jobDurationLabel(job, now, text))}</p>
       {error && <p className="st-job-error" role="alert">{error}</p>}
       {message && <p className="st-muted" role="status">{message}</p>}
     </div>
-    {job.status === 'running' && <M3eIconButton aria-label={`${job.label}を停止`} disabled={!available || busy || !!message} onClick={() => { void stop() }}><Icon name="stop" /></M3eIconButton>}
+    {job.status === 'running' && <M3eIconButton aria-label={text.stopJobLabel(job.label)} disabled={!available || busy || !!message} onClick={() => { void stop() }}><Icon name="stop" /></M3eIconButton>}
     {job.status === 'failed' && <Icon name="error" className="st-job-error" />}
   </li>
 }
