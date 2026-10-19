@@ -15,7 +15,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
     const text = messagesOf(errorMessages, currentLocale())
     return <ErrorState fullScreen icon="error" title={text.renderTitle} message={text.renderMessage} actions={[
       { label: text.reload, primary: true, onClick: () => window.location.reload() },
-      { label: text.home, onClick: () => { window.location.hash = '#/'; window.location.reload() } },
+      { label: text.home, onClick: () => { window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`); window.location.reload() } },
     ]} />
   }
 }
