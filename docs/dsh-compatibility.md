@@ -137,6 +137,7 @@ Issue #128 の各担当の報告に基づきます。根拠は `tmp/dsh-integrat
 | キー保存内部・`record-updated` の自然発火 | 未検証 | 保存側は保護対象のため未読です。実 DSH で購読登録、偽通知で単独の更新処理を確認しましたが、自然発火・引数・順序・回数は保証しません |
 | 承認・legacy 質問、timed 質問 | 同じ・timed を追加 | `dsh-user-approval`、`dsh-user-questions`。既存の返答を維持し、`attachWait`・投影・`answer` の経路を段階 6-B で接続しました |
 | `RemoteResult/RemoteFailure` | 同じ・案内を追加 | `dsh-typert-protocol/lib/types/types.d.ts`。モデル・投影・監視不能や実行中アーカイブの案内を追加しました。個々の実障害の再現とは別です |
+| `pluginInventory.list`、`pluginManager.listBundles`、`plugin-manager/changed` | 未検証（任意） | 読み取り専用のプラグイン一覧（`web/src/features/plugins`、Issue #96）。DSH 0.2.0-rc.2 のプラグイン管理の公開型を写しました。どちらの名前空間も Host に無いことがあり、起動の契約（`web/src/dsh/contract.ts`）には含めません。名前空間が無いときは画面に「この Host ではプラグインの一覧を取得できません。」と出します。実 DSH では未確認で、偽データ（`?mock`）だけで確かめています。`plugin-manager/changed` は CLI や設定ファイルの変更を HMR が拾った場合には届かないため、画面は読み直しと再接続でも取り直します |
 
 ### ピン留め（全ワークスペース共通）
 
