@@ -52,12 +52,14 @@ function sameContent(a: Draft, b: Draft): boolean {
   return a.text === b.text && sameInput(a, b)
 }
 /**
- * Whether the draft still holds the input recorded at the failure. A reload only
- * restores the body, so an absent `input` limits the answer to the body.
+ * Whether the draft still holds the input recorded at the failure. A reload
+ * restores the body alone, so an absent `input` stands for the empty images and
+ * choices that reload leaves behind; comparing only the body would treat input
+ * added after the reload as the failure state.
  */
 function matchesBaseline(draft: Draft, baseline: WorkspaceAttachmentBaseline | undefined): boolean {
   if (!baseline || draft.text !== baseline.text) return false
-  return !baseline.input || sameInput(draft, baseline.input)
+  return sameInput(draft, baseline.input ?? { images: [] })
 }
 
 /**
@@ -86,7 +88,7 @@ function settleSuperseded(recorded: WorkspaceAttachment, adopted: WorkspaceAttac
 function keepRetryOnCurrent(draftKey: string, adopted: WorkspaceAttachment): void {
   const current = readDraft(draftKey)
   if (!current.workspaceAttachment || current.workspaceAttachment.sessionId === adopted.sessionId) return
-  writeDraft(draftKey, { ...current, workspaceAttachment: adopted })
+  writeDraft(draftKey, { ...current, workspaceAttachment: { ...adopted, baseline: attachmentBaseline(current) } })
 }
 
 export function clearWorkspaceOrigin(attachment: WorkspaceAttachment, delivered: Draft): void {
@@ -143,7 +145,11 @@ function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Ba
   const destinationUnchanged = baseline.fresh
     || matchesBaseline(destinationDraft, baseline.recorded)
     || (baseline.recorded === undefined && sameContent(destinationDraft, source))
-  const forDestination = (draft: Draft): Draft => settled ? settle(draft) : { ...settle(draft), workspaceAttachment: attachment }
+  // The destination keeps the input it receives, so a retry state written there
+  // records that input even when the Host minted a new identity.
+  const forDestination = (draft: Draft): Draft => settled
+    ? settle(draft)
+    : { ...settle(draft), workspaceAttachment: { ...attachment, baseline: attachmentBaseline(draft) } }
   if (destinationUnchanged) {
     // The conversation still holds the failure-time body, so the source's input is the newer one.
     if (ownsSource && (settled || baseline.fresh)) {

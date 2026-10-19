@@ -116,13 +116,29 @@ test('a repeated attach failure adopts the newest reported identity instead of t
   assert.equal(result.sessionReady, true)
   assert.ok(result.error)
   const adopted = readDraft('session:minted-again')
-  assert.deepEqual(adopted.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-again' })
+  assert.deepEqual(adopted.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-again',
+    baseline: { text: '保つ本文', input: { images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true } } })
   assert.equal(adopted.text, '保つ本文')
   assert.deepEqual(readDraft(h.sessionKey), { text: '', images: [] })
   // The next retry names the newest identity instead of repeating the recorded
   // one that the Host replaced.
   await retryWorkspaceAttachment({ draftKey: 'session:minted-again', sessions: h.sessions })
   assert.deepEqual(h.calls.at(-1), { workspaceId: h.attachment.workspaceId, sessionId: 'minted-again' })
+})
+
+// Issue #125: a fresh identity has no earlier input of its own, so the state
+// written for it must still record the input, or the next retry compares only bodies.
+test('a failed attach of a minted identity records the input for the next retry', async () => {
+  const h = setup('minted-input')
+  h.hostMints('minted-input-new')
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.equal(result.sessionId, 'minted-input-new')
+  assert.ok(result.error)
+  assert.deepEqual(readDraft('session:minted-input-new').workspaceAttachment, {
+    workspaceId: h.attachment.workspaceId,
+    sessionId: 'minted-input-new',
+    baseline: { text: '保つ本文', input: { images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true } },
+  })
 })
 
 test('a divergent body on the recorded conversation stays as an ordinary draft after being superseded', async () => {
@@ -153,7 +169,8 @@ test('a minted ID that is not yet listed keeps the retry on the screen the user 
     // the user is on keeps its retry naming the newest identity.
     const current = readDraft(h.sessionKey)
     assert.equal(current.text, '保つ本文')
-    assert.deepEqual(current.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-unlisted' })
+    assert.deepEqual(current.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-unlisted',
+      baseline: { text: '保つ本文', input: { images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true } } })
     // The new screen's duplicate held the same body, so it is not left behind.
     assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
     // The next retry names the newest identity, not the superseded recorded one.
@@ -381,6 +398,43 @@ for (const outcome of ['success', 'failure'] as const) {
     }
   })
 }
+
+// A reload restores the body and the saved identity, but `readDraft` returns no
+// images or choices and the saved baseline keeps only the body.
+function afterReload(h: ReturnType<typeof setup>): WorkspaceAttachment {
+  const attachment: WorkspaceAttachment = { workspaceId: h.attachment.workspaceId, sessionId: h.attachment.sessionId, baseline: { text: '保つ本文' } }
+  writeDraft(h.originKey, { text: '保つ本文', images: [], workspaceAttachment: attachment })
+  writeDraft(h.sessionKey, { text: '保つ本文', images: [], workspaceAttachment: attachment })
+  return attachment
+}
+
+// Issue #125: with no saved input, the baseline stands for the empty input a
+// reload restores, so input added afterwards is not mistaken for the failure state.
+test('after a reload, an image added to the conversation survives while the new screen holds the edit', async () => {
+  const h = setup('reload-conversation-image')
+  afterReload(h)
+  const added = { id: 'conversation-added-image' } as unknown as Draft['images'][number]
+  writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), images: [added] })
+  writeDraft(h.originKey, { ...readDraft(h.originKey), text: '新規画面で直した本文' })
+  h.succeed()
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+  assert.deepEqual(readDraft(h.sessionKey), { text: '保つ本文', images: [added] })
+  assert.deepEqual(readDraft(h.originKey), { text: '新規画面で直した本文', images: [] })
+})
+
+test('after a reload, an image added on the new screen survives while the conversation holds the edit', async () => {
+  const h = setup('reload-origin-image')
+  afterReload(h)
+  const added = { id: 'new-screen-added-image' } as unknown as Draft['images'][number]
+  writeDraft(h.originKey, { ...readDraft(h.originKey), images: [added] })
+  writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '会話側で直した本文' })
+  h.succeed()
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+  assert.deepEqual(readDraft(h.sessionKey), { text: '会話側で直した本文', images: [] })
+  assert.deepEqual(readDraft(h.originKey), { text: '保つ本文', images: [added] })
+})
 
 test('a retry that finds the same body on both screens removes the new-screen duplicate', async () => {
   const h = setup('same-body')
