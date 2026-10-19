@@ -138,6 +138,10 @@ Issue #128 の各担当の報告に基づきます。根拠は `tmp/dsh-integrat
 | 承認・legacy 質問、timed 質問 | 同じ・timed を追加 | `dsh-user-approval`、`dsh-user-questions`。既存の返答を維持し、`attachWait`・投影・`answer` の経路を段階 6-B で接続しました |
 | `RemoteResult/RemoteFailure` | 同じ・案内を追加 | `dsh-typert-protocol/lib/types/types.d.ts`。モデル・投影・監視不能や実行中アーカイブの案内を追加しました。個々の実障害の再現とは別です |
 
+### ピン留め（全ワークスペース共通）
+
+ピン留めは `workspaces.pinSession` / `unpinSession` と `workspaces.list` の `pinnedSessionIds`（新しい順、全ワークスペース共通）で扱います。Host の購読で更新されるので、他の Client の変更も届きます。アーカイブ済みはピン留めできず、アーカイブでピン留めが外れます。偽データも同じ規則です。実 DSH では未確認です。
+
 ### 総点検で分かった本体の不具合
 
 偽物が実物より寛容なために見逃していた問題と、実 DSH 試験で見つかった問題です。修正の取り込み状況を分けて記します。
