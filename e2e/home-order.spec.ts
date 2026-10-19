@@ -37,3 +37,22 @@ test('101a 並べ方を最近の更新順へ切り替え、端末ごとに保存
   await expect(page.locator('m3e-menu-item').filter({ hasText: '手動の順' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.locator('m3e-menu-item').filter({ hasText: '並べ替え' })).toHaveCount(1)
 })
+
+test('101b 並べ替えの途中で別タブが並べ方を最近の更新順に変えると、並べ替えを抜けて更新順で表示する', async ({ page }) => {
+  await visit(page)
+  await page.locator('m3e-icon-button[aria-label="一覧のメニュー"]').click()
+  await page.locator('m3e-menu-item').filter({ hasText: '並べ替え' }).click()
+  await expect(page.locator('h1').first()).toHaveText('並べ替え')
+  await expect(page.locator('.home-session-button strong')).toHaveText(MANUAL_TITLES)
+
+  const other = await page.context().newPage()
+  await visit(other)
+  await chooseOrder(other, '最近の更新順')
+  await expect(other.locator('.home-session-button strong')).toHaveText(UPDATED_TITLES)
+
+  await expect(page.locator('.home-session-button strong')).toHaveText(UPDATED_TITLES)
+  await expect(page.locator('h1').first()).not.toHaveText('並べ替え')
+  await expect(page.getByRole('button', { name: '完了' })).toHaveCount(0)
+  await expect(page.locator('m3e-icon-button[aria-label="一覧のメニュー"]')).toBeVisible()
+  await other.close()
+})
