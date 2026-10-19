@@ -1,15 +1,45 @@
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { M3eRadio, M3eRadioGroup } from '@m3e/react/radio-group'
 import { M3eButton } from '@m3e/react/button'
 import { openDialog, openSheet } from '../../app/overlay/index.ts'
-import { backToClassic, setAppearance, useAppearance, type Appearance } from '../../app/theme/index.ts'
+import { Icon } from '../../app/icons/Icon.tsx'
+import {
+  THEME_COLOR_PRESETS, backToClassic, normalizeThemeColor, setAppearance, setThemeColor, useAppearance, useThemeColor,
+  type Appearance,
+} from '../../app/theme/index.ts'
+import { createFrameThrottledWriter, type FrameThrottledWriter } from './frame-throttle.ts'
 
 export const appearanceLabels: Record<Appearance, string> = {
   system: '端末の設定に合わせる', light: 'ライト', dark: 'ダーク',
 }
 
+export function themeColorLabel(color: string): string {
+  const normalized = normalizeThemeColor(color)
+  return THEME_COLOR_PRESETS.find(preset => preset.color.toLowerCase() === normalized)?.label ?? 'ほかの色'
+}
+
+/**
+ * A color input reports every color the pointer passes over. Apply only the latest one per frame,
+ * so saving and recoloring the screen keep up with the drag. A preset applies at once and drops the
+ * waiting custom color; the sheet applies a waiting custom color when it closes.
+ */
+function useThemeColorWriter(): FrameThrottledWriter<string> {
+  const [writer] = useState(() => createFrameThrottledWriter(setThemeColor, {
+    request: callback => requestAnimationFrame(callback),
+    cancel: handle => cancelAnimationFrame(handle),
+  }))
+  useEffect(() => () => writer.flush(), [writer])
+  return writer
+}
+
 function AppearanceSheet() {
   const appearance = useAppearance()
+  const color = useThemeColor()
+  // The input shows the picked color right away, ahead of the throttled store.
+  const [picked, setPicked] = useState(color)
+  useEffect(() => setPicked(color), [color])
+  const writeColor = useThemeColorWriter()
+  const custom = !THEME_COLOR_PRESETS.some(preset => preset.color.toLowerCase() === color)
   const titleId = useId()
   return <div className="settings-sheet">
     <h2 id={titleId}>外観</h2>
@@ -21,6 +51,29 @@ function AppearanceSheet() {
         <span>{appearanceLabels[value]}</span>
       </label>)}
     </M3eRadioGroup>
+    <h3>画面の色</h3>
+    <p className="muted">選んだ色から配色を作ります。</p>
+    <div className="settings-color-options" role="group" aria-label="画面の色">
+      {THEME_COLOR_PRESETS.map(({ color: presetColor, label }) => {
+        const selected = presetColor.toLowerCase() === color
+        return <button key={presetColor} type="button" className="settings-color-swatch"
+          aria-label={label} aria-pressed={selected} title={label}
+          style={{ background: presetColor }} onClick={() => {
+            // The store may already hold this color while a custom one waits, so reset the input too.
+            setPicked(presetColor.toLowerCase())
+            writeColor.immediate(presetColor)
+          }}>
+          {selected && <Icon name="check" />}
+        </button>
+      })}
+    </div>
+    <label className="settings-color-custom">
+      <span>ほかの色</span>
+      {/* aria-pressed is not allowed on a color input, so the selected state goes in its name. */}
+      <input type="color" value={picked} aria-label={custom ? 'ほかの色（選択中）' : 'ほかの色'}
+        onChange={event => { setPicked(event.currentTarget.value); writeColor.throttled(event.currentTarget.value) }} />
+      {custom && <Icon name="check" />}
+    </label>
   </div>
 }
 
