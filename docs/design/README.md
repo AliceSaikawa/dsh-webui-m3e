@@ -131,7 +131,8 @@ AI-Duration: <作業にかかった時間。例：1h20m>
 AI-Cost: <費用。定額のプランで測れなければ unknown>
 AI-Task: <設計書の番号。例：03-composer>
 ```
-- コミットメッセージに個人情報を書きません。`git push --force` と `git reset --hard` は使いません。
+- コミットメッセージに個人情報を書きません。`--force-with-lease` を付けない `git push --force` と、`git reset --hard` は使いません。`--force-with-lease` は自分のブランチには許可なしで使え、人と共有しているブランチでは許可を取ります。
+- ブランチ・コミット・PR・マージの決まりは [git-workflow.md](../git-workflow.md) にまとめてあります。この文書と食い違うときは、git-workflow.md を優先します。
 
 ## Codex に渡す指示の例
 
