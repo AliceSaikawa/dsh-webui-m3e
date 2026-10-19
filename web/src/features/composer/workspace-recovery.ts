@@ -99,7 +99,7 @@ export function retryWorkspaceAttachment(options: { draftKey: string; sessions: 
   return recovery
 }
 
-interface Baseline { revision: number; draft: Draft }
+interface Baseline { revision: number; draft: Draft; sameAtStart: boolean }
 function settle(draft: Draft): Draft {
   const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = draft
   return rest
@@ -107,9 +107,11 @@ function settle(draft: Draft): Draft {
 
 /**
  * Applies the registration result and moves the body as separate steps. The
- * created conversation's draft is replaced only when nothing wrote it after
- * the retry began; otherwise its newer input stays and only the recovery
- * state is settled.
+ * created conversation's draft is replaced only when it held the same input as
+ * the origin when the retry began and nothing wrote it after that; a draft the
+ * user already edited on either screen is never replaced. Otherwise only the
+ * recovery state is settled, and a distinct origin input stays as an ordinary
+ * draft for the new screen.
  */
 function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Baseline, { settled, clearOrigin }: { settled: boolean; clearOrigin: boolean }): void {
   const destination = `session:${attachment.sessionId}`
@@ -125,8 +127,17 @@ function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Ba
   }
   const origin = readDraft(draftKey)
   if (draftRevision(destination) === baseline.revision) {
-    writeDraft(destination, forDestination(origin))
-    if (clearOrigin) clearDraft(draftKey)
+    if (baseline.sameAtStart || sameContent(origin, baseline.draft)) {
+      writeDraft(destination, forDestination(origin))
+      if (clearOrigin) clearDraft(draftKey)
+      return
+    }
+    // The destination already held a different draft before the retry began,
+    // so registration only settles it and both inputs stay where they are.
+    if (settled) {
+      writeDraft(destination, settle(readDraft(destination)))
+      writeDraft(draftKey, settle(origin))
+    }
     return
   }
   const current = readDraft(destination)
@@ -147,11 +158,13 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
     return { sessionId: attachment.sessionId, sessionReady: false, error: new Error('画像の準備が終わってから登録をやり直してください。') }
   }
   const destination = `session:${attachment.sessionId}`
-  const baseline: Baseline = { revision: draftRevision(destination), draft: readDraft(destination) }
-  // A fresh identity has no draft yet, so its baseline is the empty revision.
+  const destinationDraft = readDraft(destination)
+  const baseline: Baseline = { revision: draftRevision(destination), draft: destinationDraft,
+    sameAtStart: sameContent(initial, destinationDraft) }
+  // A fresh identity has no earlier input of its own, so the retry may move the origin there.
   const baselineFor = (sessionId: string): Baseline => sessionId === attachment.sessionId
     ? baseline
-    : { revision: draftRevision(`session:${sessionId}`), draft: readDraft(`session:${sessionId}`) }
+    : { revision: draftRevision(`session:${sessionId}`), draft: readDraft(`session:${sessionId}`), sameAtStart: true }
   const settleReported = (reported: WorkspaceAttachment, source: Draft): void => settleSuperseded(attachment, reported, source)
   try {
     // DSH 0.2.1 reuses the named Session only while it is an unarchived blank

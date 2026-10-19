@@ -159,15 +159,20 @@ test('a minted ID that is not yet listed keeps the retry on the screen the user 
   }
 })
 
-test('new-screen recovery moves the latest edits to the existing draft, then removes the duplicate origin', async () => {
+// Issue #125: a draft the user edited on either screen before the retry began is
+// not a copy of the other, so the destination keeps its own input and the origin
+// stays as an ordinary draft for the new screen.
+test('a new-screen draft edited before the retry stays there when the conversation holds a different draft', async () => {
   const h = setup('new-edits')
   writeDraft(h.originKey, { ...readDraft(h.originKey), text: '登録を待つ間に編集した本文' })
   h.succeed()
   const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
   assert.equal(result.sessionReady, true)
-  assert.equal(readDraft(h.sessionKey).text, '登録を待つ間に編集した本文')
+  assert.equal(readDraft(h.sessionKey).text, '保つ本文')
   assert.equal(readDraft(h.sessionKey).workspaceAttachment, undefined)
-  assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+  const origin = readDraft(h.originKey)
+  assert.equal(origin.text, '登録を待つ間に編集した本文')
+  assert.equal(origin.workspaceAttachment, undefined)
 })
 
 test('successful adoption without a visible catalog row preserves the original ID on the new screen', async () => {
@@ -182,7 +187,7 @@ test('successful adoption without a visible catalog row preserves the original I
   assert.ok(result.error)
   assert.equal(readDraft(h.originKey), before)
   assert.equal(readDraft(h.sessionKey).workspaceAttachment?.sessionId, h.attachment.sessionId)
-  assert.equal(readDraft(h.sessionKey).text, '一覧へ反映される前の最新本文')
+  assert.equal(readDraft(h.sessionKey).text, '保つ本文')
 })
 
 test('remounted recovery joins one Promise and the pending getter exposes it', async () => {
@@ -289,6 +294,57 @@ test('a distinct origin input is kept as an ordinary draft when the destination 
   assert.equal(origin.text, '新規画面で直した本文')
   assert.equal(origin.workspaceAttachment, undefined)
 })
+
+// Issue #125: the destination can already differ before the retry begins. The
+// revision alone cannot prove that, so the start-time contents must agree too.
+for (const outcome of ['success', 'failure'] as const) {
+  test(`${outcome}: a conversation draft edited before the retry keeps its input`, async () => {
+    const h = setup(`before-destination-${outcome}`)
+    if (outcome === 'success') h.succeed()
+    writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '会話側で先に書いた新しい本文' })
+    const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+    const destination = readDraft(h.sessionKey)
+    assert.equal(destination.text, '会話側で先に書いた新しい本文')
+    assert.deepEqual(destination.images, [{ id: 'image-test' }])
+    assert.deepEqual(destination.model, { provider: 'local', model: 'small' })
+    assert.equal(destination.permission, 'limited')
+    assert.equal(destination.plan, true)
+    const origin = readDraft(h.originKey)
+    assert.equal(origin.text, '保つ本文')
+    if (outcome === 'success') {
+      assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+      assert.equal(destination.workspaceAttachment, undefined)
+      assert.equal(origin.workspaceAttachment, undefined)
+    } else {
+      assert.equal(result.error, h.failure)
+      assert.deepEqual(destination.workspaceAttachment, h.attachment)
+      assert.deepEqual(origin.workspaceAttachment, h.attachment)
+    }
+  })
+}
+
+for (const outcome of ['success', 'failure'] as const) {
+  test(`${outcome}: drafts edited separately on both screens before the retry are both kept`, async () => {
+    const h = setup(`before-both-${outcome}`)
+    if (outcome === 'success') h.succeed()
+    writeDraft(h.originKey, { ...readDraft(h.originKey), text: '新規画面で先に直した本文' })
+    writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '会話画面で先に直した本文' })
+    const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+    const destination = readDraft(h.sessionKey)
+    assert.equal(destination.text, '会話画面で先に直した本文')
+    const origin = readDraft(h.originKey)
+    assert.equal(origin.text, '新規画面で先に直した本文')
+    if (outcome === 'success') {
+      assert.deepEqual(result, { sessionId: h.attachment.sessionId, sessionReady: true })
+      assert.equal(destination.workspaceAttachment, undefined)
+      assert.equal(origin.workspaceAttachment, undefined)
+    } else {
+      assert.equal(result.error, h.failure)
+      assert.deepEqual(destination.workspaceAttachment, h.attachment)
+      assert.deepEqual(origin.workspaceAttachment, h.attachment)
+    }
+  })
+}
 
 test('sending from either screen is refused while the shared retry is pending', async () => {
   const h = setup('send-blocked')
