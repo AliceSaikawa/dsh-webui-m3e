@@ -53,3 +53,8 @@
 .composer-new-intro { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; min-height: 100%; padding: calc(var(--app-space) * 1.5); }
 .composer-new-intro h2 { margin-bottom: calc(var(--app-space) * .5); }
 .composer-new-intro p { color: var(--md-sys-color-on-surface-variant); }
+/* cache-sentinel(DSH の Host プラグイン)の警告。入力禁止のセッションで、送る前に出す。 */
+.composer-sentinel { display: flex; align-items: center; gap: var(--app-space); padding: calc(var(--app-space) * .5) var(--app-space); border-radius: var(--md-sys-shape-corner-medium, 12px); font-size: 13px; }
+.composer-sentinel p { flex: 1; margin: 0; }
+.composer-sentinel-warning { background: var(--md-sys-color-tertiary-container); color: var(--md-sys-color-on-tertiary-container); }
+.composer-sentinel-info { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
