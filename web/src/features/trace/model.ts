@@ -91,11 +91,11 @@ export function elapsed(start: number | undefined, end: number | undefined): num
 export function formatDuration(ms: number | undefined, text: TraceMessages = traceText, locale: Locale = SOURCE_LOCALE): string {
   if (ms === undefined) return text.durationNotMeasured
   if (!Number.isFinite(ms) || ms < 0) return text.durationInvalid
-  if (ms < 1000) return text.durationMilliseconds(formatNumber(locale, Math.round(ms)))
-  if (ms < 60000) return text.durationSeconds(formatNumber(locale, Number((ms / 1000).toFixed(1)), { maximumFractionDigits: 1 }))
+  if (ms < 1000) return text.durationMilliseconds(formatNumber(locale, Math.round(ms), { useGrouping: false }))
+  if (ms < 60000) return text.durationSeconds(formatNumber(locale, Number((ms / 1000).toFixed(1)), { maximumFractionDigits: 1, useGrouping: false }))
   const minutes = Math.floor(ms / 60000)
   const seconds = Math.floor((ms % 60000) / 1000)
-  return text.durationMinutesSeconds(formatNumber(locale, minutes), formatNumber(locale, seconds))
+  return text.durationMinutesSeconds(formatNumber(locale, minutes, { useGrouping: false }), formatNumber(locale, seconds, { useGrouping: false }))
 }
 export function formatCount(value: number, locale: Locale = SOURCE_LOCALE): string { return formatNumber(locale, value) }
 const rowIcons: Record<TraceKind, string> = {

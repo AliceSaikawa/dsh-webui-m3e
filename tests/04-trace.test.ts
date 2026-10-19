@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AssistantStream } from '../web/src/dsh/session-journal.ts'
 import type { SessionWireEvent } from '../web/src/dsh/services.ts'
-import { buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, formatTurnHeading, rowDescription, selectTrace, terminationLabel, traceRowIcon, turnHeading } from '../web/src/features/trace/model.ts'
+import { JSON_DEPTH_LIMIT, JSON_NODE_LIMIT, buildTrace, elapsed, filterTrace, findTraceRow, firstOutputTime, formatCount, formatDuration, formatJson, formatTurnHeading, rowDescription, selectTrace, terminationLabel, traceRowIcon, turnHeading } from '../web/src/features/trace/model.ts'
 import { traceMessages, type TraceMessages } from '../web/src/features/trace/messages.ts'
 import { recordDurationText, recordOutputText, recordResultText, recordUsageText } from '../web/src/features/trace/record-summary.ts'
 import { traceEmptyMessage } from '../web/src/features/trace/view-state.ts'
@@ -712,8 +712,12 @@ test('durations use the chat units while unmeasured values stay distinct from in
   assert.equal(formatDuration(18430), '18.4 秒')
   assert.equal(formatDuration(90000), '1 分 30 秒')
   assert.equal(formatDuration(1234567), '20 分 34 秒')
+  assert.equal(formatDuration(60_000_000), '1000 分 0 秒')
+  assert.equal(formatDuration(999.6), '1000 ミリ秒')
   assert.equal(formatDuration(90000), chatFormatDuration(90000))
   assert.equal(formatDuration(4100), chatFormatDuration(4100))
+  assert.equal(formatDuration(60_000_000), chatFormatDuration(60_000_000))
+  assert.equal(formatDuration(999.6), chatFormatDuration(999.6))
   assert.equal(formatCount(1234567), '1,234,567')
 })
 
@@ -807,4 +811,35 @@ test('trace text helpers assemble their words from the dictionary', () => {
   assert.equal(formatDuration(undefined, localized, 'en'), 'n/a')
   assert.equal(traceEmptyMessage('open', localized), 'EMPTY')
   assert.equal(terminationLabel({ kind: 'error', message: 'x' }, localized), 'ERR')
+})
+
+test('usage text and JSON omission marks use the given dictionary', () => {
+  const localized: TraceMessages = {
+    ...traceMessages.ja,
+    usageNone: 'NO USAGE',
+    notRecorded: 'NOT RECORDED',
+    usageSummary: (input, output, cacheRead, cacheWrite) => `${input}|${output}|${cacheRead}|${cacheWrite}`,
+    jsonOmittedCycle: 'CYCLE',
+    jsonOmittedDepth: (limit: string) => `DEPTH(${limit})`,
+    jsonOmittedLimit: (limit: string) => `LIMIT(${limit})`,
+    jsonUnreadable: 'UNREADABLE',
+  }
+  assert.equal(recordUsageText(undefined, localized), 'NO USAGE')
+  assert.equal(recordUsageText({ inputTokens: 11668, outputTokens: 812, cacheReadTokens: 9200 }, localized),
+    '11,668|812|9,200|NOT RECORDED')
+
+  const cycle: Record<string, unknown> = {}
+  cycle.self = cycle
+  assert.equal(formatJson(cycle, localized).text, `{\n  "self": CYCLE\n}`)
+
+  let deep: unknown = {}
+  for (let level = 0; level < JSON_DEPTH_LIMIT; level++) deep = { child: deep }
+  const depth = formatJson(deep, localized)
+  assert.equal(depth.partial, true)
+  assert.equal(depth.text.split(`DEPTH(${JSON_DEPTH_LIMIT})`).length - 1, 1)
+
+  const limited = formatJson(Array.from({ length: JSON_NODE_LIMIT + 1 }, () => 0), localized)
+  assert.equal(limited.partial, true)
+  assert.ok(limited.text.includes('LIMIT(10,000)'))
+  assert.equal(formatJson(1n, localized).text, 'UNREADABLE')
 })
