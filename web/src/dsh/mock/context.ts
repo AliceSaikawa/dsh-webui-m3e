@@ -71,7 +71,8 @@ export type MockExtension = {
 export interface MockOptions {
   scenario?: string; extensions?: readonly MockExtension[]; pageSize?: number
   readJobRows?: (id: string) => Promise<RemoteResult<readonly SessionJob[]>>
-  readProjections?: (id: string, signal: AbortSignal) => Promise<RemoteResult<Record<string, unknown> | null>>
+  /** Mirrors the real session.projections reply (typert.host.js:953-957): null, settled values, or the migration-pending cache. */
+  readProjections?: (id: string, signal: AbortSignal) => Promise<RemoteResult<MockProjectionRead>>
   openSession?: (id: string) => Promise<RemoteResult<null>>
   /** Admission and first journal delivery are deliberately independent. */
   beforeFirstTurn?: (id: string) => Promise<void>
@@ -79,6 +80,11 @@ export interface MockOptions {
   scheduleFrame?: (callback: () => void) => void
   imageLimits?: Partial<MockImageLimits>
 }
+/** Flat values or, when migration is pending, the host's cached read wrapped in its 3-value arm. */
+export type MockProjectionRead =
+  | Record<string, unknown>
+  | null
+  | { readonly kind: 'migration-required'; readonly values: Record<string, unknown> }
 export interface MockContext extends DshContext { readonly mock: MockKit; dispose(): void }
 
 interface SessionModel {
@@ -548,7 +554,11 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     return client
   }
 
-  function publishProjection(sessionId: string, values: Readonly<Record<string, unknown>>, state: 'idle' | 'loading' | 'ready' | 'error', error: RemoteFailure | null) {
+  const migrationRequired = (value: MockProjectionRead): value is { readonly kind: 'migration-required'; readonly values: Record<string, unknown> } =>
+    value !== null && typeof value === 'object' && 'kind' in value && (value as { kind?: unknown }).kind === 'migration-required'
+      && typeof (value as { values?: unknown }).values === 'object' && (value as { values?: unknown }).values !== null
+
+  function publishProjection(sessionId: string, values: Readonly<Record<string, unknown>>, state: 'idle' | 'loading' | 'ready' | 'migration-required' | 'error', error: RemoteFailure | null) {
     const model = models.get(sessionId)
     if (model) {
       for (const key of new Set([...model.projections.keys(), ...Object.keys(values)])) project(model, key).set(values[key])
@@ -781,14 +791,23 @@ export function createMockContext(options: MockOptions = {}): MockContext {
     list, searchResultLimit: 20,
     async create(input = {}) {
       await Promise.resolve()
-      const sessionId = input.sessionId ?? id('session')
+      if (input.workspaceId !== undefined && input.cwd !== undefined) throw commandError('gateway/bad-request', 'ワークスペースとフォルダは同時に指定できません。', true)
       const workspace = workspaceList.getSnapshot().items.find(item => item.workspaceId === input.workspaceId)
-      if (input.workspaceId && !workspace) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。', true)
+      if (input.workspaceId !== undefined && !workspace) throw commandError('workspace/not-found', 'ワークスペースが見つかりません。', true)
       const cwd = workspace?.path ?? input.cwd ?? '/mock'
-      const existing = models.get(sessionId)
+      const named = input.sessionId
+      const existing = named === undefined ? undefined : models.get(named)
       if (existing?.summary.origin === 'subagent') throw commandError('session/agent-busy', '子の会話を通常の会話として作成できません。', true)
       if (existing && existing.summary.cwd !== cwd) throw commandError('session/conflict', '会話のフォルダが一致しません。', true)
-      if (!existing) kit.addSession({ id: sessionId, displayTitle: '新しいセッション', cwd, running: false, blank: true, updatedAt: Date.now() }, [])
+      // The real Host reuses a named Session only while it is unarchived, a member of the requested
+      // Workspace, and has not started a turn; otherwise it creates a new id and attaches it
+      // (dsh-api-session-controller/lib/index.js:755-787, lib/types/agent.js:472-495).
+      const reusable = named !== undefined && (!existing || (
+        !workspaceList.getSnapshot().archivedSessionIds.includes(named)
+        && (workspace === undefined || workspace.sessionIds.includes(named))
+        && !existing.records.some(event => event.type === 'turn/start')))
+      const sessionId = reusable ? named : id('session')
+      if (!models.has(sessionId)) kit.addSession({ id: sessionId, displayTitle: '新しいセッション', cwd, running: false, blank: true, updatedAt: Date.now() }, [])
       if (workspace) attachSession(workspace, sessionId)
       return sessionId
     },
@@ -811,7 +830,8 @@ export function createMockContext(options: MockOptions = {}): MockContext {
       if (retained) return retained
       for (const [parentSessionId, projection] of Object.entries(list.getSnapshot().projectionsBySession)) {
         const entry = projection.values.subagentCatalog?.find(row => row.id === sessionId)
-        if (entry) return { parentSessionId, childSessionId: sessionId, mode: entry.mode }
+        // External children are not given addresses through the catalog (real Host manager.js:92).
+        if (entry && entry.mode !== 'external') return { parentSessionId, childSessionId: sessionId, mode: entry.mode }
       }
       return undefined
     },
@@ -831,11 +851,14 @@ export function createMockContext(options: MockOptions = {}): MockContext {
           if (controller.signal.aborted) return
           const current = list.getSnapshot().projectionsBySession[sessionId]?.values ?? {}
           if (!result.ok) { publishProjection(sessionId, current, 'error', result.error); return }
-          const values = result.value === null
+          const deferredRead = migrationRequired(result.value)
+          const next = deferredRead ? result.value.values : result.value
+          const values = next === null
             ? current === initial ? {} : current
-            : Object.fromEntries([...new Set([...Object.keys(current), ...Object.keys(result.value)])]
-              .flatMap(key => current[key] !== initial[key] ? [[key, current[key]]] : Object.hasOwn(result.value!, key) ? [[key, result.value![key]]] : []))
-          publishProjection(sessionId, values, 'ready', null)
+            : Object.fromEntries([...new Set([...Object.keys(current), ...Object.keys(next)])]
+              .flatMap(key => current[key] !== initial[key] ? [[key, current[key]]] : Object.hasOwn(next, key) ? [[key, next[key]]] : []))
+          // A migration-pending reply applies only the cached lead values (real Host manager.js:291); a ready snapshot already fetched is not re-read.
+          publishProjection(sessionId, values, deferredRead ? 'migration-required' : 'ready', null)
         } catch (error) {
           if (controller.signal.aborted) return
           if (!error || typeof error !== 'object' || !('code' in error && 'message' in error && 'details' in error)) throw error

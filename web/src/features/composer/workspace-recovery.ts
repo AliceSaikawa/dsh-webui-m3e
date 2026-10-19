@@ -46,6 +46,35 @@ function sameContent(a: Draft, b: Draft): boolean {
     && a.permission === b.permission && a.plan === b.plan
 }
 
+/**
+ * Drop the retry state of the recorded conversation once the Host reported
+ * another identity. DSH 0.2.1 reuses a named Session only while it is a blank
+ * member of the requested Workspace and otherwise creates a new one, so the
+ * recorded identity can no longer be registered. Its draft is only the copy of
+ * this recovery when it still holds the same input; a divergent input stays as
+ * an ordinary draft for the unregistered conversation.
+ */
+function settleSuperseded(recorded: WorkspaceAttachment, adopted: WorkspaceAttachment, source: Draft): void {
+  if (adopted.sessionId === recorded.sessionId) return
+  for (const key of [`session:${recorded.sessionId}`, `new:${recorded.workspaceId}`]) {
+    const draft = readDraft(key)
+    if (draft.workspaceAttachment?.sessionId !== recorded.sessionId) continue
+    if (sameContent(draft, source)) clearDraft(key)
+    else writeDraft(key, settle(draft))
+  }
+}
+
+/**
+ * Before the adopted identity reaches the list the composer cannot navigate to
+ * it, so the screen the user started from must keep its retry action. Naming the
+ * newest identity also stops the next attempt from repeating a superseded one.
+ */
+function keepRetryOnCurrent(draftKey: string, adopted: WorkspaceAttachment): void {
+  const current = readDraft(draftKey)
+  if (!current.workspaceAttachment || current.workspaceAttachment.sessionId === adopted.sessionId) return
+  writeDraft(draftKey, { ...current, workspaceAttachment: adopted })
+}
+
 export function clearWorkspaceOrigin(attachment: WorkspaceAttachment, delivered: Draft): void {
   const originKey = `new:${attachment.workspaceId}`
   const origin = readDraft(originKey)
@@ -84,6 +113,9 @@ function settle(draft: Draft): Draft {
  */
 function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Baseline, { settled, clearOrigin }: { settled: boolean; clearOrigin: boolean }): void {
   const destination = `session:${attachment.sessionId}`
+  // An unsettled destination keeps the recovery state for the identity this
+  // handoff actually registered, which may differ from the recorded one.
+  const forDestination = (draft: Draft): Draft => settled ? settle(draft) : { ...settle(draft), workspaceAttachment: attachment }
   if (draftKey === destination) {
     if (!settled) return
     const current = readDraft(destination)
@@ -93,7 +125,7 @@ function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Ba
   }
   const origin = readDraft(draftKey)
   if (draftRevision(destination) === baseline.revision) {
-    writeDraft(destination, settled ? settle(origin) : origin)
+    writeDraft(destination, forDestination(origin))
     if (clearOrigin) clearDraft(draftKey)
     return
   }
@@ -116,20 +148,39 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
   }
   const destination = `session:${attachment.sessionId}`
   const baseline: Baseline = { revision: draftRevision(destination), draft: readDraft(destination) }
+  // A fresh identity has no draft yet, so its baseline is the empty revision.
+  const baselineFor = (sessionId: string): Baseline => sessionId === attachment.sessionId
+    ? baseline
+    : { revision: draftRevision(`session:${sessionId}`), draft: readDraft(`session:${sessionId}`) }
+  const settleReported = (reported: WorkspaceAttachment, source: Draft): void => settleSuperseded(attachment, reported, source)
   try {
-    // The Host adopts when sessionId is supplied. Never retry this operation with a fresh identity.
-    const sessionId = await sessions.create({ workspaceId: attachment.workspaceId, sessionId: attachment.sessionId })
-    if (sessionId !== attachment.sessionId) throw new Error('登録した会話を確認できませんでした。')
-    const sessionReady = await sessionIsAddressable(sessions, sessionId)
+    // DSH 0.2.1 reuses the named Session only while it is an unarchived blank
+    // member of the requested Workspace, and otherwise creates and attaches a
+    // new one. Follow the identity the Host reports rather than requiring the
+    // recorded one.
+    const created = await sessions.create({ workspaceId: attachment.workspaceId, sessionId: attachment.sessionId })
+    const adopted: WorkspaceAttachment = { workspaceId: attachment.workspaceId, sessionId: usableId(created) ? created : attachment.sessionId }
+    const adoptedBaseline = baselineFor(adopted.sessionId)
+    const sessionReady = await sessionIsAddressable(sessions, adopted.sessionId)
+    const source = readDraft(draftKey)
     if (!sessionReady) {
-      handOff(draftKey, attachment, baseline, { settled: false, clearOrigin: false })
-      return { sessionId, sessionReady, error: new Error('会話の一覧を更新できませんでした。もう一度お試しください。') }
+      handOff(draftKey, adopted, adoptedBaseline, { settled: false, clearOrigin: false })
+      keepRetryOnCurrent(draftKey, adopted)
+      settleReported(adopted, source)
+      return { sessionId: adopted.sessionId, sessionReady, error: new Error('会話の一覧を更新できませんでした。もう一度お試しください。') }
     }
-    handOff(draftKey, attachment, baseline, { settled: true, clearOrigin: true })
-    return { sessionId, sessionReady }
+    handOff(draftKey, adopted, adoptedBaseline, { settled: true, clearOrigin: true })
+    settleReported(adopted, source)
+    return { sessionId: adopted.sessionId, sessionReady }
   } catch (error) {
-    const sessionReady = await sessionIsAddressable(sessions, attachment.sessionId)
-    handOff(draftKey, attachment, baseline, { settled: false, clearOrigin: sessionReady })
-    return { sessionId: attachment.sessionId, sessionReady, error }
+    // A failed attach reports the identity the Host created but could not
+    // register; the draft and the next retry follow that newest identity.
+    const reported = workspaceAttachmentFrom(error, attachment.workspaceId) ?? attachment
+    const sessionReady = await sessionIsAddressable(sessions, reported.sessionId)
+    const source = readDraft(draftKey)
+    handOff(draftKey, reported, baselineFor(reported.sessionId), { settled: false, clearOrigin: sessionReady })
+    if (!sessionReady) keepRetryOnCurrent(draftKey, reported)
+    settleReported(reported, source)
+    return { sessionId: reported.sessionId, sessionReady, error }
   }
 }

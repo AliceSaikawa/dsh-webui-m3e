@@ -211,10 +211,10 @@ test('03d 新規会話の権限・計画モード・モデルの深さを選ぶ'
   await visit(page, '/new?ws=ws-m3e')
   // Shared foundation sessions intentionally expose only one permission option.
   // New-session defaults come from 08 and contain both selectable presets.
-  await button(page, 'ワークスペース書込').click()
+  await button(page, '権限：ワークスペース書込').click()
   await shot(page, '03-permission')
   await page.getByRole('button', { name: /^フル アクセス/ }).click()
-  await expect(button(page, 'フル アクセス')).toBeVisible()
+  await expect(button(page, '権限：フル アクセス')).toBeVisible()
   await button(page, '入力の補助を開く').click()
   await page.getByRole('switch', { name: '計画モード' }).click()
   await expect(page.getByRole('switch', { name: '計画モード' })).toBeChecked()
@@ -227,7 +227,7 @@ test('03d 新規会話の権限・計画モード・モデルの深さを選ぶ'
   await page.getByLabel('メッセージ入力欄').fill('設定を選んで開始')
   await button(page, '送信').click()
   await expect(page).toHaveURL(/#\/s\//)
-  await expect(button(page, 'フル アクセス')).toBeVisible()
+  await expect(button(page, '権限：フル アクセス')).toBeVisible()
   await button(page, '入力の補助を開く').click()
   await expect(page.getByRole('switch', { name: '計画モード' })).toBeChecked()
   await shot(page, '03-plan-mode')

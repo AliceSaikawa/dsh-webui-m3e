@@ -1,9 +1,11 @@
 import type { SettingsNamespace, SettingObject } from './schema.ts'
 
-// DSH 0.2.0-rc.2 settings.describe(), captured by e2e-dsh/rpc.spec.ts.
-// Reference ids are local; only validation metadata is copied. apiKey uses the
-// renderer's password role. No submitted key value is stored in these fixtures.
-const published: { ns: string; autoGenerate: boolean; schema: unknown; base: SettingObject }[] = [
+// DSH 0.2.1-rc.2 settings.describe(), captured by e2e-dsh/rpc.spec.ts.
+// Reference ids are local; only validation metadata is copied. web-search-deepseek
+// uses the renderer's password role; web-deepseek-api mirrors the host's `secret`
+// role and its `secrets` entry so the form masks the API key the same way. No
+// submitted key value is stored in these fixtures.
+const published: { ns: string; autoGenerate: boolean; schema: unknown; base: SettingObject; secrets?: { path: string[]; set: boolean }[] }[] = [
   { ns: "agent-default-model", autoGenerate: false, base: {"provider":"deepseek-official","model":"deepseek-flash"}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"provider":1,"model":2,"reasoningEffort":3}},
     1: {"type":"string","meta":{"required":true}},
@@ -30,7 +32,7 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     0: {"type":"object","dict":{"maxParallelToolCalls":1}},
     1: {"type":"number","meta":{"step":1,"min":1}},
   } } },
-  { ns: "llm-deepseek", autoGenerate: false, base: {"maxTokens":256000,"defaultContextWindow":1000000,"models":[{"id":"deepseek-flash","name":"DeepSeek-V41-Flash","contextWindow":1000000,"inputModalities":["text","image"],"systemPromptUpdate":"in-history","toolUpdate":"addition-only"},{"id":"deepseek-v4-pro","name":"DeepSeek-V4-Pro","description":"Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.","contextWindow":1000000,"inputModalities":["text"]}],"streamIdleTimeoutMs":300000,"maxRequestFilesBytes":134217728,"maxInlineRequestImageBytes":20971520,"maxImagesPerRequest":600,"imageOffloadByteQuantum":67108864,"inlineImageOffloadByteQuantum":10485760,"imageOffloadCountQuantum":20,"filesApiTimeoutMs":60000,"fileExpiresAfterSeconds":604800,"fileRefreshMarginSeconds":3600,"fileQuotaCleanupBatch":100,"apiKeyEnv":"DEEPSEEK_API_KEY"}, schema: { uid: 0, refs: {
+  { ns: "llm-deepseek", autoGenerate: false, base: {"maxTokens":256000,"defaultContextWindow":1000000,"models":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash","contextWindow":1000000,"inputModalities":["text","image"],"systemPromptUpdate":"in-history","toolUpdate":"addition-only"},{"id":"deepseek-v4-pro","name":"DeepSeek-V4-Pro","description":"Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.","contextWindow":1000000,"inputModalities":["text"]}],"streamIdleTimeoutMs":300000,"maxRequestFilesBytes":134217728,"maxInlineRequestImageBytes":20971520,"maxImagesPerRequest":600,"imageOffloadByteQuantum":67108864,"inlineImageOffloadByteQuantum":10485760,"imageOffloadCountQuantum":20,"filesApiTimeoutMs":60000,"fileExpiresAfterSeconds":604800,"fileRefreshMarginSeconds":3600,"fileQuotaCleanupBatch":100,"apiKeyEnv":"DEEPSEEK_API_KEY"}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"baseURL":1,"thinking":2,"reasoningEffort":5,"maxTokens":10,"defaultContextWindow":11,"models":12,"streamIdleTimeoutMs":31,"maxRequestFilesBytes":32,"maxInlineRequestImageBytes":33,"maxImagesPerRequest":34,"imageOffloadByteQuantum":35,"inlineImageOffloadByteQuantum":36,"imageOffloadCountQuantum":37,"filesApiTimeoutMs":38,"fileExpiresAfterSeconds":39,"fileRefreshMarginSeconds":40,"fileQuotaCleanupBatch":41,"retryPolicy":42,"apiKeyEnv":54}},
     1: {"type":"string"},
     2: {"type":"union","list":[3,4]},
@@ -233,6 +235,11 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     142: {"type":"const","value":"always","meta":{"required":true}},
     143: {"type":"string"},
   } } },
+  { ns: "web", autoGenerate: true, base: {"searchProvider":"deepseek-official","fetchProvider":"http"}, schema: { uid: 0, refs: {
+    0: {"type":"object","dict":{"searchProvider":1,"fetchProvider":2}},
+    1: {"type":"string"},
+    2: {"type":"string"},
+  } } },
   { ns: "web-search-deepseek", autoGenerate: true, base: {"apiKeyEnv":"DEEPSEEK_API_KEY","model":"deepseek-v4-flash","apiVersion":"2023-06-01","maxTokens":4096,"maxUses":5}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"apiKey":1,"apiKeyEnv":2,"baseURL":3,"model":4,"apiVersion":5,"maxTokens":6,"maxUses":7}},
     1: {"type":"string","meta":{"role":"password"}},
@@ -242,6 +249,14 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     5: {"type":"string"},
     6: {"type":"number","meta":{"step":1,"min":1}},
     7: {"type":"number","meta":{"step":1,"min":1}},
+  } } },
+  { ns: "web-deepseek-api", autoGenerate: true, base: {"apiKeyEnv":"DEEPSEEK_API_KEY","baseURL":"https://api.deepseek.com/v1/tools","count":10,"sendOriginalQuestion":true}, secrets: [{ path: ["apiKey"], set: false }], schema: { uid: 0, refs: {
+    0: {"type":"object","dict":{"apiKey":1,"apiKeyEnv":2,"baseURL":3,"count":4,"sendOriginalQuestion":5}},
+    1: {"type":"string","meta":{"role":"secret"}},
+    2: {"type":"string","meta":{"role":"credential-ref"}},
+    3: {"type":"string"},
+    4: {"type":"number","meta":{"step":1,"min":1,"max":50}},
+    5: {"type":"boolean"},
   } } },
   { ns: "bash-sandbox", autoGenerate: true, base: {"timeoutMs":60000,"maxTimeoutMs":600000,"maxOutputBytes":64000,"maxSpillBytes":67108864,"graceMs":3000}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"cwd":1,"timeoutMs":2,"maxTimeoutMs":3,"maxOutputBytes":4,"maxSpillBytes":5,"graceMs":6}},
@@ -256,13 +271,18 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     0: {"type":"object","dict":{"preference":1}},
     1: {"type":"string","meta":{"pattern":{"source":"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$","flags":"u"},"required":false}},
   } } },
-  { ns: "ui-theme", autoGenerate: false, base: {"preference":"system","fontSize":14}, schema: { uid: 0, refs: {
-    0: {"type":"object","dict":{"preference":1,"fontSize":5}},
+  { ns: "ui-theme", autoGenerate: false, base: {"preference":"system","fontSize":14,"codeFontSize":11,"terminalFontSize":13,"textFontFamily":"","codeFontFamily":"","terminalFontFamily":""}, schema: { uid: 0, refs: {
+    0: {"type":"object","dict":{"preference":1,"fontSize":5,"codeFontSize":6,"terminalFontSize":7,"textFontFamily":8,"codeFontFamily":9,"terminalFontFamily":10}},
     1: {"type":"union","list":[2,3,4]},
     2: {"type":"const","value":"light","meta":{"required":true}},
     3: {"type":"const","value":"dark","meta":{"required":true}},
     4: {"type":"const","value":"system","meta":{"required":true}},
     5: {"type":"number","meta":{"step":1,"min":10,"max":22}},
+    6: {"type":"number","meta":{"step":1,"min":10,"max":16}},
+    7: {"type":"number","meta":{"step":1,"min":10,"max":20}},
+    8: {"type":"string"},
+    9: {"type":"string"},
+    10: {"type":"string"},
   } } },
 ]
 
@@ -274,7 +294,7 @@ export function settingsFixtures(): SettingsNamespace[] {
     if (row.ns === 'agent-default-model') Object.assign(base, { provider: 'deepseek', model: 'deepseek-v4' })
     if (row.ns === 'llm-pi-ai') base.providers = { cloud: { apiKeyEnv: 'PI_AI_API_KEY' } }
     const user: SettingObject = row.ns === 'agent-default-model' ? { reasoningEffort: 'high' } : {}
-    return { ...row, schema: structuredClone(row.schema), base, user, value: { ...structuredClone(base), ...user }, revision: 0, applies: 'live' }
+    return { ...row, schema: structuredClone(row.schema), ...(row.secrets ? { secrets: structuredClone(row.secrets) } : {}), base, user, value: { ...structuredClone(base), ...user }, revision: 0, applies: 'live' }
   })
   rows.push(exampleFixture())
   return rows

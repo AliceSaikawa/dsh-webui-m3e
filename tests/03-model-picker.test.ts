@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { ModelCatalog } from '../web/src/features/composer/api.ts'
-import { createModelApplyController, modelApplyController, effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
+import { createModelApplyController, modelApplyController, effortValue, modelChoices, modelDisplayName, modelValue, reasoningForSelection, selectionFromModelValue } from '../web/src/features/composer/model-picker.ts'
 import { consumeDraftCommand, draftTextRevision, readDraft, writeDraft } from '../web/src/features/composer/drafts.ts'
 
 const catalog: ModelCatalog = {
@@ -39,6 +39,15 @@ test('考える深さは対応モデルだけにあり、選択値かモデル�
     id: 'shared', name: '共通', reasoning: { efforts: [{ id: 'low', name: '低' }] },
   }] }] }
   assert.equal(effortValue({ provider: 'first', model: 'shared' }, modelChoices(unknownDefault)), '')
+})
+
+test('下の行のモデル名は提供元を付けず、カタログに無ければ id を出す', () => {
+  assert.equal(modelDisplayName(undefined, catalog), undefined)
+  assert.equal(modelDisplayName(null, catalog), undefined)
+  assert.equal(modelDisplayName({ provider: 'first', model: 'shared' }, catalog), '共通')
+  assert.equal(modelDisplayName({ provider: 'first', model: 'shared', reasoningEffort: 'low' }, catalog), '共通')
+  assert.equal(modelDisplayName({ provider: 'first', model: 'unknown' }, catalog), 'unknown')
+  assert.equal(modelDisplayName({ provider: 'first', model: 'shared' }, undefined), 'shared')
 })
 
 test('反映要求はシートを開き直しても一つだけ進み、成功と失敗を共有する', async () => {

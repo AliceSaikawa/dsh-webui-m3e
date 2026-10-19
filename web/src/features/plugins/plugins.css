@@ -1,0 +1,23 @@
+.plugins-content { max-width: 760px; margin-inline: auto; padding: var(--app-space); }
+.plugins-note { margin: calc(var(--app-space) / 2) 0 var(--app-space); font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.plugins-hint { margin: calc(var(--app-space) / 2) calc(var(--app-space) / 2); font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.plugins-notice { border-radius: calc(var(--app-radius) * 5 / 7); padding: var(--app-space); background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.plugins-notice m3e-button { margin-top: calc(var(--app-space) / 2); }
+.plugins-list { list-style: none; margin: 0; padding: 0; }
+.plugins-group { margin: calc(var(--app-space) / 2) 0 calc(var(--app-space) * 1.75); }
+.plugins-group > h2, .plugins-section > h2 { margin: calc(var(--app-space) * .75) calc(var(--app-space) / 2); font-size: 15px; color: var(--md-sys-color-primary); }
+.plugins-section { margin: calc(var(--app-space) / 2) 0 calc(var(--app-space) * 1.75); }
+.plugins-rows, .plugins-bundles { list-style: none; margin: 0; padding: 0; border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
+.plugins-row { display: flex; align-items: flex-start; gap: calc(var(--app-space) * .75); min-height: 48px; padding: calc(var(--app-space) * .75) var(--app-space); }
+.plugins-bundle { display: flex; flex-direction: column; min-height: 48px; padding: calc(var(--app-space) * .75) var(--app-space); }
+.plugins-row + .plugins-row, .plugins-bundle + .plugins-bundle { border-top: 1px solid var(--md-sys-color-outline-variant); }
+.plugins-icon { flex: none; border-radius: calc(var(--app-radius) / 3); }
+.plugins-row-main { flex: 1; min-width: 0; }
+.plugins-row-title { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.plugins-row-module { margin: 2px 0 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.plugins-bundle-meta { display: flex; flex-wrap: wrap; gap: calc(var(--app-space) / 2); margin: 4px 0 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
+.plugins-phase { margin: calc(var(--app-space) / 2) 0 0; font-size: 13px; color: var(--md-sys-color-primary); }
+.plugins-phase-failed { color: var(--md-sys-color-error); }
+.plugins-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; margin: calc(var(--app-space) / 2) 0 0; font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.plugins-meta-error, .plugins-bundle-error { margin: calc(var(--app-space) / 2) 0 0; font-size: 13px; color: var(--md-sys-color-error); }
+.plugins-incompatible { margin: 2px 0 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }

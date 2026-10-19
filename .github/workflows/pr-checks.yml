@@ -37,18 +37,21 @@ jobs:
         run: pnpm install --frozen-lockfile
       # The pinned lockfile is the cache key; check-ci-dsh.ts still verifies the
       # installed versions and contract files after a cache hit.
+      - name: Resolve pinned DSH version
+        id: dsh-version
+        run: echo "version=$(node -p "require('./.github/ci/dsh/package.json').dependencies['@deepseek-ai/dsh']")" >> "$GITHUB_OUTPUT"
       - name: Restore pinned DSH distribution
         id: dsh
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules
-          key: dsh-0.2.0-rc.2-${{ runner.os }}-${{ hashFiles('.github/ci/dsh/package-lock.json') }}
+          path: tmp/dsh-integration/dsh-${{ steps.dsh-version.outputs.version }}/node_modules
+          key: dsh-${{ steps.dsh-version.outputs.version }}-${{ runner.os }}-${{ hashFiles('.github/ci/dsh/package-lock.json') }}
       - name: Install pinned public DSH contract distribution
         env:
           NODE_OPTIONS: --experimental-strip-types
           DSH_CACHE_HIT: ${{ steps.dsh.outputs.cache-hit }}
         run: |
-          dsh_dir=tmp/dsh-integration/dsh-0.2.0-rc.2
+          dsh_dir=tmp/dsh-integration/dsh-${{ steps.dsh-version.outputs.version }}
           mkdir -p "$dsh_dir"
           cp .github/ci/dsh/package.json .github/ci/dsh/package-lock.json "$dsh_dir/"
           if [ "$DSH_CACHE_HIT" != 'true' ]; then

@@ -9,6 +9,15 @@ import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh
 import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
 import { bootMessages } from './app/messages.ts'
 import { applyStoredTheme } from './app/theme/index.ts'
+import { markTabShowedM3e } from '../../src/shared/ui-choice.ts'
+
+// Mark the tab before any boot work, so even a failed boot marks the tab.
+// Reading sessionStorage itself can throw when storage is blocked.
+try {
+  markTabShowedM3e(globalThis.sessionStorage)
+} catch {
+  // The mark is optional; boot continues without it.
+}
 
 applyStoredTheme()
 startLocale()
