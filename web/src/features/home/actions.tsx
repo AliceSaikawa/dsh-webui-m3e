@@ -20,7 +20,13 @@ export function renameWorkspace(dsh: DshServices, workspace: WorkspaceView) {
   prompt('ワークスペースの名前を変える', workspace.title, title => workspaceOperation(() => dsh.workspaces.rename(workspace.workspaceId, title)))
 }
 
-export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void) {
+async function setPinned(dsh: DshServices, row: SessionSummary, pinned: boolean): Promise<void> {
+  if (await attempt(() => pinned ? dsh.workspaces.pinSession(row.id) : dsh.workspaces.unpinSession(row.id))) {
+    showSnackbar(pinned ? 'ピン留めしました' : 'ピン留めを外しました')
+  }
+}
+
+export function sessionActions(dsh: DshServices, row: SessionSummary, archive: () => void, pinned: boolean) {
   if (row.origin === 'subagent') return
   openSheet(close => <div className="home-actions"><h2>{row.displayTitle}</h2>
     <M3eButton onClick={() => {
@@ -31,6 +37,9 @@ export function sessionActions(dsh: DshServices, row: SessionSummary, archive: (
         })
       })
     }}><Icon name="edit" />題名を変える</M3eButton>
+    {pinned
+      ? <M3eButton onClick={() => { close(); void setPinned(dsh, row, false) }}><Icon name="keep_off" />ピン留めを外す</M3eButton>
+      : <M3eButton onClick={() => { close(); void setPinned(dsh, row, true) }}><Icon name="push_pin" />ピン留め</M3eButton>}
     <M3eButton onClick={() => { close(); archive() }}><Icon name="inventory_2" />アーカイブ</M3eButton>
   </div>, { label: row.displayTitle })
 }

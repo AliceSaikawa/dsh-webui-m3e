@@ -32,22 +32,27 @@ export function reasoningLabel(effort?: string): string {
   return effort ? labels[effort] ?? '指定あり' : '未指定'
 }
 
-export type Child = { kind: 'child'; id: string; label?: string; activity: 'running' | 'inactive'; mode: 'one-shot' | 'continuable' }
-export type CatalogEntry = Child | { kind: 'diagnostic'; id: string }
+export type Child = { kind: 'child'; id: string; label?: string; activity: 'running' | 'inactive'; mode: 'one-shot' | 'continuable'; migrationRequired?: boolean }
+export type ExternalChild = { kind: 'external'; id: string; label?: string }
+export type CatalogEntry = Child | ExternalChild | { kind: 'diagnostic'; id: string }
 export function catalogEntries(catalog?: SessionProjectionSnapshot, summaries: Record<string, SessionSummary> = {}): CatalogEntry[] {
-  return (catalog?.values.subagentCatalog ?? []).filter(entry => entry && typeof entry.id === 'string' && (entry.mode === 'unknown' || entry.mode === 'one-shot' || entry.mode === 'continuable')).map(entry => entry.mode === 'unknown'
+  return (catalog?.values.subagentCatalog ?? []).filter(entry => entry && typeof entry.id === 'string' && (entry.mode === 'unknown' || entry.mode === 'one-shot' || entry.mode === 'continuable' || entry.mode === 'external')).map(entry => entry.mode === 'unknown'
     ? { kind: 'diagnostic', id: entry.id }
-    : { kind: 'child', id: entry.id, label: entry.label, mode: entry.mode, activity: summaries[entry.id]?.running ? 'running' : 'inactive' })
+    : entry.mode === 'external'
+    ? { kind: 'external', id: entry.id, ...(entry.label ? { label: entry.label } : {}) }
+    : { kind: 'child', id: entry.id, label: entry.label, mode: entry.mode, activity: summaries[entry.id]?.running ? 'running' : 'inactive',
+      ...(summaries[entry.id]?.formatStatus === 'migration-required' ? { migrationRequired: true } : {}) } as Child)
 }
-export function catalogRows(entries: readonly CatalogEntry[]): { children: Child[]; diagnosticCount: number } {
+export function catalogRows(entries: readonly CatalogEntry[]): { children: Child[]; externals: ExternalChild[]; diagnosticCount: number } {
   return { children: entries.filter((entry): entry is Child => entry.kind === 'child'),
+    externals: entries.filter((entry): entry is ExternalChild => entry.kind === 'external'),
     diagnosticCount: entries.filter(entry => entry.kind === 'diagnostic').length }
 }
 export function childAddress(parentSessionId: string, child: Child) {
   return { parentSessionId, childSessionId: child.id, mode: child.mode }
 }
 export function hasChildren(sessionId: string, catalog: SessionProjectionSnapshot | undefined, summaries: Record<string, SessionSummary>): boolean {
-  return catalogEntries(catalog).some(entry => entry.kind === 'child') || Object.values(summaries).some(summary => summary.parentId === sessionId && summary.origin === 'subagent')
+  return catalogEntries(catalog).some(entry => entry.kind !== 'diagnostic') || Object.values(summaries).some(summary => summary.parentId === sessionId && summary.origin === 'subagent')
 }
 export type MenuAction = 'rename' | 'stats' | 'files' | 'jobs' | 'subagents' | 'goal' | 'archive'
 export function menuActions(children: boolean, goal: unknown): MenuAction[] {

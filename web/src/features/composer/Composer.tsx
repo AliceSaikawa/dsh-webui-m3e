@@ -18,7 +18,7 @@ import { presetDisplayName } from '../../dsh/permission-presets.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
 import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
-import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type PermissionProjection, type PlanProjection } from './api.ts'
+import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { consumeDraftCommand, draftTextRevision, prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
 import { prepareImage } from './images.ts'
@@ -28,8 +28,9 @@ import { registerDeliveryDestination, handoffDeliveryDestination } from './deliv
 import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
 import { commandIcon } from './presentation.ts'
-import { modelApplyController } from './model-picker.ts'
+import { modelApplyController, modelDisplayName } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
+import { CACHE_SENTINEL_UNLOCK_LABEL, useCacheSentinel } from './cache-sentinel.ts'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -46,6 +47,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const list = useSnapshot(services.sessions.list)
   const plan = projection<PlanProjection>('plan')
   const permissionValue = projection<PermissionSelection>('permissions')
+  const modelSelection = projection<ModelSelectionProjection>('modelSelection')
   const { catalog: permissionCatalog } = usePermissionCatalog()
   const permissions = permissionValue && permissionCatalog ? { ...permissionValue, options: permissionCatalog.options } : undefined
   const { connected } = useConnection()
@@ -89,6 +91,9 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const permissionOption = permission?.options.find(option => option.value === permission.currentValue)
   const permissionName = permission ? permissionOption ? presetDisplayName(permissionOption.value, permissionOption.name) : 'カスタム' : '権限'
+  const permissionLabel = permission ? `権限：${permissionName}` : '権限'
+  const currentModel = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
+  const modelName = modelDisplayName(currentModel, catalog)
   const canSend = connected && !busy && !modelState.pending && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
   const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')
 
@@ -188,6 +193,10 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     const unsubscribe = api.onCommandsChange(() => { void reload() })
     return () => { active = false; unsubscribe() }
   }, [api, connected, sessionId])
+  // cache-sentinel が入っている DSH だけ(コマンド一覧に /sentinel がある)で状態を取りに行く。
+  // 入っていない DSH や偽データの画面で取得口の 404 を出さないため。
+  const sentinel = useCacheSentinel(sessionId, target.kind === 'session' && connected && commands.some(command => command.name === 'sentinel'))
+  const [unlocking, setUnlocking] = useState(false)
   useEffect(() => {
     setFiles([])
     if (!suggesting || !token || !sessionId || !connected) return
@@ -299,6 +308,13 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         }
       }} />, { label: '入力の補助' })
   }
+  async function unlockCache() {
+    if (!face) return
+    setUnlocking(true)
+    try { requireMatched(await face.command('/unlock')); setAuxError('') }
+    catch (error) { setAuxError(errorText(error, '送信を許可できませんでした。もう一度お試しください。')) }
+    finally { setUnlocking(false); void sentinel.refresh() }
+  }
   async function stop() {
     if (!face) return
     try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, '停止できませんでした。もう一度お試しください。')) }
@@ -307,12 +323,16 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
     {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
-      <p>会話は作成済みです。登録の再試行では新しい会話を作りません。メッセージは送信ボタンから送れます。</p>
+      <p>会話は作成済みです。登録し直すと新しい会話が作られることがあり、そのときは入力中の本文もそちらへ移ります。メッセージは送信ボタンから送れます。</p>
       {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
       <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
     </div>}
     {recovering && <p className="composer-notice" role="status">ワークスペースへの登録をやり直しています。終わるまで入力と送信はできません。</p>}
     {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? '送信結果が不明です' : '送れませんでした'}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={event => { void send(undefined, (event as MouseEvent).detail === 0) }}>もう一度送る</M3eButton></div>}
+    {sentinel.banner && <div className={`composer-sentinel composer-sentinel-${sentinel.banner.tone}`} role="status" data-testid="cache-sentinel-banner">
+      <p>{sentinel.banner.text}</p>
+      {sentinel.banner.tone === 'warning' && <M3eButton variant="outlined" disabled={!connected || unlocking} onClick={() => { void unlockCache() }}>{CACHE_SENTINEL_UNLOCK_LABEL}</M3eButton>}
+    </div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}
@@ -328,10 +348,11 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         <M3eTextareaAutosize ref={autosize} htmlFor={inputId} />
         {hint && <small id={hintId} className="composer-hint">{hint}</small>}
         {preparing && <small role="status">画像を準備しています…</small>}
-        <div className="composer-controls">
+        <div className={snapshot.running ? 'composer-controls composer-controls-running' : 'composer-controls'}>
           <M3eIconButton variant="outlined" aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
-          <M3eAssistChip className="composer-permission" variant="outlined" disabled={!connected || busy} title={permissionName} onClick={() => { void openPermissions() }}><Icon slot="icon" name="shield" /><span className="composer-permission-label">{permissionName}</span></M3eAssistChip>
+          <M3eIconButton className="composer-permission" variant="outlined" aria-label={permissionLabel} title={permissionLabel} disabled={!connected || busy} onClick={() => { void openPermissions() }}><Icon name="shield" /></M3eIconButton>
           <span className="composer-spacer" />
+          <M3eButton variant="text" className="composer-model" aria-label={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} title={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} disabled={!connected || busy} onClick={openModels}><span className="composer-model-label">{modelName ?? 'モデル'}</span></M3eButton>
           {snapshot.running && <M3eIconButton aria-label="実行を停止" disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}
           {snapshot.running ? <M3eSplitButton className="composer-send-group" variant="filled">
             <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}><Icon slot="icon" name="arrow_upward" />{busy ? '送信中' : '順番待ち'}</M3eButton>

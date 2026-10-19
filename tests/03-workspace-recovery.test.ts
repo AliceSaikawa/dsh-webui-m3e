@@ -27,10 +27,19 @@ function setup(label: string) {
   let fail = true
   let available = true
   let wait: Promise<void> | undefined
+  // DSH 0.2.1 reuses a named Session only while it is an unarchived blank member
+  // of the requested Workspace and otherwise reports another identity.
+  let minted: string | undefined
   const failure = new Error('attachment failed')
+  const published = () => minted ?? attachment.sessionId
   const sessions: Pick<ISessions, 'create' | 'list' | 'refresh'> = {
-    async create(options) { calls.push(options ?? {}); if (wait) await wait; if (fail) throw failure; return attachment.sessionId },
-    list: { subscribe: () => () => {}, getSnapshot: () => ({ phase: 'ready', ids: available ? [attachment.sessionId] : [], byId: available ? { [attachment.sessionId]: { id: attachment.sessionId, retainedBy: {}, displayTitle: attachment.sessionId, running: false, blank: true, updatedAt: 0 } } : {}, projectionsBySession: {} }) },
+    async create(options) {
+      calls.push(options ?? {})
+      if (wait) await wait
+      if (fail) throw minted === undefined ? failure : Object.assign(new Error('attachment failed'), { rpcError: { code: 'session/workspace-attach-failed', message: 'attachment failed', details: { workspaceId: attachment.workspaceId, sessionId: minted } } })
+      return published()
+    },
+    list: { subscribe: () => () => {}, getSnapshot: () => { const id = published(); return { phase: 'ready', ids: available ? [id] : [], byId: available ? { [id]: { id, retainedBy: {}, displayTitle: id, running: false, blank: true, updatedAt: 0 } } : {}, projectionsBySession: {} } } },
     async refresh() {},
   }
   const draft = { text: '保つ本文', images: [{ id: 'image-test' }], model: { provider: 'local', model: 'small' }, permission: 'limited', plan: true, workspaceAttachment: attachment }
@@ -40,10 +49,11 @@ function setup(label: string) {
   return {
     attachment, originKey, sessionKey, calls, sessions, failure,
     succeed() { fail = false }, unavailable() { available = false }, waitFor(promise: Promise<void>) { wait = promise },
+    hostMints(id: string) { minted = id },
   }
 }
 
-test('repeated Workspace registration failures only adopt the same ID and preserve body, images and choices', async () => {
+test('repeated Workspace registration failures of a reusable conversation keep naming the same ID and preserve body, images and choices', async () => {
   const h = setup('retry')
   const before = readDraft(h.sessionKey)
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -67,6 +77,86 @@ test('repeated Workspace registration failures only adopt the same ID and preser
   assert.equal(after.permission, before.permission)
   assert.equal(after.plan, before.plan)
   assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+})
+
+// Issue #128: DSH 0.2.1 reuses a named Session only while it is an unarchived
+// blank member of the requested Workspace (dsh-api-session-controller/lib/index.js:769,
+// lib/types/agent.js:483). The conversation whose attach failed is not a member,
+// so the Host mints another identity, and the retry must follow the one it reports.
+test('a non-reusable recorded conversation is superseded by the minted ID the Host registers', async () => {
+  const h = setup('minted')
+  h.hostMints('minted-registered')
+  h.succeed()
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: 'minted-registered', sessionReady: true })
+  assert.deepEqual(h.calls, [{ workspaceId: h.attachment.workspaceId, sessionId: h.attachment.sessionId }])
+  const adopted = readDraft('session:minted-registered')
+  assert.equal(adopted.text, '保つ本文')
+  assert.deepEqual(adopted.images, [{ id: 'image-test' }])
+  assert.deepEqual(adopted.model, { provider: 'local', model: 'small' })
+  assert.equal(adopted.permission, 'limited')
+  assert.equal(adopted.plan, true)
+  assert.equal(adopted.workspaceAttachment, undefined)
+  // The new screen handed its duplicate over, and the recorded conversation held
+  // only this recovery, so its retry state is gone instead of pointing at an id
+  // the Host can no longer register.
+  assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+  assert.deepEqual(readDraft(h.sessionKey), { text: '', images: [] })
+  assert.equal(pendingWorkspaceAttachment(h.sessionKey), undefined)
+})
+
+test('a repeated attach failure adopts the newest reported identity instead of the recorded one', async () => {
+  const h = setup('minted-failure')
+  h.hostMints('minted-again')
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.equal(result.sessionId, 'minted-again')
+  assert.equal(result.sessionReady, true)
+  assert.ok(result.error)
+  const adopted = readDraft('session:minted-again')
+  assert.deepEqual(adopted.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-again' })
+  assert.equal(adopted.text, '保つ本文')
+  assert.deepEqual(readDraft(h.sessionKey), { text: '', images: [] })
+  // The next retry names the newest identity instead of repeating the recorded
+  // one that the Host replaced.
+  await retryWorkspaceAttachment({ draftKey: 'session:minted-again', sessions: h.sessions })
+  assert.deepEqual(h.calls.at(-1), { workspaceId: h.attachment.workspaceId, sessionId: 'minted-again' })
+})
+
+test('a divergent body on the recorded conversation stays as an ordinary draft after being superseded', async () => {
+  const h = setup('minted-divergent')
+  h.hostMints('minted-kept')
+  h.succeed()
+  writeDraft(h.sessionKey, { ...readDraft(h.sessionKey), text: '記録側だけの別本文' })
+  const result = await retryWorkspaceAttachment({ draftKey: h.originKey, sessions: h.sessions })
+  assert.deepEqual(result, { sessionId: 'minted-kept', sessionReady: true })
+  assert.equal(readDraft('session:minted-kept').text, '保つ本文')
+  const recorded = readDraft(h.sessionKey)
+  assert.equal(recorded.text, '記録側だけの別本文')
+  assert.deepEqual(recorded.images, [{ id: 'image-test' }])
+  assert.equal(recorded.workspaceAttachment, undefined)
+})
+
+test('a minted ID that is not yet listed keeps the retry on the screen the user started from', async () => {
+  for (const outcome of ['success', 'failure'] as const) {
+    const h = setup(`minted-unlisted-${outcome}`)
+    h.hostMints('minted-unlisted')
+    h.unavailable()
+    if (outcome === 'success') h.succeed()
+    const result = await retryWorkspaceAttachment({ draftKey: h.sessionKey, sessions: h.sessions })
+    assert.equal(result.sessionId, 'minted-unlisted')
+    assert.equal(result.sessionReady, false)
+    assert.ok(result.error)
+    // Navigation cannot happen before the list shows the identity, so the screen
+    // the user is on keeps its retry naming the newest identity.
+    const current = readDraft(h.sessionKey)
+    assert.equal(current.text, '保つ本文')
+    assert.deepEqual(current.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: 'minted-unlisted' })
+    // The new screen's duplicate held the same body, so it is not left behind.
+    assert.deepEqual(readDraft(h.originKey), { text: '', images: [] })
+    // The next retry names the newest identity, not the superseded recorded one.
+    await retryWorkspaceAttachment({ draftKey: h.sessionKey, sessions: h.sessions })
+    assert.deepEqual(h.calls.at(-1), { workspaceId: h.attachment.workspaceId, sessionId: 'minted-unlisted' })
+  }
 })
 
 test('new-screen recovery moves the latest edits to the existing draft, then removes the duplicate origin', async () => {

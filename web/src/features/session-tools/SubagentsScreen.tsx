@@ -15,7 +15,7 @@ export function SubagentsScreen({ sessionId }: { sessionId: string }) {
   const list = useSnapshot(sessions.list)
   const catalog = list.projectionsBySession[sessionId]
   const entries = catalogEntries(catalog, list.byId)
-  const { children, diagnosticCount } = catalogRows(entries)
+  const { children, externals, diagnosticCount } = catalogRows(entries)
   const [error, setError] = useState('')
   const openingLifetime = useRef<AbortController | undefined>(undefined)
   const lifetime = useRef({ active: true, request: 0 })
@@ -36,16 +36,26 @@ export function SubagentsScreen({ sessionId }: { sessionId: string }) {
     try { await conversationSelection(sessions).prepare(childAddress(sessionId, child), active, () => navigate(`/s/${encodeURIComponent(child.id)}`), openingLifetime.current.signal) }
     catch (error) { if (active()) setError(remoteErrorMessage(error, '子の会話を開けませんでした。読み直してお試しください。')) }
   }
+  // Same handling as the stock UI (dsh-client-ui-subagent/lib/client.js:192-202): a
+  // migration-required catalog cannot be opened until values arrive, and external
+  // children are listed but cannot be opened.
+  const migrationRequired = catalog?.state === 'migration-required' && !entries.length
   return <PageScaffold title="サブエージェント"><div className="st-content">
     {(!catalog || catalog.state === 'loading') && <p role="status">読み込み中です…</p>}
     {(error || catalog?.state === 'error') && <div className="st-error" role="alert"><p>{error || remoteErrorMessage(catalog?.error, 'サブエージェントを読み込めませんでした。')}</p><M3eButton onClick={() => setRetry(value => value + 1)}>読み直す</M3eButton></div>}
+    {migrationRequired && <p role="status">この会話の記録は古い形式のため、開き直して移行する必要があります。</p>}
     {catalog?.state === 'ready' && !entries.length && <p>サブエージェントはありません</p>}
     <M3eActionList className="st-list" aria-label="子の会話">
       {diagnosticCount > 0 && <M3eListItem><Icon slot="leading" name="info" />読み込めない記録があります（{diagnosticCount} 件）</M3eListItem>}
+      {externals.map(entry => <M3eListItem key={entry.id}>
+          <Icon slot="leading" name="smart_toy" />
+          {entry.label || '外部タスク'}
+          <span slot="supporting-text">外部タスク</span>
+        </M3eListItem>)}
       {children.map(entry => <M3eListAction key={entry.id} onClick={() => open(entry)}>
           <Icon slot="leading" name="smart_toy" />
           {entry.label || list.byId[entry.id]?.displayTitle || '子の会話'}
-          <span slot="supporting-text">{entry.activity === 'running' ? '実行中' : '終了'} ・ {entry.mode === 'continuable' ? '続けて頼める' : '1 回限り'}</span>
+          <span slot="supporting-text">{entry.migrationRequired ? '移行が必要' : entry.activity === 'running' ? '実行中' : '終了'} ・ {entry.mode === 'continuable' ? '続けて頼める' : '1 回限り'}</span>
           <Icon slot="trailing" name="chevron_right" />
         </M3eListAction>)}
     </M3eActionList>

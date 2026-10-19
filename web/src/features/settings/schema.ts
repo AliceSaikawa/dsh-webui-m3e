@@ -68,16 +68,28 @@ export type SettingsPage = typeof settingsPages[number]['id']
 const names: Record<string, string> = {
   'agent-default-model': '既定のモデル', 'subagent-model-selection-settings': 'サブエージェントのモデル',
   permission: '権限', 'agent-preset-registry': 'エージェントのプリセット', 'agent-loop': 'エージェントの動作',
-  'web-search-deepseek': 'Web 検索', 'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル', locale: '言語と地域',
+  'web-search-deepseek': 'Web 検索', web: 'Web の提供元', 'web-deepseek-api': 'Web 検索と取得 API',
+  'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル', locale: '言語と地域',
   selectedDefault: '既定のプリセット', defaultPreset: '新しい会話の権限',
   timeoutMs: '待機時間', maxOutputBytes: '出力の上限',
   enabled: '有効にする', model: 'モデル', default: '既定のモデル', provider: '提供元',
   name: '名前', mode: '動作モード', maxSteps: '最大ステップ数', timeout: '待機時間',
   maxRetries: '再試行の上限', count: '回数', temperature: '応答の多様性',
   retry: '再試行', interval: '間隔', command: 'コマンド', language: '言語',
+  searchProvider: '検索の提供元', fetchProvider: '取得の提供元',
+  apiKey: 'API キー', apiKeyEnv: 'API キーの環境変数', baseURL: '接続先', sendOriginalQuestion: '元の質問を送る',
   reasoningEffort: '推論の強さ',
 }
 export const namespaceTitle = (ns: string): string => names[ns] ?? ns
+
+// Some DSH fields carry neither a title nor a description, so their names alone
+// would be opaque. Add what this UI knows about the value of the Web provider
+// selection (the stock page writes `deepseek-official`/`deepseek-search-api` and
+// `http`/`deepseek-fetch-api`) so the plain text fields stay usable without it.
+const fieldNotes: Record<string, string> = {
+  'web.searchProvider': '検索に使う提供元の名前です。DeepSeek の Messages 検索は deepseek-official、Web 検索 API は deepseek-search-api です。',
+  'web.fetchProvider': 'ページを取得する提供元の名前です。標準のページ取得は http、Web 検索 API は deepseek-fetch-api です。',
+}
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const safeKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 const japanese = (value?: string) => value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value) ? value : undefined
@@ -159,7 +171,7 @@ export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Recor
       : ['agent-default-model', 'subagent-model-selection-settings'].includes(row.ns) ? 'models'
       : row.ns === 'permission' ? 'permission'
       : ['agent-preset-registry', 'agent-loop'].includes(row.ns) ? 'agent'
-      : ['web-search-deepseek', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns) ? 'tools' : 'other'
+      : ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns) ? 'tools' : 'other'
     groups[page].push(row)
   }
   return groups
@@ -212,10 +224,14 @@ export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionC
     // Never show an incompletely redacted value after a traversal limit.
     return [notice(0)]
   }
-  return fields.map(field => namespace.ns === 'permission' && field.kind !== 'masked' && !field.omitted && field.path.length === 1 && field.path[0] === 'defaultPreset'
-    ? { ...field, kind: 'select', value: field.value ?? catalog?.defaultPreset,
-        disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: presetDisplayName(option.value, option.name), value: option.value })) ?? [] }
-    : field)
+  return fields.map(field => {
+    const updated = namespace.ns === 'permission' && field.kind !== 'masked' && !field.omitted && field.path.length === 1 && field.path[0] === 'defaultPreset'
+      ? { ...field, kind: 'select' as const, value: field.value ?? catalog?.defaultPreset,
+          disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: presetDisplayName(option.value, option.name), value: option.value })) ?? [] }
+      : field
+    const note = updated.path.length === 1 ? fieldNotes[`${namespace.ns}.${updated.path[0]}`] : undefined
+    return note ? { ...updated, description: updated.description ? `${updated.description}\n${note}` : note } : updated
+  })
 }
 function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
   const schema = decodeSchema(namespace.schema)

@@ -63,6 +63,8 @@ export interface SessionSummary {
   blank: boolean
   updatedAt: number
   projectionValues?: Readonly<Record<string, unknown>>
+  /** Current on attached Sessions; otherwise the persistence format status when reported. */
+  formatStatus?: 'current' | 'migration-required'
 }
 export interface SessionJob {
   readonly id: string
@@ -79,11 +81,11 @@ export interface SessionJob {
 }
 export type SubagentCatalogEntry = { readonly id: string; readonly createdAt: number } & (
   | { readonly mode: 'continuable'; readonly label: string }
-  | { readonly mode: 'one-shot' | 'unknown'; readonly label?: string }
+  | { readonly mode: 'one-shot' | 'unknown' | 'external'; readonly label?: string }
 )
 export interface SessionProjectionSnapshot {
   readonly values: Readonly<Record<string, unknown>> & { readonly subagentCatalog?: readonly SubagentCatalogEntry[] }
-  readonly state: 'idle' | 'loading' | 'ready' | 'error'
+  readonly state: 'idle' | 'loading' | 'ready' | 'migration-required' | 'error'
   readonly error: RemoteFailure | null
 }
 export interface SessionListState {

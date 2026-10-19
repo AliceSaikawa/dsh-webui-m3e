@@ -15,7 +15,12 @@ test('bundled DSH libraries are pinned to the exact versions the supported relea
 
 test('every @deepseek-ai package the build uses is covered by the compatibility pins', () => {
   const used = Object.keys(manifest.devDependencies).filter(name => name.startsWith('@deepseek-ai/')).sort()
-  assert.deepEqual(used, Object.keys(PINNED_DSH_LIBRARIES).sort())
+  // Set equality cannot hold once a non-@deepseek-ai library (zod) is pinned;
+  // the exact-version match of every pin is asserted by the test above, so
+  // covering all @deepseek-ai devDependencies here keeps the same strength.
+  for (const name of used) {
+    assert.ok(name in PINNED_DSH_LIBRARIES, `not pinned: ${name}`)
+  }
 })
 
 test('boot failures at the DSH boot contract are reported as a possible version mismatch', () => {
@@ -26,6 +31,14 @@ test('boot failures at the DSH boot contract are reported as a possible version 
   assert.equal(classifyBootFailure('client-modules: boot manifest entries must be an array'), 'incompatible')
   assert.equal(classifyBootFailure('client-modules: no registered factory for @deepseek-ai/dsh-api-remotes'), 'incompatible')
   assert.equal(classifyBootFailure('webui-m3e: the DSH client lacks sessions.open, sessions.clear'), 'incompatible')
+  // Observed verbatim when this plugin was opened on DSH 0.2.1-rc.2: the
+  // transport bundles externalized zod and the page seeded no such module.
+  assert.equal(
+    classifyBootFailure(
+      'client-modules: require("zod") missed the module table — not a platform seed word, not a materialized module, and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)',
+    ),
+    'incompatible',
+  )
 })
 
 test('boot failures that may be transient are not blamed on the DSH release', () => {

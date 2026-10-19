@@ -78,6 +78,31 @@ test('親が利用不可でも正常な明示アドレスの子は閲覧用に�
   } finally { ctx.dispose() }
 })
 
+test('external のカタログ行はアドレスにせず、子の選択も決まらない', async () => {
+  const ctx = setup('one-shot')
+  try {
+    const rows = [{ id: childSessionId, createdAt: 0, mode: 'external' as const, label: '外部での実行' }]
+    ctx.mock.setProjection(parentSessionId, 'subagentCatalog', rows)
+    assert.equal(ctx.sessions.subagentAddress(childSessionId), undefined)
+    await assert.rejects(conversationSelection(ctx.sessions).select(childSessionId))
+    assert.equal(ctx.sessions.binding(childSessionId), undefined)
+  } finally { ctx.dispose() }
+})
+
+test('移行待ちの応答は state を写して返し、読み出しを揃えた先でやり直す', async () => {
+  let reads = 0
+  const ctx = createMockContext({ readProjections: async () => { reads++; return { ok: true, value: { kind: 'migration-required', values: { title: '移行前の題名' } } } } })
+  try {
+    await ctx.sessions.refreshProjections(parentSessionId)
+    const snapshot = ctx.sessions.list.getSnapshot().projectionsBySession[parentSessionId]!
+    assert.equal(snapshot.state, 'migration-required')
+    assert.equal(snapshot.values.title, '移行前の題名')
+    // Matches the real client (manager.js:267-286): a migration-pending read is not treated as ready and is re-read instead.
+    await ctx.sessions.refreshProjections(parentSessionId)
+    assert.equal(reads, 2)
+  } finally { ctx.dispose() }
+})
+
 for (const mode of ['one-shot', 'continuable'] as const) for (const invalid of ['missing-mode', 'wrong-mode', 'wrong-parent', 'wrong-origin', 'not-found'] as const) {
   test(`B1 ${mode} ${invalid}はready後にerrorとなり準備の失敗は選択と下書きを保ち参照を解放する`, async t => {
     const ctx = setup(mode); t.after(() => ctx.dispose())
