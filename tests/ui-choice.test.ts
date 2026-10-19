@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { markTabShowedM3e, planIndexVisit, readUiChoice, TAB_MARK_KEY, uiChoiceScript } from '../src/shared/ui-choice.ts'
+import { markTabShowedM3e, planIndexVisit, readUiChoice, DESKTOP_QUERY, TAB_MARK_KEY, uiChoiceScript } from '../src/shared/ui-choice.ts'
 
 const at = (pathname: string, search = '', hash = '') => ({ pathname, search, hash })
 
@@ -40,6 +40,13 @@ test('a tab that showed m3e keeps the stock UI on /, but an explicit ?ui= still 
   assert.deepEqual(planIndexVisit(at('/', '?ui=classic'), 'dsh-webui=m3e', true), { store: 'classic' })
 })
 
+test('a desktop never moves to m3e on its own, but an explicit ?ui=m3e still does', () => {
+  assert.deepEqual(planIndexVisit(at('/'), 'dsh-webui=m3e', false, true), {})
+  assert.deepEqual(planIndexVisit(at('/index.html'), 'dsh-webui=m3e', false, true), {})
+  assert.deepEqual(planIndexVisit(at('/', '?ui=m3e'), '', false, true), { store: 'm3e', redirect: '/m3e/' })
+  assert.deepEqual(planIndexVisit(at('/', '?ui=classic'), 'dsh-webui=m3e', false, true), { store: 'classic' })
+})
+
 test('markTabShowedM3e writes the tab mark and tolerates broken storage', () => {
   const writes: Array<[string, string]> = []
   markTabShowedM3e({ setItem: (key, value) => writes.push([key, value]) })
@@ -53,11 +60,17 @@ const runScript = (
   search: string,
   cookie: string,
   sessionStorage: Pick<Storage, 'getItem'> | null = null,
+  matchMedia: ((query: string) => { matches: boolean }) | undefined = undefined,
 ) => {
   const doc = { cookie }
   const replaced: string[] = []
   const location = { pathname, search, hash: '', replace: (url: string) => replaced.push(url) }
-  new Function('location', 'document', 'sessionStorage', uiChoiceScript())(location, doc, sessionStorage)
+  new Function('location', 'document', 'sessionStorage', 'matchMedia', uiChoiceScript())(
+    location,
+    doc,
+    sessionStorage,
+    matchMedia,
+  )
   return { cookie: doc.cookie, replaced }
 }
 
@@ -73,4 +86,14 @@ test('the inline script honors the tab mark and tolerates broken storage', () =>
   assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', mark).replaced, [])
   assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', null).replaced, ['/m3e/'])
   assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', { getItem: () => { throw new Error('blocked') } }).replaced, ['/m3e/'])
+})
+
+test('the inline script keeps a desktop on the stock UI, and treats matchMedia errors as not desktop', () => {
+  const desktop = (query: string) => ({ matches: query === DESKTOP_QUERY })
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', null, desktop).replaced, [])
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', null, () => ({ matches: false })).replaced, ['/m3e/'])
+  assert.deepEqual(runScript('/', '', 'dsh-webui=m3e', null, () => { throw new Error('blocked') }).replaced, ['/m3e/'])
+  const explicit = runScript('/', '?ui=m3e', '', null, desktop)
+  assert.match(explicit.cookie, /^dsh-webui=m3e; Path=\/; Max-Age=\d+; SameSite=Strict$/)
+  assert.deepEqual(explicit.replaced, ['/m3e/'])
 })
