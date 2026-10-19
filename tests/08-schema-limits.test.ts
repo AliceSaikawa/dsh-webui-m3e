@@ -125,6 +125,52 @@ test('交差の後ろのメンバーが宣言したpasswordも、前のメンバ
   assert.doesNotMatch(JSON.stringify(fields), /synthetic-token/)
 })
 
+test('交差のメンバーobject自体のpassword属性も、展開後の項目に適用する', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [1, 2, 3] },
+    1: { type: 'object', meta: { role: 'password' }, dict: { token: 4 } },
+    2: { type: 'object', dict: { note: 5 } },
+    3: { type: 'object', dict: { count: 6 } },
+    4: { type: 'string' }, 5: { type: 'string' }, 6: { type: 'number', meta: { min: 0 } },
+  } }
+  const fields = schemaFields(row(schema, { token: 'synthetic-password', note: '備考', count: 3 }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [
+    [['token'], 'masked', undefined],
+    [['note'], 'text', '備考'],
+    [['count'], 'number', 3],
+  ])
+  assert.ok(!JSON.stringify(fields).includes('synthetic-password'))
+})
+
+test('交差の中のpassword属性付きの交差も、そのメンバーの項目へ適用する', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [1, 2] },
+    1: { type: 'intersect', meta: { role: 'password' }, list: [3] },
+    2: { type: 'object', dict: { note: 5 } },
+    3: { type: 'object', dict: { token: 4 } },
+    4: { type: 'string' }, 5: { type: 'string' },
+  } }
+  const fields = schemaFields(row(schema, { token: 'synthetic-password', note: '備考' }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [
+    [['token'], 'masked', undefined],
+    [['note'], 'text', '備考'],
+  ])
+  assert.ok(!JSON.stringify(fields).includes('synthetic-password'))
+})
+
+test('共有された定義が無保護のメンバーとpasswordの交差の両方に現れても値を出さない', () => {
+  const schema = { uid: 0, refs: {
+    0: { type: 'intersect', list: [1, 2] },
+    1: { type: 'intersect', list: [3] },
+    2: { type: 'intersect', meta: { role: 'password' }, list: [3] },
+    3: { type: 'object', dict: { token: 4 } },
+    4: { type: 'string' },
+  } }
+  const fields = schemaFields(row(schema, { token: 'synthetic-password' }))
+  assert.deepEqual(leaves(fields).map(field => [field.path, field.kind, field.value]), [[['token'], 'masked', undefined]])
+  assert.ok(!JSON.stringify(fields).includes('synthetic-password'))
+})
+
 test('復号したノードは読み取り専用で、共有されたまま変更できない（73-2）', () => {
   const input = { uid: 0, refs: { 0: { type: 'object', dict: { first: 1, second: 1 } }, 1: { type: 'string', meta: { title: '名前' } } } }
   const decoded = decodeSchema(input)
