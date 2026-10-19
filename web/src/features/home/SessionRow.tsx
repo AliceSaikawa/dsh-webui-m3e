@@ -14,13 +14,14 @@ import { canEditHomeSession, openHomeSession } from './session-navigation.ts'
 import deepseekIcon from './model-icons/deepseek.svg'
 import genericIcon from './model-icons/generic.svg'
 
-export function SessionRow({ row, mode, selected, disabled, canMutate, first, last, pinned, onToggle, onActions, onArchive, onMove, onMoveUp, onMoveDown }: {
-  row: SessionSummary; mode: 'normal' | 'sort' | 'select'; selected: boolean; disabled: boolean; canMutate: boolean; first: boolean; last: boolean; pinned: boolean
+export function SessionRow({ row, mode, selected, disabled, canMutate, first, last, pinned, archived, onToggle, onActions, onArchive, onMove, onMoveUp, onMoveDown }: {
+  row: SessionSummary; mode: 'normal' | 'sort' | 'select'; selected: boolean; disabled: boolean; canMutate: boolean; first: boolean; last: boolean; pinned: boolean; archived: boolean
   onToggle(): void; onActions(): void; onArchive(): void; onMove(before?: string): void; onMoveUp(): void; onMoveDown(): void
 }) {
   const { sessions, ctx } = useDsh()
   const status = useSnapshot(completionStatus(ctx))
   const editable = canEditHomeSession(row)
+  const selectable = editable && !archived
   const [opening, setOpening] = useState(false)
   const pendingOpen = useRef(false)
   const active = useRef(true)
@@ -40,29 +41,30 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   const selection = row.projectionValues?.modelSelection as { lastUsed?: unknown } | undefined
   const icon = modelIcon(selection?.lastUsed)
   const gesture = useRowGesture({ disabled: disabled || opening || (mode !== 'normal' && !editable), onClick: () => {
-    if (mode === 'select' && editable) onToggle()
+    if (archived) { showSnackbar('アーカイブ済みのセッションは開けません。アーカイブを戻してから開いてください。'); return }
+    if (mode === 'select' && selectable) onToggle()
     else if (mode === 'normal') void open()
-  }, onLongPress: mode === 'normal' && canMutate && editable ? onActions : undefined, onSwipe: mode === 'normal' && canMutate && editable ? onArchive : undefined })
+  }, onLongPress: mode === 'normal' && canMutate && editable ? onActions : undefined, onSwipe: mode === 'normal' && canMutate && editable && !archived ? onArchive : undefined })
   const drag = useRef<{ y: number; before?: string; active: boolean } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [destination, setDestination] = useState('')
-  return <li className={`home-session ${dragging ? 'home-session-dragging' : ''}`} data-session-id={row.id} data-pinned={pinned ? 'true' : undefined}>
+  return <li className={`home-session ${dragging ? 'home-session-dragging' : ''} ${archived ? 'home-session-archived' : ''}`} data-session-id={row.id} data-pinned={pinned ? 'true' : undefined} data-archived={archived ? 'true' : undefined}>
     {gesture.offset !== 0 && <div className="home-archive-background" aria-hidden="true"><Icon name="inventory_2" /><span>アーカイブ</span></div>}
     <div className="home-session-surface" style={{ transform: `translateX(${gesture.offset}px)` }}>
-      <button type="button" className="home-session-button" {...gesture.handlers} disabled={disabled || opening || mode === 'sort' || (mode === 'select' && !editable)}
-        aria-label={`${row.displayTitle}${pinned ? '、ピン留め' : ''}${state ? `、${state}` : ''}${editable ? '' : '、子の会話・閲覧のみ'}`} aria-pressed={mode === 'select' && editable ? selected : undefined}
+      <button type="button" className="home-session-button" {...gesture.handlers} disabled={disabled || opening || mode === 'sort' || (mode === 'select' && !selectable)}
+        aria-label={`${row.displayTitle}${archived ? '、アーカイブ済み' : ''}${pinned ? '、ピン留め' : ''}${state ? `、${state}` : ''}${editable ? '' : '、子の会話・閲覧のみ'}`} aria-pressed={mode === 'select' && selectable ? selected : undefined}
         onContextMenu={event => event.preventDefault()}>
-        {mode === 'select' && <span inert className="home-selection"><M3eCheckbox checked={editable && selected} disabled={!editable} tabIndex={-1} aria-hidden="true" /></span>}
+        {mode === 'select' && <span inert className="home-selection"><M3eCheckbox checked={selectable && selected} disabled={!selectable} tabIndex={-1} aria-hidden="true" /></span>}
         <span className="home-model-avatar" aria-hidden="true">
           {icon.kind === 'initial' ? icon.initial : <span className="home-model-glyph" style={{ '--home-model-icon': `url("${icon.kind === 'deepseek' ? deepseekIcon : genericIcon}")` } as CSSProperties} />}
           {state && <span className={`home-session-state ${pending.length ? 'home-state-pending' : ''}`}><Icon name={stateIcon} /></span>}
         </span>
-        <span className="home-session-text"><span className="home-session-heading">{pinned && <Icon name="push_pin" filled className="home-row-pin" />}<strong>{row.displayTitle}</strong></span><small>{folderName(row.cwd)} ・ {formatUpdatedAt(row.updatedAt)}</small>
+        <span className="home-session-text"><span className="home-session-heading">{archived && <Icon name="inventory_2" className="home-row-archived" />}{pinned && <Icon name="push_pin" filled className="home-row-pin" />}<strong>{row.displayTitle}</strong></span><small>{folderName(row.cwd)} ・ {formatUpdatedAt(row.updatedAt)}</small>
           {!editable && <small>{opening ? '子の会話を開いています…' : '子の会話・閲覧のみ'}</small>}
           {state && <span className="home-sr-only">{state}</span>}</span>
         {mode === 'normal' && <Icon name="chevron_right" className="home-row-chevron" />}
       </button>
-      {mode === 'sort' && editable && !pinned && <button type="button" className="home-drag-handle" aria-label={`${row.displayTitle}を並べ替え。上下キーでも移動できます`}
+      {mode === 'sort' && editable && !pinned && !archived && <button type="button" className="home-drag-handle" aria-label={`${row.displayTitle}を並べ替え。上下キーでも移動できます`}
         disabled={disabled || !canMutate} onKeyDown={event => {
           if (event.key === 'ArrowUp' && !first) { event.preventDefault(); onMoveUp() }
           if (event.key === 'ArrowDown' && !last) { event.preventDefault(); onMoveDown() }
@@ -75,7 +77,7 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
           if (Math.abs(event.clientY - drag.current.y) < 8 && !drag.current.active) return
           drag.current.active = true; setDragging(true)
           const list = event.currentTarget.closest('ul')
-          const candidates = [...(list?.querySelectorAll<HTMLElement>('[data-session-id]') ?? [])].filter(node => node.dataset.sessionId !== row.id && node.dataset.pinned !== 'true')
+          const candidates = [...(list?.querySelectorAll<HTMLElement>('[data-session-id]') ?? [])].filter(node => node.dataset.sessionId !== row.id && node.dataset.pinned !== 'true' && node.dataset.archived !== 'true')
           const target = candidates.find(node => { const rect = node.getBoundingClientRect(); return event.clientY < rect.top + rect.height / 2 })
           drag.current.before = target?.dataset.sessionId
           setDestination(target ? `${target.querySelector('strong')?.textContent ?? ''}の前へ` : '最後へ')

@@ -3,10 +3,8 @@ import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
 import { ChatMarkdown } from './ChatMarkdown.tsx'
 import { showSnackbar } from '../../app/overlay/index.ts'
-import { back } from '../../app/router.ts'
 import { useSession } from '../../dsh/session.ts'
 import type { SessionFace } from '../../dsh/services.ts'
-import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { AttachmentImage, FileAttachment, PreviewImage } from './Attachments.tsx'
 import { MessageActions } from './MessageActions.tsx'
 import { ChatSheets, useChatSheets } from './ChatSheets.tsx'
@@ -93,8 +91,7 @@ function SessionChat({ sessionId, active }: { sessionId: string; active: boolean
       onKeyDown={event => { if (['ArrowUp', 'PageUp', 'Home'].includes(event.key)) scroll.stopFollowing() }}>
       <div className="chat-rows" ref={scroll.content}>
         {snapshot.openState === 'loading' || snapshot.openState === 'cold' ? <div className="chat-state"><Progress>会話を読み込んでいます…</Progress></div>
-          : snapshot.openState === 'error' ? <div className="chat-state"><p role="alert">{remoteErrorMessage(snapshot.openError)}</p><M3eButton onClick={back}>一覧に戻る</M3eButton></div>
-            : <>
+          : <>
               <div className="chat-older">{snapshot.loadingOlder || scroll.requesting ? <Progress>前のメッセージを読み込んでいます…</Progress>
                 : snapshot.hasMore && <M3eButton onClick={() => void scroll.loadOlder()}>前のメッセージを読み込む</M3eButton>}</div>
               {rows.length === 0 && <div className="chat-state"><Icon name="chat_bubble" /><h2>何をしますか</h2><p>下の入力欄からメッセージを送れます。</p></div>}
