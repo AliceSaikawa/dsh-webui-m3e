@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { InteractionStore } from '../web/src/dsh/interactions-store.ts'
+import { InteractionStore, type ApprovalDisplayReason } from '../web/src/dsh/interactions-store.ts'
 import { approvalReason } from '../web/src/features/interactions/approval-reason.ts'
 
 const sandboxReason = 'escalate sandbox to danger-full-access: pnpm test'
@@ -31,4 +31,41 @@ test('承認の待ち行列は displayReason を捨てずに残す', async () =>
   assert.equal(approvalReason(pending, 'ja'), displayReason.en)
   await pending.answer('allowed-once')
   assert.equal(await result, 'allowed-once')
+})
+
+test('requestApproval は en が文字列なら、文字列の訳だけを残す', async () => {
+  const store = new InteractionStore()
+  const result = store.requestApproval('session-a', { toolName: 'bash', displayReason: {
+    en: 'Allow this operation',
+    zh: '允许本次操作',
+    ja: null,
+    fr: 7,
+  } as unknown as ApprovalDisplayReason })
+  const pending = store.getSnapshot()[0]
+  if (pending?.kind !== 'approval') assert.fail('承認がありません')
+  assert.deepEqual(pending.displayReason, { en: 'Allow this operation', zh: '允许本次操作' })
+  await pending.answer('rejected')
+  assert.equal(await result, 'rejected')
+})
+
+test('requestApproval は en が文字列のオブジェクトでない displayReason を捨てる', async () => {
+  const invalid: unknown[] = [
+    null,
+    'Allow this operation',
+    42,
+    ['en'],
+    {},
+    { zh: '允许本次操作' },
+    { en: null, zh: '允许本次操作' },
+    { en: 42, zh: '允许本次操作' },
+  ]
+  for (const value of invalid) {
+    const store = new InteractionStore()
+    const result = store.requestApproval('session-a', { toolName: 'bash', displayReason: value as ApprovalDisplayReason })
+    const pending = store.getSnapshot()[0]
+    if (pending?.kind !== 'approval') assert.fail('承認がありません')
+    assert.equal(pending.displayReason, undefined)
+    await pending.answer('rejected')
+    assert.equal(await result, 'rejected')
+  }
 })
