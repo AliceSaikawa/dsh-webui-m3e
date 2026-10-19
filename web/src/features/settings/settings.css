@@ -39,6 +39,15 @@
 .settings-appearance-options { display: grid; }
 .settings-appearance-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; margin: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
 .settings-appearance-option m3e-radio { flex: none; }
+.settings-color-options { display: grid; grid-template-columns: repeat(6, minmax(40px, 48px)); justify-content: space-between; gap: calc(var(--app-space) / 4); max-width: calc(48px * 6 + var(--app-space) * 3); margin: calc(var(--app-space) / 2) 0; }
+.settings-color-swatch { box-sizing: border-box; display: grid; place-items: center; width: 100%; aspect-ratio: 1; padding: 0; border: 2px solid var(--md-sys-color-outline-variant); border-radius: 50%; cursor: pointer; }
+.settings-color-swatch[aria-pressed='true'] { border-color: var(--md-sys-color-primary); }
+/* The swatch is user data in any color; a surface badge keeps the check readable on all of them. */
+.settings-color-swatch .material-symbols-outlined { padding: 2px; border-radius: 50%; font-size: 20px; color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface); }
+.settings-color-custom { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; margin: calc(var(--app-space) / 2) 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
+.settings-color-custom input { width: 48px; height: 48px; padding: 0; border: 1px solid var(--md-sys-color-outline); border-radius: calc(var(--app-radius) / 3); background: none; cursor: pointer; }
+.settings-color-custom .material-symbols-outlined { color: var(--md-sys-color-primary); }
+.settings-color-swatch:focus-visible, .settings-color-custom input:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 .settings-model-options { display: grid; min-width: 0; }
 .settings-model-option { display: flex; align-items: center; gap: calc(var(--app-space) * .75); min-height: 48px; min-width: 0; padding: calc(var(--app-space) / 4) 0; cursor: pointer; }
 .settings-model-option span { min-width: 0; overflow-wrap: anywhere; }
