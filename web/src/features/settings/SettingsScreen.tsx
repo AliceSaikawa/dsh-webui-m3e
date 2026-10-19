@@ -4,7 +4,12 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { TabScaffold } from '../../app/shell/TabScaffold.tsx'
 import { navigate } from '../../app/router.ts'
 import { useAppearance, useThemeColor } from '../../app/theme/index.ts'
+import { useMessages } from '../../i18n/index.ts'
+import { useDsh } from '../../dsh/services.ts'
 import { appearanceLabels, confirmClassic, openAppearance, themeColorLabel } from './AppearanceSheet.tsx'
+import { useAgentPresetRoster } from './AgentPresetsPage.tsx'
+import { presetDisplayText } from './agent-presets.ts'
+import { agentPresetMessages } from './messages.ts'
 import { groupNamespaces, pageSummary, settingsPages } from './schema.ts'
 import { useSettings } from './use-settings.ts'
 import { useProviderSummary } from './use-provider-summary.ts'
@@ -25,6 +30,17 @@ export function SettingsScreen() {
   const { state, store } = useSettings()
   const providers = useProviderSummary()
   const groups = groupNamespaces(state.namespaces)
+  const { remote } = useDsh()
+  const presetText = useMessages(agentPresetMessages)
+  const presets = useAgentPresetRoster(remote)
+  const modeSummary = presets.state.phase === 'loading' ? presetText.summaryLoading
+    : presets.state.phase === 'unavailable' ? presetText.summaryUnavailable
+    : presets.state.phase === 'error' ? presetText.summaryError
+    : (() => {
+        const selected = presets.state.rows.find(row => row.isDefault)
+        if (selected) return presetDisplayText(selected, presetText).name
+        return presets.state.rows.length === 0 ? presetText.empty : presetText.missingDefault
+      })()
   return <TabScaffold title="設定" tab="settings"><div className="settings-content">
     <section className="settings-section" aria-labelledby="settings-device">
       <h2 id="settings-device">この端末</h2>
@@ -45,12 +61,18 @@ export function SettingsScreen() {
       <h2 id="settings-dsh">DSH の設定</h2>
       <SettingsStatus state={state} reload={store.reload} />
       <M3eActionList className="settings-card">
-        {settingsPages.filter(page => page.id !== 'other' || groups.other.length > 0).map(page =>
-          <M3eListAction key={page.id} onClick={() => navigate(`/settings/${page.id}`)}>
+        {settingsPages.filter(page => page.id !== 'other' || groups.other.length > 0).flatMap(page => {
+          const row = <M3eListAction key={page.id} onClick={() => navigate(`/settings/${page.id}`)}>
             <span slot="leading"><Icon name={page.icon} /></span>{page.title}
             <span slot="supporting-text">{page.id === 'providers' ? providers : state.phase === 'loading' ? '読み込み中…' : state.error ? '設定を確認できません' : pageSummary(page.id, groups[page.id], state.permissionCatalog)}</span>
             <span slot="trailing"><Icon name="chevron_right" /></span>
-          </M3eListAction>)}
+          </M3eListAction>
+          return page.id === 'agent' ? [row, <M3eListAction key="modes" onClick={() => navigate('/settings/modes')}>
+            <span slot="leading"><Icon name="tune" /></span>{presetText.title}
+            <span slot="supporting-text">{modeSummary}</span>
+            <span slot="trailing"><Icon name="chevron_right" /></span>
+          </M3eListAction>] : [row]
+        })}
         <M3eListAction onClick={() => navigate('/settings/plugins')}>
           <span slot="leading"><Icon name="extension" /></span>プラグイン
           <span slot="supporting-text">入っているプラグインと状態</span>

@@ -67,10 +67,10 @@ export type SettingsPage = typeof settingsPages[number]['id']
 
 const names: Record<string, string> = {
   'agent-default-model': '既定のモデル', 'subagent-model-selection-settings': 'サブエージェントのモデル',
-  permission: '権限', 'agent-preset-registry': 'エージェントのプリセット', 'agent-loop': 'エージェントの動作',
+  permission: '権限', 'agent-loop': 'エージェントの動作',
   'web-search-deepseek': 'Web 検索', web: 'Web の提供元', 'web-deepseek-api': 'Web 検索と取得 API',
   'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル', locale: '言語と地域',
-  selectedDefault: '既定のプリセット', defaultPreset: '新しい会話の権限',
+  defaultPreset: '新しい会話の権限',
   timeoutMs: '待機時間', maxOutputBytes: '出力の上限',
   enabled: '有効にする', model: 'モデル', default: '既定のモデル', provider: '提供元',
   name: '名前', mode: '動作モード', maxSteps: '最大ステップ数', timeout: '待機時間',
@@ -164,13 +164,16 @@ export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Recor
   const groups: Record<SettingsPage, SettingsNamespace[]> = { models: [], permission: [], agent: [], providers: [], tools: [], other: [] }
   for (const row of namespaces) {
     if (row.ns.startsWith('ui-')) continue
+    // The dedicated mode page owns both the roster and selectedDefault, so this
+    // namespace never appears as a generic form.
+    if (row.ns === 'agent-preset-registry') continue
     // Explicit M3E editors mirror the stock custom pages. Other suppressed
     // entries (including provider internals) must not become generic forms.
-    if (!row.autoGenerate && !['agent-default-model', 'subagent-model-selection-settings', 'permission', 'bash-sandbox', 'pwsh-sandbox', 'agent-preset-registry', 'locale'].includes(row.ns)) continue
+    if (!row.autoGenerate && !['agent-default-model', 'subagent-model-selection-settings', 'permission', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns)) continue
     const page: SettingsPage = row.ns.startsWith('llm-') ? 'providers'
       : ['agent-default-model', 'subagent-model-selection-settings'].includes(row.ns) ? 'models'
       : row.ns === 'permission' ? 'permission'
-      : ['agent-preset-registry', 'agent-loop'].includes(row.ns) ? 'agent'
+      : row.ns === 'agent-loop' ? 'agent'
       : ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns) ? 'tools' : 'other'
     groups[page].push(row)
   }
@@ -478,7 +481,6 @@ export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNam
     return name === value ? 'カスタム' : name
   }
   if (page === 'agent') return join([
-    labeled('プリセット', textAt('agent-preset-registry', 'selectedDefault')),
     labeled('ツールの同時実行数', textAt('agent-loop', 'maxParallelToolCalls')),
   ])
   if (page === 'tools') return join([

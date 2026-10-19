@@ -6,6 +6,7 @@ import { settingsFixtures } from './mock-fixtures.ts'
 import { applyMockOperations, mockSettingsChanged } from './mock-mutations.ts'
 import { mockProviderRegistry, registerMockModelWriter } from './mock-models.ts'
 import { installCustomScenarios } from './mock-custom.ts'
+import { AGENT_PRESET_NS } from './agent-presets.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -20,6 +21,58 @@ const isObject = (value: SettingValue | undefined): value is SettingObject => ty
 const allowedKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
 const validRef = (ref: unknown): ref is string =>
   typeof ref === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(ref)
+
+interface MockAgentPreset {
+  readonly id: string
+  readonly order?: number
+  readonly name?: string
+  readonly description?: string
+  readonly broken?: string
+}
+
+/** Shipped ids have no name, so the page supplies their Japanese copy. */
+const mockAgentPresets: readonly MockAgentPreset[] = [
+  { id: 'standard', order: 1 },
+  { id: 'ptc', order: 2 },
+  { id: 'minimal', order: 3 },
+  { id: 'cordis', order: 4 },
+  { id: 'review', name: 'レビュー用', description: '変更内容を確認し、テストと指摘をまとめるモードです。' },
+  { id: 'no-description', name: '説明なし' },
+  {
+    id: 'broken-team',
+    name: 'チーム用',
+    broken: "team-tools (./plugins/team-tools.js): Cannot find module '/srv/dsh/profiles/team/plugins/team-tools.js'\npersona (@deepseek-ai/dsh-persona): waiting for terminal",
+  },
+]
+
+/**
+ * The Host documents `read` as the declared plugin rows dumped as YAML, not the
+ * preset wrapper. Paths in a diagnostic come from the same composition.
+ */
+const mockPresetContent = (id: string): string => [
+  '- id: persona',
+  "  name: '@deepseek-ai/dsh-persona'",
+  '  config:',
+  '    suffix: Your working directory is {{cwd}}.',
+  '    prefix: You are a coding agent powered by the {{model}} model.',
+  '- id: tool-bash',
+  "  name: '@deepseek-ai/dsh-tool-bash'",
+  ...(id === 'minimal' ? [] : [
+    '- id: tool-fs',
+    "  name: '@deepseek-ai/dsh-tool-fs'",
+    '- id: tool-web',
+    "  name: '@deepseek-ai/dsh-tool-web'",
+    '  config:',
+    '    fetch: true',
+  ]),
+  ...(id === 'broken-team' ? [
+    '- id: team-tools',
+    "  name: './plugins/team-tools.js'",
+  ] : []),
+].join('\n')
+
+const comparePresets = (left: MockAgentPreset, right: MockAgentPreset): number =>
+  (left.order ?? Infinity) - (right.order ?? Infinity) || left.id.localeCompare(right.id)
 
 /** Merge user overrides without sharing mutable objects with callers. */
 function merge(base: SettingObject, patch: SettingObject): SettingObject {
@@ -53,6 +106,8 @@ export function extendMock(kit: MockKit): void {
   let rejectWrites = false
   let keysWritable = true
   let keyLookupFails = false
+  let presetListFails = false
+  let presetListUnavailable = false
   // Keep registration booleans only, never the submitted key material.
   const registeredKeys = new Set(['DEEPSEEK_API_KEY'])
 
@@ -110,6 +165,27 @@ export function extendMock(kit: MockKit): void {
     },
   }
   kit.addRemote('settings', remote)
+  if (!kit.isScenario('agent-presets-unavailable')) {
+    kit.addRemote('agentPresets', {
+      async list() {
+        if (presetListUnavailable) return failure('gateway/invocation-unavailable', 'モードの一覧を取得できませんでした。')
+        if (presetListFails) return failure('gateway/internal', 'モードの一覧を取得できませんでした。')
+        const stored = namespaces.get(AGENT_PRESET_NS)?.value.selectedDefault
+        const selected = typeof stored === 'string' ? stored : 'standard'
+        return success({ presets: [...mockAgentPresets].sort(comparePresets).map(row => ({ ...row, isDefault: row.id === selected })) })
+      },
+      async read(id: string) {
+        const row = mockAgentPresets.find(item => item.id === id)
+        if (!row) return failure('agent-preset/not-found', 'このモードは見つかりません。')
+        return success({
+          agentPreset: row.id,
+          content: mockPresetContent(row.id),
+          ...('name' in row ? { name: row.name } : {}),
+          ...('description' in row ? { description: row.description } : {}),
+        })
+      },
+    })
+  }
   const custom = installCustomScenarios(kit, remote, namespaces)
   registerMockModelWriter(kit, async selection => {
     const result = checkWrite('agent-default-model')
@@ -164,4 +240,11 @@ export function extendMock(kit: MockKit): void {
   })
   kit.scenario('settings-keys-readonly', () => { keysWritable = false })
   kit.scenario('settings-keys-unavailable', () => { keyLookupFails = true })
+  kit.scenario('agent-presets-error', () => { presetListFails = true })
+  kit.scenario('agent-presets-unavailable', () => {})
+  kit.scenario('agent-presets-invocation-unavailable', () => { presetListUnavailable = true })
+  kit.scenario('agent-presets-missing-default', () => {
+    const row = namespaces.get(AGENT_PRESET_NS)!
+    row.value = { ...row.value, selectedDefault: 'removed-team' }
+  })
 }
