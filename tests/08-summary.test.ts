@@ -38,6 +38,18 @@ test('権限カタログの日本語の表示名を要約に使う', () => {
   assert.equal(pageSummary('permission', [permission], { options, defaultOptions: options, defaultPreset: 'restricted' }), '読み取りのみ')
 })
 
+test('カタログの名前がキーのままで説明が無くても日本語の表示名を要約に使う', () => {
+  const permission = namespace('permission', { defaultPreset: 'workspace-write' })
+  const option = { value: 'workspace-write', name: 'workspace-write' }
+  assert.equal(pageSummary('permission', [permission], {
+    options: [option], defaultOptions: [option], defaultPreset: 'workspace-write',
+  }), 'ワークスペース書込')
+})
+
+test('カタログが無くても組み込みの値は日本語の表示名を要約に使う', () => {
+  assert.equal(pageSummary('permission', [namespace('permission', { defaultPreset: 'read-only' })]), '読み取りのみ')
+})
+
 test('エージェントとツールは確認済みの主要設定値だけを要約する', () => {
   const agent = [
     namespace('agent-loop', { enabled: false, maxParallelToolCalls: 4 }),

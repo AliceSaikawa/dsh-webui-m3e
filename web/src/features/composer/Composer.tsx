@@ -14,6 +14,7 @@ import { useSession } from '../../dsh/session.ts'
 import { sessionAccess } from '../../dsh/session-access.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { presetDisplayName } from '../../dsh/permission-presets.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
 import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
@@ -88,7 +89,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const permission = target.kind === 'new' ? defaults && { ...defaults, currentValue: draft.permission ?? defaults.currentValue } : permissions
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
-  const permissionName = permission ? permission.currentValue === 'custom' ? 'カスタム' : permission.options.find(option => option.value === permission.currentValue)?.name ?? 'カスタム' : '権限'
+  const permissionOption = permission?.options.find(option => option.value === permission.currentValue)
+  const permissionName = permission ? permissionOption ? presetDisplayName(permissionOption.value, permissionOption.name) : 'カスタム' : '権限'
   const permissionLabel = permission ? `権限：${permissionName}` : '権限'
   const currentModel = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
   const modelName = modelDisplayName(currentModel, catalog)
@@ -282,7 +284,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
       if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
       if (!mounted.current) return
-      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} close={close} apply={async value => {
+      closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} sessionId={sessionId} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
         else if (face) { requireMatched(await face.command(`/permission ${value}`)); update({ permission: undefined }) }
       }} />, { label: '権限の選び直し' })
