@@ -267,3 +267,11 @@ AI が人間の返事を待っているときのシートを作ります。返�
 - 修正前は送信中の status が存在せず、通常質問の h2 も存在しない試験が失敗。修正後は通常質問、プランと通常質問の混在、送信の保留→失敗→再試行→成功を実 Chromium の DOM で確認。role=status が aria-busy=true の祖先を持たないことも確認した。
 - 新規回帰試験と既存 overlay の結果、実行環境は `01-home.md` の同日メモを参照。VoiceOver 実機の発話は未確認で、DOM の検証を読み上げ確認済みとは扱わない。コミット・公開はしていない。
 - 親の独立レビューで新規 Chromium 9 件を再実行して成功。隔離公開 DSH 0.2.0-rc.2＋localhost 偽 LLM の承認・質問の実記録表示 2 件も成功。実 VoiceOver 読み上げと iOS 実機は未確認。
+
+### 2026-10-19：Issue #122 承認の表示用の理由（displayReason）
+
+- 承認の要求が持つ `displayReason` を `PendingApproval` に残し、`web/src/features/interactions/approval-reason.ts` の `approvalReason` が画面の言語（`useLocale`）の訳、無ければ `en`、どちらも無ければ従来の `reason` を選ぶ。`InteractionSheet.tsx` はその結果を理由の行に出す。日本語の訳はまだ無いので、日本語の画面では英語の `displayReason` が出る。
+- `web/src/dsh/interactions-store.ts` は 00 の担当ファイルだが、`displayReason` を待ち行列へ写すために `ApprovalDisplayReason` の型と `PendingApproval.displayReason` を足した。表示の選択は 05 の純粋な処理に置いた。
+- 偽データの `scenario=approval` に、サンドボックスの昇格と同じ形の `reason`（内部向けの英語）と `displayReason`（en・zh）を入れた。
+- 修正前に `tests/05-approval-reason.test.ts` を実行し、`approval-reason.ts` が無いため失敗することを確認した。処理を足した後、store が `displayReason` を捨てる試験 1 件が失敗することも確認した。
+- 検証：`pnpm typecheck`、`pnpm test`（1,323 件中 1,321 件成功、既存の skip 2 件）、`pnpm build`、`git diff --check` が成功。ブラウザと実 DSH は起動していない。

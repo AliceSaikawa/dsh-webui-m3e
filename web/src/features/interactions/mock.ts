@@ -91,7 +91,11 @@ function requestApproval(kit: MockKit, cancel: boolean): void {
     agent: 'approval-sheet',
     toolName: 'bash',
     callId: 'approval-bash',
-    reason: '承認シートの動作をテストで確かめるためです。',
+    reason: 'escalate sandbox to danger-full-access: 承認シートの動作をテストで確かめるためです。',
+    displayReason: {
+      en: 'Allow this operation with danger-full-access permissions: verify the approval sheet in a test',
+      zh: '允许本次操作使用 danger-full-access 权限：在测试中确认审批画面的动作',
+    },
     signal: controller.signal,
   }, { afterMs: approvalDelay })
   void reportReply(reply, '承認').finally(() => { if (timer !== undefined) clearTimeout(timer) })
