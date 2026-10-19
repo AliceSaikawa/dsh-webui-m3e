@@ -13,7 +13,7 @@ import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { selectWorkspace, orderSessions, pinnedFirst, visibleSessions, type ArchivedFilter, type OrderBy } from './data.ts'
+import { selectWorkspace, orderSessions, pinnedFirst, pinnedFirstInOrder, visibleSessions, type ArchivedFilter, type OrderBy } from './data.ts'
 import { useHomePreferences, setCurrentWorkspace, setShowSubagents, setArchivedFilter, setOrderBy } from './preferences.ts'
 import { attempt, renameWorkspace, sessionActions, workspaceActions } from './actions.tsx'
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
@@ -45,7 +45,9 @@ export function HomeScreen() {
   const workspace = selectWorkspace(snapshot.items, preferences.workspaceId)
   const archivedIds = new Set(snapshot.archivedSessionIds)
   const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents, preferences.archivedFilter)
-  const { rows, pinned } = pinnedFirst(orderSessions(visible, preferences.orderBy), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
+  const { rows, pinned } = preferences.orderBy === 'updated'
+    ? pinnedFirstInOrder(orderSessions(visible, 'updated'), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
+    : pinnedFirst(orderSessions(visible, 'manual'), snapshot.pinnedSessionIds.filter(id => !archivedIds.has(id)))
   const unpinned = rows.filter(row => !pinned.has(row.id) && !archivedIds.has(row.id))
   const operable = rows.some(row => canEditHomeSession(row) && !archivedIds.has(row.id))
   const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))

@@ -46,6 +46,13 @@ export function pinnedFirst(rows: readonly SessionSummary[], pinnedIds: readonly
   return { rows: [...ordered, ...rows.filter(row => !pinned.has(row.id))], pinned }
 }
 
+/** Keep the given order inside each partition; used when recency already sorts pins. */
+export function pinnedFirstInOrder(rows: readonly SessionSummary[], pinnedIds: readonly string[]): { rows: SessionSummary[]; pinned: ReadonlySet<string> } {
+  const known = new Set(rows.map(row => row.id))
+  const pinned = new Set([...new Set(pinnedIds)].filter(id => known.has(id)))
+  return { rows: [...rows.filter(row => pinned.has(row.id)), ...rows.filter(row => !pinned.has(row.id))], pinned }
+}
+
 export function formatUpdatedAt(timestamp: number, now = new Date()): string {
   const date = new Date(timestamp)
   if (!Number.isFinite(timestamp) || Number.isNaN(date.getTime())) return '日時不明'

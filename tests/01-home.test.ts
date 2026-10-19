@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { folderName, formatUpdatedAt, modelIcon, orderSessions, pinnedFirst, selectWorkspace, shortenHomePath, visibleSessions } from '../web/src/features/home/data.ts'
+import { folderName, formatUpdatedAt, modelIcon, orderSessions, pinnedFirst, pinnedFirstInOrder, selectWorkspace, shortenHomePath, visibleSessions } from '../web/src/features/home/data.ts'
 import { createHomePreferencesStore, parseHomePreferences } from '../web/src/features/home/preferences-store.ts'
 import type { SessionSummary, WorkspaceView } from '../web/src/dsh/services.ts'
 
@@ -64,6 +64,17 @@ test('session order keeps the workspace order or sorts by the newest update with
   assert.deepEqual(orderSessions(withUnknown, 'updated').map(row => row.id), ['c', 'a', 'b', 'infinite', 'unknown'])
 })
 
+test('updated order keeps archives in their recency slot and fronts only unarchived pins', () => {
+  const rows = [session('older', { updatedAt: 100 }), session('pinnedOld', { updatedAt: 200 }), session('archived', { updatedAt: 500 }), session('pinnedNew', { updatedAt: 600 }), session('archivedPinned', { updatedAt: 700 })]
+  const archived = new Set(['archived', 'archivedPinned'])
+  const ordered = orderSessions(rows, 'updated')
+  assert.deepEqual(ordered.map(row => row.id), ['archivedPinned', 'pinnedNew', 'archived', 'pinnedOld', 'older'])
+  const { rows: placed, pinned } = pinnedFirstInOrder(ordered, ['pinnedOld', 'pinnedNew', 'archivedPinned'].filter(id => !archived.has(id)))
+  assert.deepEqual(placed.map(row => row.id), ['pinnedNew', 'pinnedOld', 'archivedPinned', 'archived', 'older'])
+  assert.deepEqual([...pinned].sort(), ['pinnedNew', 'pinnedOld'])
+  assert.deepEqual(pinnedFirst(orderSessions(rows, 'manual'), ['pinnedOld', 'pinnedNew']).rows.map(row => row.id), ['pinnedOld', 'pinnedNew', 'older', 'archived', 'archivedPinned'])
+})
+
 test('updated dates use the local calendar day and two-digit times and dates', () => {
   const now = new Date(2026, 8, 25, 15, 30)
   assert.equal(formatUpdatedAt(new Date(2026, 8, 25, 9, 5).getTime(), now), '09:05')
@@ -114,6 +125,13 @@ test('stored preferences accept only the supported values and tolerate damaged J
   for (const value of [null, 'broken', 'null', '[]', 'false', '{"workspaceId":12,"showSubagents":"true"}']) {
     assert.deepEqual(parseHomePreferences(value), { workspaceId: null, showSubagents: false, archivedFilter: 'default', orderBy: 'manual' })
   }
+})
+
+test('stored preferences from before both choices default the missing field', () => {
+  assert.deepEqual(parseHomePreferences('{"archivedFilter":"only"}'), { workspaceId: null, showSubagents: false, archivedFilter: 'only', orderBy: 'manual' })
+  assert.deepEqual(parseHomePreferences('{"orderBy":"updated"}'), { workspaceId: null, showSubagents: false, archivedFilter: 'default', orderBy: 'updated' })
+  assert.deepEqual(parseHomePreferences('{"workspaceId":"saved","showSubagents":true}'), { workspaceId: 'saved', showSubagents: true, archivedFilter: 'default', orderBy: 'manual' })
+  assert.deepEqual(parseHomePreferences(null), { workspaceId: null, showSubagents: false, archivedFilter: 'default', orderBy: 'manual' })
 })
 
 test('preferences persist both choices, reuse unchanged snapshots, and notify on changes only', () => {
