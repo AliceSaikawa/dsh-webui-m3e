@@ -66,9 +66,9 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Usage
 
-1. Sign in to the standard interface once (open the sign-in URL printed by `dsh web`).
-2. Open `http://<host>/m3e/`.
-3. On iPhone, choose "Add to Home Screen" from Safari's Share menu to open it like an app.
+Installation, signing in to the standard interface, and opening `http://<host>/m3e/` are covered in Quick Start.
+
+On iPhone, choose "Add to Home Screen" from Safari's Share menu to open it like an app. On a real device, only opening it in Safari has been confirmed; behavior as a Web app added to the Home Screen is not verified.
 
 ### Switching interfaces
 
@@ -120,7 +120,7 @@ For source builds, see the [development and distribution guide](docs/development
 - The UI text is Japanese only for now. The foundation for following DSH's language setting exists ([docs/design/11-i18n.md](docs/design/11-i18n.md)), but the English and Chinese translations are not added yet.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
 - Real-device testing has been done only on an iPhone 17 Pro Max with Safari. Other devices and browsers are not tested.
-- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope.
+- UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Behavior with a real LLM is not verified. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope.
 - See [docs/development.md](docs/development.md) for architecture, development instructions and verification records.
 
 ## License

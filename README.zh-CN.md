@@ -66,9 +66,9 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 使用方法
 
-1. 先登录一次标准界面（打开 `dsh web` 输出的登录 URL）。
-2. 打开 `http://<host>/m3e/`。
-3. 在 iPhone 上，可以通过 Safari 的分享菜单选择「添加到主屏幕」，像应用一样打开。
+安装、登录标准界面以及打开 `http://<host>/m3e/` 的步骤见「快速开始」。
+
+在 iPhone 上，可以通过 Safari 的分享菜单选择「添加到主屏幕」，像应用一样打开。实机上仅验证了在 Safari 中打开的情况，作为添加到主屏幕的 Web 应用运行时的表现尚未验证。
 
 ### 切换界面
 
@@ -120,7 +120,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 - 界面文字目前仅提供日语。虽然已有跟随 DSH 语言设置的机制（[docs/design/11-i18n.md](docs/design/11-i18n.md)），但英语和中文的译文尚未加入。
 - 插件随附 DSH 的内部库（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`），因此可能无法在某些 DSH 版本上运行。
 - 实机验证仅在 iPhone 17 Pro Max 的 Safari 上进行。其他设备和浏览器尚未验证。
-- 界面测试主要使用模拟数据，与 DSH 的连接则通过隔离的真实 DSH 和模拟 LLM 验证。详细验证范围见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)。
+- 界面测试主要使用模拟数据，与 DSH 的连接则通过隔离的真实 DSH 和模拟 LLM 验证。尚未验证使用真实 LLM 时的表现。详细验证范围见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)。
 - 开发方法、工作原理和验证记录见 [docs/development.md](docs/development.md)。
 
 ## 许可证

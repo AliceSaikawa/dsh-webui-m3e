@@ -64,9 +64,9 @@ M3E は npm レジストリに公開していないため、名前だけの `add
 
 ## 使い方
 
-1. 標準画面で一度ログインします（`dsh web` が表示したログイン用の URL を開きます）。
-2. `http://<host>/m3e/` を開きます。
-3. iPhone では、Safari の共有メニューから「ホーム画面に追加」すると、アプリのように開けます。
+導入、標準画面へのログイン、`http://<host>/m3e/` を開くところまでは Quick Start のとおりです。
+
+iPhone では、Safari の共有メニューから「ホーム画面に追加」すると、アプリのように開けます。実機で確認したのは Safari で開いた場合だけで、ホーム画面に追加したアプリとしての動作は未確認です。
 
 ### 画面を切り替える
 
@@ -118,7 +118,7 @@ dsh plugin --profile web remove dsh-webui-m3e
 - 画面の文言は今のところ日本語だけです。言語は DSH の言語設定に従う土台（[docs/design/11-i18n.md](docs/design/11-i18n.md)）はありますが、英語と中国語の訳はまだ入っていません。
 - DSH の内部のライブラリ（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`）を同梱しているので、DSH の版によっては動かないことがあります。
 - 実機での確認は iPhone 17 Pro Max の Safari だけで行っています。ほかの端末・ブラウザは確認していません。
-- 画面の試験は主に偽のデータで行い、DSH とのつながりは隔離した実物の DSH と偽の LLM で確かめています。確認の範囲は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
+- 画面の試験は主に偽のデータで行い、DSH とのつながりは隔離した実物の DSH と偽の LLM で確かめています。本物の LLM での動作は未確認です。確認の範囲は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
 - 開発の方法と仕組み、検証の記録は [docs/development.md](docs/development.md) にあります。
 
 ## ライセンス
