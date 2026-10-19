@@ -21,6 +21,32 @@ export const PINNED_DSH_LIBRARIES = {
   '@deepseek-ai/dsh-client-store': '0.2.0-rc.2',
 } as const
 
+/**
+ * Name of the `<meta>` the Host half adds to the index. Its content is the
+ * page entry script (`/m3e/assets/index-<hash>.js`) of the dist that Host half
+ * was built with.
+ */
+export const HOST_BUILD_META = 'dsh-webui-m3e-host'
+
+/**
+ * Whether the index was rendered by a Host half built with a different page.
+ *
+ * DSH serves the new `dist/` as soon as the plugin is replaced on disk, but
+ * keeps running the Host half it imported until it restarts. A 0.0.7 Host
+ * half in front of a 0.0.8 page leaves the stock bootstrap ahead of `<base>`,
+ * so the module loader fails before any version check; this tells that apart.
+ * @param hostEntry - content of the {@link HOST_BUILD_META} meta; missing on Host halves older than this check.
+ * @param pageEntryUrl - `import.meta.url` of the running page entry.
+ */
+export function isStaleHostHalf(hostEntry: string | null | undefined, pageEntryUrl: string): boolean {
+  if (!hostEntry) return true
+  try {
+    return new URL(pageEntryUrl).pathname !== hostEntry
+  } catch {
+    return true
+  }
+}
+
 /** How a failed boot is explained; see describeBootFailure. */
 export type BootFailureKind = 'not-host' | 'incompatible' | 'unknown'
 

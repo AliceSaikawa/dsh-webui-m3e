@@ -5,11 +5,12 @@ import { bootDsh } from './dsh/boot.ts'
 import { initializeInteractions } from './dsh/interactions.ts'
 import type { InteractionContext } from './dsh/interactions-store.ts'
 import { initializeRouter } from './app/router.ts'
-import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
+import { classifyBootFailure, HOST_BUILD_META, isStaleHostHalf, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
 
 const element = document.getElementById('app')!
 
-const context = import.meta.env.DEV && new URLSearchParams(location.search).has('mock')
+const mock = import.meta.env.DEV && new URLSearchParams(location.search).has('mock')
+const context = mock
   ? import('./dsh/mock/index.ts').then(({ createMockContext }) => createMockContext())
   : bootDsh()
 
@@ -27,8 +28,14 @@ context.then(
   (error: unknown) => {
     console.error(error)
     const kind = classifyBootFailure(error instanceof Error ? error.message : String(error))
+    // After the plugin is replaced, DSH serves the new page at once but keeps
+    // the old Host half until it restarts; that pairing fails to boot.
+    const staleHost = kind !== 'not-host' && !mock &&
+      isStaleHostHalf(document.querySelector<HTMLMetaElement>(`meta[name="${HOST_BUILD_META}"]`)?.content, import.meta.url)
     element.textContent = kind === 'not-host'
       ? '起動に失敗しました。このページは DSH の Host が描いたページではありません。開発用の画面は ?mock を付けて開いてください。'
+      : staleHost
+      ? '起動に失敗しました。M3E を入れ替えたあと、DSH がまだ再起動されていない可能性があります。DSH を再起動してから読み直してください。'
       : kind === 'incompatible'
       ? `起動に失敗しました。この DSH の版に M3E の画面が対応していない可能性があります。M3E の画面は DSH ${SUPPORTED_DSH_VERSION} で確かめています。`
       : '起動に失敗しました。ページを読み直してください。'

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { classifyBootFailure, PINNED_DSH_LIBRARIES, SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
+import { classifyBootFailure, isStaleHostHalf, PINNED_DSH_LIBRARIES, SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { devDependencies: Record<string, string> }
 
@@ -26,6 +26,17 @@ test('boot failures at the DSH boot contract are reported as a possible version 
   assert.equal(classifyBootFailure('client-modules: boot manifest entries must be an array'), 'incompatible')
   assert.equal(classifyBootFailure('client-modules: no registered factory for @deepseek-ai/dsh-api-remotes'), 'incompatible')
   assert.equal(classifyBootFailure('webui-m3e: the DSH client lacks sessions.open, sessions.clear'), 'incompatible')
+})
+
+test('a page served by a Host half built with another page is recognized as a Host that was not restarted', () => {
+  const page = 'https://host.example/m3e/assets/index-smj_VV-h.js'
+  assert.equal(isStaleHostHalf('/m3e/assets/index-smj_VV-h.js', page), false)
+  // Observed on a live Host that kept the 0.0.7 Host half after a 0.0.8 install: no marker at all.
+  assert.equal(isStaleHostHalf(undefined, page), true)
+  assert.equal(isStaleHostHalf(null, page), true)
+  assert.equal(isStaleHostHalf('', page), true)
+  assert.equal(isStaleHostHalf('/m3e/assets/index-Old00000.js', page), true)
+  assert.equal(isStaleHostHalf('/m3e/assets/index-smj_VV-h.js', 'not a url'), true)
 })
 
 test('boot failures that may be transient are not blamed on the DSH release', () => {

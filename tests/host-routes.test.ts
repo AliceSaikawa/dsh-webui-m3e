@@ -6,6 +6,7 @@ import { sep } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads } from '../src/host/index.ts'
+import { HOST_BUILD_META } from '../src/shared/dsh-compat.ts'
 import { uiChoiceScript } from '../src/shared/ui-choice.ts'
 
 const INDEX_PATHS = [
@@ -182,4 +183,18 @@ test('M3E moves its single base before the injected queue and bootstrap, resolvi
   // The shared tap remains independent of M3E's base/preload postprocessing.
   const stock = '<head><base href="./"><link rel="preload" as="script" href="plugins/??stock/client.js&amp;rev=a"></head>'
   assert.equal(injectUiChoice(stock), `<head><script>${uiChoiceScript()}</script>${stock.slice(6)}`)
+})
+
+test('the index names the page entry this Host half was built with, once, right after the base', () => {
+  const boot = '<script src="plugins/??modules/client.js&amp;rev=b"></script>'
+  const html = `<head>${boot}<base href="/" /></head>`
+  const entry = '/m3e/assets/index-AbCd_1-2.js'
+  const prepared = prepareM3eIndex(html, entry)
+  assert.equal(prepared, `<head><base href="/"><meta name="${HOST_BUILD_META}" content="${entry}">${boot}</head>`)
+  assert.equal(prepareM3eIndex(prepared, entry), prepared)
+  // A second pass by another build replaces the marker instead of adding one.
+  assert.equal(prepareM3eIndex(prepared, '/m3e/assets/index-other000.js').match(/dsh-webui-m3e-host/g)?.length, 1)
+  assert.equal(prepareM3eIndex(html, '/m3e/a"b<c>.js'), `<head><base href="/"><meta name="${HOST_BUILD_META}" content="/m3e/a&quot;b&lt;c&gt;.js">${boot}</head>`)
+  // Run from source (not built), the Host half claims no build at all.
+  assert.equal(prepareM3eIndex(html, undefined), `<head><base href="/">${boot}</head>`)
 })

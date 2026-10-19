@@ -14,6 +14,13 @@ import { build } from 'esbuild'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const { name: packageId } = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as { name: string }
 
+// The Host half records which page it was built with (src/host/index.ts
+// DIST_ENTRY), so a page served by a Host that was not restarted after an
+// update can say so. `pnpm build` runs Vite first, so dist/ is this build's.
+const distIndex = await readFile(resolve(root, 'dist/index.html'), 'utf8')
+const distEntry = /<script type="module"[^>]*\ssrc="(\/m3e\/assets\/[^"]+\.js)"/.exec(distIndex)?.[1]
+if (distEntry === undefined) throw new Error('dist/index.html has no /m3e/assets entry script; run vite build first')
+
 const hostOut = resolve(root, 'lib/index.js')
 await build({
   entryPoints: [resolve(root, 'src/host/index.ts')],
@@ -23,12 +30,16 @@ await build({
   platform: 'node',
   target: 'node22',
   external: ['@deepseek-ai/*'],
+  define: { __M3E_DIST_ENTRY__: JSON.stringify(distEntry) },
   legalComments: 'none',
   logLevel: 'warning',
 })
 const host = await readFile(hostOut, 'utf8')
 if (!/\bexport\s*\{[^}]*\bapply\b/.test(host)) {
   throw new Error('lib/index.js does not export apply; the Loader cannot mount the row')
+}
+if (!host.includes(JSON.stringify(distEntry))) {
+  throw new Error('lib/index.js does not carry the dist entry it was built with')
 }
 
 const clientOut = resolve(root, 'lib/client.js')

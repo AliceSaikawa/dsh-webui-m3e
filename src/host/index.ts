@@ -15,6 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import { HOST_BUILD_META } from '../shared/dsh-compat.ts'
 import { uiChoiceScript } from '../shared/ui-choice.ts'
 
 export const name = 'webui-m3e'
@@ -51,17 +52,36 @@ export function stripApplicationPreloads(html: string): string {
   return html.replace(APPLICATION_PRELOAD, '')
 }
 
+declare const __M3E_DIST_ENTRY__: string | undefined
+
+/**
+ * The page entry script of the dist this Host half was built with, fixed at
+ * build time by scripts/build-plugin.ts. DSH keeps an imported Host half until
+ * it restarts, while `dist/` is read from disk on every request; the page
+ * compares this value to its own entry to explain that mismatch.
+ */
+export const DIST_ENTRY: string | undefined = typeof __M3E_DIST_ENTRY__ === 'string' ? __M3E_DIST_ENTRY__ : undefined
+
+const BUILD_META = new RegExp(`<meta name="${HOST_BUILD_META}"[^>]*>`, 'g')
+
 /**
  * DSH 0.2 resolves plugin bundles, RPC, streams and upload workers against the
  * document base. Keep its native transports by resolving them at the Host root.
  * renderIndex prepends the bootstrap, so move our template's base ahead of it.
  * This postprocessing belongs only to /m3e; tapIndex also runs on the stock UI.
+ * @param html - index body after the webserver's render.
+ * @param distEntry - entry script of the dist this Host half was built with; omitted from the page when unknown.
  */
-export function prepareM3eIndex(html: string): string {
+export function prepareM3eIndex(html: string, distEntry: string | undefined = DIST_ENTRY): string {
+  const marker = distEntry === undefined ? '' : `<meta name="${HOST_BUILD_META}" content="${escapeAttribute(distEntry)}">`
   return stripApplicationPreloads(html)
     .replace(/<base href="\/"\s*\/?>/g, '')
-    .replace(/<head(?:\s[^>]*)?>/i, (open) => `${open}<base href="/">`)
+    .replace(BUILD_META, '')
+    .replace(/<head(?:\s[^>]*)?>/i, (open) => `${open}<base href="/">${marker}`)
 }
+
+const escapeAttribute = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /**
  * Put the UI choice script first in the head, so it runs before any stock
