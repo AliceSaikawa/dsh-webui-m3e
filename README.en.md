@@ -19,7 +19,7 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 ## Quick Start
 
 > [!IMPORTANT]
-> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. **No release supports DSH 0.2.1-rc.2 yet** (support arrives with the next release). 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
+> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. Install DSH 0.2.0-rc.2 with `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` and check it with `dsh --version`. **No release supports DSH 0.2.1-rc.2 yet** (this repository's main supports 0.2.1-rc.2, and the next release will distribute it). 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
 
 1. Run this on the machine running DSH:
 
@@ -31,34 +31,40 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 
 2. Open the sign-in URL printed by `dsh web` to sign in to the standard interface.
 
-3. Open `http://<host>/m3e/` on the same address. If it returns 404, restart that profile's Host.
+3. Open `http://<host>/m3e/` on the same address. If it returns 404, restart that profile's Host. Restarting the Host changes the sign-in URL, so repeat from step 2.
 
 M3E is not published to the npm registry, so installing by name with `add dsh-webui-m3e` is unavailable. M3E has no additional runtime packages to install, and you do not need its source, a local build, or its development dependencies. Always restart the Host after an update or rollback, because that switches the Host code between versions.
 
 ## Features
 
 - **Conversations:** Read AI responses, tool results, and reasoning at phone width. You can also switch to a chronological trace view.
+- **Session list:** Pin conversations to the top of the list. Pins are shared across all workspaces, and changes made in the standard interface or on other devices are reflected too.
 - **Responses:** Approve tools, answer AI questions, and review plans from a bottom sheet, whatever screen you are on.
 - **Inbox:** See conversations that need a response together with completed conversations.
 - **Composer:** Attach images, reference files with `@`, get command suggestions with `/`, and switch models, reasoning effort, permission presets, and plan mode.
 - **Session tools:** Open stats, files, jobs, subagents, and goals from the conversation menu.
 - **Search:** Search conversations.
-- **Settings:** Manage DSH settings, API keys, custom providers, and this device's appearance (light or dark).
+- **Settings:** Manage DSH settings, API keys, and custom providers.
+- **Appearance:** Besides light and dark, choose the base color on each device from six presets (purple, blue, teal, green, orange, red) or any color. The chosen color is applied to the whole interface.
+- **Plugins:** From Settings, check the state of installed plugins in a read-only list.
 - **Home screen:** On iPhone, choose "Add to Home Screen" in Safari to open it like an app.
 
 The existing DSH interface remains available. You can choose which interface to use on each device.
 
 ## Requirements
 
-- DeepSeek Harness **0.2.1-rc.2**
-  - Support for 0.2.0-rc.2 and the 0.1.5 series has been removed. If you stay on 0.2.0-rc.2, the distributed release is 0.0.8. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
-  - Install DSH itself with an explicit version. The npm `latest` tag is still 0.2.0-rc.2, so installing without a version gets a release this plugin does not support (do not use `@next`: the version it points to changes over time).
+- DeepSeek Harness **0.2.0-rc.2** (when using the published 0.0.8)
+  - Use 0.0.8 with this version. Install it with `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` and check it with `dsh --version`.
+  - See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
+- DeepSeek Harness **0.2.1-rc.2** (this repository's main; distributed with the next release)
+  - main supports this version. No release supports it yet. Support for the 0.1.5 series has been removed.
+  - Install DSH itself with an explicit version. The npm `latest` tag is still 0.2.0-rc.2, so installing without a version gets a release main does not support (do not use `@next`: the version it points to changes over time).
 
     ```bash
     npm i -g @deepseek-ai/dsh@0.2.1-rc.2
     ```
 
-    Check your installed version with `dsh --version`. For DSH 0.2.0-rc.2, run `npm i -g @deepseek-ai/dsh@0.2.0-rc.2`.
+    Check your installed version with `dsh --version`.
 - Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (used by the regular npm-installed DSH CLI).
   - DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
 - The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
@@ -77,6 +83,8 @@ Choose which interface to use on this device with any of the following options. 
 - In the standard interface: `設定 → 一般 → この端末で M3E の画面を使う` (Settings → General → Use the M3E interface on this device)
 - In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
 - Add `?ui=m3e` or `?ui=classic` to the URL
+
+On a device where you chose M3E, opening `/` on a phone switches to M3E. On a computer (where the main input is a mouse or trackpad), `/` stays on the standard interface; open `/m3e/` directly to use M3E. On devices such as Windows Firefox with a touchscreen, the main input may not be detected as a computer, so `/` may still move to `/m3e/` as on a phone. If you remove `/m3e/` from the URL in a tab that was showing M3E and open `/`, that tab stays on the standard interface. A newly opened tab follows the setting on a phone.
 
 If either interface fails to load, open `http://<host>/?ui=classic` to return to the standard interface.
 
@@ -111,6 +119,7 @@ If something fails, check the following.
 - A download returning 404: check the tag, asset filename and URL in the release list.
 - Missing pnpm: check PATH.
 - A missing UI: check the profile and restart the Host.
+- Opening `/m3e/` without the cookie shows a page that asks you to reopen it from the address bar. Follow that instruction.
 - Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
