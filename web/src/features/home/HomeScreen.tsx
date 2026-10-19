@@ -13,7 +13,7 @@ import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
-import { selectWorkspace, visibleSessions } from './data.ts'
+import { selectWorkspace, pinnedFirst, visibleSessions } from './data.ts'
 import { useHomePreferences, setCurrentWorkspace, setShowSubagents } from './preferences.ts'
 import { attempt, renameWorkspace, sessionActions, workspaceActions } from './actions.tsx'
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
@@ -32,7 +32,11 @@ export function HomeScreen() {
   const snapshot = useSnapshot(dsh.workspaces.list)
   const preferences = useHomePreferences()
   const workspace = selectWorkspace(snapshot.items, preferences.workspaceId)
-  const rows = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents)
+  const visible = visibleSessions(workspace, list.byId, snapshot.archivedSessionIds, preferences.showSubagents)
+  const { rows, pinned } = pinnedFirst(visible, snapshot.pinnedSessionIds)
+  const unpinned = rows.filter(row => !pinned.has(row.id))
+  const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))
+  const sortCaption = pinned.size ? 'つまみをドラッグして順番を変更（ピン留めした行は固定した順に並びます）' : 'つまみをドラッグして順番を変更'
   const { connected } = useConnection()
   const directory = useDirectoryAvailability(dsh.remote, connected)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -147,13 +151,16 @@ export function HomeScreen() {
             {directory.canAdd && <M3eButton variant="filled" disabled={!connected} onClick={() => navigate('/workspaces/add')}>ワークスペースを追加</M3eButton>}
             {!directory.canAdd && directory.ready && <p className="muted">フォルダの選択を利用できません。</p>}</div>
           : rows.length === 0 ? <div className="home-empty"><Icon name="chat_bubble" /><h2>まだセッションがありません</h2><p>右下の ＋ から始められます</p></div>
-          : <><p className="home-list-caption">{mode === 'sort' ? 'つまみをドラッグして順番を変更' : mode === 'select' ? 'アーカイブするセッションを選択' : `${rows.length} 件のセッション`}</p>
-            <ul className="home-sessions" aria-label="セッション一覧">{rows.map((row, index) => <SessionRow key={row.id} row={row} mode={mode}
-              selected={selected.has(row.id)} disabled={busy} canMutate={connected} first={index === 0} last={index === rows.length - 1}
-              onToggle={() => { if (canEditHomeSession(row)) setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) }}
-              onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) })} onArchive={() => { void archive([row.id]) }}
-              onMove={before => { void move(row.id, before) }} onMoveUp={() => { void move(row.id, rows[index - 1]?.id) }}
-              onMoveDown={() => { void move(row.id, rows[index + 2]?.id) }} />)}</ul></>}
+          : <><p className="home-list-caption">{mode === 'sort' ? sortCaption : mode === 'select' ? 'アーカイブするセッションを選択' : `${rows.length} 件のセッション`}</p>
+            <ul className="home-sessions" aria-label="セッション一覧">{rows.map(row => {
+              const position = unpinnedIndex.get(row.id) ?? -1
+              return <SessionRow key={row.id} row={row} mode={mode} pinned={pinned.has(row.id)}
+                selected={selected.has(row.id)} disabled={busy} canMutate={connected} first={position === 0} last={position === unpinned.length - 1}
+                onToggle={() => { if (canEditHomeSession(row)) setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) }}
+                onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) }, pinned.has(row.id))} onArchive={() => { void archive([row.id]) }}
+                onMove={before => { void move(row.id, before) }} onMoveUp={() => { void move(row.id, unpinned[position - 1]?.id) }}
+                onMoveDown={() => { void move(row.id, unpinned[position + 2]?.id) }} />
+            })}</ul></>}
       </div>
     </TabScaffold>
     <M3eMenu ref={menu} aria-label="一覧のメニュー" className="home-menu" positionX="before">

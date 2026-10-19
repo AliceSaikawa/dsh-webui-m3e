@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import test from 'node:test'
+import { SUPPORTED_DSH_VERSION } from '../src/shared/dsh-compat.ts'
 import { buildChatRows } from '../web/src/features/chat/model.ts'
 import { createSessionJournal, foldSessionWindow, streamBlocksOf, type AssistantStream } from '../web/src/dsh/session-journal.ts'
 import { observable } from '../web/src/dsh/mock/observable.ts'
@@ -96,13 +97,13 @@ test('増分更新と再接続の両方で、開始済みツールの後着デ�
   assert.deepEqual(journal.getSnapshot().stream, incremental)
 })
 
-const nativeRoot = ['../tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/',
-  '../../dsh-webui-m3e/tmp/dsh-integration/dsh-0.2.0-rc.2/node_modules/@deepseek-ai/']
+const nativeRoot = [`../tmp/dsh-integration/dsh-${SUPPORTED_DSH_VERSION}/node_modules/@deepseek-ai/`,
+  `../../dsh-webui-m3e/tmp/dsh-integration/dsh-${SUPPORTED_DSH_VERSION}/node_modules/@deepseek-ai/`]
   .map(path => new URL(path, import.meta.url))
   .find(root => existsSync(new URL('dsh-llm/lib/types/assembler.js', root)))
 
 test('DSH rc.2 の BlockAssembler と生成中・確定後の順序が一致する', {
-  skip: nativeRoot ? false : 'DSH 0.2.0-rc.2 の公開配布コードが未配置',
+  skip: nativeRoot ? false : `DSH ${SUPPORTED_DSH_VERSION} の公開配布コードが未配置`,
 }, async () => {
   const { BlockAssembler } = await import(new URL('dsh-llm/lib/types/assembler.js', nativeRoot).href)
   const assembler = new BlockAssembler()

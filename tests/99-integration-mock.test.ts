@@ -56,7 +56,7 @@ function scenarioNames(): string[] {
 }
 
 test('全機能の偽データを一緒に読み込んでも、名前空間・ID・状態名の重複の警告が出ない', () => {
-  assert.equal(features.length, 10)
+  assert.equal(features.length, 11)
   const { ctx, messages } = build()
   ctx.dispose()
   assert.deepEqual(messages, [])

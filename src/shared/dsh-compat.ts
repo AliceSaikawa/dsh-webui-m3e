@@ -9,16 +9,17 @@
  */
 
 /** Supported DSH release, including the migrated boot and Session reference contracts. */
-export const SUPPORTED_DSH_VERSION = '0.2.0-rc.2'
+export const SUPPORTED_DSH_VERSION = '0.2.1-rc.2'
 
 /**
  * Shared libraries bundled into the M3E page and the exact versions the
  * supported release ships. A mismatch can load, then fail inside a plugin.
  */
 export const PINNED_DSH_LIBRARIES = {
-  '@deepseek-ai/cordis': '4.0.4',
-  '@deepseek-ai/cordis-plugin-loader': '1.0.5',
-  '@deepseek-ai/dsh-client-store': '0.2.0-rc.2',
+  '@deepseek-ai/cordis': '4.0.5',
+  '@deepseek-ai/cordis-plugin-loader': '1.0.6',
+  '@deepseek-ai/dsh-client-store': '0.2.1-rc.2',
+  zod: '4.4.3',
 } as const
 
 /** How a failed boot is explained; see describeBootFailure. */
@@ -33,6 +34,8 @@ export type BootFailureKind = 'not-host' | 'incompatible' | 'unknown'
 export function classifyBootFailure(message: string): BootFailureKind {
   if (message.includes('no boot graph')) return 'not-host'
   // Contract-shape errors only; a bundle that fails to download stays unknown.
-  if (/webui-m3e: (the Host boot graph has no |plugins did not activate|the DSH client lacks )|client-modules: (HTML did not preload|boot manifest|no registered factory|cannot resolve)/.test(message)) return 'incompatible'
+  // A module table miss is a build-time externals drift (e.g. a shared library
+  // the transport plugins require but the page does not seed).
+  if (/webui-m3e: (the Host boot graph has no |plugins did not activate|the DSH client lacks )|client-modules: (HTML did not preload|boot manifest|no registered factory|cannot resolve)|require\("[^"]*"\) missed the module table/.test(message)) return 'incompatible'
   return 'unknown'
 }

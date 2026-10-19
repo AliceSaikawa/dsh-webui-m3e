@@ -8,7 +8,7 @@ async function expose(page: Page) {
     await route.fulfill({ response, body: body.replace(/\breturn ctx;?/, 'globalThis.__permissionReview = ctx; return ctx;') })
   })
   await visit(page, '/s/readme-review')
-  await expect(page.locator('.composer-permission-label')).toHaveText('ワークスペース書込')
+  await expect(page.locator('.composer-permission')).toHaveAttribute('aria-label', '権限：ワークスペース書込')
 }
 
 test('FR1 権限の再取得中も移行前と同じ候補・説明・選択印を表示し、失敗とは扱わない', async ({ page }) => {
@@ -22,7 +22,7 @@ test('FR1 権限の再取得中も移行前と同じ候補・説明・選択印�
     return catalog.value.options.filter((option: any) => option.value !== 'custom')
       .map((option: any) => ({ name: option.name, description: option.description ?? '', selected: String(option.value === 'workspace-write') }))
   })
-  await button(page, 'ワークスペース書込').click()
+  await button(page, '権限：ワークスペース書込').click()
   await expect.poll(() => page.evaluate(() => typeof (window as any).__finishPermissionRead)).toBe('function')
   const sheet = page.locator('.composer-sheet').filter({ has: page.getByRole('heading', { name: '権限の選び直し' }) })
   // 413a857 の PermissionSheet は h2、候補の button、操作失敗時の alert だけ。
@@ -49,7 +49,7 @@ test('FR1 権限の取得失敗は既存のエラー欄と日本語の案内へ�
       ok: false, error: { code: 'gateway/internal', message: 'injected catalog failure', details: {} },
     })
   })
-  await button(page, 'ワークスペース書込').click()
+  await button(page, '権限：ワークスペース書込').click()
   const sheet = page.locator('.composer-sheet')
   await expect(sheet.getByRole('alert')).toHaveText('サーバーでエラーが発生しました。しばらく待ってから、もう一度お試しください。')
   await expect(sheet.getByRole('status')).toHaveCount(0)

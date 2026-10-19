@@ -1,4 +1,6 @@
 import type { AskUserQuestionAnswer, AskUserQuestionAnswerItem, AskUserQuestionItem } from '../../dsh/interactions-store.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { interactionMessages, type InteractionText } from './messages.ts'
 
 export interface QuestionDraft { selected: string[]; custom: string }
 
@@ -29,8 +31,8 @@ export function buildQuestionAnswers(items: readonly AskUserQuestionItem[], draf
   return { answers: items.map(item => buildQuestionAnswer(item, questionDraft(drafts, item.id))) }
 }
 
-export function buildPlanApproval(item: AskUserQuestionItem): AskUserQuestionAnswerItem {
-  if (item.intent?.kind !== 'plan-review' || !item.intent.approve.trim()) throw new Error('プランの承認の選択肢がありません。')
+export function buildPlanApproval(item: AskUserQuestionItem, text: InteractionText = messagesOf(interactionMessages, 'ja')): AskUserQuestionAnswerItem {
+  if (item.intent?.kind !== 'plan-review' || !item.intent.approve.trim()) throw new Error(text.missingPlanChoice)
   return { id: item.id, selected: [item.intent.approve] }
 }
 

@@ -2,6 +2,11 @@ import { isPlanReview, type PendingInteraction } from '../../dsh/interactions-st
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
 import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { M3eSessionList } from '../../dsh/completion-status.ts'
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { inboxMessages } from './messages.ts'
+
+/** The texts this feature shows. Tests and callers may pass them explicitly. */
+export type InboxMessages = Translation<typeof inboxMessages.ja>
 
 interface InboxRow {
   key: string
@@ -34,13 +39,14 @@ function workspaceLoading(workspaces: WorkspaceSnapshot): boolean {
 }
 
 /** Keep loading/error decisions testable without rendering React components. */
-export function inboxStatus(rows: InboxRows, list: SessionListState, workspaces: WorkspaceSnapshot) {
-  const loadingMessage = list.phase === 'pending' ? '対応待ちを読み込んでいます'
-    : workspaceLoading(workspaces) ? 'ワークスペースを読み込んでいます' : null
+export function inboxStatus(rows: InboxRows, list: SessionListState, workspaces: WorkspaceSnapshot,
+  text: InboxMessages = messagesOf(inboxMessages, 'ja')) {
+  const loadingMessage = list.phase === 'pending' ? text.loadingInbox
+    : workspaceLoading(workspaces) ? text.loadingWorkspaces : null
   const workspaceError = !workspaceFailed(workspaces) ? null
     : workspaces.items.length > 0
-      ? 'ワークスペース一覧を取得できませんでした。所属は前回取得した情報です。'
-      : 'ワークスペース一覧を取得できませんでした。所属を確認できません。'
+      ? text.workspaceErrorKnown
+      : text.workspaceErrorUnknown
   return {
     loadingMessage,
     workspaceError,
@@ -49,24 +55,26 @@ export function inboxStatus(rows: InboxRows, list: SessionListState, workspaces:
 }
 
 /** The controller's queue is already in arrival order, including deferred requests. */
-export function describePending(pending: PendingInteraction): Pick<InboxRow, 'icon' | 'description'> {
+export function describePending(pending: PendingInteraction,
+  text: InboxMessages = messagesOf(inboxMessages, 'ja')): Pick<InboxRow, 'icon' | 'description'> {
   if (pending.kind === 'approval') {
-    return { icon: 'terminal', description: `ツールの承認：${pending.toolName} を実行しようとしています` }
+    return { icon: 'terminal', description: text.approvalDescription(pending.toolName) }
   }
-  const firstQuestion = pending.items[0]?.question.trim() || '質問の内容を確認してください'
+  const firstQuestion = pending.items[0]?.question.trim() || text.questionFallback
   if (isPlanReview(pending)) {
-    return { icon: 'checklist', description: 'プランの確認：承認するまで作業を始めません' }
+    return { icon: 'checklist', description: text.planReviewDescription }
   }
-  return { icon: 'help', description: `質問：${firstQuestion}` }
+  return { icon: 'help', description: text.questionDescription(firstQuestion) }
 }
 
-export function relativeTime(updatedAt: number, now: number): string {
-  if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return '時刻不明'
+export function relativeTime(updatedAt: number, now: number,
+  text: InboxMessages = messagesOf(inboxMessages, 'ja')): string {
+  if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return text.timeUnknown
   const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000))
-  if (seconds < 60) return 'たった今'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分前`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 時間前`
-  return `${Math.floor(seconds / 86400)} 日前`
+  if (seconds < 60) return text.timeNow
+  if (seconds < 3600) return text.minutesAgo(Math.floor(seconds / 60))
+  if (seconds < 86400) return text.hoursAgo(Math.floor(seconds / 3600))
+  return text.daysAgo(Math.floor(seconds / 86400))
 }
 
 /** Archived sessions leave the completed list; pending requests still need an answer. */
@@ -91,42 +99,43 @@ export function buildInboxRows(
   list: M3eSessionList,
   workspaces: WorkspaceSnapshot,
   now: number,
+  text: InboxMessages = messagesOf(inboxMessages, 'ja'),
 ): InboxRows {
   const namesBySession = new Map<string, string>()
   for (const workspace of workspaces.items) {
     for (const id of workspace.sessionIds) {
-      if (!namesBySession.has(id)) namesBySession.set(id, workspace.title.trim() || '名前のないワークスペース')
+      if (!namesBySession.has(id)) namesBySession.set(id, workspace.title.trim() || text.untitledWorkspace)
     }
   }
   const identity = (sessionId: string) => {
     const session = list.byId[sessionId]
     const workspace = workspaces.items.find(item => item.path === session?.cwd)
-    const knownName = namesBySession.get(sessionId) ?? (workspace ? workspace.title.trim() || '名前のないワークスペース' : undefined)
+    const knownName = namesBySession.get(sessionId) ?? (workspace ? workspace.title.trim() || text.untitledWorkspace : undefined)
     let workspaceName: string
     if (workspaceFailed(workspaces)) {
-      workspaceName = knownName ? `${knownName}（更新未確認）` : 'ワークスペースを確認できません'
+      workspaceName = knownName ? text.workspaceUnverified(knownName) : text.workspaceUnknown
     } else if (workspaceLoading(workspaces)) {
-      workspaceName = knownName ? `${knownName}（更新中）` : 'ワークスペースを読み込み中'
+      workspaceName = knownName ? text.workspaceRefreshing(knownName) : text.workspaceLoading
     } else {
-      workspaceName = knownName ?? (list.phase === 'pending' ? 'ワークスペースを読み込み中'
-        : !session ? 'ワークスペースを確認できません' : 'ワークスペース未登録')
+      workspaceName = knownName ?? (list.phase === 'pending' ? text.workspaceLoading
+        : !session ? text.workspaceUnknown : text.workspaceUnregistered)
     }
     return {
       sessionId,
-      title: session?.displayTitle.trim() || (list.phase === 'pending' ? 'セッションを読み込み中'
-        : !session ? 'セッション情報を取得できません' : '題名のないセッション'),
+      title: session?.displayTitle.trim() || (list.phase === 'pending' ? text.sessionLoading
+        : !session ? text.sessionUnknown : text.untitledSession),
       workspaceName,
     }
   }
   return {
-    pending: pending.map(item => ({ key: item.key, ...identity(item.sessionId), ...describePending(item), pending: item })),
+    pending: pending.map(item => ({ key: item.key, ...identity(item.sessionId), ...describePending(item, text), pending: item })),
     completed: completedSessions(list, workspaces.archivedSessionIds)
       .sort((a, b) => (Number.isFinite(b.updatedAt) ? b.updatedAt : 0) - (Number.isFinite(a.updatedAt) ? a.updatedAt : 0))
       .map(session => ({
         key: session.id,
         ...identity(session.id),
         icon: 'done_all',
-        description: `完了 ・ ${relativeTime(session.updatedAt, now)}`,
+        description: text.completedDescription(relativeTime(session.updatedAt, now, text)),
         updatedAt: session.updatedAt,
       })),
   }
