@@ -276,3 +276,11 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - 修正前のブラウザ試験 2 件は、購読失敗の案内がないことと停止ボタンがないことで失敗した。修正後は新規 8 件、既存のジョブ購読解放・表示順の 2 件がすべて成功した。停止の連打・失敗再試行・すでに終了・遅い応答、一覧の失敗・再接続・メニュー表示を確認した。
 - `pnpm test` は 1111 件成功、skip 0（一覧 store の追加 4 件を含む）。`pnpm typecheck`、`pnpm build`、`pnpm check:pack`（19 ファイル）、`git diff --check` も成功。既存のビルド chunk サイズ警告は残る。
 - `e2e-dsh/jobs-kill.spec.ts` は隔離した DSH 0.2.0-rc.2、偽モデル、合成の `sleep 30` バックグラウンドジョブだけを使い、画面から停止して購読で「停止済み」になることを確認した（1 件成功）。個人の DSH・認証情報・外部の有料 API は使っていない。ブラウザの偽データ試験は専用 localhost:5194、実 DSH は隔離した動的ポートを使用し、動画は記録していない。
+
+
+### 2026-10-20：Issue #131、会話のゴール・ストリップ
+
+- `useGoalPresence` が activation 監視と pause/resume/complete/clear/edit を一手に持ち、`GoalScreen` と新規 `GoalStrip` が同じフックを使う。ストリップの表示可否は純関数 `goalStripVisible`（`goal-strip-model.ts`。host の typecheck が React を引かないよう presence 本体と分離し、`goal-presence.ts` から再エクスポート）。
+- 任意の `goals.edit` は `GoalsEditRemote` + `goalsEditOf` + `performGoalEdit`（`EditGoalRequest` は `{ objective?; maxGoalRounds? }`）。必須の `GoalsRemote` には載せない。偽データは edit を実装。
+- Composer は session 対象だけ `<GoalStrip sessionId />` を `.composer-queue` の上に載せる。子会話は表示のみ。ストリップ1行分の余白として composer/footer の高さ定数を軽く上げた（`composer.css`・`app/styles.css`）。
+- 単体：`tests/09-goal-presence.test.ts`、`09-operations` / `09-mock` の edit 試験。DSH・ブラウザ操作は未実施。
