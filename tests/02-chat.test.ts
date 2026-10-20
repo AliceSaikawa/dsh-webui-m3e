@@ -177,6 +177,32 @@ test('goal の command/run だけコマンド入力行を出し、done は通常
   ])
 })
 
+test('goal のコマンド入力は DSH が記録する args（先頭に空白が付く生の入力）でも「/goal 本文」になる', () => {
+  // dsh-commands records `args: line.slice("/goal".length)`, so the separator is part of the string
+  // and a typed line may end in whitespace; `args` is absent when the definition sets recordInput: false.
+  const rows = buildChatRows([
+    event(1, 'command/run', { name: 'goal', commandId: 'raw-1', args: ' 承認シートを作る', source: { kind: 'user' } }),
+    event(2, 'command/run', { name: 'goal', commandId: 'raw-2', args: ' 目標\n次の行  ', source: { kind: 'user' } }),
+    event(3, 'command/run', { name: 'goal', commandId: 'raw-3', args: '', source: { kind: 'user' } }),
+    event(4, 'command/run', { name: 'goal', commandId: 'raw-4', source: { kind: 'user' } }),
+    event(5, 'command/run', { name: 'goal', commandId: 'raw-5', args: '\t\n ', source: { kind: 'user' } }),
+    event(6, 'command/run', { name: 'goal', commandId: 'raw-6', args: 42, source: { kind: 'user' } }),
+  ])
+  assert.deepEqual(rows.map(row => row.kind === 'command-input' ? row.text : row.kind), [
+    '/goal 承認シートを作る', '/goal 目標\n次の行', '/goal', '/goal', '/goal', '/goal',
+  ])
+})
+
+test('goal 以外の command/run と、名前のない command/run はコマンド入力行にしない', () => {
+  const rows = buildChatRows([
+    event(1, 'command/run', { name: 'model', commandId: 'm-1', args: ' gpt', source: { kind: 'user' } }),
+    event(2, 'command/run', { commandId: 'no-name', args: ' x', source: { kind: 'user' } }),
+    event(3, 'command/run', { name: 'goals', commandId: 'near-miss', args: ' x', source: { kind: 'user' } }),
+    event(4, 'command/run', { name: 'GOAL', commandId: 'case', args: ' x', source: { kind: 'user' } }),
+  ])
+  assert.deepEqual(rows.filter(row => row.kind === 'command-input'), [])
+})
+
 test('command outcomes retain success, failure, and unknown states with Japanese presentation', () => {
   const rows = buildChatRows([
     event(1, 'command/run', { name: 'permission', commandId: 'known-command' }),
