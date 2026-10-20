@@ -50,6 +50,11 @@ export function SettingsScreen() {
             <span slot="supporting-text">{page.id === 'providers' ? providers : state.phase === 'loading' ? '読み込み中…' : state.error ? '設定を確認できません' : pageSummary(page.id, groups[page.id], state.permissionCatalog)}</span>
             <span slot="trailing"><Icon name="chevron_right" /></span>
           </M3eListAction>)}
+        <M3eListAction onClick={() => navigate('/settings/modes')}>
+          <span slot="leading"><Icon name="layers" /></span>モード
+          <span slot="supporting-text">新しい会話の既定を選ぶ</span>
+          <span slot="trailing"><Icon name="chevron_right" /></span>
+        </M3eListAction>
         <M3eListAction onClick={() => navigate('/settings/plugins')}>
           <span slot="leading"><Icon name="extension" /></span>プラグイン
           <span slot="supporting-text">入っているプラグインと状態</span>

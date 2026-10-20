@@ -1,0 +1,27 @@
+.modes-content { max-width: 760px; margin-inline: auto; padding: var(--app-space); padding-bottom: calc(var(--app-space) + env(safe-area-inset-bottom)); }
+.modes-intro, .modes-hint { margin: calc(var(--app-space) / 2) calc(var(--app-space) / 2) var(--app-space); font-size: 13px; line-height: 1.5; color: var(--md-sys-color-on-surface-variant); }
+.modes-notice { border-radius: calc(var(--app-radius) * 5 / 7); padding: var(--app-space); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.modes-notice[role="alert"], .modes-error { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.modes-notice m3e-button { margin-top: calc(var(--app-space) / 2); }
+.modes-saving { min-height: 20px; margin: 0 calc(var(--app-space) / 2); font-size: 13px; color: var(--md-sys-color-primary); }
+.modes-group { margin: calc(var(--app-space) / 2) 0 calc(var(--app-space) * 1.75); }
+.modes-group > h2 { margin: calc(var(--app-space) * .75) calc(var(--app-space) / 2); font-size: 15px; color: var(--md-sys-color-primary); }
+.modes-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--app-space) * .75); }
+.modes-card { display: flex; flex-direction: column; gap: calc(var(--app-space) / 2); min-width: 0; padding: var(--app-space); border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant); }
+.modes-card-current { box-shadow: inset 0 0 0 2px var(--md-sys-color-primary); }
+.modes-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: calc(var(--app-space) / 2); }
+.modes-card h3 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.modes-id { margin: 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.modes-badges { display: flex; flex-wrap: wrap; gap: calc(var(--app-space) / 2); }
+.modes-badge { padding: 2px 8px; border-radius: 999px; font-size: 12px; line-height: 1.4; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.modes-badge-default { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.modes-badge-broken { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.modes-description, .modes-broken { margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.modes-description { color: var(--md-sys-color-on-surface-variant); }
+.modes-broken { color: var(--md-sys-color-error); }
+.modes-actions { display: grid; grid-template-columns: 1fr; gap: calc(var(--app-space) / 2); }
+.modes-actions m3e-button { min-height: 44px; width: 100%; }
+.modes-yaml { margin: calc(var(--app-space) / 2) 0 0; max-height: 50vh; overflow: auto; white-space: pre; -webkit-overflow-scrolling: touch; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.45; padding: var(--app-space); border-radius: calc(var(--app-radius) / 2); background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface); }
+.modes-dialog-id { margin: calc(var(--app-space) / 4) 0 0; font-size: 12px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.modes-dialog-actions { display: flex; justify-content: flex-end; margin-top: var(--app-space); }
+.modes-dialog-actions m3e-button { min-height: 44px; }
