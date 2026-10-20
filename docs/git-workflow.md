@@ -38,7 +38,7 @@ squash では、ブランチのコミットは main に残りません。main �
 | `--force-with-lease` を付けない `git push --force` | 使わない |
 | PR の作成・本文の更新 | 依頼か許可があるときだけ |
 | main へのマージ | ユーザー、またはユーザーにマージを頼まれた担当だけ（PR の番号か範囲で示されたもの） |
-| マージを頼まれた PR のブランチへの、指摘の修正の push | 行ってよい（新しいコミットとして積み、force push はしない） |
+| マージを頼まれた PR のブランチへの、指摘の修正のコミットと push | 行ってよい（新しいコミットとして積み、force push はしない） |
 | `git reset --hard`、コミットしていない変更を捨てる操作 | 使わない |
 | マージ済みの自分のブランチと worktree の削除 | §9 の条件を満たせば行ってよい。満たさなければ確認する |
 
@@ -168,31 +168,46 @@ AI-Agent: <ハーネス> / <モデル>
 
 ## 7. マージ
 
-マージするのは、ユーザーか、ユーザーにマージを頼まれた担当だけです。頼み方は PR の番号でも、「レビュー待ちの PR」のような範囲でもかまいません。頼まれたら、次の 1〜6 を途中で確認を取らずに進めます。止めて報告するのは、このあとの「止めて報告すること」に当たるときだけです。
+マージするのは、ユーザーか、ユーザーにマージを頼まれた担当だけです。頼み方は PR の番号でも、「レビュー待ちの PR」のような範囲でもかまいません。頼まれたら、次の 1〜6 を途中で確認を取らずに進めます。止めて報告するのは、このあとの「止めて報告すること」に当たるときだけです。ただし、ユーザーがメッセージを先に見たいと言ったときは、5 の前にメッセージを見せて確認を取ります。
 
 1. CI（`all checks`）が通っていること。ただし、CI が通っただけで安全とは見なしません。
 2. PR ごとに、作った担当とは別の、独立したセッション（サブエージェントなど）でレビューします。blocking の指摘は、その PR のブランチに新しいコミットとして直し、レビューか再確認を受け直します。
-3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。
-4. main に残すコミットメッセージを §4 の形で書き、`tmp/pr-<番号>-commit.txt` に保存します。
+3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。他の担当が作った共有しているブランチ（§1）では、rebase ではなく main をマージで取り込みます（§5）。
+4. main に残すコミットメッセージを §4 の形で書きます。**`tmp/pr-<番号>-commit.txt` には本文だけ**（段落、`Closes` か `Refs`、トレーラ）を書き、**件名は書きません**。件名は 5 で `--subject` に渡します。ファイルにも書くと、件名が二重になります。
    - 件名は、PR のタイトルの末尾に ` (#<番号>)` を付けたものです。
    - 本文は、見出しも箇条書きも使わない 1〜3 段落の文章にします。使う人から見て何が変わったか、レビューで迷いそうな判断、確かめていない大事なことを書きます。ファイルの一覧、検証のログ、レビューの経緯は書きません。どれも PR に残ります。
-   - 本文のあとに、PR の本文と同じ `Closes #<番号>` か `Refs #<番号>` の行を置きます。
-   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します。トレーラのないコミットは、PR の本文やブランチ名から書いた AI を確かめて足します。
+   - 本文のあとに、PR の本文にある `Closes #<番号>` か `Refs #<番号>` の行を置きます。PR の本文になければ書きません。
+   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します（片方が空の行は除きます）。トレーラのないコミットのトレーラは足しません。セッションの記録など確かな根拠で AI が書いたと分かるときだけ足し、推測で帰属を作りません。
      ```bash
-     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..<ブランチ> | grep . | sort -u
-     git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..<ブランチ> | grep . | sort -u
+     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..<ブランチ> | grep . | sed 's/^/AI-Agent: /' | sort -u
+     git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..<ブランチ> | grep . | sed 's/^/Co-authored-by: /' | sort -u
      # 前の形式のコミット
-     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..<ブランチ> | grep -v '^ / $' | sort -u
+     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..<ブランチ> | grep -Ev '^ / | / $' | sed 's/^/AI-Agent: /' | sort -u
+     ```
+   - ファイルの末尾は「本文 → 空行 → `Closes`/`Refs` → 空行 → トレーラ」の順にします。`Closes` とトレーラを同じ段落に置くと、git がトレーラを読めず、トレーラが空になります。
+     ```text
+     <本文の段落>
+
+     Closes #<番号>
+
+     AI-Agent: Codex CLI / gpt-5
+     Co-authored-by: Cursor Agent <cursoragent@cursor.com>
      ```
 5. squash でマージします。
    ```bash
    gh pr merge <番号> --squash --match-head-commit <レビューした先頭の SHA> \
-     --subject '<件名> (#<番号>)' --body-file tmp/pr-<番号>-commit.txt
+     --subject "$(gh pr view <番号> --json title --jq .title) (#<番号>)" \
+     --body-file tmp/pr-<番号>-commit.txt
    ```
+   - 件名を単一引用符で渡すと、タイトルに `'` があるときに壊れます。上のように `"$(…)"` で PR のタイトルから渡すか、ダブルクォートの中で `"`、`$`、`` ` ``、`\` をエスケープします。
    - `--match-head-commit` は、レビューのあとにブランチが動いていたらマージを止めるためです。止まったら、増えたコミットをレビューし直します。
    - `--delete-branch` は付けません。ローカルのブランチを消そうとして、worktree で使っているブランチに当たると失敗するためです。リモートのブランチは設定で自動で消え、ローカルは §9 で片付けます。
-6. `git log origin/main -1` で、main のコミットが書いたとおりかを確かめます。マージした PR と、そのコミットメッセージを報告します。
-   - ユーザーにメッセージを先に見たいと言われたときは、5 の前に見せて確認を取ります。
+6. `git fetch origin && git log origin/main -1 --format=%B` で、main のコミットが書いたとおりかを確かめます（fetch しないと古い main を見ます）。見るのは次の 3 つです。
+   - 件名が書いたとおりで、末尾に `(#<番号>)` が付いている
+   - 本文が書いたとおりで、件名が二重になっていない
+   - トレーラの個数と中身が、4 で集めたものと同じである
+
+   マージした PR と、そのコミットメッセージを報告します。
 
 ### 止めて報告すること
 
@@ -200,6 +215,11 @@ AI-Agent: <ハーネス> / <モデル>
 - CI が落ち続け、PR の中では直せない
 - main との衝突を、どちらかの変更の意図を変えずには解けない
 - §1 で許可が要る操作（共有しているブランチへの `--force-with-lease` など）や、禁じた操作が必要になった
+- 独立したレビューのセッションを立てられない
+- 保護などで、通常の `gh pr merge` が拒否された（`--admin` や `--auto` で回避しない）
+- CI（`all checks`）が未完了のまま。完了まで待ち、長く終わらなければ報告する
+- `--match-head-commit` の不一致が繰り返される
+- push が拒否された
 
 ## 8. 依存する PR（スタック）
 
