@@ -14,10 +14,9 @@ const noSubscription = () => () => {}
 const idle: ForkState = { status: 'idle' }
 const idleSnapshot = () => idle
 
-type ActionText = (typeof messageActionMessages)['ja']
-
 /** The source text, not the rendered Markdown, so the browser's own selection and copy apply. */
-function SelectTextSheet({ text, t, close }: { text: string; t: ActionText; close: () => void }) {
+function SelectTextSheet({ text, close }: { text: string; close: () => void }) {
+  const t = useMessages(messageActionMessages)
   return <section className="chat-select-text"><header><h2>{t.selectTitle}</h2><M3eButton onClick={close}>{t.close}</M3eButton></header>
     <p className="muted">{t.selectHint}</p>
     <div className="chat-select-text-body" data-testid="chat-select-text">{text}</div>
@@ -47,10 +46,13 @@ function ActionsSheet({ sessionId, text, seq, close }: { sessionId: string; text
       if (alive.current) { close(); showSnackbar(t.copied) }
     } catch { if (alive.current) setError(t.copyFailed) }
   }
+  // A second tap in the same frame must not stack a second selection sheet.
+  const selecting = useRef(false)
   const selectText = () => {
-    if (!sheets.isActive()) return
+    if (selecting.current || !sheets.isActive()) return
+    selecting.current = true
     close()
-    sheets.openFull(closeSelection => <SelectTextSheet text={text} t={t} close={closeSelection} />, { label: t.selectTitle })
+    sheets.openFull(closeSelection => <SelectTextSheet text={text} close={closeSelection} />, { label: t.selectTitle })
   }
   const fork = () => {
     if (!sheets.isActive() || !operation) return
