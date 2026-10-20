@@ -1,6 +1,5 @@
 import { test, expect, visit, button, menu, shot } from './helpers'
 import type { Page } from '@playwright/test'
-import type { MockContext } from '../web/src/dsh/mock/index.ts'
 
 // Same hook as malformed-data.spec.ts: the finished ?mock context, before main.tsx uses it.
 async function expose(page: Page) {
