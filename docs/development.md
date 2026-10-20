@@ -1,6 +1,6 @@
 # 開発者向けの説明
 
-利用の方法は [README](../README.md) にあります。この文書は、仕組みと開発の方法をまとめたものです。設計書は [docs/design/](design/README.md)、画面の仕様は [docs/ui-spec.md](ui-spec.md) にあります。
+利用の方法は [README](../README.ja.md)（日本語。正本は英語の [README.md](../README.md)）にあります。この文書は、仕組みと開発の方法をまとめたものです。設計書は [docs/design/](design/README.md)、画面の仕様は [docs/ui-spec.md](ui-spec.md) にあります。
 
 開発中は `pnpm dev` のあと `http://localhost:5173/m3e/?mock` を開きます。DSH の起動は不要です。偽データは開発時だけ読み込まれ、本番ビルドには含まれません。`features/*/routes.tsx` と `features/*/mock.ts` は自動で集めるので、機能の担当は共有登録ファイルを編集する必要がありません。
 
@@ -520,7 +520,7 @@ DSH 0.2.1-rc.2 向けのビルド済み Web UI プラグインです。
 - ソース取得・ビルド・version の手編集は不要です。
 - 導入: `dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<版>/dsh-webui-m3e-<版>.tgz`
 - 更新・旧版への復帰後は、対象プロファイルの Host を再起動してください。
-- 本物の LLM と iPhone Safari・ホーム画面の Web アプリ、Desktop での動作は未確認です。
+- 本物の LLM、ホーム画面に追加した Web アプリ、iPhone 17 Pro Max の Safari 以外の端末・ブラウザ、Desktop での動作は未確認です。
 - 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v<版>/README.md
 ```
 
@@ -626,7 +626,7 @@ dsh_smoke web --no-open --host 127.0.0.1 --port 0
 | 削除後の Host 再起動 | `/m3e/` は 404、標準画面は 200 のまま |
 | `dsh plugin --profile web add file:<tgz>` → `dsh plugin --profile web add <GitHub の URL>` | 両方 exit 0。依存参照が file: から GitHub URL に変わり、再起動後 `/m3e/` は 200 |
 
-**未検証**：GitHub URL で導入した状態での会話・workspace・設定の保持（ローカル URL と file: の確認のみ）、公開版同士の更新・旧版復帰（2 つ目の版がまだ無い）、Desktop、本物の LLM、iPhone Safari とホーム画面に追加した Web アプリ、ほかの作者のプラグイン、長期利用データ。npm レジストリはアカウントが無いため未公開です。上の偽 LLM を使う保持確認手順は、残る検証のために維持しています。
+**未検証**：GitHub URL で導入した状態での会話・workspace・設定の保持（ローカル URL と file: の確認のみ）、公開版同士の更新・旧版復帰（2 つ目の版がまだ無い）、Desktop、本物の LLM、ホーム画面に追加した Web アプリ、iPhone 17 Pro Max の Safari 以外の端末・ブラウザ、ほかの作者のプラグイン、長期利用データ。npm レジストリはアカウントが無いため未公開です。上の偽 LLM を使う保持確認手順は、残る検証のために維持しています。
 
 ### あとで npm にも出す場合
 

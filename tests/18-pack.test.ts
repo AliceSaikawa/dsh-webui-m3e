@@ -15,7 +15,7 @@ function fixture(): PackFile[] {
   return [
     { path: 'package.json', text: JSON.stringify({ name: 'dsh-webui-m3e', main: 'lib/index.js', exports: { '.': { default: './lib/index.js' }, './client': './lib/client.js' }, dsh: { bundle: { patch: './cordis.patch.yml' } }, scripts: { prepack: 'build-and-check' } }) },
     { path: 'cordis.patch.yml', text: '- insert:\n    - id: webui-m3e\n      name: dsh-webui-m3e\n' },
-    ...['lib/index.js', 'lib/client.js', 'dist/index.html', assetJs, assetCss, 'dist/assets/material-symbols-outlined-DzyP15l8.woff2', 'LICENSE', 'README.md', 'README.en.md', 'README.zh-CN.md',
+    ...['lib/index.js', 'lib/client.js', 'dist/index.html', assetJs, assetCss, 'dist/assets/material-symbols-outlined-DzyP15l8.woff2', 'LICENSE', 'README.md', 'README.ja.md', 'README.zh-CN.md',
       'dist/manifest.webmanifest', 'dist/sw.js', 'dist/sw-cache.js', 'dist/apple-touch-icon.png', 'dist/icon-192.png', 'dist/icon-512.png', 'dist/icon-maskable-512.png',
     ].map(path => ({ path, text: 'release content' })),
   ]
@@ -97,7 +97,7 @@ test('pack: accepts release artifacts and producer-only prepack', () => {
   assert.deepEqual(validatePack(content(assetJs, 'const routes = { "../features/home/routes.tsx": 1 }; // ?mock is a production help message')), [])
 })
 test('pack: requires every entrypoint and document', () => {
-  for (const path of ['package.json', 'lib/index.js', 'lib/client.js', 'dist/index.html', 'cordis.patch.yml', 'LICENSE', 'README.md', 'README.en.md', 'README.zh-CN.md']) {
+  for (const path of ['package.json', 'lib/index.js', 'lib/client.js', 'dist/index.html', 'cordis.patch.yml', 'LICENSE', 'README.md', 'README.ja.md', 'README.zh-CN.md']) {
     rejects(fixture().filter(file => file.path !== path), `missing: ${path}`)
   }
 })
