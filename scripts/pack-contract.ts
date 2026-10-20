@@ -3,7 +3,7 @@ export interface PackFile { path: string; text?: string }
 
 const required = [
   'package.json', 'lib/index.js', 'lib/client.js', 'dist/index.html',
-  'cordis.patch.yml', 'LICENSE', 'README.md', 'README.en.md', 'README.zh-CN.md',
+  'cordis.patch.yml', 'LICENSE', 'README.md', 'README.ja.md', 'README.zh-CN.md',
 ]
 const staticFiles = new Set([...required,
   'dist/manifest.webmanifest', 'dist/sw.js', 'dist/sw-cache.js',

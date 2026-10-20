@@ -1,6 +1,6 @@
 # 引き継ぎ
 
-次のセッションは、このファイル、[README.md](../README.md)、[dsh-compatibility.md](dsh-compatibility.md)、[docs/ui-spec.md](ui-spec.md) の順に読んでから始めてください。現在の対応版・確認範囲は互換性文書を正とし、過去の API 調査メモは当時の記録として扱ってください。
+次のセッションは、このファイル、[README.ja.md](../README.ja.md)、[dsh-compatibility.md](dsh-compatibility.md)、[docs/ui-spec.md](ui-spec.md) の順に読んでから始めてください。現在の対応版・確認範囲は互換性文書を正とし、過去の API 調査メモは当時の記録として扱ってください。
 
 ## 2026-10-04：DSH 0.2.0-rc.2 への移行
 
@@ -21,7 +21,7 @@
 1. [既知の制限](dsh-compatibility.md#既知の制限と最後に確認すること)を引き継ぎます。ゴールの読取り応答が止まったままになると、その後の通知でも復帰しません。画面に入り直すと回復します。偽 RPC で再現した制限で、実 Host の障害注入は未検証です。段階 6-C の修正と試験強化は、独立した再確認を通して取り込み済みです。
 2. DSH 0.2.0-rc.2 への移行は、PR #19 として main にマージ済みです（`b895500`）。互換性文書の集計は、指示役が文書の取り込み後の `ab5c09d` で実行した結果です。指示役が自分で差分を適用した 3 コミットの扱いは、引き続き利用者の判断待ちです。
 3. 再接続のバナー、実行中のアーカイブ、完了未読の保存、アカウント操作、開いたモデル選択シートの一覧更新、期限つき質問の残り時間・続行状態は、[仕様と実物の差](dsh-compatibility.md#仕様と実物の差)を基に利用者が判断します。`docs/ui-spec.md` は今回変更していません。
-4. iPhone Safari と PWA、本物の LLM、プロキシ、本番の版と古い記録を実機で確認します。特に **Safari の実際の BFCache 復帰後の送信**は未検証です。Chromium での `pagehide/pageshow` の試験を、実機確認の代わりにはしません。
+4. ホーム画面に追加した PWA、iPhone 17 Pro Max の Safari 以外の端末・ブラウザ、本物の LLM、プロキシ、本番の版と古い記録を実機で確認します（iPhone 17 Pro Max の Safari で開く場合は、利用者が実機で開いて確かめています。README の「注意」を参照）。特に **Safari の実際の BFCache 復帰後の送信**は未検証です。Chromium での `pagehide/pageshow` の試験を、実機確認の代わりにはしません。
 
 実行方法は [development.md](development.md#試験の使い分け) を参照してください。偽データ e2e の一時ポート設定は Git 管理外です。Host のフォルダ選択は環境で native / browse が変わり、統合試験は SSH 起動の印で browse を選びます。期限つき質問は専用 fixture が起動前に timed の preset を設定するため、追加の環境変数は不要です。
 
@@ -81,7 +81,7 @@
 
 ## 部品集の実機比較（Simulator、2026-09-25）
 
-iPhone 17 Pro Max（iOS 26.2）で、Safari とホーム画面に追加した Web アプリの両方で確かめました。テスト用のページは `tmp/libtest`（git 管理外）にあり、`pnpm dev` で 127.0.0.1:5190 に開きます。URL に `?chat` を付けると会話画面から始まり、`?fill` を付けると入力欄に 8 行を入れます。画面左上の HUD に、画面の高さ、`visualViewport`、safe-area の値が出ます。
+これは部品集を選ぶための iOS Simulator での確認で、製品としての実機の確認記録ではありません。iPhone 17 Pro Max（iOS 26.2）の Simulator で、Safari とホーム画面に追加した Web アプリの両方で確かめました。テスト用のページは `tmp/libtest`（git 管理外）にあり、`pnpm dev` で 127.0.0.1:5190 に開きます。URL に `?chat` を付けると会話画面から始まり、`?fill` を付けると入力欄に 8 行を入れます。画面左上の HUD に、画面の高さ、`visualViewport`、safe-area の値が出ます。
 
 | 確認したこと | @m3e/web + @m3e/react | @language-lit |
 |---|---|---|
