@@ -29,7 +29,7 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 
    `web` is an example, so select the profile that actually serves your Web UI (a misspelled name still creates a new profile, and a successful install alone does not confirm the target).
 
-2. Open the sign-in URL printed by `dsh web` to sign in to the standard interface.
+2. Open the sign-in URL printed by `dsh web` to sign in to the standard interface (DSH's own Web UI).
 
 3. Open `http://<host>/m3e/` on the same address. If it returns 404, restart that profile's Host. Restarting the Host (stop `dsh web` with Ctrl+C and start it again with the same command) can change the sign-in URL, so repeat from step 2.
 
@@ -89,7 +89,7 @@ In this README, the "standard interface" is DSH's own Web UI (the URL parameter 
 - In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
 - Add `?ui=m3e` or `?ui=classic` to the URL
 
-On a device where you chose M3E, opening `/` on a phone switches to M3E. On a computer (where the main input is a mouse or trackpad), `/` stays on the standard interface; open `/m3e/` directly to use M3E. On devices such as Windows Firefox with a touchscreen, the main input may not be detected as a computer, so `/` may still move to `/m3e/` as on a phone. If you remove `/m3e/` from the URL in a tab that was showing M3E and open `/`, that tab stays on the standard interface. A newly opened tab follows the setting on a phone. In 0.0.8, `/` also moves to `/m3e/` on a computer, and there is no per-tab behavior that keeps a tab on the standard interface.
+On a device where you chose M3E, newly opening `/` on a phone switches to M3E. On a computer (where the main input is a mouse or trackpad), `/` stays on the standard interface; open `/m3e/` directly to use M3E. On devices such as Windows Firefox with a touchscreen, the main input may not be detected as a computer, so `/` may still move to `/m3e/` as on a phone. If you remove `/m3e/` from the URL in a tab that was showing M3E and open `/`, that tab stays on the standard interface. A newly opened tab follows the setting on a phone. In 0.0.8, `/` also moves to `/m3e/` on a computer, and there is no per-tab behavior that keeps a tab on the standard interface.
 
 If either interface fails to load, open `http://<host>/?ui=classic` to return to the standard interface.
 

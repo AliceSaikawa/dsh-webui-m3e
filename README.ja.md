@@ -2,7 +2,7 @@
 
 日本語 | [English](README.md) | [简体中文](README.zh-CN.md)
 
-DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 3 Expressive の画面で操作するためのプラグインです。
+DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 3 Expressive（M3E）の画面で操作するためのプラグインです。
 
 <p>
   <img src="docs/images/home.png" alt="セッションの一覧" width="200">
@@ -27,7 +27,7 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 
    `web` は例なので、実際に Web 画面を動かしているプロファイルを指定してください（名前を間違えても新しいプロファイルが作られるだけで、追加に成功しても接続先が正しいとは限りません）。
 
-2. `dsh web` が表示したログイン用の URL を開き、標準画面にログインします。
+2. `dsh web` が表示したログイン用の URL を開き、標準画面（DSH 本来の Web 画面）にログインします。
 
 3. 同じアドレスで `http://<host>/m3e/` を開きます。404 になるときは、そのプロファイルの Host を再起動します。Host を再起動（`dsh web` を Ctrl+C で止め、同じコマンドでもう一度起動）するとログイン用の URL が変わることがあるので、手順 2 からやり直します。
 

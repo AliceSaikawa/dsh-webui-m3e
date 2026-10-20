@@ -95,31 +95,49 @@ test('readme: the screenshots exist for every language that links them', () => {
   assert.deepEqual(images('README.md', '.en'), images('README.ja.md', ''))
 })
 
-/** The shape that the three languages must share: sections, list sizes, alerts, code and links. */
+/**
+ * The shape that the three languages must share: for every section, the number of
+ * paragraphs, bullets and numbered steps, the ASCII inline code, the versions and
+ * dates; plus the alerts, fenced code and external links of the whole file.
+ */
 function shape(path: string) {
-  const sections: { h2: string; bullets: number }[] = []
+  type Section = { heading: string; blocks: number; bullets: number; steps: number; tokens: string[] }
+  const sections: Section[] = []
   const code: string[] = []
   const alerts: string[] = []
   let h3 = 0
   let fenced: string[] | undefined
+  let inBlock = false
   for (const line of lines(path)) {
     if (/^\s*```/.test(line)) {
       if (fenced) { code.push(fenced.join('\n')); fenced = undefined } else fenced = []
+      inBlock = false
       continue
     }
     if (fenced) { fenced.push(line.trim()); continue }
-    if (/^## /.test(line)) sections.push({ h2: line, bullets: 0 })
-    else if (/^### /.test(line)) h3 += 1
-    else if (/^\s*[-*] /.test(line)) sections.at(-1)!.bullets += 1
-    else if (/^> \[!(?:NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/.test(line)) alerts.push(line)
+    const current = sections.at(-1)
+    if (/^## /.test(line)) { sections.push({ heading: line, blocks: 0, bullets: 0, steps: 0, tokens: [] }); inBlock = false; continue }
+    if (/^### /.test(line)) { h3 += 1; inBlock = false; continue }
+    if (!current) continue
+    if (/^\s*[-*] /.test(line)) current.bullets += 1
+    if (/^\d+\. /.test(line)) current.steps += 1
+    if (/^> \[!(?:NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/.test(line)) alerts.push(line)
+    if (line.trim() === '') inBlock = false
+    else if (!inBlock && !/^\s*[-*\d]/.test(line)) { current.blocks += 1; inBlock = true }
+    else if (/^\s*[-*\d]/.test(line)) inBlock = false
+    for (const match of line.matchAll(/`([^`]+)`/g)) if (/^[\x20-\x7e]+$/.test(match[1]!)) current.tokens.push(match[1]!)
+    current.tokens.push(...(line.match(/\d+(?:\.\d+)+(?:-rc\.\d+)?|\d{4}-\d\d-\d\d/g) ?? []))
   }
   const external = [...read(path).matchAll(/\]\((https?:[^)\s]+)\)/g)].map((match) => match[1])
-  return { h2: sections.length, h3, bullets: sections.map((section) => section.bullets), code, alerts, external }
+  return {
+    h2: sections.length, h3, alerts, code, external,
+    sections: sections.map(({ blocks, bullets, steps, tokens }) => ({ blocks, bullets, steps, tokens: tokens.sort() })),
+  }
 }
 
-test('readme: the three READMEs share the same sections, list sizes, alerts, code blocks and external links', () => {
+test('readme: the three READMEs share the same sections, paragraphs, steps, versions, code and links', () => {
   const english = shape('README.md')
-  assert.deepEqual(english.bullets.length, english.h2)
+  assert.ok(english.sections.length >= 7)
   for (const path of ['README.ja.md', 'README.zh-CN.md']) {
     assert.deepEqual(shape(path), english, path)
   }
