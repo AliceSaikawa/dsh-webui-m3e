@@ -7,20 +7,21 @@ import { useMessages } from '../../i18n/index.ts'
 import { goalActivationFor, updateGoalActivation, watchGoalActivation } from './goal-activation.ts'
 import { sessionToolsMessages } from './messages.ts'
 import {
-  goalStripVisible,
-  type GoalStripVisibility,
-} from './goal-strip-model.ts'
+  goalPresenceModel,
+  type GoalPresenceModel,
+} from './goal-presence-model.ts'
 import {
-  currentGoalProjection, goalPhaseLabel, goalPrimaryAction, goalProjectionOf, goalsEditOf, goalsRemoteOf,
+  currentGoalProjection, goalProjectionOf, goalsEditOf, goalsRemoteOf,
   performGoalEdit, performGoalOperation,
   type GoalAction, type GoalActivation, type GoalActivationRef, type GoalDisplayState, type GoalObservation,
-  type GoalProjection, type GoalRef, type GoalsRemoteWithEdit,
+  type GoalProjection, type GoalRef,
 } from './operations.ts'
 
 export {
-  goalStripVisible,
-  type GoalStripModel, type GoalStripVisibility, type GoalStripVisibleInput,
-} from './goal-strip-model.ts'
+  GOAL_STRIP_MIN_VIEWPORT_HEIGHT, goalStripFits,
+  type GoalPresenceInput, type GoalStripAction, type GoalStripActionKind, type GoalStripMessage,
+  type GoalStripModel, type GoalStripVisibility,
+} from './goal-presence-model.ts'
 
 export interface GoalPresenceState {
   readonly sessionId: string
@@ -32,25 +33,21 @@ export interface GoalPresenceState {
   readonly busy: boolean
   readonly error: string
   readonly needsRefresh: boolean
-  readonly canEdit: boolean
   readonly goalsSupported: boolean
   readonly connected: boolean
 }
 
-export interface GoalPresence extends GoalPresenceState {
-  readonly primary: 'pause' | 'resume' | undefined
-  readonly statusLine: string
-  readonly canMutate: boolean
-  readonly exhausted: boolean
-  readonly strip: GoalStripVisibility
+export interface GoalPresence extends GoalPresenceState, GoalPresenceModel {
   refresh(): Promise<void>
   retryActivation(): void
   runPrimary(): Promise<void>
   complete(): Promise<void>
   clear(): Promise<void>
   /**
-   * No-op when !canEdit. Validates non-empty trimmed objective at the boundary.
-   * Uses GoalsEditRemote.edit then the same observation merge path as pause/resume.
+   * No-op when unmounted or the trimmed objective is unchanged. Throws
+   * text.mutateFailed / text.mutateRefreshed so the prompt dialog stays open
+   * with its inline error. Uses GoalsEditRemote.edit then the same observation
+   * merge path as pause/resume.
    */
   editObjective(objective: string): Promise<void>
 }
@@ -81,19 +78,13 @@ export function useGoalPresence(sessionId: string): GoalPresence {
   }, [])
 
   const goals = useMemo(() => goalsRemoteOf(remote.goals), [remote])
-  const canEdit = Boolean(goals && goalsEditOf(goals))
+  const editor = useMemo(() => goals && goalsEditOf(goals), [goals])
   const current = currentGoalProjection(projected, observed)
   const goal = current?.goal
   const activation = goalActivationFor(goal, liveActivation)
-  const primary = goal ? goalPrimaryAction(goal, activation) : undefined
-  const exhausted = primary === 'resume' && !!current && current.roundsStarted >= current.goal.maxGoalRounds
   const readOnly = snapshot.subagent !== null
   const goalsSupported = Boolean(goals)
-  const canMutate = !readOnly && goalsSupported && connected && activationReady
-    && !busy && !needsRefresh && activation !== undefined
-  const statusLine = goal
-    ? text.goalStatusLine(goalPhaseLabel(goal.phase, activation, text), current!.roundsStarted, goal.maxGoalRounds)
-    : ''
+  const editSupported = Boolean(editor)
 
   useEffect(() => {
     setActivationError(false)
@@ -109,6 +100,13 @@ export function useGoalPresence(sessionId: string): GoalPresence {
     void watcher.refresh()
     return () => watcher.dispose()
   }, [remote, goals, sessionId, goal?.id, goal?.revision, connection, face, activationRefresh])
+
+  const state: GoalPresenceState = {
+    sessionId, current, activation, activationReady, activationError, readOnly, busy, error, needsRefresh,
+    goalsSupported, connected,
+  }
+  const model = goalPresenceModel({ ...state, editSupported }, text)
+  const { canMutate, canEdit } = model
 
   async function refresh() {
     if (!goals || lock.current) return
@@ -157,13 +155,16 @@ export function useGoalPresence(sessionId: string): GoalPresence {
 
   async function editObjective(objective: string) {
     const trimmed = objective.trim()
-    if (!alive.current || !goals || !canEdit || !trimmed || lock.current || !canMutate || !goal) return
-    if (!goalsEditOf(goals)) return
+    if (!alive.current) return
+    if (goal && trimmed === goal.objective) return
+    if (!editor || !trimmed || lock.current || !canMutate || !canEdit || !goal) {
+      throw new Error(text.mutateFailed)
+    }
     const ref = { id: goal.id, revision: goal.revision }
     lock.current = true
     setBusy(true)
     setError('')
-    const result = await performGoalEdit(goals as GoalsRemoteWithEdit, sessionId, ref, { objective: trimmed })
+    const result = await performGoalEdit(editor, sessionId, ref, { objective: trimmed })
     lock.current = false
     if (!alive.current) return
     setBusy(false)
@@ -171,28 +172,28 @@ export function useGoalPresence(sessionId: string): GoalPresence {
     if (result.ok) {
       setObserved({ baseline: projected, value: result.value, ref: result.ref })
       showSnackbar(text.goalEditedNotice)
-    } else if (result.refreshed) {
+      return
+    }
+    const message = result.refreshed ? text.mutateRefreshed : text.mutateFailed
+    if (result.refreshed) {
       setObserved({ baseline: projected, value: result.value })
-      setError(text.mutateRefreshed)
     } else {
       setNeedsRefresh(true)
-      setError(text.mutateFailed)
     }
+    setError(message)
+    throw new Error(message)
   }
 
-  const state: GoalPresenceState = {
-    sessionId, current, activation, activationReady, activationError, readOnly, busy, error, needsRefresh,
-    canEdit, goalsSupported, connected,
-  }
-  const strip = goalStripVisible({ ...state, statusLine })
+  const latestEdit = useRef(editObjective)
+  latestEdit.current = editObjective
 
   return {
-    ...state, primary, statusLine, canMutate, exhausted, strip,
+    ...state, ...model,
     refresh,
     retryActivation() { setActivationRefresh(value => value + 1) },
     async runPrimary() {
-      if (!goal || !primary || (primary === 'resume' && exhausted)) return
-      await mutate(primary, { id: goal.id, revision: goal.revision })
+      if (!goal || !model.primary || (model.primary === 'resume' && model.exhausted)) return
+      await mutate(model.primary, { id: goal.id, revision: goal.revision })
     },
     async complete() {
       if (!goal || goal.phase === 'complete') return
@@ -202,6 +203,6 @@ export function useGoalPresence(sessionId: string): GoalPresence {
       if (!goal) return
       await mutate('clear', { id: goal.id, revision: goal.revision })
     },
-    editObjective,
+    editObjective: (value: string) => latestEdit.current(value),
   }
 }

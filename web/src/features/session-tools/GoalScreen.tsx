@@ -66,7 +66,7 @@ function GoalContent({ sessionId }: { sessionId: string }) {
           onClick={() => { void presence.runPrimary() }}>
           {presence.primary === 'pause' ? text.pauseGoal : text.resumeGoal}
         </M3eButton>}
-        {presence.canEdit && !presence.readOnly && <M3eButton variant="outlined" disabled={!presence.canMutate}
+        {presence.canEdit && <M3eButton variant="outlined" disabled={!presence.canMutate}
           onClick={openEdit}>{text.editGoal}</M3eButton>}
         {goal.phase !== 'complete' && <M3eButton variant="filled" disabled={!presence.canMutate}
           onClick={() => { void presence.complete() }}>{text.completeGoal}</M3eButton>}

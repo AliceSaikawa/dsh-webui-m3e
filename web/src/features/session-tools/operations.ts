@@ -62,9 +62,9 @@ export function goalsRemoteOf(value: unknown): GoalsRemote | undefined {
 }
 
 /** One gate for edit UI; callers never probe remote.edit themselves. */
-export function goalsEditOf(remote: GoalsRemote): GoalsEditRemote | undefined {
+export function goalsEditOf(remote: GoalsRemote): GoalsRemoteWithEdit | undefined {
   const candidate = remote as GoalsRemote & Partial<GoalsEditRemote>
-  return typeof candidate.edit === 'function' ? candidate as GoalsEditRemote : undefined
+  return typeof candidate.edit === 'function' ? candidate as GoalsRemoteWithEdit : undefined
 }
 
 export function goalProjectionOf(view: GoalView | undefined): GoalDisplayState | null {

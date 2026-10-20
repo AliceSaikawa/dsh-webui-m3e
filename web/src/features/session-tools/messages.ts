@@ -156,7 +156,7 @@ export const sessionToolsMessages = defineMessages({
     clearGoalDialogTitle: 'ゴールを消しますか？',
     clearGoalDialogBody: (objective: string) => `「${objective}」をこの会話から消します。`,
     clearGoalDialogLabel: 'ゴールを消す確認',
-    editGoal: '編集',
+    editGoal: '目標を編集',
     editGoalDialogTitle: '目標を編集',
     editGoalDialogLabel: '目標の編集',
     editGoalField: '目標',

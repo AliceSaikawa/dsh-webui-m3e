@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { goalStripVisible } from '../web/src/features/session-tools/goal-strip-model.ts'
-import { goalPrimaryAction, type GoalDisplayState } from '../web/src/features/session-tools/operations.ts'
+import {
+  GOAL_STRIP_MIN_VIEWPORT_HEIGHT, goalPresenceModel, goalStripFits, type GoalPresenceInput,
+} from '../web/src/features/session-tools/goal-presence-model.ts'
+import { sessionToolsMessages } from '../web/src/features/session-tools/messages.ts'
+import type { GoalDisplayState } from '../web/src/features/session-tools/operations.ts'
+
+const text = sessionToolsMessages.ja
 
 function display(overrides: Partial<GoalDisplayState['goal']> & { roundsStarted?: number; activation?: GoalDisplayState['activation'] } = {}): GoalDisplayState {
   const { roundsStarted = 3, activation, ...goalPatch } = overrides
@@ -15,99 +20,181 @@ function display(overrides: Partial<GoalDisplayState['goal']> & { roundsStarted?
   }
 }
 
-function base(overrides: Partial<Parameters<typeof goalStripVisible>[0]> = {}) {
-  const current = overrides.current !== undefined ? overrides.current : display({ activation: 'armed' })
+function input(overrides: Partial<GoalPresenceInput> = {}): GoalPresenceInput {
   return {
-    current,
-    activation: current && typeof current === 'object' ? (current.activation ?? 'armed') : undefined,
+    current: display({ activation: 'armed' }),
+    activation: 'armed',
     activationReady: true,
+    activationError: false,
     readOnly: false,
     busy: false,
     error: '',
     needsRefresh: false,
-    canEdit: true,
+    editSupported: true,
     goalsSupported: true,
     connected: true,
-    statusLine: '進行中 ・ 3 / 8 ラウンド',
     ...overrides,
   }
 }
 
-test('ストリップは読込中・無し・完了を隠し、進行中は目標と操作を出す', () => {
-  assert.equal(goalStripVisible(base({ current: undefined })).kind, 'hidden')
-  assert.equal(goalStripVisible(base({ current: null })).kind, 'hidden')
-  assert.equal(goalStripVisible(base({ current: display({ phase: 'complete' }) })).kind, 'hidden')
+function modelOf(overrides: Partial<GoalPresenceInput> = {}) {
+  return goalPresenceModel(input(overrides), text)
+}
 
-  const visible = goalStripVisible(base())
-  assert.equal(visible.kind, 'visible')
-  if (visible.kind !== 'visible') throw new Error('expected visible')
-  assert.equal(visible.model.objective, '承認シートを作る')
-  assert.equal(visible.model.statusLine, '進行中 ・ 3 / 8 ラウンド')
-  assert.equal(visible.model.primary, 'pause')
-  assert.equal(visible.model.canMutate, true)
-  assert.equal(visible.model.canEdit, true)
+function visibleModel(overrides: Partial<GoalPresenceInput> = {}) {
+  const model = modelOf(overrides)
+  assert.equal(model.strip.kind, 'visible')
+  if (model.strip.kind !== 'visible') throw new Error('expected visible')
+  return model.strip.model
+}
+
+test('読込中・ゴール無し・完了ではストリップを隠す', () => {
+  assert.equal(modelOf({ current: undefined }).strip.kind, 'hidden')
+  assert.equal(modelOf({ current: null }).strip.kind, 'hidden')
+  assert.equal(modelOf({ current: display({ phase: 'complete' }) }).strip.kind, 'hidden')
+
+  const loading = modelOf({ current: undefined })
+  assert.equal(loading.primary, undefined)
+  assert.equal(loading.exhausted, false)
+  assert.equal(loading.statusLine, '')
+
+  const complete = modelOf({ current: display({ phase: 'complete' }), activation: undefined })
+  assert.equal(complete.primary, undefined)
+  assert.equal(complete.statusLine, '完了 ・ 3 / 8 ラウンド')
+  assert.equal('strip' in complete, true)
 })
 
-test('ストリップは一時停止と行き詰まりでも表示し、停止中は再開を選ぶ', () => {
-  const paused = goalStripVisible(base({
-    current: display({ phase: 'paused', activation: 'disarmed' }),
-    activation: 'disarmed',
-    statusLine: '一時停止 ・ 3 / 8 ラウンド',
-  }))
-  assert.equal(paused.kind, 'visible')
-  if (paused.kind === 'visible') assert.equal(paused.model.primary, 'resume')
+test('進行中は目標・状態・一時停止と編集を出し、メッセージは出さない', () => {
+  const model = modelOf()
+  assert.equal(model.primary, 'pause')
+  assert.equal(model.exhausted, false)
+  assert.equal(model.canMutate, true)
+  assert.equal(model.canEdit, true)
+  assert.equal(model.statusLine, '進行中 ・ 3 / 8 ラウンド')
 
-  const blocked = goalStripVisible(base({
+  const strip = visibleModel()
+  assert.equal(strip.objective, '承認シートを作る')
+  assert.equal(strip.statusLine, '進行中 ・ 3 / 8 ラウンド')
+  assert.deepEqual(strip.actions, [
+    { kind: 'pause', enabled: true },
+    { kind: 'edit', enabled: true },
+  ])
+  assert.equal('message' in strip, false)
+})
+
+test('停止中・一時停止・行き詰まりでは再開を選ぶ', () => {
+  const stopped = modelOf({ activation: 'disarmed', current: display({ activation: 'disarmed' }) })
+  assert.equal(stopped.primary, 'resume')
+  assert.equal(stopped.statusLine, '停止中 ・ 3 / 8 ラウンド')
+  assert.deepEqual(visibleModel({ activation: 'disarmed', current: display({ activation: 'disarmed' }) }).actions, [
+    { kind: 'resume', enabled: true },
+    { kind: 'edit', enabled: true },
+  ])
+
+  const paused = modelOf({ activation: 'disarmed', current: display({ phase: 'paused', activation: 'disarmed' }) })
+  assert.equal(paused.primary, 'resume')
+  assert.equal(paused.statusLine, '一時停止 ・ 3 / 8 ラウンド')
+  assert.deepEqual(visibleModel({ activation: 'disarmed', current: display({ phase: 'paused', activation: 'disarmed' }) }).actions, [
+    { kind: 'resume', enabled: true },
+    { kind: 'edit', enabled: true },
+  ])
+})
+
+test('操作できない入力では操作を無効にし、編集能力が無ければ編集を出さない', () => {
+  const busy = visibleModel({ busy: true })
+  assert.deepEqual(busy.actions, [
+    { kind: 'pause', enabled: false },
+    { kind: 'edit', enabled: false },
+  ])
+  assert.equal(modelOf({ busy: true }).canMutate, false)
+
+  assert.equal(modelOf({ needsRefresh: true }).canMutate, false)
+  assert.equal(modelOf({ activationReady: false }).canMutate, false)
+  assert.equal(modelOf({ activation: undefined }).canMutate, false)
+  assert.equal(modelOf({ connected: false }).canMutate, false)
+  assert.equal(modelOf({ goalsSupported: false }).canMutate, false)
+
+  const noEdit = modelOf({ editSupported: false })
+  assert.equal(noEdit.canEdit, false)
+  assert.deepEqual(visibleModel({ editSupported: false }).actions, [{ kind: 'pause', enabled: true }])
+})
+
+test('子の会話は操作を出さず、編集もできない', () => {
+  const model = modelOf({ readOnly: true })
+  assert.equal(model.canMutate, false)
+  assert.equal(model.canEdit, false)
+  assert.deepEqual(visibleModel({ readOnly: true }).actions, [])
+})
+
+test('読込エラーでは読み直しだけを出し、エラー文を載せる', () => {
+  const model = visibleModel({ error: '変更できませんでした。' })
+  assert.deepEqual(model.actions, [{ kind: 'reload', enabled: true }])
+  assert.deepEqual(model.message, { tone: 'error', text: '変更できませんでした。' })
+
+  const busy = visibleModel({ error: '変更できませんでした。', busy: true })
+  assert.deepEqual(busy.actions, [{ kind: 'reload', enabled: false }])
+})
+
+test('実行状態の確認失敗では再試行だけを出し、失敗の文を載せる', () => {
+  const model = visibleModel({ activationError: true })
+  assert.deepEqual(model.actions, [{ kind: 'retry-activation', enabled: true }])
+  assert.deepEqual(model.message, { tone: 'error', text: 'ゴールの実行状態を確認できませんでした。' })
+
+  const offline = visibleModel({ activationError: true, connected: false })
+  assert.deepEqual(offline.actions, [{ kind: 'retry-activation', enabled: false }])
+})
+
+test('行き詰まりの理由は情報メッセージとして出し、操作は残す', () => {
+  const model = visibleModel({
+    activation: 'disarmed',
     current: display({
       phase: 'blocked', activation: 'disarmed',
       blockedReason: { code: 'verification-failed', message: 'テストに失敗しました' },
     }),
+  })
+  assert.deepEqual(model.actions, [
+    { kind: 'resume', enabled: true },
+    { kind: 'edit', enabled: true },
+  ])
+  assert.deepEqual(model.message, { tone: 'info', text: 'テストに失敗しました' })
+  assert.equal(modelOf({
     activation: 'disarmed',
-    statusLine: '行き詰まり ・ 3 / 8 ラウンド',
-  }))
-  assert.equal(blocked.kind, 'visible')
-  if (blocked.kind === 'visible') {
-    assert.equal(blocked.model.primary, 'resume')
-    assert.equal(blocked.model.blockedMessage, 'テストに失敗しました')
-  }
-
-  const disarmed = display({ phase: 'active', activation: 'disarmed' })
-  assert.equal(goalPrimaryAction(disarmed.goal, 'disarmed'), 'resume')
-  const strip = goalStripVisible(base({ current: disarmed, activation: 'disarmed', statusLine: '停止中 ・ 3 / 8 ラウンド' }))
-  assert.equal(strip.kind, 'visible')
-  if (strip.kind === 'visible') assert.equal(strip.model.primary, 'resume')
+    current: display({
+      phase: 'blocked', activation: 'disarmed',
+      blockedReason: { code: 'verification-failed', message: 'テストに失敗しました' },
+    }),
+  }).statusLine, '行き詰まり ・ 3 / 8 ラウンド')
 })
 
-test('子の会話と未準備では操作を出さず、編集能力も折る', () => {
-  const child = goalStripVisible(base({ readOnly: true }))
-  assert.equal(child.kind, 'visible')
-  if (child.kind === 'visible') {
-    assert.equal(child.model.canMutate, false)
-    assert.equal(child.model.canEdit, false)
-  }
-
-  const notReady = goalStripVisible(base({ activationReady: false, activation: undefined }))
-  assert.equal(notReady.kind, 'visible')
-  if (notReady.kind === 'visible') assert.equal(notReady.model.canMutate, false)
-
-  const noEdit = goalStripVisible(base({ canEdit: false }))
-  assert.equal(noEdit.kind, 'visible')
-  if (noEdit.kind === 'visible') assert.equal(noEdit.model.canEdit, false)
-})
-
-test('ラウンド上限では exhausted になり、エラー文はインラインに載る', () => {
-  const exhausted = goalStripVisible(base({
+test('ラウンド上限では再開を無効にし、上限の情報メッセージを載せる', () => {
+  const overrides = {
+    activation: 'disarmed' as const,
     current: display({ phase: 'paused', activation: 'disarmed', roundsStarted: 8 }),
-    activation: 'disarmed',
-  }))
-  assert.equal(exhausted.kind, 'visible')
-  if (exhausted.kind === 'visible') {
-    assert.equal(exhausted.model.exhausted, true)
-    assert.equal(exhausted.model.primary, 'resume')
-    assert.equal(exhausted.model.canMutate, true)
   }
+  const model = modelOf(overrides)
+  assert.equal(model.primary, 'resume')
+  assert.equal(model.exhausted, true)
+  assert.equal(model.canMutate, true)
+  assert.deepEqual(visibleModel(overrides).actions, [
+    { kind: 'resume', enabled: false },
+    { kind: 'edit', enabled: true },
+  ])
+  assert.deepEqual(visibleModel(overrides).message, { tone: 'info', text: 'ラウンド数の上限に達したため、再開できません。' })
+})
 
-  const errored = goalStripVisible(base({ error: '変更できませんでした。' }))
-  assert.equal(errored.kind, 'visible')
-  if (errored.kind === 'visible') assert.equal(errored.model.inlineError, '変更できませんでした。')
+test('状態の行は位相と実行状態から組み立てる', () => {
+  assert.equal(modelOf({ activation: undefined }).statusLine, '状態未確認 ・ 3 / 8 ラウンド')
+  assert.equal(modelOf({ activation: 'armed' }).statusLine, '進行中 ・ 3 / 8 ラウンド')
+  assert.equal(modelOf({ activation: 'disarmed' }).statusLine, '停止中 ・ 3 / 8 ラウンド')
+  assert.equal(modelOf({
+    activation: 'disarmed', current: display({ phase: 'paused', activation: 'disarmed', roundsStarted: 0 }),
+  }).statusLine, '一時停止 ・ 0 / 8 ラウンド')
+  assert.equal(modelOf({ current: display({ phase: 'complete' }) }).statusLine, '完了 ・ 3 / 8 ラウンド')
+})
+
+test('高さ 400px 未満ではストリップを描かない', () => {
+  assert.equal(GOAL_STRIP_MIN_VIEWPORT_HEIGHT, 400)
+  assert.equal(goalStripFits(399), false)
+  assert.equal(goalStripFits(400), true)
+  assert.equal(goalStripFits(800), true)
 })
