@@ -58,6 +58,22 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
     phase: 'active', maxGoalRounds: 8, roundsStarted: 3, createdAt: now - 240000, updatedAt: now, activation: 'armed',
   }, false)
 
+  // `/goal <objective>` creates a goal in the mock, as the command handler only
+  // appends `command/run`. The event data stays unknown until validated here.
+  let goalSerial = 0
+  kit.onRecord((sessionId, event) => {
+    if (event.type !== 'command/run' || !exists(sessionId)) return
+    const data = event.data
+    if (typeof data !== 'object' || data === null) return
+    const { name, args } = data as { name?: unknown; args?: unknown }
+    if (name !== 'goal' || typeof args !== 'string' || !args.trim()) return
+    const time = Date.now()
+    publish(sessionId, {
+      id: `session-tools-goal-${++goalSerial}`, revision: 1, objective: args,
+      phase: 'active', maxGoalRounds: 8, roundsStarted: 0, createdAt: time, updatedAt: time, activation: 'armed',
+    })
+  })
+
   function current(sessionId: string, ref: GoalRef): RemoteResult<GoalView> {
     if (!live(sessionId)) return lookupFailure()
     const goal = goals.get(sessionId)
@@ -120,6 +136,13 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
   })
   kit.scenario('goal-disarmed', () => {
     publish(parent, { ...goals.get(parent)!, activation: 'disarmed' }, false)
+  })
+  kit.scenario('goal-exhausted', () => {
+    const goal = goals.get(parent)
+    if (!goal) return
+    publish(parent, {
+      ...goal, revision: goal.revision + 1, phase: 'paused', activation: 'disarmed', roundsStarted: goal.maxGoalRounds,
+    }, false)
   })
   // Preparation stays under test control; it causes no activation notification.
   kit.scenario('goal-preparing', () => {

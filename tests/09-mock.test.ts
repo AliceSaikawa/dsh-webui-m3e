@@ -9,7 +9,7 @@ import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock
 import { appendFilePage, directoryChanged, directoryRequestPath, fileBreadcrumbs, fileChanged, fileRoute, readImageFile, workspaceFilesOf } from '../web/src/features/session-tools/files.ts'
 import { extendMock, SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
 import { catalogEntries, childAddress, contextPercent, hasChildren, maxTurn, menuActions, runningJobCount, type ContextPressure } from '../web/src/features/session-tools/presentation.ts'
-import { goalsEditOf, goalsRemoteOf, performGoalEdit, performGoalOperation, type GoalProjection, type GoalsRemoteWithEdit } from '../web/src/features/session-tools/operations.ts'
+import { goalsEditOf, goalsRemoteOf, performGoalEdit, performGoalOperation, type GoalProjection } from '../web/src/features/session-tools/operations.ts'
 
 const sessionId = MOCK_IDS.sessions.approval
 
@@ -285,7 +285,7 @@ test('ゴール編集は objective を更新して revision を進め、完了�
     assert.equal(rounds.objective, '新しい目標文')
     const completed = unwrapRemoteResult(await remote.complete(sessionId, rounds))
     assert.equal((await editor.edit(sessionId, completed, { objective: '完了後' })).ok, false)
-    const stale = await performGoalEdit(remote as GoalsRemoteWithEdit, sessionId, original, { objective: '古い' })
+    const stale = await performGoalEdit(editor, sessionId, original, { objective: '古い' })
     assert.equal(stale.ok, false)
     if (!stale.ok) assert.equal(stale.refreshed, true)
   } finally { ctx.dispose() }
@@ -303,5 +303,49 @@ test('行き詰まりのシナリオは理由を表示し、再開で解除し�
     assert.equal(result.blockedReason, undefined)
     assert.equal((ctx.sessions.retain(sessionId, { source: 'm3e.test' }).binding.session.projections.faceOf('goal').getSnapshot() as GoalProjection).goal.phase, 'active')
     assert.equal(unwrapRemoteResult(await remote.get(MOCK_IDS.sessions.readme)), undefined)
+  } finally { ctx.dispose() }
+})
+
+test('/goal はゴールのない会話に実行中のゴールを作り、goal projection へ反映する', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const face = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).session
+    const projection = face.projections.faceOf('goal')
+    const result = await face.command('/goal 新しい目標を立てる')
+    assert.equal(result.ok, true)
+    const goal = unwrapRemoteResult(await goalsRemoteOf(ctx.remote.goals)!.get(MOCK_IDS.sessions.readme))
+    assert.equal(goal?.objective, '新しい目標を立てる')
+    assert.equal(goal?.phase, 'active')
+    assert.equal(goal?.roundsStarted, 0)
+    assert.equal(goal?.revision, 1)
+    assert.equal(goal?.activation, 'armed')
+    const projected = projection.getSnapshot() as GoalProjection
+    assert.equal(projected.goal.objective, '新しい目標を立てる')
+    assert.equal(projected.goal.phase, 'active')
+    assert.equal(projected.goal.revision, 1)
+    assert.equal(projected.roundsStarted, 0)
+  } finally { ctx.dispose() }
+})
+
+test('/goal の引数が空ならゴールを作らない', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const face = (await ctx.sessions.retain(MOCK_IDS.sessions.readme, { source: 'm3e.test' }).ready).session
+    const projection = face.projections.faceOf('goal')
+    assert.equal((await face.command('/goal')).ok, true)
+    assert.equal(unwrapRemoteResult(await goalsRemoteOf(ctx.remote.goals)!.get(MOCK_IDS.sessions.readme)), undefined)
+    assert.equal(projection.getSnapshot(), undefined)
+  } finally { ctx.dispose() }
+})
+
+test('goal-exhausted シナリオは上限まで進んだ停止中のゴールを作り、再開を拒否する', async () => {
+  const ctx = createMockContext({ scenario: 'goal-exhausted', extensions: [{ extendMock }] })
+  try {
+    const remote = goalsRemoteOf(ctx.remote.goals)!
+    const goal = unwrapRemoteResult(await remote.get(sessionId))!
+    assert.equal(goal.phase, 'paused')
+    assert.equal(goal.maxGoalRounds, 8)
+    assert.equal(goal.roundsStarted, goal.maxGoalRounds)
+    assert.equal((await remote.resume(sessionId, goal)).ok, false)
   } finally { ctx.dispose() }
 })
