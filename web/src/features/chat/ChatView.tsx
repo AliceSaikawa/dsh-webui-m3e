@@ -7,6 +7,7 @@ import { useSession } from '../../dsh/session.ts'
 import type { SessionFace } from '../../dsh/services.ts'
 import { AttachmentImage, FileAttachment, PreviewImage } from './Attachments.tsx'
 import { MessageActions } from './MessageActions.tsx'
+import { messageBody } from './text-selection.ts'
 import { ChatSheets, useChatSheets } from './ChatSheets.tsx'
 import { ToolDetail } from './ToolDetail.tsx'
 import { appendLiveRows, buildSettledChat, commandPresentation, formatDuration, summarizeToolArguments, toolIcon, type ChatRow } from './model.ts'
@@ -21,14 +22,14 @@ function Progress({ children }: { children: string }) {
 const Row = memo(function Row({ row, sessionId, face, active }: { row: ChatRow; sessionId: string; face?: SessionFace; active: boolean }) {
   const sheets = useChatSheets()
   if (row.kind === 'user') return <article className="chat-user" aria-label="自分のメッセージ">
-    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}>
+    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active} body={messageBody('user')}>
       {row.text && <p className="chat-bubble">{row.text}</p>}
       <div className="chat-attachments">{row.content.map((block, index) => block.type === 'image'
         ? <AttachmentImage key={index} attachment={block.attachment} face={face} />
         : block.type === 'file' ? <FileAttachment key={index} attachment={block.attachment} /> : null)}</div>
     </MessageActions></article>
   if (row.kind === 'assistant') return row.text ? <article className="chat-assistant" aria-label="AI のメッセージ" aria-busy={row.streaming}>
-    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active}><ChatMarkdown>{row.text}</ChatMarkdown></MessageActions>
+    <MessageActions sessionId={sessionId} text={row.text} seq={row.seq} active={active} body={messageBody('assistant')} streaming={row.streaming}><ChatMarkdown>{row.text}</ChatMarkdown></MessageActions>
   </article> : null
   if (row.kind === 'reasoning') return <details className="chat-reasoning"><summary><Icon name="psychology" /><span className="chat-row-label">{row.streaming ? '考えています…' : '考えた内容'}</span>
     {row.durationMs !== undefined && <span className="chat-reasoning-duration">{formatDuration(row.durationMs)}</span>}<Icon className="chat-chevron" name="expand_more" /></summary>

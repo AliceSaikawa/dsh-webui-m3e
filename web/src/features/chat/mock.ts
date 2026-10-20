@@ -128,6 +128,35 @@ export function extendMock(kit: MockKit): void {
     ]))
     active.updateWorkspace('ws-chat-check', workspace => ({ sessionIds: [...workspace.sessionIds, sessionId] }))
   })
+  kit.scenario('message-select', active => {
+    const sessionId = 'message-select'
+    const assistant = `${[
+      '必要な**コマンド**だけをコピーできます。',
+      '',
+      '```sh',
+      'pnpm test --reporter=dot',
+      '```',
+      '',
+      '設定ファイルは `/mock/dsh-webui-m3e/README.md` です。',
+    ].join('\n')}\n\n${Array.from({ length: 20 }, () => '余白の行です。').join('\n\n')}`
+    active.addSession(summary(sessionId, '一部をコピー'), history([
+      event(0, 'turn/start', { turn: 1 }),
+      event(0, 'step/start', { turn: 1, step: 1 }),
+      event(1, 'user/message', { role: 'user', content: [{ type: 'text', text: '星は *そのまま* 出します。パスは /tmp/partial.txt です。' }] }),
+      event(2, 'assistant/message', { turn: 1, step: 1, stream: [], message: { role: 'assistant', content: [{ type: 'text', text: assistant }] } }),
+      event(3, 'step/end', { turn: 1, step: 1 }),
+      event(3, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]))
+    const streamId = 'message-select-stream'
+    active.addSession({ ...summary(streamId, '生成中の本文'), running: true }, history([
+      event(0, 'turn/start', { turn: 1 }),
+      event(1, 'user/message', { role: 'user', content: [{ type: 'text', text: '生成中の一部を選んで' }] }),
+      event(2, 'step/start', { turn: 1, step: 1 }),
+    ]))
+    active.addWorkspace({ workspaceId: 'ws-message-select', path: '/mock/message-select', title: '一部コピーの確認', sessionIds: [sessionId, streamId], createdAt: new Date(origin).toISOString(), updatedAt: new Date(origin).toISOString() })
+    const gap = '続く本文です。'.repeat(6)
+    void active.streamAssistant(streamId, `生成を始めました。SELECT-MID${gap}SELECT-END`, { chunkMs: 200 })
+  })
   kit.scenario('open-error', active => {
     active.addSession(summary('chat-open-error', '開けない会話'), [])
     active.setSessionState('chat-open-error', { openState: 'error', openError: { code: 'session/not-found', message: '会話が見つかりません。', details: { sessionId: 'chat-open-error' } } })
