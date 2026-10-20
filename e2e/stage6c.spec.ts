@@ -28,6 +28,15 @@ async function announceAgentReady(page: Page) {
   })
 }
 
+async function notifyGoalWatchers(page: Page) {
+  await announceAgentReady(page)
+  await page.evaluate(() => {
+    const kit = (window as any).__stage6c.mock
+    kit.setSessionState('approval-sheet', { running: true })
+    kit.setProjection('approval-sheet', 'goal', kit.getProjection('approval-sheet', 'goal'))
+  })
+}
+
 async function preparationFailed(page: Page, message: string) {
   await page.evaluate(async message => {
     const kit = (window as any).__stage6c.mock
@@ -168,23 +177,40 @@ test('S6C B2 準備が進まなければ読取りを続けず、既存の状態�
 })
 
 test('S6C B2 準備待ちのゴール画面を離れると通知が来ても読取りを再開しない', async ({ page }) => {
+  // The chat screen mounts the strip, whose own watcher legitimately reads
+  // goals.get on notifications. A control page that opens the chat directly
+  // counts those reads, so a watcher leaked by GoalScreen would show up as a
+  // larger delta in the main flow below.
+  const control = await page.context().newPage()
+  await control.clock.install()
+  await expose(control)
+  await visit(control, '/s/approval-sheet', 'goal-preparing')
+  await expect(control.getByTestId('goal-strip')).toBeVisible()
+  await expect(control.getByLabel('メッセージ入力欄')).toBeVisible()
+  await control.clock.runFor(10000)
+  const controlBefore = await control.evaluate(() => (window as any).__goalReads)
+  await notifyGoalWatchers(control)
+  await control.clock.runFor(10000)
+  const direct = await control.evaluate(() => (window as any).__goalReads) - controlBefore
+  await control.close()
+
   await page.clock.install()
   await expose(page)
   await visit(page, '/s/approval-sheet/goal', 'goal-preparing')
   await expect(page.getByText('ゴールの実行状態を確認できませんでした。')).toBeVisible()
-  const reads = await page.evaluate(() => (window as any).__goalReads)
   // Keep the same Session open on chat so a leaked watcher could still read it.
   await page.evaluate(() => { window.location.hash = '/s/approval-sheet' })
   await expect(page.getByRole('heading', { name: 'ゴール', exact: true })).toHaveCount(0)
   await expect(page.getByLabel('メッセージ入力欄')).toBeVisible()
-  await announceAgentReady(page)
-  await page.evaluate(() => {
-    const kit = (window as any).__stage6c.mock
-    kit.setSessionState('approval-sheet', { running: true })
-    kit.setProjection('approval-sheet', 'goal', kit.getProjection('approval-sheet', 'goal'))
-  })
+  await expect(page.getByTestId('goal-strip')).toBeVisible()
   await page.clock.runFor(10000)
-  expect(await page.evaluate(() => (window as any).__goalReads)).toBe(reads)
+  const reads = await page.evaluate(() => (window as any).__goalReads)
+  await notifyGoalWatchers(page)
+  await page.clock.runFor(10000)
+  // direct > 0 proves the notifications reach the probe at all; equality means
+  // the strip accounts for every read and nothing leaked from GoalScreen.
+  expect(direct).toBeGreaterThan(0)
+  expect(await page.evaluate(() => (window as any).__goalReads) - reads).toBe(direct)
 })
 
 test('S6C B2 同じゴールの投影更新から実行状態を読み直す', async ({ page }) => {
