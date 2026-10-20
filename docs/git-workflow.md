@@ -172,18 +172,20 @@ AI-Agent: <ハーネス> / <モデル>
 
 1. CI（`all checks`）が通っていること。ただし、CI が通っただけで安全とは見なしません。
 2. PR ごとに、作った担当とは別の、独立したセッション（サブエージェントなど）でレビューします。blocking の指摘は、その PR のブランチに新しいコミットとして直し、レビューか再確認を受け直します。
-3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。他の担当が作った共有しているブランチ（§1）では、rebase ではなく main をマージで取り込みます（§5）。
+3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。共有しているブランチ（§1）では、rebase ではなく main をマージで取り込みます（§5）。
 4. main に残すコミットメッセージを §4 の形で書きます。**`tmp/pr-<番号>-commit.txt` には本文だけ**（段落、`Closes` か `Refs`、トレーラ）を書き、**件名は書きません**。件名は 5 で `--subject` に渡します。ファイルにも書くと、件名が二重になります。
    - 件名は、PR のタイトルの末尾に ` (#<番号>)` を付けたものです。
    - 本文は、見出しも箇条書きも使わない 1〜3 段落の文章にします。使う人から見て何が変わったか、レビューで迷いそうな判断、確かめていない大事なことを書きます。ファイルの一覧、検証のログ、レビューの経緯は書きません。どれも PR に残ります。
    - 本文のあとに、PR の本文にある `Closes #<番号>` か `Refs #<番号>` の行を置きます。PR の本文になければ書きません。
-   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します（片方が空の行は除きます）。トレーラのないコミットのトレーラは足しません。セッションの記録など確かな根拠で AI が書いたと分かるときだけ足し、推測で帰属を作りません。
+   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します（片方が空の行は除きます）。トレーラのないコミットには、トレーラを足しません。セッションの記録など確かな根拠で AI が書いたと分かるときだけ足し（モデルが分からなければ `unknown`）、推測で帰属を作りません。
      ```bash
-     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..<ブランチ> | grep . | sed 's/^/AI-Agent: /' | sort -u
-     git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..<ブランチ> | grep . | sed 's/^/Co-authored-by: /' | sort -u
+     git fetch origin   # 古い origin/main を基準にしない
+     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..origin/<ブランチ> | grep . | sed 's/^/AI-Agent: /' | sort -u
+     git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..origin/<ブランチ> | grep . | sed 's/^/Co-authored-by: /' | sort -u
      # 前の形式のコミット
-     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..<ブランチ> | grep -Ev '^ / | / $' | sed 's/^/AI-Agent: /' | sort -u
+     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..origin/<ブランチ> | grep -Ev '^ / | / $' | sed 's/^/AI-Agent: /' | sort -u
      ```
+     新しい形式と前の形式で同じ AI があるときは、`AI-Agent` の行が重複していないかを見て、重複を除きます。
    - ファイルの末尾は「本文 → 空行 → `Closes`/`Refs` → 空行 → トレーラ」の順にします。`Closes` とトレーラを同じ段落に置くと、git がトレーラを読めず、トレーラが空になります。
      ```text
      <本文の段落>
