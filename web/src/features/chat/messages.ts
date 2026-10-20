@@ -4,7 +4,8 @@ import { defineMessages } from '../../i18n/catalog.ts'
  * Texts for the message actions sheet and the text selection sheet
  * (web/src/features/chat/MessageActions.tsx). The rest of the chat screen is
  * moved in its own migration PR (docs/design/11-i18n.md). Terms follow the DSH
- * standard UI: copy / 复制, copied / 已复制, branch / 分支.
+ * standard UI and docs/i18n/glossary.md: copy / 复制, copied / 复制成功,
+ * branch / 分支, conversation / 对话.
  */
 export const messageActionMessages = defineMessages({
   ja: {
@@ -40,8 +41,8 @@ export const messageActionMessages = defineMessages({
   zh: {
     title: '消息操作',
     copy: '复制',
-    copied: '已复制。',
-    copyFailed: '无法复制。请点按「选择文本」选中文字后再复制。',
+    copied: '复制成功。',
+    copyFailed: '无法复制。请点击“选择文本”选中文本后再复制。',
     selectText: '选择文本',
     selectTitle: '选择文本',
     selectHint: '长按文字后拖动选择范围，然后复制。',
@@ -49,7 +50,7 @@ export const messageActionMessages = defineMessages({
     forking: '正在分支…',
     forkUnavailable: '发送或生成确认后，才能从这里分支。',
     forkCreated: '已从这条消息创建分支。',
-    openFork: '打开分支的对话',
+    openFork: '打开分支对话',
     close: '关闭',
   },
 })
