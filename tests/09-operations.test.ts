@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { RemoteResult, SessionJob } from '../web/src/dsh/services.ts'
 import {
-  currentGoalProjection, goalPhaseLabel, goalPrimaryAction, goalProjectionOf, goalsRemoteOf,
-  isLiveJob, jobDurationLabel, jobKindLabel, jobStatusLabel, performGoalOperation, sortJobs,
-  type GoalRef, type GoalView, type GoalsRemote,
+  currentGoalProjection, goalPhaseLabel, goalPrimaryAction, goalProjectionOf, goalsEditOf, goalsRemoteOf,
+  isLiveJob, jobDurationLabel, jobKindLabel, jobStatusLabel, performGoalEdit, performGoalOperation, sortJobs,
+  type GoalRef, type GoalView, type GoalsRemote, type GoalsRemoteWithEdit,
 } from '../web/src/features/session-tools/operations.ts'
 
 const view: GoalView = {
@@ -68,6 +68,45 @@ test('ゴールのRPC値はprojectionに変換し、位相に合う操作だけ�
   assert.equal(goalPhaseLabel('blocked'), '行き詰まり')
   assert.ok(goalsRemoteOf(remote()))
   assert.equal(goalsRemoteOf({ get() {} }), undefined)
+  assert.equal(goalsEditOf(remote()), undefined)
+  const withEdit = { ...remote(), edit: async () => success(view) } satisfies GoalsRemoteWithEdit
+  assert.ok(goalsEditOf(withEdit))
+  assert.ok(goalsRemoteOf(withEdit), 'edit があっても必須 RPC だけで判定する')
+})
+
+test('ゴール編集は表示した GoalRef を送り、失敗時は読み直して再送しない', async () => {
+  const requested: GoalRef[] = []
+  let edits = 0
+  let reads = 0
+  const ref = { id: view.id, revision: view.revision }
+  const edited = { ...view, revision: 3, objective: '書き換えた目標' }
+  const withEdit: GoalsRemoteWithEdit = {
+    ...remote({
+      get: async () => { reads += 1; return success(view) },
+    }),
+    edit: async (id, passed, request) => {
+      assert.equal(id, 'session-1')
+      assert.equal(request.objective, '書き換えた目標')
+      requested.push(passed)
+      edits += 1
+      return success(edited)
+    },
+  }
+  const ok = await performGoalEdit(withEdit, 'session-1', ref, { objective: '書き換えた目標' })
+  assert.equal(requested[0], ref)
+  assert.equal(edits, 1)
+  assert.equal(reads, 0)
+  assert.equal(ok.ok, true)
+  if (ok.ok) assert.equal(ok.value?.goal.objective, '書き換えた目標')
+
+  const rejected = await performGoalEdit({
+    ...withEdit,
+    edit: async () => { edits += 1; return failure },
+    get: async () => { reads += 1; return success({ ...view, revision: 9, objective: '最新' }) },
+  }, 'session-1', { id: view.id, revision: 1 }, { objective: '古い編集' })
+  assert.equal(edits, 2)
+  assert.equal(reads, 1)
+  assert.deepEqual(rejected, { ok: false, refreshed: true, value: goalProjectionOf({ ...view, revision: 9, objective: '最新' }) })
 })
 
 test('ゴール操作は表示したGoalRefをそのまま送り、成功値を画面へ返す', async () => {

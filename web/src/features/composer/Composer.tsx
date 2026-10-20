@@ -31,6 +31,8 @@ import { commandIcon } from './presentation.ts'
 import { modelApplyController, modelDisplayName } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
 import { CACHE_SENTINEL_UNLOCK_LABEL, useCacheSentinel } from './cache-sentinel.ts'
+import { GoalStrip } from '../session-tools/GoalStrip.tsx'
+import '../session-tools/session-tools.css'
 import './composer.css'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
@@ -336,6 +338,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
     {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
     {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}
+    {target.kind === 'session' && <GoalStrip sessionId={sessionId} />}
     {queue.length > 0 && <div className="composer-queue"><M3eAssistChip className="composer-queue-chip" variant="elevated" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: '順番待ちの編集' }) }}><Icon slot="icon" name="schedule" />順番待ち {queue.length} 件</M3eAssistChip></div>}
     <div className="composer-input-wrap">
       {suggesting && !busy && (token ? files.length > 0 : commandMatches.length > 0) && <div className="composer-suggestions" aria-label={token ? 'ファイルの候補' : 'コマンドの候補'}>

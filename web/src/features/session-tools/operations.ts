@@ -38,11 +38,33 @@ export interface GoalsRemote {
   clear(sessionId: string, ref: GoalRef): Promise<RemoteResult<GoalRef>>
 }
 
+/** Optional host fields for goals.edit — not required on GoalsRemote. */
+export interface EditGoalRequest {
+  readonly objective?: string
+  readonly maxGoalRounds?: number
+}
+
+/**
+ * Optional host capability. Not required for goalsRemoteOf to succeed.
+ * Presence exposes canEdit only when this method exists on the remote.
+ */
+export interface GoalsEditRemote {
+  edit(sessionId: string, ref: GoalRef, request: EditGoalRequest): Promise<RemoteResult<GoalView>>
+}
+
+export type GoalsRemoteWithEdit = GoalsRemote & GoalsEditRemote
+
 export function goalsRemoteOf(value: unknown): GoalsRemote | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const remote = value as Partial<GoalsRemote>
   return ['get', 'pause', 'resume', 'complete', 'clear'].every(key =>
     typeof remote[key as keyof GoalsRemote] === 'function') ? remote as GoalsRemote : undefined
+}
+
+/** One gate for edit UI; callers never probe remote.edit themselves. */
+export function goalsEditOf(remote: GoalsRemote): GoalsEditRemote | undefined {
+  const candidate = remote as GoalsRemote & Partial<GoalsEditRemote>
+  return typeof candidate.edit === 'function' ? candidate as GoalsEditRemote : undefined
 }
 
 export function goalProjectionOf(view: GoalView | undefined): GoalDisplayState | null {
@@ -90,6 +112,21 @@ export async function performGoalOperation(
       const result = await remote[action](sessionId, ref)
       if (result.ok) return { ok: true, value: goalProjectionOf(result.value), ref: result.value }
     }
+  } catch { /* Read back after both wire failures and rejected results. */ }
+  try {
+    const result = await remote.get(sessionId)
+    if (result.ok) return { ok: false, refreshed: true, value: goalProjectionOf(result.value) }
+  } catch { /* The caller keeps the last known goal and offers a manual retry. */ }
+  return { ok: false, refreshed: false }
+}
+
+/** Same refresh-on-fail pattern as performGoalOperation; never retries with a new ref. */
+export async function performGoalEdit(
+  remote: GoalsRemoteWithEdit, sessionId: string, ref: GoalRef, request: EditGoalRequest,
+): Promise<GoalOperationResult> {
+  try {
+    const result = await remote.edit(sessionId, ref, request)
+    if (result.ok) return { ok: true, value: goalProjectionOf(result.value), ref: result.value }
   } catch { /* Read back after both wire failures and rejected results. */ }
   try {
     const result = await remote.get(sessionId)

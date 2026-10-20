@@ -1,6 +1,8 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
-import { goalProjectionOf, type GoalAction, type GoalRef, type GoalsRemote, type GoalView } from './operations.ts'
+import {
+  goalProjectionOf, type EditGoalRequest, type GoalAction, type GoalRef, type GoalsRemoteWithEdit, type GoalView,
+} from './operations.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -80,7 +82,7 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
     publish(sessionId, value)
     return success(value)
   }
-  const remote: GoalsRemote = {
+  const remote: GoalsRemoteWithEdit = {
     async get(sessionId) { return live(sessionId) ? success(goals.get(sessionId)) : lookupFailure() },
     pause: (sessionId, ref) => update(sessionId, ref, 'pause'),
     resume: (sessionId, ref) => update(sessionId, ref, 'resume'),
@@ -91,6 +93,24 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
       const tombstone = { id: result.value.id, revision: result.value.revision + 1 }
       publish(sessionId, undefined)
       return success(tombstone)
+    },
+    async edit(sessionId, ref, request: EditGoalRequest) {
+      const result = current(sessionId, ref)
+      if (!result.ok) return result
+      const goal = result.value
+      if (goal.phase === 'complete') return failure('gateway/internal', '今の状態ではこの操作はできません。')
+      if (request.objective === undefined && request.maxGoalRounds === undefined) {
+        return failure('gateway/internal', '変更する内容がありません。')
+      }
+      const value: GoalView = {
+        ...goal,
+        revision: goal.revision + 1,
+        updatedAt: Math.max(Date.now(), goal.updatedAt),
+        ...(request.objective !== undefined ? { objective: request.objective } : {}),
+        ...(request.maxGoalRounds !== undefined ? { maxGoalRounds: request.maxGoalRounds } : {}),
+      }
+      publish(sessionId, value)
+      return success(value)
     },
   }
   kit.addRemote('goals', remote)

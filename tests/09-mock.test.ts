@@ -9,7 +9,7 @@ import { createWorkspaceFilesMock } from '../web/src/features/session-tools/mock
 import { appendFilePage, directoryChanged, directoryRequestPath, fileBreadcrumbs, fileChanged, fileRoute, readImageFile, workspaceFilesOf } from '../web/src/features/session-tools/files.ts'
 import { extendMock, SESSION_TOOLS_MOCK_IDS } from '../web/src/features/session-tools/mock.ts'
 import { catalogEntries, childAddress, contextPercent, hasChildren, maxTurn, menuActions, runningJobCount, type ContextPressure } from '../web/src/features/session-tools/presentation.ts'
-import { goalsRemoteOf, performGoalOperation, type GoalProjection } from '../web/src/features/session-tools/operations.ts'
+import { goalsEditOf, goalsRemoteOf, performGoalEdit, performGoalOperation, type GoalProjection, type GoalsRemoteWithEdit } from '../web/src/features/session-tools/operations.ts'
 
 const sessionId = MOCK_IDS.sessions.approval
 
@@ -265,6 +265,29 @@ test('古い GoalRef は状態を変えず拒否し、再読み込みだけで�
     assert.equal(unwrapRemoteResult(await remote.get(sessionId))?.phase, 'paused')
     assert.equal(changes, 0)
     stop()
+  } finally { ctx.dispose() }
+})
+
+test('ゴール編集は objective を更新して revision を進め、完了後は拒否する', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  try {
+    const remote = goalsRemoteOf(ctx.remote.goals)!
+    const editor = goalsEditOf(remote)
+    assert.ok(editor, '偽データは edit 能力を公開する')
+    const original = unwrapRemoteResult(await remote.get(sessionId))!
+    const edited = unwrapRemoteResult(await editor.edit(sessionId, original, { objective: '新しい目標文' }))
+    assert.equal(edited.objective, '新しい目標文')
+    assert.equal(edited.revision, original.revision + 1)
+    assert.equal(edited.phase, original.phase)
+    assert.equal((ctx.mock.getProjection(sessionId, 'goal') as GoalProjection).goal.objective, '新しい目標文')
+    const rounds = unwrapRemoteResult(await editor.edit(sessionId, edited, { maxGoalRounds: 12 }))
+    assert.equal(rounds.maxGoalRounds, 12)
+    assert.equal(rounds.objective, '新しい目標文')
+    const completed = unwrapRemoteResult(await remote.complete(sessionId, rounds))
+    assert.equal((await editor.edit(sessionId, completed, { objective: '完了後' })).ok, false)
+    const stale = await performGoalEdit(remote as GoalsRemoteWithEdit, sessionId, original, { objective: '古い' })
+    assert.equal(stale.ok, false)
+    if (!stale.ok) assert.equal(stale.refreshed, true)
   } finally { ctx.dispose() }
 })
 
