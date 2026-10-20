@@ -19,7 +19,7 @@ The screenshots show translated mock screens. The actual app UI is Japanese only
 ## Quick Start
 
 > [!IMPORTANT]
-> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. Install DSH 0.2.0-rc.2 with `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` and check it with `dsh --version`. **No release supports DSH 0.2.1-rc.2 yet** (this repository's main supports 0.2.1-rc.2, and the next release will distribute it). 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
+> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. Install DSH 0.2.0-rc.2 with `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` and check it with `dsh --version`. **The pre-release v0.0.9-rc.2 is the release that supports DSH 0.2.1-rc.2** (GitHub's Latest is still 0.0.8). Install it the same way as below, replacing `v0.0.8` and `0.0.8` in the URL with `v0.0.9-rc.2` and `0.0.9-rc.2`. 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
 
 1. Run this on the machine running DSH:
 
@@ -38,7 +38,7 @@ M3E is not published to the npm registry, so installing by name with `add dsh-we
 ## Features
 
 > [!NOTE]
-> This section describes main, which the next release will distribute. 0.0.8 does not have pinning, archived-session display and restore, base color selection, the plugin list, or the shared error screens.
+> This section describes main. 0.0.8 does not have pinning, archived-session display and restore, base color selection, the plugin list, or the shared error screens. The pre-release v0.0.9-rc.2 includes them.
 
 - **Conversations:** Read AI responses, tool results, and reasoning at phone width. You can also switch to a chronological trace view.
 - **Session list:** Pin conversations to the top of the list. Pins are shared across all workspaces, and changes made in the standard interface or on other devices are reflected too. You can show archived conversations by switching the list filter, and restore one from the long-press menu.
@@ -51,7 +51,7 @@ M3E is not published to the npm registry, so installing by name with `add dsh-we
 - **Appearance:** Besides light and dark, choose the base color on each device from six presets (purple, blue, teal, green, orange, red) or any color. The chosen color is applied to the whole interface.
 - **Plugins:** From Settings, check the state of installed plugins in a read-only list.
 - **Errors:** A shared screen explains the cause and the next action for render failures, unknown screens, conversations that fail to open, and being offline at startup.
-- **Home screen:** On iPhone, choose "Add to Home Screen" in Safari to open it like an app.
+- **Home screen:** On iPhone, choose "Add to Home Screen" in Safari to open it like an app. Behavior as a Web app added to the Home Screen is not verified.
 
 The existing DSH interface remains available. You can choose which interface to use on each device.
 
@@ -60,8 +60,8 @@ The existing DSH interface remains available. You can choose which interface to 
 - DeepSeek Harness **0.2.0-rc.2** (when using the published 0.0.8)
   - Use 0.0.8 with this version. See Quick Start for installation.
   - See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
-- DeepSeek Harness **0.2.1-rc.2** (this repository's main; distributed with the next release)
-  - main supports this version. No release supports it yet. Support for the 0.1.5 series has been removed.
+- DeepSeek Harness **0.2.1-rc.2** (this repository's main and the pre-release v0.0.9-rc.2)
+  - main and v0.0.9-rc.2 support this version. Support for the 0.1.5 series has been removed.
   - Install DSH itself with an explicit version. The npm `latest` tag is still 0.2.0-rc.2, so installing without a version gets a release main does not support (do not use `@next`: the version it points to changes over time).
 
     ```bash
@@ -123,7 +123,7 @@ If something fails, check the following.
 - A download returning 404: check the tag, asset filename and URL in the release list.
 - Missing pnpm: check PATH.
 - A missing UI: check the profile and restart the Host.
-- Opening `/m3e/` without the cookie shows a page that asks you to reopen it from the address bar (next release). If it does not open in 0.0.8, reopen the sign-in URL printed by `dsh web`.
+- Opening `/m3e/` without the cookie shows a page that asks you to reopen it from the address bar (from v0.0.9-rc.2). If it does not open in 0.0.8, reopen the sign-in URL printed by `dsh web`.
 - Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).
@@ -132,7 +132,7 @@ For source builds, see the [development and distribution guide](docs/development
 
 - The UI text is Japanese only for now. The foundation for following DSH's language setting exists ([docs/design/11-i18n.md](docs/design/11-i18n.md)), but the English and Chinese translations are not added yet.
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
-- Real-device testing has been done only on an iPhone 17 Pro Max with Safari. Other devices and browsers are not tested.
+- Real-device testing has been done only by opening it in Safari on an iPhone 17 Pro Max. Behavior as a Web app added to the Home Screen, and other devices and browsers, are not tested.
 - UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Behavior with a real LLM is not verified. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) for the detailed verification scope.
 - See [docs/development.md](docs/development.md) for architecture, development instructions and verification records.
 
