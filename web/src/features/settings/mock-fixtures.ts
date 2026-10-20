@@ -271,6 +271,11 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     0: {"type":"object","dict":{"preference":1}},
     1: {"type":"string","meta":{"pattern":{"source":"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$","flags":"u"},"required":false}},
   } } },
+  // dsh-client-ui-settings publishes the Coding Tools preference as `enabled`, true unless set otherwise.
+  { ns: "ui-settings", autoGenerate: false, base: {"enabled":true}, schema: { uid: 0, refs: {
+    0: {"type":"object","dict":{"enabled":1}},
+    1: {"type":"boolean","meta":{"default":true}},
+  } } },
   { ns: "ui-theme", autoGenerate: false, base: {"preference":"system","fontSize":14,"codeFontSize":11,"terminalFontSize":13,"textFontFamily":"","codeFontFamily":"","terminalFontFamily":""}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"preference":1,"fontSize":5,"codeFontSize":6,"terminalFontSize":7,"textFontFamily":8,"codeFontFamily":9,"terminalFontFamily":10}},
     1: {"type":"union","list":[2,3,4]},
