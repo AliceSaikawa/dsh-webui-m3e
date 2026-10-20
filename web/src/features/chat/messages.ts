@@ -1,0 +1,70 @@
+import { defineMessages } from '../../i18n/catalog.ts'
+
+/**
+ * Message-action sheet and the text-selection sheet.
+ * Japanese is the source. English and Chinese are ready, and the page still
+ * shows Japanese until every catalog is translated (docs/design/11-i18n.md).
+ * The rest of the chat screen stays inline until its own migration.
+ */
+export const chatActionMessages = defineMessages({
+  ja: {
+    actionsTitle: 'メッセージの操作',
+    copy: 'コピー',
+    selectText: 'テキストを選択',
+    fork: 'ここから分岐',
+    forking: '分岐しています…',
+    forkPending: '送信・生成が確定すると、この位置から分岐できます。',
+    forkCreated: 'このメッセージからの分岐を作成しました。',
+    openFork: '分岐した会話を開く',
+    close: '閉じる',
+    copied: 'コピーしました。',
+    copyFailed: 'コピーできませんでした。「テキストを選択」を開いて、必要な部分を選んでコピーしてください。',
+    selectTitle: 'テキストを選択',
+    selectHelp: '必要な部分を長押しして選び、表示されたコピーを押してください。',
+    selectBody: '選択できる本文',
+    copyBlock: 'このブロックをコピー',
+    blockCopied: 'コードブロックをコピーしました。',
+    blockCopyFailed: 'コードブロックをコピーできませんでした。ブロックの中の文字を選んでコピーしてください。',
+    streamingHint: '生成の途中です。続きを含めるには、閉じてからもう一度開いてください。',
+  },
+  en: {
+    actionsTitle: 'Message actions',
+    copy: 'Copy',
+    selectText: 'Select text',
+    fork: 'Branch from here',
+    forking: 'Branching…',
+    forkPending: 'You can branch from here after the message is saved.',
+    forkCreated: 'Branched from this message.',
+    openFork: 'Open the branched conversation',
+    close: 'Close',
+    copied: 'Copied.',
+    copyFailed: 'Could not copy. Open Select text, choose the part you need, and copy it.',
+    selectTitle: 'Select text',
+    selectHelp: 'Touch and hold the part you need, then tap Copy.',
+    selectBody: 'Selectable message text',
+    copyBlock: 'Copy this block',
+    blockCopied: 'Copied the code block.',
+    blockCopyFailed: 'Could not copy the code block. Select the text inside the block and copy it.',
+    streamingHint: 'This reply is still being written. Close this sheet and open Select text again to include the rest.',
+  },
+  zh: {
+    actionsTitle: '消息操作',
+    copy: '复制',
+    selectText: '选择文本',
+    fork: '从此处分支',
+    forking: '正在分支…',
+    forkPending: '消息保存后即可从此处分支。',
+    forkCreated: '已从此消息创建分支。',
+    openFork: '打开分支会话',
+    close: '关闭',
+    copied: '已复制。',
+    copyFailed: '无法复制。请打开「选择文本」，选中需要的部分后再复制。',
+    selectTitle: '选择文本',
+    selectHelp: '长按需要的部分并选中，然后点按复制。',
+    selectBody: '可选中的正文',
+    copyBlock: '复制此代码块',
+    blockCopied: '已复制代码块。',
+    blockCopyFailed: '无法复制代码块。请在代码块内选择文字后再复制。',
+    streamingHint: '回复仍在生成。要包含后续内容，请关闭后重新打开「选择文本」。',
+  },
+})
