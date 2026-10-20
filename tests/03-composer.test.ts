@@ -4,6 +4,7 @@ import {
   filterCommands, findReferenceToken, fitImageDimensions, isKnownCommand,
   isReferencePathSafe, reasoningEffortLabel, replaceReference, shouldConvertImage, visibleQueue,
 } from '../web/src/features/composer/helpers.ts'
+import { permissionIcon } from '../web/src/features/composer/presentation.ts'
 
 test('reference completion is limited to the cursor word after a whitespace boundary', () => {
   assert.deepEqual(findReferenceToken('@docs', 5), { start: 0, end: 5, query: 'docs' })
@@ -96,4 +97,13 @@ test('image resizing keeps aspect ratio without enlarging images or producing an
   assert.deepEqual(fitImageDimensions(1, 9000), { width: 1, height: 2048 })
   assert.throws(() => fitImageDimensions(0, 10), /大きさ/u)
   assert.throws(() => fitImageDimensions(10, Number.NaN), /大きさ/u)
+})
+
+test('permission icon distinguishes the four built-in presets and keeps the shield for everything else', () => {
+  assert.equal(permissionIcon('read-only'), 'visibility')
+  assert.equal(permissionIcon('workspace-write'), 'edit_document')
+  assert.equal(permissionIcon('danger-full-access'), 'warning')
+  assert.equal(permissionIcon('auto'), 'gpp_maybe')
+  // Custom, a Host-added preset, not loaded yet, and keys that exist on every object.
+  for (const value of ['custom', 'team-review', '', 'toString', '__proto__', undefined]) assert.equal(permissionIcon(value), 'shield')
 })

@@ -39,7 +39,7 @@
 - 角丸 28px の枠 1 つに、上に入力欄、下にボタンの行をまとめます。1 行のときの高さは約 110px です。
 - 入力欄は `@m3e/react` の `M3eTextareaAutosize`（最大 6 行、それ以上はスクロール）を使います。
 - **Enter は改行です。送信は送信ボタンだけです。**
-- 下の行：左に ＋（＋ のシート）、その隣に権限の盾のアイコンのボタン（今のプリセット名は読み上げとツールチップだけ。タップで権限の選び直し）、右寄せにモデル名のボタン（タップでモデルの選択）、右に送信ボタン（Issue #106）。
+- 下の行：左に ＋（＋ のシート）、その隣に権限のアイコンのボタン（アイコンは今のプリセットに合わせて変わる。プリセット名は読み上げとツールチップだけ。タップで権限の選び直し）、右寄せにモデル名のボタン（タップでモデルの選択）、右に送信ボタン（Issue #106）。
 - 入力中の文は、セッションごとにこの端末へ保存し（`localStorage`）、会話を開き直しても残します。送ったら消します。
 - 接続が切れている間は、送信ボタンを押せなくします。
 - サブエージェントの会話（`snapshot.subagent` が null でない）では、入力欄の代わりに「サブエージェントの会話は読むだけです」の 1 行を出します（2026-09-25 の決定。続けて頼む機能は後回し）。
@@ -94,6 +94,7 @@
 - projection の `permissions`（`{ options, currentValue }`）から、プリセットを並べます。名前と説明（`description`）をそのまま出し、今のものにチェックを付けます。
 - 選んだら閉じ、チップの名前を変えます。確認のダイアログは挟みません（2026-09-25 の決定。あとでフィードバックで見直す）。
 - `currentValue` がどの選択肢にも合わないときは、チップに「カスタム」と出します。「カスタム」は選べません。
+- アイコンは `permissionIcon(value)`（`presentation.ts`）が値から決め、入力欄のボタンとシートの行で同じ関数を使います：`read-only` は `visibility`、`workspace-write` は `edit_document`、`danger-full-access` は `warning`、`auto` は `gpp_maybe`。`custom`、Host が足したプリセット、projection や候補の読み込み前は `shield` です。
 
 ### 新しいセッション
 
@@ -432,3 +433,9 @@
 
 - session 対象の Composer に `GoalStrip` をキューの上へ追加（09 の presence を import）。`/goal` を偽コマンド一覧と `face.command` 許可リストへ追加（作成自体はコマンド経路のまま）。
 - 高さの定数は main のまま。`.composer` に `--composer-goal-reserve`（既定 0px）を置き、`.composer:has(.goal-strip)` で 48px、`.composer:has(.goal-strip-message)` で 92px にして、`.composer-frame` と textarea の `max-height` から引く。ゴールのない会話の入力欄は main と同じ高さになる。ストリップは高さ 400px 未満の表示領域では出さない（09 の `goalStripFits`）ので、844×222 などの低い画面の操作行は変わらない。`app/styles.css` は変更していない。
+
+### 2026-10-20：Issue #144、入力欄の権限のアイコン
+
+- 入力欄の権限のボタンが `permissionIcon` を使い、今の権限に合わせたアイコンを出す。アイコンは `currentValue` から決まるので、シートでの選び直し、`/permission`、ほかの端末での変更のどれでも、再読み込みなしで変わる。シートの行の `auto` は `warning` から `gpp_maybe` に変えた。
+- 仮定（issue の案を採用）：アイコンの組み合わせは案のとおり。フル アクセスと自動レビューでも色は変えない。
+- 確かめたこと：単体試験（`tests/03-composer.test.ts`）と、偽データの e2e（`e2e/permission-icon.spec.ts`）。実 DSH では確かめていない。
