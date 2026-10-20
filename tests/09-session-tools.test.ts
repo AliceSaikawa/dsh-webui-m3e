@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { catalogEntries, catalogRows, childAddress, contextPercent, formatTokens, hasChildren, maxTurn, menuActions, reasoningLabel, runningJobCount } from '../web/src/features/session-tools/presentation.ts'
+import { cacheHit, catalogEntries, catalogRows, childAddress, contextPercent, formatTokens, hasChildren, maxTurn, menuActions, reasoningLabel, runningJobCount } from '../web/src/features/session-tools/presentation.ts'
 import type { SessionJob, SessionSummary, SessionWireEvent, SessionProjectionSnapshot } from '../web/src/dsh/services.ts'
 
 test('コンテキストは pressure を優先し、欠けたときのみ projected に戻る', () => {
@@ -9,6 +9,25 @@ test('コンテキストは pressure を優先し、欠けたときのみ projec
   assert.equal(contextPercent({ pressureTokens: 0, projectedTokens: 100, contextWindow: 100 }), 0)
   assert.equal(contextPercent({ pressureTokens: 120, contextWindow: 100 }), 120)
   for (const value of [undefined, null, {}, { pressureTokens: 1 }, { pressureTokens: 1, contextWindow: 0 }, { pressureTokens: -1, contextWindow: 100 }, { pressureTokens: NaN, contextWindow: 100 }, { pressureTokens: 1, contextWindow: Infinity }]) assert.equal(contextPercent(value), undefined)
+})
+test('キャッシュヒット率は標準の画面と同じ分母・丸めで、入力がなければ出さない', () => {
+  const usage = (uncachedInputTokens: number, cacheReadTokens: number, cacheWriteTokens: number) => ({ uncachedInputTokens, outputTokens: 5, cacheReadTokens, cacheWriteTokens })
+  // Denominator is uncached input + cache read + cache write.
+  assert.deepEqual(cacheHit(usage(11668, 15400, 2048)), { value: 53, fractionDigits: 0 })
+  assert.deepEqual(cacheHit(usage(50, 50, 0)), { value: 50, fractionDigits: 0 })
+  assert.deepEqual(cacheHit(usage(0, 0, 100)), { value: 0, fractionDigits: 0 })
+  // Ties round up.
+  assert.deepEqual(cacheHit(usage(1, 1, 0)), { value: 50, fractionDigits: 0 })
+  assert.deepEqual(cacheHit(usage(199, 1, 0)), { value: 1, fractionDigits: 0 })
+  // A full hit is 100; a partial hit never rounds up to 100.
+  assert.deepEqual(cacheHit(usage(0, 1234, 0)), { value: 100, fractionDigits: 0 })
+  assert.deepEqual(cacheHit(usage(1, 199, 0)), { value: 99.5, fractionDigits: 1 })
+  assert.deepEqual(cacheHit(usage(1, 999, 0)), { value: 99.9, fractionDigits: 1 })
+  assert.deepEqual(cacheHit(usage(1, 99999, 0)), { value: 99.999, fractionDigits: 3 })
+  assert.deepEqual(cacheHit(usage(1, 1_000_000_000_000, 0)), { value: 99.9999999999, fractionDigits: 10 })
+  // No input, or any input-side bucket missing or invalid: nothing to show.
+  for (const value of [undefined, null, {}, usage(0, 0, 0), { cacheReadTokens: 1, cacheWriteTokens: 0 }, { uncachedInputTokens: 1, cacheWriteTokens: 0 }, { uncachedInputTokens: 1, cacheReadTokens: 0 },
+    usage(NaN, 1, 0), usage(1, Infinity, 0), usage(1, 1, -1), usage(1.5, 1, 0)]) assert.equal(cacheHit(value), undefined)
 })
 test('トークンは万単位と未取得を区別する', () => {
   assert.equal(formatTokens(0), '0')
