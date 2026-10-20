@@ -186,3 +186,58 @@ test('131 /goal で偽データのゴールを作り、コマンド入力の吹�
   expect(alignment.right).toBeLessThanOrEqual(1)
   expect(alignment.left).toBeGreaterThan(1)
 })
+
+test('131 停止中（disarmed）の進行中ゴールは「停止中」と再開を出し、帯の再開で進行中に戻る', async ({ page }) => {
+  await visit(page, '/s/approval-sheet', 'goal-disarmed')
+  await expect(status(page)).toHaveText('停止中 ・ 3 / 8 ラウンド')
+  await expect(strip(page).getByRole('alert')).toHaveCount(0)
+  await expect(strip(page).getByRole('button', { name: '一時停止', exact: true })).toHaveCount(0)
+  await expect(strip(page).getByRole('button', { name: '再開', exact: true })).toBeEnabled()
+  await strip(page).getByRole('button', { name: '再開', exact: true }).click()
+  await expect(status(page)).toHaveText('進行中 ・ 3 / 8 ラウンド')
+  await expect(page.locator('m3e-snackbar:popover-open').last()).toContainText('ゴールを再開しました')
+  await expect(strip(page).getByRole('button', { name: '再開', exact: true })).toHaveCount(0)
+  await expect(strip(page).getByRole('button', { name: '一時停止', exact: true })).toBeEnabled()
+})
+
+const SETTLED_STATUS = {
+  default: '進行中 ・ 3 / 8 ラウンド',
+  'goal-disarmed': '停止中 ・ 3 / 8 ラウンド',
+  'goal-blocked': '行き詰まり ・ 3 / 8 ラウンド',
+  'goal-exhausted': '一時停止 ・ 8 / 8 ラウンド',
+} as const
+
+for (const scenario of [undefined, 'goal-disarmed', 'goal-blocked', 'goal-exhausted'] as const) {
+  test(`131 帯とゴール画面は状態・理由・操作の可否が食い違わない（${scenario ?? '進行中'}）`, async ({ page }) => {
+    await visit(page, '/s/approval-sheet', scenario)
+    // Wait for the settled state: the first render shows「状態未確認」until activation is known.
+    await expect(status(page)).toHaveText(SETTLED_STATUS[scenario ?? 'default'])
+    const names = ['一時停止', '再開', '目標を編集'] as const
+    const stripView = {
+      objective: await objective(page).innerText(),
+      status: await status(page).innerText(),
+      message: (await message(page).count()) ? await message(page).innerText() : '',
+      actions: await Promise.all(names.map(async name => {
+        const target = strip(page).getByRole('button', { name, exact: true })
+        return (await target.count()) === 0 ? 'none' : (await target.isDisabled()) ? 'disabled' : 'enabled'
+      })),
+    }
+    await strip(page).locator('.goal-strip-body').click()
+    await expect(page).toHaveURL(/#\/s\/approval-sheet\/goal$/)
+    const region = page.getByRole('region', { name: '現在のゴール' })
+    await expect(region).toBeVisible()
+    // The screen mounts its own presence hook, so its status and button states settle after the first
+    // render (activation unconfirmed → disabled buttons). Poll instead of reading once.
+    await expect.poll(async () => ({
+      objective: await region.getByRole('heading').innerText(),
+      status: await region.locator('.st-goal-status').innerText(),
+      // Every message paragraph on the screen: the blocked reason in the card, the exhausted note below it.
+      // Reading them all (not just the strip's text) also catches a message only the screen shows.
+      message: (await page.locator('.st-goal-card p:not(.st-goal-status), .st-content > p.st-muted, .st-error p').allInnerTexts()).join('\n'),
+      actions: await Promise.all(names.map(async name => {
+        const target = page.locator('.st-goal-actions').getByRole('button', { name, exact: true })
+        return (await target.count()) === 0 ? 'none' : (await target.isDisabled()) ? 'disabled' : 'enabled'
+      })),
+    })).toEqual(stripView)
+  })
+}
