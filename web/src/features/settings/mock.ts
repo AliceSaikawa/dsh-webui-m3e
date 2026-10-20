@@ -6,7 +6,7 @@ import { settingsFixtures } from './mock-fixtures.ts'
 import { applyMockOperations, mockSettingsChanged } from './mock-mutations.ts'
 import { mockProviderRegistry, registerMockModelWriter } from './mock-models.ts'
 import { installCustomScenarios } from './mock-custom.ts'
-import { AGENT_PRESET_NS } from './agent-presets.ts'
+import { AGENT_PRESET_NS, CODING_TOOLS_NS } from './agent-presets.ts'
 
 type MutateOperation = { op: 'unset'; path: string[] } | { op: 'set'; path: string[]; value: SettingValue }
 export interface SettingsMockRemote {
@@ -108,6 +108,7 @@ export function extendMock(kit: MockKit): void {
   let keyLookupFails = false
   let presetListFails = false
   let presetListUnavailable = false
+  let standardBroken = false
   // Keep registration booleans only, never the submitted key material.
   const registeredKeys = new Set(['DEEPSEEK_API_KEY'])
 
@@ -172,7 +173,8 @@ export function extendMock(kit: MockKit): void {
         if (presetListFails) return failure('gateway/internal', 'モードの一覧を取得できませんでした。')
         const stored = namespaces.get(AGENT_PRESET_NS)?.value.selectedDefault
         const selected = typeof stored === 'string' ? stored : 'standard'
-        return success({ presets: [...mockAgentPresets].sort(comparePresets).map(row => ({ ...row, isDefault: row.id === selected })) })
+        const presets = mockAgentPresets.map(row => row.id === 'standard' && standardBroken ? { ...row, broken: 'persona (@deepseek-ai/dsh-persona): waiting for terminal' } : row)
+        return success({ presets: presets.sort(comparePresets).map(row => ({ ...row, isDefault: row.id === selected })) })
       },
       async read(id: string) {
         const row = mockAgentPresets.find(item => item.id === id)
@@ -240,6 +242,19 @@ export function extendMock(kit: MockKit): void {
   })
   kit.scenario('settings-keys-readonly', () => { keysWritable = false })
   kit.scenario('settings-keys-unavailable', () => { keyLookupFails = true })
+  // Coding Tools off: the Host hides PTC and Minimal, so a default that needs them goes back to standard.
+  const codingToolsOff = () => {
+    const row = namespaces.get(CODING_TOOLS_NS)!
+    row.base = { ...row.base, enabled: false }
+    row.value = { ...row.value, enabled: false }
+  }
+  const defaultTo = (id: string) => {
+    const row = namespaces.get(AGENT_PRESET_NS)!
+    row.value = { ...row.value, selectedDefault: id }
+  }
+  kit.scenario('coding-tools-off', codingToolsOff)
+  kit.scenario('coding-tools-off-default-ptc', () => { codingToolsOff(); defaultTo('ptc') })
+  kit.scenario('coding-tools-off-default-ptc-no-standard', () => { codingToolsOff(); defaultTo('ptc'); standardBroken = true })
   kit.scenario('agent-presets-error', () => { presetListFails = true })
   kit.scenario('agent-presets-unavailable', () => {})
   kit.scenario('agent-presets-invocation-unavailable', () => { presetListUnavailable = true })

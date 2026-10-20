@@ -27,7 +27,7 @@ import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.t
 import { registerDeliveryDestination, handoffDeliveryDestination } from './delivery-destination.ts'
 import { conversationSelection } from '../../dsh/conversation-selection.ts'
 import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRecoveryResult } from './workspace-recovery.ts'
-import { commandIcon } from './presentation.ts'
+import { commandIcon, permissionIcon } from './presentation.ts'
 import { modelApplyController, modelDisplayName } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
 import { CACHE_SENTINEL_UNLOCK_LABEL, useCacheSentinel } from './cache-sentinel.ts'
@@ -369,7 +369,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         {preparing && <small role="status">画像を準備しています…</small>}
         <div className={snapshot.running ? 'composer-controls composer-controls-running' : 'composer-controls'}>
           <M3eIconButton variant="outlined" aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
-          <M3eIconButton className="composer-permission" variant="outlined" aria-label={permissionLabel} title={permissionLabel} disabled={!connected || busy} onClick={() => { void openPermissions() }}><Icon name="shield" /></M3eIconButton>
+          <M3eIconButton className="composer-permission" variant="outlined" aria-label={permissionLabel} title={permissionLabel} disabled={!connected || busy} onClick={() => { void openPermissions() }}><Icon name={permissionIcon(permissionOption?.value)} /></M3eIconButton>
           <span className="composer-spacer" />
           <M3eButton variant="text" className="composer-model" aria-label={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} title={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} disabled={!connected || busy} onClick={openModels}><span className="composer-model-label">{modelName ?? 'モデル'}</span></M3eButton>
           {snapshot.running && <M3eIconButton aria-label="実行を停止" disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}

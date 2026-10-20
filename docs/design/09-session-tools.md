@@ -50,7 +50,8 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 
 - シートで出します。値はすべて projection から読み、DSH に問い合わせません。
 - コンテキストの使用率：`contextPressure` の `pressureTokens`（なければ `projectedTokens`）を `contextWindow` で割った割合。進捗バーと「62%」のような数字で出します。値がなければこの行を出しません。
-- トークン：`tokenUsage` の入力（`uncachedInputTokens`）、出力、キャッシュ（読み・書き）。1 万以上は「1.2 万」の形にします。
+- キャッシュヒット率：`tokenUsage` の `cacheReadTokens` を、入力側の 3 つの合計（`uncachedInputTokens` + `cacheReadTokens` + `cacheWriteTokens`）で割った割合。標準の画面（`dsh-client-ui-chat` の `cacheHitPercent`）と同じ計算で、コンテキストの使用率と同じく数字と進捗バーで出します。整数に丸め（ちょうど半分は切り上げ）、100% に届かない値が 100 に丸まるときは、100 にならない桁数まで小数を出します（`cacheHit`）。3 つのどれかが欠けているとき、入力が 0 のときは、この行を出しません。
+- トークン：`tokenUsage` の入力（`uncachedInputTokens`）と出力の 1 行、キャッシュの読み・書きの 1 行。1 万以上は「1.2 万」の形にします。
 - ターン：`records` の `turn/start` の最大の番号。
 - モデル：`modelSelection` のモデル名と考える深さ。
 - クォータは出しません（2026-09-25 の決定。第 1 弾では出さない方針）。
@@ -90,7 +91,7 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - projection の `goal` を読みます。ゴールがなければ「ゴールはありません」とだけ出します。
 - カードに、目標の文（`objective`）、状態（進行中、一時停止、行き詰まり、完了）、ラウンド数（`roundsStarted` / `maxGoalRounds`）を出します。行き詰まり（`blocked`）なら理由（`blockedReason`）も出します。
 - ボタン：「一時停止」（一時停止中は「再開」）、「完了にする」、「ゴールを消す」（確認を挟む）。操作には `GoalRef`（`id` と `revision`）を渡し、古い `revision` で拒否されたら読み直します。
-- ゴールの作成と編集は後回しです。
+- ゴールの作成は入力欄の `/goal` で行います。目標の編集は `goals.edit` を持つ Host だけです。会話画面のストリップとコマンド入力の吹き出しは、2026-10-20 の項にあります。
 
 ## 使う DSH の窓口
 
@@ -287,3 +288,19 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - 偽データ：`/goal <目標>` で、その会話に進行中のゴールを作る（`kit.onRecord` で `command/run` を見る）。シナリオ `goal-exhausted` を追加した。
 - `e2e/stage6c.spec.ts` の「準備待ちのゴール画面を離れると…」は、会話画面のストリップも `goals.get` を読むため、会話画面を直接開いた対照ページと読取りの増分を比べる形に変えた。GoalScreen の監視を解放しない変異では 9 対 6 で失敗することを確かめた。
 - 確かめたこと：`pnpm typecheck`、`pnpm test`（1389 件成功、2 件 skip）、`pnpm build`、`git diff --check`、`tsconfig.e2e.json` の型検査、偽データの e2e 全体（362 件成功。新規 `e2e/goal-strip.spec.ts` の 8 件を含む）。390×844・390×450 の画面写真で、ストリップと会話欄の高さを目で確かめた。実 DSH と実機のキーボード表示では確かめていない。
+
+### 2026-10-21：Issue #131 の残りの確認と試験の補強
+
+- Issue #131 の項目を `main`（#139 の後）と照らした。ストリップ、帯からの一時停止／再開、行き詰まり・ラウンド上限・停止中の表示、`/goal` のコマンド入力の吹き出し、狭い画面と入力欄の高さ、偽データのシナリオ（`goal-blocked`・`goal-disarmed`・`goal-exhausted`）は #139 で実装済みだった。実装は変えていない。
+- 足したもの：`e2e/goal-strip.spec.ts` に、停止中（`goal-disarmed`）の帯の表示と再開、帯とゴール画面の状態・理由・操作の可否が食い違わないこと（進行中・停止中・行き詰まり・上限到達の 4 つ）を足した。`tests/02-chat.test.ts` に、DSH が記録する実際の `args`（先頭に空白が付く生の入力）でも「/goal 本文」になること、`goal` 以外と名前のない `command/run` は吹き出しにならないことを足した。`docs/ui-spec.md` に、ストリップとコマンド入力の吹き出しを書き、「作成と編集は後回し」を直した。
+- DSH の `dsh-commands`（`lib/index.js`）は、`recordInput: false` でない限り `args: line.slice("/name".length)` を記録する。標準画面の `dsh-client-ui-goal` は `/${name}${args.trimEnd()}` を出す。M3E は `args` を前後とも `trim()` して `/goal 本文` にするので、通常の入力では同じ見た目になる。入力の先頭に複数の空白や改行が続く場合だけ、標準画面は空白をそのまま残し、M3E は 1 つの空白にする。
+- 偽データの `command`（`web/src/dsh/mock/context.ts`）は、`args` を空白で区切り直して `join(' ')` する。実際の DSH の記録（先頭の空白付きの生の入力）とは形が違うが、表示は同じなので変えていない。
+- 保留：目標の編集（`goals.edit`）は、実 DSH で実行して確かめられないので、これ以上は進めない。0.2.1-rc.2 の `dsh-goal` の型（`typert.remote-client.d.ts`）、Host の実装、標準画面の呼び出し（`dsh-client-ui-goal` の `onEdit`）で、RPC の有無と `{ objective?, maxGoalRounds? }` の形は確かめた（`docs/dsh-compatibility.md` の表と同じ）。実装は #139 の `goalsEditOf` で、RPC がなければ編集のボタンを出さない。
+- 意図した差：標準の画面はストリップから消去もできるが、M3E は確認のダイアログを挟めるゴール画面だけに置く。ストリップのアイコンボタンは実測 40×40px で、本体の高さ 44px より小さい（未対応）。
+
+### 2026-10-20：Issue #145、統計のキャッシュヒット率
+
+- `cacheHit`（`presentation.ts`）が標準の画面と同じ分母・丸めで割合を返し、`StatsSheet` がコンテキストの使用率の下に数字と進捗バーで出す。整数の計算は `BigInt` で行う。桁の書式は `formatNumber`（`web/src/i18n/format.ts`）。
+- 標準の画面と同じ値になることは、`dsh-client-ui-chat` 0.2.1-rc.2 の `formatCacheHitPercent` を読んで合わせ、そのコードを抜き出して `cacheHit` と `formatNumber('ja')` の出力を 236,006 通り（小さな値の全探索、乱数の大きな値、99.5・99.9・99.999・99.9999999999 の境界）で突き合わせ、不一致 0 を確かめた。実 DSH の画面での表示は見ていない。
+- トークンの行を、入力・出力の行と、キャッシュ（読み込み・書き込み）の行に分けた。1 行に 4 つ並べると、390px の幅で「キャッシュ読み込み」の途中で折り返したため。
+- 仮定（issue の案を採用）：ターンごと（トレースの記録の詳細）のキャッシュヒット率、LLM の時間・ツールの時間・TTFT・TPS は入れない。割合は会話全体のキャッシュヒット率だけ。

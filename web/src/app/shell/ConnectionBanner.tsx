@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
+import { useMessages } from '../../i18n/index.ts'
+import { shellMessages } from '../messages.ts'
 
 const lastConnected = new WeakMap<object, number>()
 export function useConnection() {
@@ -11,6 +13,7 @@ export function useConnection() {
   return { state, connected: state === 'connected', lastConnectedAt: lastConnected.get(connection), reconnect: () => connection.reconnect() }
 }
 export function ConnectionBanner() {
+  const text = useMessages(shellMessages)
   const { state, lastConnectedAt, reconnect } = useConnection()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -19,7 +22,7 @@ export function ConnectionBanner() {
     return () => clearInterval(timer)
   }, [state])
   if (state === 'connected') return null
-  if (state === 'connecting') return <div className="connection-progress" role="progressbar" aria-label="再接続中"><span /></div>
-  const stale = lastConnectedAt === undefined ? '保存済みのデータを表示しています' : `${Math.max(0, Math.floor((now - lastConnectedAt) / 60_000))} 分前のデータを表示しています`
-  return <aside className="connection-banner" role="status"><div><strong>DSH との接続が切れました</strong><small>{stale}</small></div><M3eButton onClick={reconnect}>再接続</M3eButton></aside>
+  if (state === 'connecting') return <div className="connection-progress" role="progressbar" aria-label={text.reconnecting}><span /></div>
+  const stale = lastConnectedAt === undefined ? text.staleWithoutTime : text.staleMinutes(Math.max(0, Math.floor((now - lastConnectedAt) / 60_000)))
+  return <aside className="connection-banner" role="status"><div><strong>{text.disconnected}</strong><small>{stale}</small></div><M3eButton onClick={reconnect}>{text.reconnect}</M3eButton></aside>
 }

@@ -5,6 +5,8 @@ import { conversationSelection, conversationSessionId, createConversationVisitTr
 import { completionStatus } from '../dsh/completion-status.ts'
 import { resetDeferred } from '../dsh/interactions.ts'
 import { remoteErrorMessage } from '../dsh/remote-result.ts'
+import { currentLocale, messagesOf } from '../i18n/index.ts'
+import { shellMessages } from './messages.ts'
 import { showSnackbar } from './overlay/index.ts'
 
 /** Effects convey intent; reference lifetime belongs to the root owner. */
@@ -28,7 +30,7 @@ export function useConversationSelection(pathname: string): void {
       if (!active || owner.state.getSnapshot().sessionId !== sessionId || diagnostic.reported) return
       diagnostic.reported = true
       console.error(`会話を選択できませんでした: ${sessionId}`, error)
-      showSnackbar(remoteErrorMessage(error, '会話を開けませんでした。もう一度お試しください。'))
+      showSnackbar(remoteErrorMessage(error, messagesOf(shellMessages, currentLocale()).openFailed))
     })
     return () => { active = false }
   }, [owner, sessionId, list.phase, workspaceList.phase, diagnostic])
