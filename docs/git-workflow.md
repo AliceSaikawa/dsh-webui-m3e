@@ -1,6 +1,6 @@
 # Git の運用
 
-このリポジトリ（`AliceSaikawa/dsh-webui-m3e`）で作業する人と AI エージェント（Claude Code、Codex、DSH など）の、worktree・ブランチ・コミット・PR・マージの決まりです。2026-10-16 に決めました。[設計書の README](design/README.md) や担当の設計書とここが食い違うときは、この文書を優先します。
+このリポジトリ（`AliceSaikawa/dsh-webui-m3e`）で作業する人と AI エージェント（Claude Code、Codex、DSH など）の、worktree・ブランチ・コミット・PR・マージの決まりです。2026-10-16 に決め、2026-10-20 にコミットのトレーラとマージの手順を変えました。[設計書の README](design/README.md) や担当の設計書とここが食い違うときは、この文書を優先します。
 
 ## 0. 方針
 
@@ -9,7 +9,7 @@
 - push していないコミットの amend・rebase・並べ替えは、許可なしで行ってかまいません。
 - 自分のブランチなら `--force-with-lease` を使ってかまいません。人と共有しているブランチでは許可を取ります。
 
-squash では、ブランチのコミットは main に残りません。main の履歴に残るのは **PR のタイトルと本文** です。ブランチのコミットを整えるのはレビューを読みやすくするためで、main の履歴の質は PR のタイトルと本文で決まります。
+squash では、ブランチのコミットは main に残りません。main の履歴に残るのは、**マージのときに書くコミットメッセージ** です（§7）。PR の本文はレビューのための説明で、main には残しません。ブランチのコミットを整えるのは、レビューを読みやすくするためです。
 
 ### GitHub の設定（2026-10-16 に変更）
 
@@ -17,13 +17,13 @@ squash では、ブランチのコミットは main に残りません。main �
 |---|---|---|
 | `allow_squash_merge` | `true` | squash だけでマージする |
 | `allow_merge_commit`、`allow_rebase_merge` | `false` | ほかのマージ方法は選べない |
-| `squash_merge_commit_title` | `PR_TITLE` | main のコミットの件名は PR のタイトル（末尾に ` (#番号)` が付く） |
-| `squash_merge_commit_message` | `PR_BODY` | main のコミットの本文は PR の本文 |
+| `squash_merge_commit_title` | `PR_TITLE` | GitHub の画面でマージするときの件名の下書き。§7 の手順では `--subject` で渡す |
+| `squash_merge_commit_message` | `PR_BODY` | GitHub の画面でマージするときの本文の下書き。§7 の手順では `--body-file` で渡す |
 | `delete_branch_on_merge` | `true` | マージしたら、リモートのブランチを自動で消す |
 
 ブランチ保護の必須チェックは `all checks` だけです。`strict`（最新の main を取り込み済みであること）は求めていません。
 
-これより前のマージは merge commit で行っていました。そのため、main の古い履歴には `Merge pull request #…` と、ブランチの個々のコミットが残っています。
+これより前のマージは merge commit で行っていました。そのため、main の古い履歴には `Merge pull request #…` と、ブランチの個々のコミットが残っています。#138 までの squash のコミットは、PR の本文をそのまま本文にしています。
 
 ## 1. 操作と許可
 
@@ -37,7 +37,8 @@ squash では、ブランチのコミットは main に残りません。main �
 | **共有しているブランチ**への `--force-with-lease` | 対象を示して許可を取ってから |
 | `--force-with-lease` を付けない `git push --force` | 使わない |
 | PR の作成・本文の更新 | 依頼か許可があるときだけ |
-| main へのマージ | ユーザー、または対象の PR を示して許可された担当だけ |
+| main へのマージ | ユーザー、またはユーザーにマージを頼まれた担当だけ（PR の番号か範囲で示されたもの） |
+| マージを頼まれた PR のブランチへの、指摘の修正の push | 行ってよい（新しいコミットとして積み、force push はしない） |
 | `git reset --hard`、コミットしていない変更を捨てる操作 | 使わない |
 | マージ済みの自分のブランチと worktree の削除 | §9 の条件を満たせば行ってよい。満たさなければ確認する |
 
@@ -94,28 +95,31 @@ git push --force-with-lease --force-if-includes origin <ブランチ>
 
 ### メッセージ
 
-ブランチのコミットも、main に残る squash のコミット（PR のタイトルと本文）も、同じ形にします。
+ブランチのコミットも、main に残る squash のコミット（§7）も、同じ形にします。
 
 ```text
 <type>(<scope>): <subject in English>
 
 <なぜ変えたか。件名の言い直しはしない>
 
-AI-Harness: <DeepSeek Harness / Claude Code / Codex CLI など>
-AI-Model: <モデル名>
-AI-Effort: <推論の強さ>
-AI-Duration: <例：15m>
-AI-Cost: <分からなければ unknown>
-AI-Task: <設計書の番号か Issue。例：08-settings>
+AI-Agent: <ハーネス> / <モデル>
 ```
 
 - 件名は Conventional Commits の `type(scope): subject` です。type は `feat`、`fix`、`perf`、`refactor`、`docs`、`test`、`chore`、`ci` のどれかです。scope には変えた領域（`settings`、`composer` など）を書き、省略してもかまいません。
 - **件名は英語**で、短い命令形にし、末尾にピリオドを付けません。変更の中心になる実在のシンボルがあれば、その名前を入れます。例: `fix(settings): keep pending drafts across reset`
 - 本文には、理由とレビューで迷いそうな判断を書きます。件名を繰り返しません。本文の言語は日本語でも英語でもかまいません。
-- 段落や箇条の途中で改行しません。1 文には 1 つのことを書き、言い換えずに実在の名前（シンボル、パス、コマンド）を使います。
+- 段落や箇条の途中で改行しません。英語の本文も、72 桁などで折り返しません。1 文には 1 つのことを書き、言い換えずに実在の名前（シンボル、パス、コマンド）を使います。
 - ブランチのコミットの本文には `#` で始まる行を書きません。エディタで `git commit` すると、git がコメントとして消すためです。
-- AI が書いたコミットにはトレーラを付けます。分からない値は `unknown` と書きます。
 - 個人情報、ローカルの絶対パス、認証値を書きません。
+
+### トレーラ
+
+- AI が書いたコミットには、書いた AI ごとに `AI-Agent: <ハーネス> / <モデル>` を 1 行ずつ付けます。モデルが分からなければ `unknown` と書きます。
+- ハーネスは製品の名前で書き、`Cursor`、`OpenCode`、`DeepSeek Harness`、`Claude Code`、`Codex CLI` の表記に揃えます。ここにないハーネスは、製品の正式な名前を書きます。
+- モデルは、ハーネスが示す ID をそのまま書きます。例: `claude-opus-5-5`、`deepseek-v4.1-flash-free`
+- `Co-authored-by` は、使ったハーネスに公式の行があるときだけ付けます。例: Cursor の `Co-authored-by: Cursor Agent <cursoragent@cursor.com>`。使っていないハーネスやモデルの行は付けず、メールアドレスも作りません。
+- トレーラは本文の **最後** に置き、前に空行を 1 つはさみます。git がトレーラとして読めるようにするためです。
+- 2026-10-20 より前のコミットには、`AI-Harness`、`AI-Model`、`AI-Effort`、`AI-Duration`、`AI-Cost`、`AI-Task` の 6 行が付いています。書き換えません。
 
 ## 5. main への追従
 
@@ -134,7 +138,7 @@ AI-Task: <設計書の番号か Issue。例：08-settings>
 - レビューできて単独でマージできるまとまりができたら、すぐに PR を出します。大きな PR を 1 本出すより、狭い PR を数本出します。目安は数百行（試験を含む）です。千行を超えそうなら、分け方を先に相談します。
 - PR はドラフトにせず、レビューできる状態で開きます。
 - **タイトルが、main に残るコミットの件名になります。** §4 の形式（英語）で書きます。
-- **本文が、main に残るコミットの本文になります。** 差分を持っているレビュー担当が 1 分で読める説明にします。作業の記録ではありません。次の節をこの順に置き、書くことのない節は消します。
+- **本文は、レビューのための説明です。** main には残りません。main のコミットの本文は、マージのときにこれをもとに書きます（§7）。差分を持っているレビュー担当が 1 分で読める説明にします。作業の記録ではありません。次の節をこの順に置き、書くことのない節は消します。
   ```text
   ## Why
   <意図と方針を 1〜2 段落で>
@@ -153,15 +157,8 @@ AI-Task: <設計書の番号か Issue。例：08-settings>
   - 確かめていないこと: <あれば>
 
   Closes #<番号>
-
-  AI-Harness: ...
-  AI-Model: ...
-  AI-Effort: ...
-  AI-Duration: ...
-  AI-Cost: ...
-  AI-Task: ...
   ```
-  - トレーラは本文の **最後** に置き、前に空行を 1 つはさみます（git がトレーラとして読めるようにするため）。複数の AI やセッションが関わったときは、主に書いたものを書きます。
+  - トレーラは書きません。main のコミットのトレーラは、マージのときにブランチのコミットから集めます（§7）。
   - 全体を 40 行以内にします。超えそうなら削ります。
   - Scope はファイルごとの説明文にしません。実装の手順、レビュー指摘への対応の経緯、SHA の列挙、rebase の経緯、エージェントごとの報告、長いログや表も書きません。必要なら、ファイルや Issue のコメントにしてリンクします。
   - `## Summary` や `## Test plan` のような決まり文句の節は使いません。
@@ -171,16 +168,38 @@ AI-Task: <設計書の番号か Issue。例：08-settings>
 
 ## 7. マージ
 
+マージするのは、ユーザーか、ユーザーにマージを頼まれた担当だけです。頼み方は PR の番号でも、「レビュー待ちの PR」のような範囲でもかまいません。頼まれたら、次の 1〜6 を途中で確認を取らずに進めます。止めて報告するのは、このあとの「止めて報告すること」に当たるときだけです。
+
 1. CI（`all checks`）が通っていること。ただし、CI が通っただけで安全とは見なしません。
-2. 各 PR に、作った担当とは別のセッションのレビューがあること。blocking の指摘を直したら、マージの前にレビューか再確認を受け直します。
+2. PR ごとに、作った担当とは別の、独立したセッション（サブエージェントなど）でレビューします。blocking の指摘は、その PR のブランチに新しいコミットとして直し、レビューか再確認を受け直します。
 3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。
-4. マージは squash で行います。
+4. main に残すコミットメッセージを §4 の形で書き、`tmp/pr-<番号>-commit.txt` に保存します。
+   - 件名は、PR のタイトルの末尾に ` (#<番号>)` を付けたものです。
+   - 本文は、見出しも箇条書きも使わない 1〜3 段落の文章にします。使う人から見て何が変わったか、レビューで迷いそうな判断、確かめていない大事なことを書きます。ファイルの一覧、検証のログ、レビューの経緯は書きません。どれも PR に残ります。
+   - 本文のあとに、PR の本文と同じ `Closes #<番号>` か `Refs #<番号>` の行を置きます。
+   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します。トレーラのないコミットは、PR の本文やブランチ名から書いた AI を確かめて足します。
+     ```bash
+     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..<ブランチ> | grep . | sort -u
+     git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..<ブランチ> | grep . | sort -u
+     # 前の形式のコミット
+     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..<ブランチ> | grep -v '^ / $' | sort -u
+     ```
+5. squash でマージします。
    ```bash
-   gh pr merge <番号> --squash
+   gh pr merge <番号> --squash --match-head-commit <レビューした先頭の SHA> \
+     --subject '<件名> (#<番号>)' --body-file tmp/pr-<番号>-commit.txt
    ```
-   - 件名と本文は設定に任せ、`--subject` や `--body` で上書きしません。直したいときは、マージの前に PR のタイトルと本文を直します。
+   - `--match-head-commit` は、レビューのあとにブランチが動いていたらマージを止めるためです。止まったら、増えたコミットをレビューし直します。
    - `--delete-branch` は付けません。ローカルのブランチを消そうとして、worktree で使っているブランチに当たると失敗するためです。リモートのブランチは設定で自動で消え、ローカルは §9 で片付けます。
-5. マージするのは、ユーザーか、その PR について明示的に許可された担当だけです。
+6. `git log origin/main -1` で、main のコミットが書いたとおりかを確かめます。マージした PR と、そのコミットメッセージを報告します。
+   - ユーザーにメッセージを先に見たいと言われたときは、5 の前に見せて確認を取ります。
+
+### 止めて報告すること
+
+- blocking の指摘を直すのに、仕様の判断が要る
+- CI が落ち続け、PR の中では直せない
+- main との衝突を、どちらかの変更の意図を変えずには解けない
+- §1 で許可が要る操作（共有しているブランチへの `--force-with-lease` など）や、禁じた操作が必要になった
 
 ## 8. 依存する PR（スタック）
 
@@ -220,3 +239,5 @@ squash したブランチは main の祖先にならないので、`git branch -
 ## 参考
 
 - @poteto（Lauren Tan）の運用。[pstack](https://github.com/cursor/plugins/tree/main/pstack) の [opening-a-pr.md](https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/opening-a-pr.md) と [shipping.md](https://github.com/cursor/plugins/blob/main/pstack/skills/poteto-mode/playbooks/shipping.md) をもとに、このリポジトリの禁止事項（`git reset --hard` を使わない、マージは許可制）に合わせて変えています。
+- main に残すコミットメッセージの形は、cursor/plugins の [6b78e9f](https://github.com/cursor/plugins/commit/6b78e9f4e46c75d1697d837e51f07c2692e60b24) を参考にしています。
+- §7 の、レビューからマージまでを任せる流れは、OpenAI DevDay Exchange Tokyo（2026-10-20）で示された指示の例（[写真](https://x.com/uakihir0/status/2112438809535357427)）を参考にしています。

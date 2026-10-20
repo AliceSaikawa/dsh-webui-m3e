@@ -120,17 +120,7 @@ pnpm build
 
 ## コミット
 
-- メッセージは `<type>: <内容>` の形で、type は `feat`、`fix`、`refactor`、`docs`、`test`、`chore` のどれかです。
-- ユーザーの共通ルールに従い、AI が書いたコミットには、次の git トレーラを付けます。どの AI のどの設定で書いたかを、あとで比べられるようにするためです。分からない値は `unknown` と書きます。
-
-```text
-AI-Harness: Codex CLI
-AI-Model: <モデル名>
-AI-Effort: <推論の強さ>
-AI-Duration: <作業にかかった時間。例：1h20m>
-AI-Cost: <費用。定額のプランで測れなければ unknown>
-AI-Task: <設計書の番号。例：03-composer>
-```
+- メッセージの形と、AI が書いたコミットに付けるトレーラ（`AI-Agent`）は、[git-workflow.md](../git-workflow.md) の §4 に従います。
 - コミットメッセージに個人情報を書きません。`--force-with-lease` を付けない `git push --force` と、`git reset --hard` は使いません。`--force-with-lease` は自分のブランチには許可なしで使え、人と共有しているブランチでは許可を取ります。
 - ブランチ・コミット・PR・マージの決まりは [git-workflow.md](../git-workflow.md) にまとめてあります。この文書と食い違うときは、git-workflow.md を優先します。
 
