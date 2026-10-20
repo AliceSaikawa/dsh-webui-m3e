@@ -19,6 +19,35 @@ export function contextPercent(value?: ContextPressure | null): number | undefin
   return Math.round(tokens / window * 100)
 }
 
+export interface CacheHit {
+  /** The rate in percent, rounded for display (never 100 for a partial hit). */
+  readonly value: number
+  /** Decimal places that `value` is rounded to. */
+  readonly fractionDigits: number
+}
+
+/**
+ * Cache-hit rate of the whole conversation, matching the stock screen
+ * (dsh-client-ui-chat `cacheHitPercent`): cache reads over the three input-side
+ * buckets (uncached input + cache read + cache write). Returns undefined when
+ * any bucket is missing or no input was sent, so no "0%" or "NaN%" is shown.
+ * Ratios round to whole percent, ties up. A partial hit that would round to 100
+ * keeps adding decimals until it stays below 100; only a full hit is 100.
+ */
+export function cacheHit(usage?: Usage | null): CacheHit | undefined {
+  const buckets = [usage?.uncachedInputTokens, usage?.cacheReadTokens, usage?.cacheWriteTokens]
+  if (!buckets.every((tokens): tokens is number => typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens >= 0)) return undefined
+  const read = BigInt(buckets[1]!)
+  const input = BigInt(buckets[0]!) + read + BigInt(buckets[2]!)
+  if (input === 0n) return undefined
+  if (read === input) return { value: 100, fractionDigits: 0 }
+  for (let fractionDigits = 0; ; fractionDigits++) {
+    const scale = 100n * 10n ** BigInt(fractionDigits)
+    const units = (2n * read * scale + input) / (2n * input)
+    if (units < scale) return { value: Number(units) / 10 ** fractionDigits, fractionDigits }
+  }
+}
+
 /**
  * Token counts. Above 10,000 the scale is 万 (10,000) for every language; the
  * formatted value and its placement follow the page language (formatNumber).

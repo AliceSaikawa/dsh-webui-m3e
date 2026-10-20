@@ -50,7 +50,8 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 
 - シートで出します。値はすべて projection から読み、DSH に問い合わせません。
 - コンテキストの使用率：`contextPressure` の `pressureTokens`（なければ `projectedTokens`）を `contextWindow` で割った割合。進捗バーと「62%」のような数字で出します。値がなければこの行を出しません。
-- トークン：`tokenUsage` の入力（`uncachedInputTokens`）、出力、キャッシュ（読み・書き）。1 万以上は「1.2 万」の形にします。
+- キャッシュヒット率：`tokenUsage` の `cacheReadTokens` を、入力側の 3 つの合計（`uncachedInputTokens` + `cacheReadTokens` + `cacheWriteTokens`）で割った割合。標準の画面（`dsh-client-ui-chat` の `cacheHitPercent`）と同じ計算で、コンテキストの使用率と同じく数字と進捗バーで出します。整数に丸め（ちょうど半分は切り上げ）、100% に届かない値が 100 に丸まるときは、100 にならない桁数まで小数を出します（`cacheHit`）。3 つのどれかが欠けているとき、入力が 0 のときは、この行を出しません。
+- トークン：`tokenUsage` の入力（`uncachedInputTokens`）と出力の 1 行、キャッシュの読み・書きの 1 行。1 万以上は「1.2 万」の形にします。
 - ターン：`records` の `turn/start` の最大の番号。
 - モデル：`modelSelection` のモデル名と考える深さ。
 - クォータは出しません（2026-09-25 の決定。第 1 弾では出さない方針）。
@@ -287,3 +288,10 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - 偽データ：`/goal <目標>` で、その会話に進行中のゴールを作る（`kit.onRecord` で `command/run` を見る）。シナリオ `goal-exhausted` を追加した。
 - `e2e/stage6c.spec.ts` の「準備待ちのゴール画面を離れると…」は、会話画面のストリップも `goals.get` を読むため、会話画面を直接開いた対照ページと読取りの増分を比べる形に変えた。GoalScreen の監視を解放しない変異では 9 対 6 で失敗することを確かめた。
 - 確かめたこと：`pnpm typecheck`、`pnpm test`（1389 件成功、2 件 skip）、`pnpm build`、`git diff --check`、`tsconfig.e2e.json` の型検査、偽データの e2e 全体（362 件成功。新規 `e2e/goal-strip.spec.ts` の 8 件を含む）。390×844・390×450 の画面写真で、ストリップと会話欄の高さを目で確かめた。実 DSH と実機のキーボード表示では確かめていない。
+
+### 2026-10-20：Issue #145、統計のキャッシュヒット率
+
+- `cacheHit`（`presentation.ts`）が標準の画面と同じ分母・丸めで割合を返し、`StatsSheet` がコンテキストの使用率の下に数字と進捗バーで出す。整数の計算は `BigInt` で行う。桁の書式は `formatNumber`（`web/src/i18n/format.ts`）。
+- 標準の画面と同じ値になることは、`dsh-client-ui-chat` 0.2.1-rc.2 の `formatCacheHitPercent` を読んで合わせた。同じ入力どうしの出力の突き合わせまでは行っていない。
+- トークンの行を、入力・出力の行と、キャッシュ（読み込み・書き込み）の行に分けた。1 行に 4 つ並べると、390px の幅で「キャッシュ読み込み」の途中で折り返したため。
+- 仮定（issue の案を採用）：ターンごと（トレースの記録の詳細）のキャッシュヒット率、LLM の時間・ツールの時間・TTFT・TPS は入れない。割合は会話全体のキャッシュヒット率だけ。
