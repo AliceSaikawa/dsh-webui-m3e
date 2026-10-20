@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   filterCommands, findReferenceToken, fitImageDimensions, isKnownCommand,
   isReferencePathSafe, reasoningEffortLabel, replaceReference, shouldConvertImage, visibleQueue,
+  withdrawnPermission,
 } from '../web/src/features/composer/helpers.ts'
 
 test('reference completion is limited to the cursor word after a whitespace boundary', () => {
@@ -96,4 +97,15 @@ test('image resizing keeps aspect ratio without enlarging images or producing an
   assert.deepEqual(fitImageDimensions(1, 9000), { width: 1, height: 2048 })
   assert.throws(() => fitImageDimensions(0, 10), /大きさ/u)
   assert.throws(() => fitImageDimensions(10, Number.NaN), /大きさ/u)
+})
+
+test('a draft permission is dropped only when it was chosen and the catalog no longer offers it', () => {
+  const options = [{ value: 'read-only' }, { value: 'workspace-write' }]
+  assert.equal(withdrawnPermission('team-review', options), 'team-review')
+  assert.equal(withdrawnPermission('read-only', options), undefined)
+  assert.equal(withdrawnPermission(undefined, options), undefined)
+  assert.equal(withdrawnPermission('read-only', []), 'read-only')
+  // Matching is by value, never by prefix or inherited key.
+  assert.equal(withdrawnPermission('read', options), 'read')
+  assert.equal(withdrawnPermission('toString', options), 'toString')
 })

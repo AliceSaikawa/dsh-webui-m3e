@@ -94,3 +94,13 @@ export function fitImageDimensions(width: number, height: number): { width: numb
   const scale = Math.min(1, imageMaxEdge / Math.max(width, height))
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }
 }
+
+/**
+ * The permission a new-conversation draft chose, when the catalog no longer
+ * offers it. The Host answers `/permission <unknown>` with `matched: true` and
+ * leaves the permission unchanged, so such a value must not reach the send.
+ * Returns undefined when nothing was chosen or the choice is still offered.
+ */
+export function withdrawnPermission(chosen: string | undefined, options: readonly { readonly value: string }[]): string | undefined {
+  return chosen !== undefined && !options.some(option => option.value === chosen) ? chosen : undefined
+}
