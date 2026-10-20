@@ -3,6 +3,8 @@ import { RemoteCallError } from '../../dsh/remote-result.ts'
 
 /** The settings namespace that stores the new-conversation default. */
 export const AGENT_PRESET_NS = 'agent-preset-registry'
+/** The settings namespace of the Coding Tools preference (`enabled`, true unless set to false). */
+export const CODING_TOOLS_NS = 'ui-settings'
 
 export interface AgentPresetRow {
   readonly id: string
@@ -83,6 +85,33 @@ export function groupPresets(rows: readonly AgentPresetRow[]): { builtIn: AgentP
   const builtIn: AgentPresetRow[] = [], custom: AgentPresetRow[] = []
   for (const row of rows) (isBuiltInPreset(row) ? builtIn : custom).push(row)
   return { builtIn, custom }
+}
+
+/** Coding Tools are off only when the Host reports `enabled: false`; a missing or unreadable value keeps every mode. */
+export function codingToolsDisabled(namespaces: readonly { readonly ns: string; readonly value?: unknown }[]): boolean {
+  const row = namespaces.find(item => item.ns === CODING_TOOLS_NS)
+  return record(row?.value)?.enabled === false
+}
+
+/** The shipped PTC and Minimal modes need Coding Tools; a named custom override keeps its own behavior. */
+export function requiresCodingTools(row: Pick<AgentPresetRow, 'id' | 'name'> | undefined): boolean {
+  return row !== undefined && isBuiltInPreset(row) && (row.id === 'ptc' || row.id === 'minimal')
+}
+
+/** Modes shown in the settings list: with Coding Tools off, PTC and Minimal are hidden. */
+export function visiblePresets(rows: readonly AgentPresetRow[], codingToolsOff: boolean): readonly AgentPresetRow[] {
+  return codingToolsOff ? rows.filter(row => !requiresCodingTools(row)) : rows
+}
+
+/**
+ * What to do about the new-conversation default once Coding Tools are off:
+ * `none` when it is still usable, `set-standard` to save `standard`, and
+ * `standard-unavailable` when `standard` is missing or broken (nothing is saved).
+ */
+export type CodingToolsReset = 'none' | 'set-standard' | 'standard-unavailable'
+export function codingToolsReset(rows: readonly AgentPresetRow[], codingToolsOff: boolean): CodingToolsReset {
+  if (!codingToolsOff || !requiresCodingTools(rows.find(row => row.isDefault))) return 'none'
+  return rows.some(row => row.id === 'standard' && row.broken === undefined) ? 'set-standard' : 'standard-unavailable'
 }
 
 interface AgentPresetsWire {

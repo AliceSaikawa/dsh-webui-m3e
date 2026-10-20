@@ -25,7 +25,7 @@ test('設定の偽データは全ページと全種類、反映時期、除外�
   try {
     const description = unwrapRemoteResult(await remote.describe())
     assert.equal(description.writable, true)
-    assert.equal(description.namespaces.length, 14)
+    assert.equal(description.namespaces.length, 15)
     const grouped = groupNamespaces(description.namespaces)
     assert.deepEqual(Object.fromEntries(Object.entries(grouped).map(([page, items]) => [page, items.length])), {
       models: 2, permission: 1, agent: 1, providers: 0, tools: 5, other: 1,

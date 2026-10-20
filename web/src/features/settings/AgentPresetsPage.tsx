@@ -9,7 +9,7 @@ import { useMessages } from '../../i18n/index.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { useDsh, type DshRemote } from '../../dsh/services.ts'
-import { AGENT_PRESET_NS, agentPresetsApi, groupPresets, presetDisplayText, type AgentPresetRow, type AgentPresetsApi } from './agent-presets.ts'
+import { AGENT_PRESET_NS, agentPresetsApi, codingToolsDisabled, codingToolsReset, groupPresets, presetDisplayText, visiblePresets, type AgentPresetRow, type AgentPresetsApi } from './agent-presets.ts'
 import { agentPresetMessages, type AgentPresetTexts } from './messages.ts'
 import { fieldKey } from './store.ts'
 import { useSettings } from './use-settings.ts'
@@ -21,8 +21,14 @@ export type AgentPresetRosterState =
   | { readonly phase: 'error'; readonly error: unknown }
   | { readonly phase: 'ready'; readonly rows: readonly AgentPresetRow[] }
 
-/** Read the optional roster and keep it current across reconnects and settings changes. */
+/**
+ * Read the optional roster and keep it current across reconnects and settings
+ * changes. With Coding Tools off it also puts a hidden default (PTC or Minimal)
+ * back to `standard` each time the roster or the preference changes, as the
+ * stock screen does; `resetError` says why that could not be done.
+ */
 export function useAgentPresetRoster(remote: DshRemote) {
+  const text = useMessages(agentPresetMessages)
   const api = useMemo(() => agentPresetsApi(remote), [remote])
   const [state, setState] = useState<AgentPresetRosterState>({ phase: 'loading' })
   const [generation, setGeneration] = useState(0)
@@ -53,7 +59,27 @@ export function useAgentPresetRoster(remote: DshRemote) {
     if (connected && !wasConnected.current) reload()
     wasConnected.current = connected
   }, [connected, reload])
-  return { state, reload, api }
+
+  const { state: settings, store } = useSettings()
+  const codingToolsOff = settings.phase === 'ready' && codingToolsDisabled(settings.namespaces)
+  const writable = settings.phase === 'ready' && settings.writable && settings.namespaces.some(row => row.ns === AGENT_PRESET_NS)
+  const [resetError, setResetError] = useState<string>()
+  // One attempt per roster read: a refused save is not retried until the roster is read again.
+  const attempted = useRef<AgentPresetRosterState | undefined>(undefined)
+  useEffect(() => {
+    const decision = state.phase === 'ready' ? codingToolsReset(state.rows, codingToolsOff) : 'none'
+    if (decision === 'none' || !writable) { setResetError(undefined); return }
+    if (decision === 'standard-unavailable') { setResetError(text.standardUnavailable); return }
+    if (attempted.current === state) return
+    attempted.current = state
+    let active = true
+    void store.edit(AGENT_PRESET_NS, ['selectedDefault'], 'standard').then(saved => {
+      if (saved) reload()
+      else if (active) setResetError(store.getSnapshot().fieldErrors[fieldKey(AGENT_PRESET_NS, ['selectedDefault'])] ?? text.saveFailed)
+    })
+    return () => { active = false }
+  }, [state, codingToolsOff, writable, store, reload, text])
+  return { state, reload, api, codingToolsOff, resetError }
 }
 
 export function AgentPresetsPage() {
@@ -65,7 +91,10 @@ export function AgentPresetsPage() {
   const [notice, setNotice] = useState<string>()
   const canWrite = settings.phase === 'ready' && settings.writable
     && settings.namespaces.some(row => row.ns === AGENT_PRESET_NS)
-  const groups = roster.state.phase === 'ready' ? groupPresets(roster.state.rows) : { builtIn: [], custom: [] }
+  // The Coding Tools preference decides which modes show, so wait for it to avoid a flash of hidden modes.
+  const pending = roster.state.phase === 'loading' || (roster.state.phase === 'ready' && settings.phase === 'loading')
+  const rows = roster.state.phase === 'ready' ? visiblePresets(roster.state.rows, roster.codingToolsOff) : []
+  const groups = groupPresets(rows)
 
   async function makeDefault(row: AgentPresetRow): Promise<void> {
     if (!canWrite || saving !== undefined || row.broken !== undefined || row.isDefault) return
@@ -88,20 +117,21 @@ export function AgentPresetsPage() {
   return <PageScaffold title={text.title} actions={<M3eIconButton aria-label={text.refresh} onClick={roster.reload}><Icon name="refresh" /></M3eIconButton>}>
     <div className="settings-content">
       <p className="settings-preset-intro">{text.intro}</p>
-      {roster.state.phase === 'loading' && <p role="status" className="muted">{text.loading}</p>}
+      {pending && <p role="status" className="muted">{text.loading}</p>}
       {roster.state.phase === 'unavailable' && <p role="status" className="settings-notice">{text.unavailable}</p>}
       {roster.state.phase === 'error' && <div role="alert" className="settings-notice">
         <p>{remoteErrorMessage(roster.state.error, text.loadFailed)}</p>
         <M3eButton variant="outlined" onClick={roster.reload}>{text.retry}</M3eButton>
       </div>}
-      {roster.state.phase === 'ready' && <>
+      {roster.state.phase === 'ready' && !pending && <>
         {settings.phase === 'error' && <p role="alert" className="settings-notice">{settings.error}</p>}
         {settings.phase === 'ready' && !canWrite && <p className="settings-notice">{text.readonly}</p>}
+        {roster.resetError !== undefined && <p role="alert" className="settings-notice">{roster.resetError}</p>}
         {notice !== undefined && <p role="alert" className="settings-notice">{notice}</p>}
         {saving !== undefined && <p role="status" className="settings-saving">{text.saving}</p>}
         <PresetGroup title={text.builtInGroup} rows={groups.builtIn} text={text} canWrite={canWrite} saving={saving !== undefined} makeDefault={makeDefault} view={view} />
         <PresetGroup title={text.customGroup} rows={groups.custom} text={text} canWrite={canWrite} saving={saving !== undefined} makeDefault={makeDefault} view={view} />
-        {roster.state.rows.length === 0 && <p className="muted">{text.empty}</p>}
+        {rows.length === 0 && <p className="muted">{text.empty}</p>}
       </>}
     </div>
   </PageScaffold>
