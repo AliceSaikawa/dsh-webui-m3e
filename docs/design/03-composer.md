@@ -430,4 +430,5 @@
 
 ### 2026-10-20：Issue #131、Composer へのゴール・ストリップ載せ
 
-- session 対象の Composer に `GoalStrip` をキューの上へ追加（09 の presence を import）。入力欄の高さ上限をストリップ1行分だけ広げた。`/goal` を偽コマンド一覧と `face.command` 許可リストへ追加（作成自体はコマンド経路のまま）。
+- session 対象の Composer に `GoalStrip` をキューの上へ追加（09 の presence を import）。`/goal` を偽コマンド一覧と `face.command` 許可リストへ追加（作成自体はコマンド経路のまま）。
+- 高さの定数は main のまま。`.composer` に `--composer-goal-reserve`（既定 0px）を置き、`.composer:has(.goal-strip)` で 48px、`.composer:has(.goal-strip-message)` で 92px にして、`.composer-frame` と textarea の `max-height` から引く。ゴールのない会話の入力欄は main と同じ高さになる。ストリップは高さ 400px 未満の表示領域では出さない（09 の `goalStripFits`）ので、844×222 などの低い画面の操作行は変わらない。`app/styles.css` は変更していない。

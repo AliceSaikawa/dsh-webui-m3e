@@ -280,7 +280,10 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 
 ### 2026-10-20：Issue #131、会話のゴール・ストリップ
 
-- `useGoalPresence` が activation 監視と pause/resume/complete/clear/edit を一手に持ち、`GoalScreen` と新規 `GoalStrip` が同じフックを使う。ストリップの表示可否は純関数 `goalStripVisible`（`goal-strip-model.ts`。host の typecheck が React を引かないよう presence 本体と分離し、`goal-presence.ts` から再エクスポート）。
-- 任意の `goals.edit` は `GoalsEditRemote` + `goalsEditOf` + `performGoalEdit`（`EditGoalRequest` は `{ objective?; maxGoalRounds? }`）。必須の `GoalsRemote` には載せない。偽データは edit を実装。
-- Composer は session 対象だけ `<GoalStrip sessionId />` を `.composer-queue` の上に載せる。子会話は表示のみ。ストリップ1行分の余白として composer/footer の高さ定数を軽く上げた（`composer.css`・`app/styles.css`）。
-- 単体：`tests/09-goal-presence.test.ts`、`09-operations` / `09-mock` の edit 試験。DSH・ブラウザ操作は未実施。
+- `useGoalPresence` が activation 監視と pause/resume/complete/clear/edit を一手に持ち、`GoalScreen` と新規 `GoalStrip` が同じフックを使う。`primary`・`exhausted`・`canMutate`・`canEdit`・状態の行・ストリップの表示と操作は、純関数 `goalPresenceModel`（`goal-presence-model.ts`）だけが計算する。host の typecheck が React を引かないよう、フック本体とは別のファイルに置いた。
+- ストリップは高さ 44px の 1 行（目標・状態と、一時停止／再開・目標を編集のアイコンボタン）。エラー、activation の確認失敗、行き詰まりの理由、ラウンド上限の説明は、その下の 2 行までのメッセージ行に出す。エラーのときは操作を「読み直す」（activation の失敗は「状態を読み直す」）だけにする。表示領域の高さが 400px 未満ならストリップを描かない（`goalStripFits`）。
+- 任意の `goals.edit` は `goalsEditOf`（`GoalsRemoteWithEdit` を返す）と `performGoalEdit`。必須の `GoalsRemote` には載せない。`editObjective` は目標の文が変わらなければ送らず、失敗すると例外を投げて `TextPromptDialog` に書いた文とエラーを残す。ダイアログは開いた時点の presence を持つので、フックは最新の描画の処理を呼ぶ関数を返す。
+- Composer は session 対象だけ `<GoalStrip sessionId />` を `.composer-queue` の上に載せる。子会話は表示のみ。入力欄の高さの上限は `.composer:has(.goal-strip)` のときだけ `--composer-goal-reserve`（48px、メッセージ行があれば 92px）を引く。ゴールのない会話の値は main と同じ。
+- 偽データ：`/goal <目標>` で、その会話に進行中のゴールを作る（`kit.onRecord` で `command/run` を見る）。シナリオ `goal-exhausted` を追加した。
+- `e2e/stage6c.spec.ts` の「準備待ちのゴール画面を離れると…」は、会話画面のストリップも `goals.get` を読むため、会話画面を直接開いた対照ページと読取りの増分を比べる形に変えた。GoalScreen の監視を解放しない変異では 9 対 6 で失敗することを確かめた。
+- 確かめたこと：`pnpm typecheck`、`pnpm test`（1389 件成功、2 件 skip）、`pnpm build`、`git diff --check`、`tsconfig.e2e.json` の型検査、偽データの e2e 全体（362 件成功。新規 `e2e/goal-strip.spec.ts` の 8 件を含む）。390×844・390×450 の画面写真で、ストリップと会話欄の高さを目で確かめた。実 DSH と実機のキーボード表示では確かめていない。

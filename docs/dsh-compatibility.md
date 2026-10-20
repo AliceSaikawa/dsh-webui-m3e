@@ -126,6 +126,7 @@ Issue #128 の各担当の報告に基づきます。根拠は `tmp/dsh-integrat
 | `session.modelCatalog/selectModel` | 同じ | `dsh-api-session-controller/lib/index.js`。モデルのある group が利用候補です。モデル一覧の表示は実 DSH、選択操作全体は偽データで確認します |
 | `directoryPicker.list/createDirectory` | 同じ | `dsh-api-workspace-controller/lib/typert.remote-client.d.ts`。実 DSH は browse 一覧から追加する経路です |
 | `goals.get/pause/resume/complete/clear`、`goal/activation-changed` | 同じ・実 DSH の操作全体は未検証 | `dsh-goal/lib/typert.remote-client.d.ts`、`dsh-api-remotes/lib/index.js`。Agent の準備待ち・状態通知・読取り集約を実装し、単体・偽画面で確認しました |
+| `goals.edit` | 型だけ照合・実 DSH では未実行 | 0.2.1-rc.2 の `dsh-goal/lib/typert.remote-client.d.ts` と `lib/types/types.d.ts`（`edit(agentId, ref, { objective?, maxGoalRounds? })`）。必須の `GoalsRemote` には入れず、`goalsEditOf` で有無を判定します。M3E は `objective` だけを送ります |
 | `api-session/added`、`api-session/error` | 型・購読を追加 | `dsh-api-session-controller` と `dsh-api-remotes`。Agent の登録・準備失敗をゴール画面の再取得と古い応答の無効化に使います。登録通知は全初期化 listener の完了保証ではありません |
 | `workspaceFiles.list/read/stat` | 同じ | `dsh-api-workspace-files/lib/typert.remote-client.d.ts`。実ワークスペースの一覧・本文・版を確認しました |
 | `workspaceFiles.readBytes/changes` | 直した | 同パッケージの `lib/types/types.d.ts` と `lib/index.js`。入れ子の範囲、バイト列、監視の対象と解放を合わせました |
