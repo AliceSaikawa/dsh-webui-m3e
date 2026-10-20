@@ -118,13 +118,13 @@ function shape(path: string) {
     const current = sections.at(-1)
     if (/^## /.test(line)) { sections.push({ heading: line, blocks: 0, bullets: 0, steps: 0, tokens: [] }); inBlock = false; continue }
     if (/^### /.test(line)) { h3 += 1; inBlock = false; continue }
+    if (/^> \[!(?:NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/.test(line)) alerts.push(line)
     if (!current) continue
     if (/^\s*[-*] /.test(line)) current.bullets += 1
     if (/^\d+\. /.test(line)) current.steps += 1
-    if (/^> \[!(?:NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/.test(line)) alerts.push(line)
     if (line.trim() === '') inBlock = false
-    else if (!inBlock && !/^\s*[-*\d]/.test(line)) { current.blocks += 1; inBlock = true }
-    else if (/^\s*[-*\d]/.test(line)) inBlock = false
+    else if (/^\s*(?:[-*]|\d+\.) /.test(line)) inBlock = false
+    else if (!inBlock) { current.blocks += 1; inBlock = true }
     for (const match of line.matchAll(/`([^`]+)`/g)) if (/^[\x20-\x7e]+$/.test(match[1]!)) current.tokens.push(match[1]!)
     current.tokens.push(...(line.match(/\d+(?:\.\d+)+(?:-rc\.\d+)?|\d{4}-\d\d-\d\d/g) ?? []))
   }
@@ -149,6 +149,19 @@ test('readme: links to the Japanese-only docs are marked in the English and Chin
     const docLinks = [...read(path).matchAll(/\]\((docs\/[^)\s#]+\.md)(?:#[^)\s]*)?\)(.{0,12})/g)]
     assert.ok(docLinks.length >= 5, `${path} links to docs`)
     for (const [, target, after] of docLinks) assert.ok(after!.includes(mark), `${path}: ${target} is followed by ${mark}`)
+  }
+})
+
+test('readme: the Notes say that other devices and browsers are not verified, in every language', () => {
+  const phrase: Record<string, RegExp> = {
+    'README.md': /Safari on an iPhone 17 Pro Max[^]*other devices and browsers, are not tested/,
+    'README.ja.md': /iPhone 17 Pro Max の Safari[^]*ほかの端末・ブラウザは確認していません/,
+    'README.zh-CN.md': /iPhone 17 Pro Max 的 Safari[^]*以及其他设备和浏览器，尚未验证/,
+  }
+  for (const [path, pattern] of Object.entries(phrase)) {
+    const text = read(path)
+    const notes = text.slice(text.search(/^## (?:Notes|注意|注意事项)$/m))
+    assert.match(notes, pattern, path)
   }
 })
 
