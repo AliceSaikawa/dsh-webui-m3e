@@ -31,6 +31,7 @@ export const agentPresetMessages = defineMessages({
     readonly: 'この DSH では既定のモードを変更できません。設定の内容は確認できます。',
     saveFailed: '新しい会話の既定を変更できませんでした。',
     saving: '変更しています…',
+    standardUnavailable: 'コード作業がオフのため既定のモードを標準モードに戻す必要がありますが、標準モードを使えません。既定は変更していません。',
     configTitle: (name: string) => `${name} の設定`,
     configLoading: '設定を読み込んでいます…',
     configFailed: '設定を読み込めませんでした。',
