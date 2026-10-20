@@ -3,20 +3,14 @@ import type { Connection, DshRemote } from '../dsh/services.ts'
 import { messagesOf, type Catalog, type Messages, type Translation } from './catalog.ts'
 import { connectLocalePreference } from './dsh.ts'
 import type { Locale } from './locale.ts'
-import { createLocaleStore, type LocaleSnapshot } from './store.ts'
+import { browserLanguages, localeStore } from './current.ts'
+import type { LocaleSnapshot } from './store.ts'
 
 export { defineMessages, messagesOf, type Catalog, type Messages, type Translation } from './catalog.ts'
 export { compareText, formatDateTime, formatNumber, intlLocale } from './format.ts'
 export type { Locale } from './locale.ts'
 export type { LocaleSnapshot } from './store.ts'
-
-function browserLanguages(): string[] {
-  if (typeof navigator === 'undefined') return []
-  return [...(navigator.languages ?? []), navigator.language].filter((tag): tag is string => typeof tag === 'string' && tag !== '')
-}
-
-/** The page's single locale store. */
-export const localeStore = createLocaleStore({ languages: browserLanguages() })
+export { currentLocale, localeStore } from './current.ts'
 
 let started = false
 /**
@@ -40,11 +34,6 @@ export function connectDshLocale(ctx: unknown): () => void {
   const root = ctx as { readonly remote?: DshRemote; readonly connection?: Connection } | null
   if (!root?.remote) return () => {}
   return connectLocalePreference({ remote: root.remote, connection: root.connection }, localeStore)
-}
-
-/** The page language outside React (start-up, plain functions). */
-export function currentLocale(): Locale {
-  return localeStore.getSnapshot().active
 }
 
 export function useLocaleSnapshot(): LocaleSnapshot {

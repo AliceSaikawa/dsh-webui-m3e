@@ -3,6 +3,8 @@ import { M3eBottomSheet } from '@m3e/react/bottom-sheet'
 import { M3eDialog } from '@m3e/react/dialog'
 import type { M3eBottomSheetElement } from '@m3e/web/bottom-sheet'
 import type { M3eDialogElement } from '@m3e/web/dialog'
+import { useMessages } from '../../i18n/index.ts'
+import { overlayMessages } from '../messages.ts'
 import { getOverlays, useOverlays, isTopOverlay, type OverlayEntry } from './store.ts'
 import { hideSheet, keepTopInteractive, OverlayPresentation, setSheetHandle } from './presentation.ts'
 
@@ -15,6 +17,7 @@ function observeInert(element: HTMLElement, notify: () => void): () => void {
 function OverlayLayer({ entry, presentation }: { entry: OverlayEntry; presentation: OverlayPresentation }) {
   const sheet = useRef<M3eBottomSheetElement>(null)
   const dialog = useRef<M3eDialogElement>(null)
+  const text = useMessages(overlayMessages)
   const content = typeof entry.render === 'function' ? entry.render(entry.close) : entry.render
   useLayoutEffect(() => {
     const element = sheet.current ?? dialog.current
@@ -50,13 +53,13 @@ function OverlayLayer({ entry, presentation }: { entry: OverlayEntry; presentati
     if (presentation.isUserClose(entry.id) && isTopOverlay(entry.id)) entry.close()
   }
   const cancel = (event: Event) => { if (!entry.dismissible) event.preventDefault() }
-  if (entry.kind === 'dialog') return <M3eDialog ref={dialog} closeLabel="閉じる"
-    aria-label={entry.label ?? '確認'} disableClose={!entry.dismissible} onClosed={closed} onCancel={cancel}>
+  if (entry.kind === 'dialog') return <M3eDialog ref={dialog} closeLabel={text.close}
+    aria-label={entry.label ?? text.dialogLabel} disableClose={!entry.dismissible} onClosed={closed} onCancel={cancel}>
     <div className="dialog-content">{content}</div>
   </M3eDialog>
   return <M3eBottomSheet ref={sheet} modal handle={entry.kind === 'sheet'} hideable={entry.dismissible}
-    handleLabel="シートの高さを変更" detents={entry.kind === 'full' ? ['full'] : ['fit', 'full']}
-    className={entry.kind === 'full' ? 'full-sheet' : 'bottom-sheet'} aria-label={entry.label ?? '操作'}
+    handleLabel={text.sheetHandle} detents={entry.kind === 'full' ? ['full'] : ['fit', 'full']}
+    className={entry.kind === 'full' ? 'full-sheet' : 'bottom-sheet'} aria-label={entry.label ?? text.sheetLabel}
     onCancel={cancel} onClosed={closed}>
     <div className="sheet-content">{content}</div>
   </M3eBottomSheet>
