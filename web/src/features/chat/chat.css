@@ -5,6 +5,7 @@
 .chat-older { min-height: 48px; display: flex; align-items: center; justify-content: center; }
 .chat-user { margin-left: auto; width: fit-content; max-width: 92%; }
 .chat-bubble { margin: 0; border-radius: var(--app-radius) var(--app-radius) calc(var(--app-radius) / 7 * 2) var(--app-radius); padding: calc(var(--app-space) * .875) var(--app-space); background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); white-space: pre-wrap; line-height: 1.7; overflow-wrap: anywhere; }
+.chat-command-input .chat-bubble-command { font-family: ui-monospace, monospace; font-size: 14px; }
 .chat-assistant { padding: 0 calc(var(--app-space) * .25); min-width: 0; }
 .chat-assistant .markdown > :first-child { margin-top: calc(var(--app-space) * .5); }
 .chat-assistant .markdown > :last-child { margin-bottom: 0; }

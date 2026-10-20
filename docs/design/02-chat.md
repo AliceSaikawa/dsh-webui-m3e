@@ -315,3 +315,9 @@
 - 開く前の画像ボタンを保持し、シートの native 終了後に残っている入口へ戻す。表示先が変わった場合や新たなシートで操作している場合には戻さない。フレームと開閉イベントの listener は終了時に解除する。
 - 修正前のキーボード試験は初期フォーカスで失敗。autofocus 属性だけでは改善せず、表示後の明示フォーカスと、native 終了後の入口復帰が必要だった。修正後は見出し、Tab で閉じるボタン、Escape／閉じるで入口復帰、別シートの割込みからの再表示を実 Chromium で確認した。
 - `e2e/mobile-accessibility.spec.ts` を現在の回帰検証の指示で追加。既存 `chat-details.spec.ts` と overlay 関連試験も成功。実行環境・他の検証・制限は `01-home.md` の同日メモを参照。コミット・公開はしていない。
+
+
+### 2026-10-20：Issue #131、/goal のコマンド入力吹き出し
+
+- `CommandInputRow`（`kind: 'command-input'`）を追加。`COMMAND_INPUT_NAMES = new Set(['goal'])` だけを `command/run` から右寄せ吹き出しにし、表示用 `text`（`/goal …`）は model 境界で組み立てる。すべての `command/done`（goal 含む）は従来どおり `CommandRow`。
+- `ChatView` は MessageActions なし・aria-label「コマンド入力」。共有の `approvalRecords` は S6B 表示比較を崩さないため触らず、単体試験で run+done を検証した。

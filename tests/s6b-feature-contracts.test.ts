@@ -32,8 +32,9 @@ test('S6B コマンド候補の順序と添付属性、任意signal、不正なR
   try {
     const api = composerApi(ctx.remote)
     const commands = await api.listCommands('readme-review')
-    assert.deepEqual(commands.map(row => row.name), ['model', 'permission', 'plan'])
+    assert.deepEqual(commands.map(row => row.name), ['model', 'permission', 'plan', 'goal'])
     assert.equal(commands[2]?.input?.attachments, true)
+    assert.equal(commands[3]?.input?.hint, '達成したい目標')
     const files = ctx.remote.fileReferences as { list(id: string, query: string, signal?: AbortSignal): Promise<RemoteResult<unknown>> }
     assert.deepEqual(await files.list('readme-review', 'README'), { ok: true, value: [{ path: 'README.md', kind: 'file' }] })
     assert.deepEqual(await files.list('missing', ''), { ok: false, error: { code: 'session/not-found', message: '会話が見つかりません。', details: { sessionId: 'missing' } } })

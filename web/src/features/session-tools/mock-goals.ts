@@ -1,6 +1,8 @@
 import type { MockKit } from '../../dsh/mock/kit.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
-import { goalProjectionOf, type GoalAction, type GoalRef, type GoalsRemote, type GoalView } from './operations.ts'
+import {
+  goalProjectionOf, type EditGoalRequest, type GoalAction, type GoalRef, type GoalsRemoteWithEdit, type GoalView,
+} from './operations.ts'
 
 const success = <T>(value: T): RemoteResult<T> => ({ ok: true, value: structuredClone(value) })
 const failure = (code: string, message: string): RemoteResult<never> => ({ ok: false, error: { code, message, details: {} } })
@@ -56,6 +58,22 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
     phase: 'active', maxGoalRounds: 8, roundsStarted: 3, createdAt: now - 240000, updatedAt: now, activation: 'armed',
   }, false)
 
+  // `/goal <objective>` creates a goal in the mock, as the command handler only
+  // appends `command/run`. The event data stays unknown until validated here.
+  let goalSerial = 0
+  kit.onRecord((sessionId, event) => {
+    if (event.type !== 'command/run' || !exists(sessionId)) return
+    const data = event.data
+    if (typeof data !== 'object' || data === null) return
+    const { name, args } = data as { name?: unknown; args?: unknown }
+    if (name !== 'goal' || typeof args !== 'string' || !args.trim()) return
+    const time = Date.now()
+    publish(sessionId, {
+      id: `session-tools-goal-${++goalSerial}`, revision: 1, objective: args,
+      phase: 'active', maxGoalRounds: 8, roundsStarted: 0, createdAt: time, updatedAt: time, activation: 'armed',
+    })
+  })
+
   function current(sessionId: string, ref: GoalRef): RemoteResult<GoalView> {
     if (!live(sessionId)) return lookupFailure()
     const goal = goals.get(sessionId)
@@ -80,7 +98,7 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
     publish(sessionId, value)
     return success(value)
   }
-  const remote: GoalsRemote = {
+  const remote: GoalsRemoteWithEdit = {
     async get(sessionId) { return live(sessionId) ? success(goals.get(sessionId)) : lookupFailure() },
     pause: (sessionId, ref) => update(sessionId, ref, 'pause'),
     resume: (sessionId, ref) => update(sessionId, ref, 'resume'),
@@ -92,6 +110,24 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
       publish(sessionId, undefined)
       return success(tombstone)
     },
+    async edit(sessionId, ref, request: EditGoalRequest) {
+      const result = current(sessionId, ref)
+      if (!result.ok) return result
+      const goal = result.value
+      if (goal.phase === 'complete') return failure('gateway/internal', '今の状態ではこの操作はできません。')
+      if (request.objective === undefined && request.maxGoalRounds === undefined) {
+        return failure('gateway/internal', '変更する内容がありません。')
+      }
+      const value: GoalView = {
+        ...goal,
+        revision: goal.revision + 1,
+        updatedAt: Math.max(Date.now(), goal.updatedAt),
+        ...(request.objective !== undefined ? { objective: request.objective } : {}),
+        ...(request.maxGoalRounds !== undefined ? { maxGoalRounds: request.maxGoalRounds } : {}),
+      }
+      publish(sessionId, value)
+      return success(value)
+    },
   }
   kit.addRemote('goals', remote)
   kit.scenario('goal-blocked', () => {
@@ -100,6 +136,13 @@ export function installGoalMock(kit: MockKit, parent: string, now: number) {
   })
   kit.scenario('goal-disarmed', () => {
     publish(parent, { ...goals.get(parent)!, activation: 'disarmed' }, false)
+  })
+  kit.scenario('goal-exhausted', () => {
+    const goal = goals.get(parent)
+    if (!goal) return
+    publish(parent, {
+      ...goal, revision: goal.revision + 1, phase: 'paused', activation: 'disarmed', roundsStarted: goal.maxGoalRounds,
+    }, false)
   })
   // Preparation stays under test control; it causes no activation notification.
   kit.scenario('goal-preparing', () => {

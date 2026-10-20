@@ -13,6 +13,16 @@
 .st-goal-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--app-space); }
 .st-goal-actions > m3e-button { min-width: 0; }
 .st-goal-clear { grid-column: 1 / -1; justify-self: start; }
+
+/* Composer strip: one compact two-row grid above the queue / input. */
+.goal-strip { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: calc(var(--app-space) / 2); row-gap: 0; align-items: center; box-sizing: border-box; margin: 0 0 calc(var(--app-space) / 4); padding: 0 calc(var(--app-space) / 4) 0 calc(var(--app-space) * .75); border-radius: calc(var(--app-radius) * 4 / 7); background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); }
+.goal-strip:has(.goal-strip-message-error) { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.goal-strip-body { display: flex; flex-direction: column; justify-content: center; min-width: 0; height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: start; cursor: pointer; }
+.goal-strip-body:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; border-radius: calc(var(--app-radius) / 7); }
+.goal-strip-objective { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-strip-status { font-size: 12px; line-height: 16px; color: color-mix(in srgb, currentColor 85%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-strip-actions { display: flex; flex-wrap: nowrap; gap: 0; justify-content: flex-end; min-width: 0; }
+.goal-strip-message { grid-column: 1 / -1; margin: 0 0 calc(var(--app-space) / 2); font-size: 13px; line-height: 18px; max-height: 36px; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .st-list { border-radius: var(--app-radius); background: var(--md-sys-color-surface-container-low); overflow: hidden; }
 ul.st-list { list-style: none; padding: 0; margin: 0; }
 .st-row { display: flex; align-items: center; gap: calc(var(--app-space) * .75); padding: var(--app-space); border-bottom: 1px solid var(--md-sys-color-outline-variant); }

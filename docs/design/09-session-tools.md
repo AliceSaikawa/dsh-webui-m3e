@@ -276,3 +276,14 @@ M3 のメニュー（ボタンの下に出る一覧）で、次の 7 項目を�
 - 修正前のブラウザ試験 2 件は、購読失敗の案内がないことと停止ボタンがないことで失敗した。修正後は新規 8 件、既存のジョブ購読解放・表示順の 2 件がすべて成功した。停止の連打・失敗再試行・すでに終了・遅い応答、一覧の失敗・再接続・メニュー表示を確認した。
 - `pnpm test` は 1111 件成功、skip 0（一覧 store の追加 4 件を含む）。`pnpm typecheck`、`pnpm build`、`pnpm check:pack`（19 ファイル）、`git diff --check` も成功。既存のビルド chunk サイズ警告は残る。
 - `e2e-dsh/jobs-kill.spec.ts` は隔離した DSH 0.2.0-rc.2、偽モデル、合成の `sleep 30` バックグラウンドジョブだけを使い、画面から停止して購読で「停止済み」になることを確認した（1 件成功）。個人の DSH・認証情報・外部の有料 API は使っていない。ブラウザの偽データ試験は専用 localhost:5194、実 DSH は隔離した動的ポートを使用し、動画は記録していない。
+
+
+### 2026-10-20：Issue #131、会話のゴール・ストリップ
+
+- `useGoalPresence` が activation 監視と pause/resume/complete/clear/edit を一手に持ち、`GoalScreen` と新規 `GoalStrip` が同じフックを使う。`primary`・`exhausted`・`canMutate`・`canEdit`・状態の行・ストリップの表示と操作は、純関数 `goalPresenceModel`（`goal-presence-model.ts`）だけが計算する。host の typecheck が React を引かないよう、フック本体とは別のファイルに置いた。
+- ストリップは高さ 44px の 1 行（目標・状態と、一時停止／再開・目標を編集のアイコンボタン）。エラー、activation の確認失敗、行き詰まりの理由、ラウンド上限の説明は、その下の 2 行までのメッセージ行に出す。エラーのときは操作を「読み直す」（activation の失敗は「状態を読み直す」）だけにする。表示領域の高さが 400px 未満ならストリップを描かない（`goalStripFits`）。
+- 任意の `goals.edit` は `goalsEditOf`（`GoalsRemoteWithEdit` を返す）と `performGoalEdit`。必須の `GoalsRemote` には載せない。`editObjective` は目標の文が変わらなければ送らず、失敗すると例外を投げて `TextPromptDialog` に書いた文とエラーを残す。ダイアログは開いた時点の presence を持つので、フックは最新の描画の処理を呼ぶ関数を返す。
+- Composer は session 対象だけ `<GoalStrip sessionId />` を `.composer-queue` の上に載せる。子会話は表示のみ。入力欄の高さの上限は `.composer:has(.goal-strip)` のときだけ `--composer-goal-reserve`（48px、メッセージ行があれば 92px）を引く。ゴールのない会話の値は main と同じ。
+- 偽データ：`/goal <目標>` で、その会話に進行中のゴールを作る（`kit.onRecord` で `command/run` を見る）。シナリオ `goal-exhausted` を追加した。
+- `e2e/stage6c.spec.ts` の「準備待ちのゴール画面を離れると…」は、会話画面のストリップも `goals.get` を読むため、会話画面を直接開いた対照ページと読取りの増分を比べる形に変えた。GoalScreen の監視を解放しない変異では 9 対 6 で失敗することを確かめた。
+- 確かめたこと：`pnpm typecheck`、`pnpm test`（1389 件成功、2 件 skip）、`pnpm build`、`git diff --check`、`tsconfig.e2e.json` の型検査、偽データの e2e 全体（362 件成功。新規 `e2e/goal-strip.spec.ts` の 8 件を含む）。390×844・390×450 の画面写真で、ストリップと会話欄の高さを目で確かめた。実 DSH と実機のキーボード表示では確かめていない。

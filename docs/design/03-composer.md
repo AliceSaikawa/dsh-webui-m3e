@@ -426,3 +426,9 @@
 - `tests/03-workspace-recovery.test.ts` の 3 つの場合の試験（各成功・失敗）と、同じ ID で内容が同じときの重複解消、会話画面から始めて Host が別 ID を作る経路の試験を追加した。同ファイル 24 件すべて成功。
 - 実 DSH での登録失敗と実機の表示は未確認。今回の変更は純粋処理なので、偽データの e2e は既存 2 件の回帰のみ確認した。
 - 2026-10-20 追記：再読み込み後は `baseline.input` が無いため、本文だけで比べると、再読み込み後に付けた画像や選んだモデル・権限・計画を「失敗時のまま」と誤判定していた。`matchesBaseline` は `input` が無いとき、再読み込みが返す空の入力（`{ images: [] }`）と比べる。Host が別 ID を作ってその登録にも失敗したときは、`forDestination` と `keepRetryOnCurrent` が書く復旧情報にも `attachmentBaseline` を付け、次の再試行が本文だけの判定に戻らないようにした。再読み込み後に会話へ画像を足す場合、新規画面へ画像を足す場合、別 ID の失敗が入力を持つ場合の試験を `tests/03-workspace-recovery.test.ts` に追加した。既存の e2e `e2e/workspace-recovery-handoff.spec.ts` の保存値の期待にも `baseline` を足した。
+
+
+### 2026-10-20：Issue #131、Composer へのゴール・ストリップ載せ
+
+- session 対象の Composer に `GoalStrip` をキューの上へ追加（09 の presence を import）。`/goal` を偽コマンド一覧と `face.command` 許可リストへ追加（作成自体はコマンド経路のまま）。
+- 高さの定数は main のまま。`.composer` に `--composer-goal-reserve`（既定 0px）を置き、`.composer:has(.goal-strip)` で 48px、`.composer:has(.goal-strip-message)` で 92px にして、`.composer-frame` と textarea の `max-height` から引く。ゴールのない会話の入力欄は main と同じ高さになる。ストリップは高さ 400px 未満の表示領域では出さない（09 の `goalStripFits`）ので、844×222 などの低い画面の操作行は変わらない。`app/styles.css` は変更していない。

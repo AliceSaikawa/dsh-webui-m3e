@@ -55,12 +55,28 @@ export interface CommandRow extends RowBase {
   readonly text: string
   readonly status: 'success' | 'error' | 'unknown'
 }
+/** Right-aligned input bubble. Only emitted for names in COMMAND_INPUT_NAMES. */
+export interface CommandInputRow extends RowBase {
+  readonly kind: 'command-input'
+  /** Always 'goal' for now; string so the row stays reopenable if the host widens later. */
+  readonly name: string
+  /** Display text, e.g. "/goal …" — formatted at the buildSettledChat boundary. */
+  readonly text: string
+}
 export interface PendingRow extends RowBase {
   readonly kind: 'pending'
   readonly submission: PendingSubmission
   readonly text: string
 }
-export type ChatRow = UserRow | ContextRow | TextRow | ToolRow | SystemRow | CommandRow | PendingRow
+export type ChatRow = UserRow | ContextRow | TextRow | ToolRow | SystemRow | CommandRow | CommandInputRow | PendingRow
+
+/** Closed set — growing this list is an explicit product decision. */
+export const COMMAND_INPUT_NAMES: ReadonlySet<string> = new Set(['goal'])
+
+function commandInputText(name: string, args: string): string {
+  const trimmed = args.trim()
+  return trimmed ? `/${name} ${trimmed}` : `/${name}`
+}
 
 type ObjectValue = Record<string, unknown>
 const objectOf = (value: unknown): ObjectValue | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined
@@ -305,6 +321,16 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     const data = objectOf(event.data)
     if (data === undefined) continue
     const base = { key: `event:${event.seq}`, seq: event.seq, time: event.time }
+    if (event.type === 'command/run') {
+      const name = stringOf(data.name)
+      if (name !== undefined && COMMAND_INPUT_NAMES.has(name)) {
+        rows.push({
+          ...base, kind: 'command-input', name,
+          text: commandInputText(name, stringOf(data.args) ?? ''),
+        })
+      }
+      continue
+    }
     if (event.type === 'user/message') {
       const content = contentOf(data.content)
       // DSH logs injected context (instruction files, skills, recalls) as user

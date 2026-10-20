@@ -53,6 +53,11 @@ const Row = memo(function Row({ row, sessionId, face, active }: { row: ChatRow; 
         ? <AttachmentImage key={index} attachment={block.attachment} face={face} />
         : block.type === 'file' ? <FileAttachment key={index} attachment={block.attachment} /> : null)}</div>}</details>
   }
+  if (row.kind === 'command-input') {
+    return <article className="chat-user chat-command-input" aria-label="コマンド入力">
+      <p className="chat-bubble chat-bubble-command">{row.text}</p>
+    </article>
+  }
   if (row.kind === 'command') {
     const presentation = commandPresentation(row)
     const text = presentation.failureReason ?? row.text

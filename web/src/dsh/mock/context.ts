@@ -527,7 +527,7 @@ export function createMockContext(options: MockOptions = {}): MockContext {
         await Promise.resolve()
         if (!isActive(model)) return failure('session/not-found', '会話が見つかりません。')
         const [name, ...args] = line.trim().replace(/^\//, '').split(/\s+/)
-        if (!name || !['permission', 'plan', 'model', 'help', 'clear'].includes(name)) return success({ matched: false })
+        if (!name || !['permission', 'plan', 'model', 'help', 'clear', 'goal'].includes(name)) return success({ matched: false })
         const commandId = id('command')
         append(model, 'command/run', { commandId, name, args: args.join(' '), source: { kind: 'user' } })
         if (name === 'plan') kit.setProjection(summary.id, 'plan', { active: args[0] !== 'off', pending: false })
