@@ -96,6 +96,8 @@ test('権限プリセットの名前と説明は、辞書へ移す前と同じ�
   assert.equal(ja.dangerFullAccess, 'フル アクセス')
   assert.equal(ja.autoReview, '自動レビュー（実験的）')
   assert.equal(ja.custom, 'カスタム')
+  assert.equal(ja.workspaceWriteDescription, '作業フォルダと許可された一時フォルダの中に書き込めます。範囲を広げるときは確認します。')
+  assert.equal(ja.dangerFullAccessDescription, '確認なしで、すべてのファイルにアクセスできます。')
   assert.equal(ja.autoReviewDescription, 'サンドボックスなしで動きます。ツールを呼び出すたびに、同じモデルが実験的に確認します。')
   const text: PermissionPresetTexts = { ...ja, readOnly: 'RO', workspaceWrite: 'WW', dangerFullAccess: 'FULL', autoReview: 'AUTO', custom: 'CUSTOM',
     workspaceWriteDescription: 'WW-D', dangerFullAccessDescription: 'FULL-D', autoReviewDescription: 'AUTO-D' }
