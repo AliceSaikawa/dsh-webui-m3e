@@ -65,7 +65,8 @@
 ### メッセージの操作
 
 - 吹き出しか本文を長押しすると、シートを開きます。
-- 「コピー」：その項目の文字をクリップボードへ。
+- 「コピー」：その項目の文字をクリップボードへ。失敗したら「テキストを選択」から選ぶよう案内します。
+- 「テキストを選択」：操作のシートを閉じ、全画面のシート（`SelectTextSheet`）に本文の元の文字を出します。ブラウザ標準の選択とコピーを使います（`.chat-select-text-body` は `user-select: text`、`-webkit-touch-callout: default`）。Markdown は描画せず、`white-space: pre-wrap` のソースです。生成中のメッセージは、開いた時点の本文です。
 - 「ここから分岐」：`sessions.fork({ sessionId, atSeq })` で新しいセッションを作り、`#/s/<新しい id>` へ移ります。`atSeq` はその項目のイベントの `seq` です。
 
 ### 状態と例外
@@ -321,3 +322,13 @@
 
 - `CommandInputRow`（`kind: 'command-input'`）を追加。`COMMAND_INPUT_NAMES = new Set(['goal'])` だけを `command/run` から右寄せ吹き出しにし、表示用 `text`（`/goal …`）は model 境界で組み立てる。すべての `command/done`（goal 含む）は従来どおり `CommandRow`。
 - `ChatView` は MessageActions なし・aria-label「コマンド入力」。共有の `approvalRecords` は S6B 表示比較を崩さないため触らず、単体試験で run+done を検証した。
+
+### 2026-10-20：Issue #140、「テキストを選択」
+
+- 長押しのシートは残し、「コピー」と「ここから分岐」の間に「テキストを選択」を足した。押すと操作のシートを閉じてから `openFull` で全画面のシート（`SelectTextSheet`、`MessageActions.tsx`）を開く。重ねないのは、閉じたときに会話へ直接戻るため。本文がないときは「コピー」と同じく押せない。
+- 選ぶ画面は、Markdown を描画した本文ではなく元の文字を出す（Issue のコメントで決めた方針のうち、この点は仮定：描画後の DOM ではなく `text` をそのまま使う）。コードブロックの内容や記号も、ソースのまま選べる。
+- `.chat-message-action` の `-webkit-touch-callout: none` と `contextmenu` の抑止は、長押しのシートのために残す。選ぶ画面は `.chat-message-action` の外にあるので、`user-select: text` と `-webkit-touch-callout: default` でブラウザの選択を使う。
+- 文言は `web/src/features/chat/messages.ts` の `messageActionMessages` に置き、ja・en・zh を用意した。移したのは `MessageActions.tsx` の文言だけで、チャットの残りは移行 PR の対象のまま。用語は DSH 標準画面（copy／复制、branch／分支）に合わせた。
+- 失敗時の案内を「本文を選択してコピーしてください。」から「「テキストを選択」から本文を選んでコピーしてください。」に変えた。
+- 単体試験 `tests/02-message-actions.test.ts`（辞書のそろい、案内が実在のボタン名を指す、訳が日本語のままでない）と、`?mock` の e2e `e2e/message-select-text.spec.ts`（シートの 3 項目、選ぶ画面の元の文字・`user-select`・一部の選択・閉じる、10px を超える移動で長押しが取り消されること）を追加した。10px の試験は、しきい値を壊す変異で失敗することを確かめた。
+- 未確認：iPhone の Safari で、長押しからの範囲選択・コピーのメニューが出ること。Chromium のブラウザ標準の選択は、プログラムで作った範囲でしか確かめていない（指のドラッグは試していない）。コードブロックだけをコピーするボタンは、今回は足していない（Issue の「決める」項目のまま）。

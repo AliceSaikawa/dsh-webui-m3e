@@ -57,5 +57,9 @@
 .chat-json { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--app-space); border-radius: calc(var(--app-radius) / 7 * 4); font: 13px/1.65 ui-monospace, monospace; background: var(--md-sys-color-surface-container-high, var(--md-sys-color-surface-variant)); }
 .chat-nested-result { padding-left: calc(var(--app-space) * .75); border-left: 2px solid var(--md-sys-color-outline-variant); }
 .chat-sheet-actions { display: flex; flex-direction: column; align-items: stretch; gap: calc(var(--app-space) * .75); }
+.chat-select-text { padding: 0 calc(var(--app-space) * .5); min-width: 0; }
+.chat-select-text header { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--app-space) * .75); }
+/* The message action area turns the touch callout and the context menu off; this sheet is outside it and must keep the browser's own selection. */
+.chat-select-text-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; padding: var(--app-space); border-radius: calc(var(--app-radius) / 7 * 4); background: var(--md-sys-color-surface-container-high, var(--md-sys-color-surface-variant)); }
 @keyframes chat-pulse { from { opacity: .35; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .chat-progress-dot { animation: none; } }
