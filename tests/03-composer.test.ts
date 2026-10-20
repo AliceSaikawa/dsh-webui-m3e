@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   filterCommands, findReferenceToken, fitImageDimensions, isKnownCommand,
   isReferencePathSafe, reasoningEffortLabel, replaceReference, shouldConvertImage, visibleQueue,
+  withdrawnPermission,
 } from '../web/src/features/composer/helpers.ts'
 import { permissionIcon } from '../web/src/features/composer/presentation.ts'
 
@@ -106,4 +107,15 @@ test('permission icon distinguishes the four built-in presets and keeps the shie
   assert.equal(permissionIcon('auto'), 'gpp_maybe')
   // Custom, a Host-added preset, not loaded yet, and keys that exist on every object.
   for (const value of ['custom', 'team-review', '', 'toString', '__proto__', undefined]) assert.equal(permissionIcon(value), 'shield')
+})
+
+test('a draft permission is dropped only when it was chosen and the catalog no longer offers it', () => {
+  const options = [{ value: 'read-only' }, { value: 'workspace-write' }]
+  assert.equal(withdrawnPermission('team-review', options), 'team-review')
+  assert.equal(withdrawnPermission('read-only', options), undefined)
+  assert.equal(withdrawnPermission(undefined, options), undefined)
+  assert.equal(withdrawnPermission('read-only', []), 'read-only')
+  // Matching is by value, never by prefix or inherited key.
+  assert.equal(withdrawnPermission('read', options), 'read')
+  assert.equal(withdrawnPermission('toString', options), 'toString')
 })

@@ -95,6 +95,7 @@
 - 選んだら閉じ、チップの名前を変えます。確認のダイアログは挟みません（2026-09-25 の決定。あとでフィードバックで見直す）。
 - `currentValue` がどの選択肢にも合わないときは、チップに「カスタム」と出します。「カスタム」は選べません。
 - アイコンは `permissionIcon(value)`（`presentation.ts`）が値から決め、入力欄のボタンとシートの行で同じ関数を使います：`read-only` は `visibility`、`workspace-write` は `edit_document`、`danger-full-access` は `warning`、`auto` は `gpp_maybe`。`custom`、Host が足したプリセット、projection や候補の読み込み前は `shield` です。
+- 新しい会話の下書き（`draft.permission`）で選んだ権限が、読み直した `defaultOptions` に無いときは、下書きの選択を外して既定に戻し、「権限「<名前>」は使えなくなったため、「<既定の名前>」に戻しました。」を出します（`withdrawnPermission`、`Composer.tsx`）。送信中の下書きは触りません。
 
 ### 新しいセッション
 
@@ -433,6 +434,13 @@
 
 - session 対象の Composer に `GoalStrip` をキューの上へ追加（09 の presence を import）。`/goal` を偽コマンド一覧と `face.command` 許可リストへ追加（作成自体はコマンド経路のまま）。
 - 高さの定数は main のまま。`.composer` に `--composer-goal-reserve`（既定 0px）を置き、`.composer:has(.goal-strip)` で 48px、`.composer:has(.goal-strip-message)` で 92px にして、`.composer-frame` と textarea の `max-height` から引く。ゴールのない会話の入力欄は main と同じ高さになる。ストリップは高さ 400px 未満の表示領域では出さない（09 の `goalStripFits`）ので、844×222 などの低い画面の操作行は変わらない。`app/styles.css` は変更していない。
+
+### 2026-10-20：Issue #142、下書きで選んだ権限が候補から消えたとき
+
+- **再現**：偽データで、Host のプリセット `team-review` を下書きで選び、候補から外して `permission-presets/catalog-changed` を流すと、チップは「カスタム」になり、下書きは `team-review` を持ったまま、送信で `/permission team-review` を送った（案内なし）。隔離した実 DSH 0.2.1-rc.2 で、候補にない値の `/permission` は `{ ok: true, value: { matched: true } }` を返し、`currentValue` は変わらなかった（`bogus-preset`、`auto` がオフの間の `auto`）。`dsh-permission-presets` のコマンドは未知の名前を `kind: 'error'`（`unknown preset "…"`）の `command/done` として記録するだけで、`command()` の結果は失敗にならない。そのため `requireMatched` では検出できない。issue の 2 つの見込みのうち、「権限が効かないまま本文が送られる」が正しかった。「unknown preset で失敗する」は起きない。
+- **起きる条件**：実 Host では、新しい会話の候補（`defaultOptions`）に `auto` は入らない（`options` だけ）。起きるのは、`defaultOptions` にある Host のプリセットが、設定の読み直しなどで消えた場合に限る。
+- **修正**：`Composer.tsx` が `defaultPermissions()` を読み直すたびに、下書きの `permission` が候補にあるか確かめ、なければ外して既定に戻し、知らせる。最初の読み込みでも行うので、再読み込み前の選択が残っていた場合も同じ。会話中のシートでの選び直し（`face.command('/permission …')`）は変えていない。
+- **試験**：`tests/03-composer.test.ts`（`withdrawnPermission`）、`e2e/permission-draft-withdrawn.spec.ts`（外れた選択は既定に戻り `/permission` を送らない、残る選択は保たれる）。修正前は前者の e2e が失敗することを確認した。
 
 ### 2026-10-20：Issue #144、入力欄の権限のアイコン
 
