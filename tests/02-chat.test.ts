@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  appendLiveRows, buildChatRows, buildSettledChat, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
+  appendLiveRows, buildChatRows, buildSettledChat, COMMAND_INPUT_NAMES, commandPresentation, formatDuration, formatToolArguments, getStreamBlocks,
   isNearBottom, preservePrependScroll, summarizeToolArguments, toolIcon,
 } from '../web/src/features/chat/model.ts'
 import type { AssistantStream, StreamBlock } from '../web/src/dsh/session-journal.ts'
@@ -151,6 +151,30 @@ test('command completion uses command/run only to find its name', () => {
   ])
   assert.deepEqual(rows.map(row => row.kind), ['command', 'command', 'command'])
   assert.deepEqual(rows.map(row => row.kind === 'command' ? [row.name, row.text] : []), [['permission', '変更しました'], ['permission', ''], ['', '']])
+})
+
+test('goal の command/run だけコマンド入力行を出し、done は通常のコマンド結果のまま', () => {
+  assert.deepEqual([...COMMAND_INPUT_NAMES], ['goal'])
+  const rows = buildChatRows([
+    event(1, 'command/run', { name: 'goal', commandId: 'goal-1', args: '承認シートを作る' }),
+    event(2, 'command/done', { commandId: 'goal-1', kind: 'success', text: '/goal を実行しました' }),
+    event(3, 'command/run', { name: 'goal', commandId: 'goal-empty', args: '  ' }),
+    event(4, 'command/done', { commandId: 'goal-empty', kind: 'success', text: '' }),
+    event(5, 'command/run', { name: 'permission', commandId: 'perm-1', args: 'workspace-write' }),
+    event(6, 'command/done', { commandId: 'perm-1', kind: 'success', text: '変更しました' }),
+  ])
+  assert.deepEqual(rows.map(row => row.kind), ['command-input', 'command', 'command-input', 'command', 'command'])
+  const inputs = rows.filter(row => row.kind === 'command-input')
+  assert.deepEqual(inputs.map(row => row.kind === 'command-input' ? [row.name, row.text] : []), [
+    ['goal', '/goal 承認シートを作る'],
+    ['goal', '/goal'],
+  ])
+  const commands = rows.filter(row => row.kind === 'command')
+  assert.deepEqual(commands.map(row => row.kind === 'command' ? [row.name, row.status, row.text] : []), [
+    ['goal', 'success', '/goal を実行しました'],
+    ['goal', 'success', ''],
+    ['permission', 'success', '変更しました'],
+  ])
 })
 
 test('command outcomes retain success, failure, and unknown states with Japanese presentation', () => {

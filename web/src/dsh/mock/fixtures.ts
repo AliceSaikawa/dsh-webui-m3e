@@ -71,6 +71,8 @@ export const approvalRecords: readonly SessionWireEvent[] = events([
   [5400, 'tool/result', { turn: 1, step: 1, message: { role: 'tool', toolCallId: 'approval-read', content: [{ type: 'text', text: '承認シートの実装を確認しました。' }] } }],
   [18400, 'step/end', { turn: 1, step: 1 }],
   [18400, 'turn/end', { turn: 1, reason: 'completed' }],
+  [19000, 'command/run', { commandId: 'approval-goal', name: 'goal', args: '承認シートを作り、テストで操作を確かめる', source: { kind: 'user' } }],
+  [19010, 'command/done', { commandId: 'approval-goal', kind: 'success', text: '/goal を実行しました' }],
   [20000, 'turn/start', { turn: 2 }],
   [20000, 'user/message', { role: 'user', content: [{ type: 'text', text: 'テストも追加して' }] }],
   [20000, 'step/start', { turn: 2, step: 1 }],

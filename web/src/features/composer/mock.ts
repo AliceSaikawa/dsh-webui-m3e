@@ -11,6 +11,7 @@ export const mockCommands: readonly CommandDescriptor[] = [
   { name: 'model', description: 'この会話で使うモデルを選びます。' },
   { name: 'permission', description: 'この会話の権限を切り替えます。', input: { hint: '権限のプリセット名' } },
   { name: 'plan', description: '計画モードに切り替えます。off で終了します。', input: { hint: '計画したいこと、または off', attachments: true } },
+  { name: 'goal', description: 'この会話のゴール（目標）を設定します。', input: { hint: '達成したい目標' } },
 ]
 export const mockPermissions: PermissionSelection = { currentValue: 'workspace-write' }
 export const mockPermissionCatalog: PermissionCatalog = {
