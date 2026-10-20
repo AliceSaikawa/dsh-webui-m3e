@@ -5,7 +5,7 @@ import { M3eIconButton } from '@m3e/react/icon-button'
 import { M3eSplitButton } from '@m3e/react/split-button'
 import { M3eTextareaAutosize, type M3eTextareaAutosizeElement } from '@m3e/react/textarea-autosize'
 import { Icon } from '../../app/icons/Icon.tsx'
-import { openSheet } from '../../app/overlay/index.ts'
+import { openSheet, showSnackbar } from '../../app/overlay/index.ts'
 import { navigate } from '../../app/router.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useDsh, type InboxState } from '../../dsh/services.ts'
@@ -20,7 +20,7 @@ import type { PermissionSelection } from './api.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { composerApi, requireMatched, type CommandDescriptor, type FileReference, type ModelCatalog, type ModelSelection, type ModelSelectionProjection, type PermissionProjection, type PlanProjection } from './api.ts'
 import { consumeDraftCommand, draftTextRevision, prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
-import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue } from './helpers.ts'
+import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue, withdrawnPermission } from './helpers.ts'
 import { prepareImage } from './images.ts'
 import { errorText, ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
@@ -70,6 +70,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const modelApply = useMemo(() => modelApplyController(services.sessions, draftKey), [services.sessions, draftKey])
   const modelState = useSyncExternalStore(modelApply.subscribe, modelApply.getSnapshot, modelApply.getSnapshot)
   const [defaults, setDefaults] = useState<PermissionProjection>()
+  const latestDefaults = useRef<PermissionProjection | undefined>(undefined)
   const [cursor, setCursor] = useState(draft.text.length)
   const [suggesting, setSuggesting] = useState(false)
   const textArea = useRef<HTMLTextAreaElement>(null)
@@ -175,13 +176,28 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     let generation = 0
     const reload = async () => {
       const request = ++generation
-      try { const value = await api.defaultPermissions(); if (active && request === generation) setDefaults(value) }
+      try {
+        const value = await api.defaultPermissions()
+        if (!active || request !== generation) return
+        // The choice is kept in the draft, so a preset withdrawn from the catalog (or one left from before a
+        // reload) would be sent as `/permission <value>`, which the Host ignores. Go back to the default instead.
+        const draft = readDraft(draftKey)
+        const withdrawn = !value || pendingDelivery(draftKey) ? undefined : withdrawnPermission(draft.permission, value.options)
+        if (value && withdrawn !== undefined) {
+          const name = latestDefaults.current?.options.find(option => option.value === withdrawn)?.name ?? withdrawn
+          const fallback = value.options.find(option => option.value === value.currentValue)
+          writeDraft(draftKey, { ...draft, permission: undefined })
+          showSnackbar(`権限「${presetDisplayName(withdrawn, name)}」は使えなくなったため、${fallback ? `「${presetDisplayName(fallback.value, fallback.name)}」` : '既定'}に戻しました。`)
+        }
+        latestDefaults.current = value
+        setDefaults(value)
+      }
       catch { if (active && request === generation) setDefaults(undefined) }
     }
     const off = onRemoteEvent(services.remote, 'settings/document-updated', ns => { if (ns === 'permission') void reload() })
     void reload()
     return () => { active = false; off() }
-  }, [api, connected, target.kind, permissionCatalog, services.remote])
+  }, [api, connected, target.kind, permissionCatalog, services.remote, draftKey])
   useEffect(() => {
     if (!sessionId || !connected) return
     let active = true
