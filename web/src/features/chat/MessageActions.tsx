@@ -4,16 +4,29 @@ import { Icon } from '../../app/icons/Icon.tsx'
 import { showSnackbar } from '../../app/overlay/index.ts'
 import { navigate } from '../../app/router.ts'
 import { useDsh } from '../../dsh/services.ts'
+import { useMessages } from '../../i18n/index.ts'
 import { useChatSheets } from './ChatSheets.tsx'
 import { messageForkOperation, type ForkState } from './fork-operation.ts'
 import { beginChatLongPress } from './long-press.ts'
+import { messageActionMessages } from './messages.ts'
 
 const noSubscription = () => () => {}
 const idle: ForkState = { status: 'idle' }
 const idleSnapshot = () => idle
 
+type ActionText = (typeof messageActionMessages)['ja']
+
+/** The source text, not the rendered Markdown, so the browser's own selection and copy apply. */
+function SelectTextSheet({ text, t, close }: { text: string; t: ActionText; close: () => void }) {
+  return <section className="chat-select-text"><header><h2>{t.selectTitle}</h2><M3eButton onClick={close}>{t.close}</M3eButton></header>
+    <p className="muted">{t.selectHint}</p>
+    <div className="chat-select-text-body" data-testid="chat-select-text">{text}</div>
+  </section>
+}
+
 function ActionsSheet({ sessionId, text, seq, close }: { sessionId: string; text: string; seq?: number; close: () => void }) {
   const { sessions } = useDsh()
+  const t = useMessages(messageActionMessages)
   const sheets = useChatSheets()
   const operation = seq === undefined ? undefined : messageForkOperation(sessions, sessionId, seq)
   const state = useSyncExternalStore(operation?.subscribe ?? noSubscription, operation?.getSnapshot ?? idleSnapshot, idleSnapshot)
@@ -31,32 +44,39 @@ function ActionsSheet({ sessionId, text, seq, close }: { sessionId: string; text
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text)
-      if (alive.current) { close(); showSnackbar('コピーしました。') }
-    } catch { if (alive.current) setError('コピーできませんでした。本文を選択してコピーしてください。') }
+      if (alive.current) { close(); showSnackbar(t.copied) }
+    } catch { if (alive.current) setError(t.copyFailed) }
+  }
+  const selectText = () => {
+    if (!sheets.isActive()) return
+    close()
+    sheets.openFull(closeSelection => <SelectTextSheet text={text} t={t} close={closeSelection} />, { label: t.selectTitle })
   }
   const fork = () => {
     if (!sheets.isActive() || !operation) return
     setError('')
     void operation.start()
   }
-  return <section className="chat-detail"><h2>メッセージの操作</h2>
-    <div className="chat-sheet-actions"><M3eButton disabled={!text || busy} onClick={() => void copy()}><Icon name="content_copy" />コピー</M3eButton>
-      <M3eButton disabled={seq === undefined || busy || state.status === 'success'} onClick={fork}><Icon name="call_split" />{busy ? '分岐しています…' : 'ここから分岐'}</M3eButton></div>
-    {seq === undefined && <p className="muted">送信・生成が確定すると、この位置から分岐できます。</p>}
-    {state.status === 'success' && <div role="status"><p>このメッセージからの分岐を作成しました。</p><M3eButton onClick={() => { close(); navigate(`/s/${encodeURIComponent(state.sessionId)}`) }}>分岐した会話を開く</M3eButton></div>}
+  return <section className="chat-detail"><h2>{t.title}</h2>
+    <div className="chat-sheet-actions"><M3eButton disabled={!text || busy} onClick={() => void copy()}><Icon name="content_copy" />{t.copy}</M3eButton>
+      <M3eButton disabled={!text || busy} onClick={selectText}><Icon name="text_select_start" />{t.selectText}</M3eButton>
+      <M3eButton disabled={seq === undefined || busy || state.status === 'success'} onClick={fork}><Icon name="call_split" />{busy ? t.forking : t.fork}</M3eButton></div>
+    {seq === undefined && <p className="muted">{t.forkUnavailable}</p>}
+    {state.status === 'success' && <div role="status"><p>{t.forkCreated}</p><M3eButton onClick={() => { close(); navigate(`/s/${encodeURIComponent(state.sessionId)}`) }}>{t.openFork}</M3eButton></div>}
     {state.status === 'error' && <p role="alert">{state.message}</p>}
-    {error && <p role="alert">{error}</p>}<div className="actions"><M3eButton onClick={close}>閉じる</M3eButton></div>
+    {error && <p role="alert">{error}</p>}<div className="actions"><M3eButton onClick={close}>{t.close}</M3eButton></div>
   </section>
 }
 
 /** Message operations open only after a hold; scrolling cancels the hold. */
 export function MessageActions({ sessionId, text, seq, children, active }: { sessionId: string; text: string; seq?: number; children: ReactNode; active: boolean }) {
   const sheets = useChatSheets()
+  const t = useMessages(messageActionMessages)
   const hold = useRef<{ press: ReturnType<typeof beginChatLongPress>; x: number; y: number; pointerId: number } | null>(null)
   const cancel = () => { hold.current?.press.cancel(); hold.current = null }
   const finish = () => { hold.current?.press.finish(); hold.current = null }
   useLayoutEffect(() => { if (!active) cancel(); return cancel }, [active])
-  const show = () => { if (active) sheets.open(close => <ActionsSheet sessionId={sessionId} text={text} seq={seq} close={close} />, { label: 'メッセージの操作' }) }
+  const show = () => { if (active) sheets.open(close => <ActionsSheet sessionId={sessionId} text={text} seq={seq} close={close} />, { label: t.title }) }
   const start = (event: PointerEvent<HTMLDivElement>) => {
     cancel()
     if (!active || !event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest('button, a, summary, m3e-icon-button')) return
