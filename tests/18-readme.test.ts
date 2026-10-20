@@ -84,8 +84,70 @@ test('readme: the three READMEs state the same real-device scope and the same se
 })
 
 test('readme: the screenshots exist for every language that links them', () => {
+  const images = (path: string, suffix: string) => localTargets(path).filter((target) => target.startsWith('docs/images/')).sort()
+    .map((target) => target.replace(suffix, ''))
   assert.deepEqual(localTargets('README.md').filter((target) => target.startsWith('docs/images/')).sort(),
     ['docs/images/approval.en.png', 'docs/images/chat.en.png', 'docs/images/home.en.png', 'docs/images/inbox.en.png'])
   assert.deepEqual(localTargets('README.ja.md').filter((target) => target.startsWith('docs/images/')).sort(),
     ['docs/images/approval.png', 'docs/images/chat.png', 'docs/images/home.png', 'docs/images/inbox.png'])
+  assert.deepEqual(localTargets('README.zh-CN.md').filter((target) => target.startsWith('docs/images/')).sort(),
+    ['docs/images/approval.zh-CN.png', 'docs/images/chat.zh-CN.png', 'docs/images/home.zh-CN.png', 'docs/images/inbox.zh-CN.png'])
+  assert.deepEqual(images('README.md', '.en'), images('README.ja.md', ''))
+})
+
+/** The shape that the three languages must share: sections, list sizes, alerts, code and links. */
+function shape(path: string) {
+  const sections: { h2: string; bullets: number }[] = []
+  const code: string[] = []
+  const alerts: string[] = []
+  let h3 = 0
+  let fenced: string[] | undefined
+  for (const line of lines(path)) {
+    if (/^\s*```/.test(line)) {
+      if (fenced) { code.push(fenced.join('\n')); fenced = undefined } else fenced = []
+      continue
+    }
+    if (fenced) { fenced.push(line.trim()); continue }
+    if (/^## /.test(line)) sections.push({ h2: line, bullets: 0 })
+    else if (/^### /.test(line)) h3 += 1
+    else if (/^\s*[-*] /.test(line)) sections.at(-1)!.bullets += 1
+    else if (/^> \[!(?:NOTE|IMPORTANT|WARNING|TIP|CAUTION)\]/.test(line)) alerts.push(line)
+  }
+  const external = [...read(path).matchAll(/\]\((https?:[^)\s]+)\)/g)].map((match) => match[1])
+  return { h2: sections.length, h3, bullets: sections.map((section) => section.bullets), code, alerts, external }
+}
+
+test('readme: the three READMEs share the same sections, list sizes, alerts, code blocks and external links', () => {
+  const english = shape('README.md')
+  assert.deepEqual(english.bullets.length, english.h2)
+  for (const path of ['README.ja.md', 'README.zh-CN.md']) {
+    assert.deepEqual(shape(path), english, path)
+  }
+})
+
+test('readme: links to the Japanese-only docs are marked in the English and Chinese READMEs', () => {
+  const marks: Record<string, string> = { 'README.md': 'Japanese', 'README.zh-CN.md': '日文' }
+  for (const [path, mark] of Object.entries(marks)) {
+    const docLinks = [...read(path).matchAll(/\]\((docs\/[^)\s#]+\.md)(?:#[^)\s]*)?\)(.{0,12})/g)]
+    assert.ok(docLinks.length >= 5, `${path} links to docs`)
+    for (const [, target, after] of docLinks) assert.ok(after!.includes(mark), `${path}: ${target} is followed by ${mark}`)
+  }
+})
+
+test('readme: the Home Screen app is called unverified in the features, usage and notes of every language', () => {
+  const unverified: Record<string, RegExp> = {
+    'README.md': /Home Screen[^.]*not (?:verified|tested)/,
+    'README.ja.md': /ホーム画面[^。]*(?:未確認|確認していません)/,
+    'README.zh-CN.md': /主屏幕[^。]*尚未验证/,
+  }
+  for (const [path, pattern] of Object.entries(unverified)) {
+    const text = read(path)
+    for (const heading of [/^## (?:Features|できること|功能)$/m, /^## (?:Usage|使い方|使用方法)$/m, /^## (?:Notes|注意|注意事项)$/m]) {
+      const start = heading.exec(text)
+      assert.ok(start, `${path}: ${heading}`)
+      const rest = text.slice(start.index + start[0].length)
+      const section = rest.slice(0, rest.search(/^## /m) === -1 ? undefined : rest.search(/^## /m))
+      assert.ok(pattern.test(section), `${path}: ${heading} says the Home Screen app is unverified`)
+    }
+  }
 })

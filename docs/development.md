@@ -521,7 +521,7 @@ DSH 0.2.1-rc.2 向けのビルド済み Web UI プラグインです。
 - 導入: `dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<版>/dsh-webui-m3e-<版>.tgz`
 - 更新・旧版への復帰後は、対象プロファイルの Host を再起動してください。
 - 本物の LLM、ホーム画面に追加した Web アプリ、iPhone 17 Pro Max の Safari 以外の端末・ブラウザ、Desktop での動作は未確認です。
-- 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v<版>/README.md
+- 詳しい手順と確認範囲: https://github.com/AliceSaikawa/dsh-webui-m3e/blob/v<版>/README.md（英語。日本語は同じ場所の README.ja.md）
 ```
 
 公開する人は `read M3E_RELEASE_COMMIT` に、検査した main の先頭の完全な SHA を入力します。リリース直前にも HEAD とリモート main が同じであることを照合し、違う場合は停止して更新後の main で確認し直します。対象版のタグが既に表示された場合も停止し、再利用しません。
