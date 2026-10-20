@@ -58,8 +58,9 @@ test('#103 キーのままのプリセット名と標準の英語の説明を日
   const auto = rows.nth(2)
   await expect(auto).toHaveAccessibleName(/^自動レビュー（実験的） /)
   await expect(auto.locator('small')).toHaveText('サンドボックスなしで動きます。ツールを呼び出すたびに、同じモデルが実験的に確認します。')
-  // Auto runs without a sandbox, so its row carries the warning glyph.
-  await expect(auto.locator('.composer-sheet-icon')).toHaveText('warning')
+  // Each built-in preset has its own glyph (#144); full access and Auto are both unsandboxed.
+  await expect(full.locator('.composer-sheet-icon')).toHaveText('warning')
+  await expect(auto.locator('.composer-sheet-icon')).toHaveText('gpp_maybe')
 })
 
 test('#103 今と同じプリセットを選び直しても /permission を送らない', async ({ page }) => {
