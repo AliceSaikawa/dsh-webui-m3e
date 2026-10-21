@@ -78,7 +78,7 @@ test('G-real-3 作業の詳細・折りたたむタイミング・パフォー�
   await openM3e(page, integration.host, '/settings')
   // Nothing saved yet: both screens show the stock defaults.
   await expect.poll(() => m3eShown(page, '作業の詳細')).toBe('詳細')
-  await expect.poll(() => m3eShown(page, '作業の詳細を折りたたむタイミング')).toBe('回答の完了時')
+  await expect.poll(() => m3eShown(page, '折りたたむタイミング')).toBe('回答の完了時')
   await expect.poll(() => m3eShown(page, 'パフォーマンスと使用状況')).toBe('詳細')
   const stock = await openStockSettings(context, integration.host)
   try {
@@ -87,7 +87,7 @@ test('G-real-3 作業の詳細・折りたたむタイミング・パフォー�
     await expect(stockRow(stock, 'Performance & usage')).toHaveText('Detailed')
     // M3E → stock.
     await m3ePick(page, '作業の詳細', '完全に展開')
-    await m3ePick(page, '作業の詳細を折りたたむタイミング', '次のメッセージの送信時')
+    await m3ePick(page, '折りたたむタイミング', '次のメッセージの送信時')
     await m3ePick(page, 'パフォーマンスと使用状況', '簡潔')
     await expect(stockRow(stock, 'Work details')).toHaveText('Verbose')
     await expect(stockRow(stock, 'When to Collapse Work Details')).toHaveText('On next message')
@@ -101,12 +101,12 @@ test('G-real-3 作業の詳細・折りたたむタイミング・パフォー�
     await expect.poll(() => m3eShown(page, 'パフォーマンスと使用状況')).toBe('詳細')
     await stockRow(stock, 'When to Collapse Work Details').click()
     await stock.getByRole('menuitem', { name: 'On completion', exact: true }).click()
-    await expect.poll(() => m3eShown(page, '作業の詳細を折りたたむタイミング')).toBe('回答の完了時')
+    await expect.poll(() => m3eShown(page, '折りたたむタイミング')).toBe('回答の完了時')
     // The Host keeps them: a fresh load of M3E reads the same values.
     await page.reload()
     await expect.poll(() => m3eShown(page, '作業の詳細')).toBe('簡潔')
     await expect.poll(() => m3eShown(page, 'パフォーマンスと使用状況')).toBe('詳細')
-    await expect.poll(() => m3eShown(page, '作業の詳細を折りたたむタイミング')).toBe('回答の完了時')
+    await expect.poll(() => m3eShown(page, '折りたたむタイミング')).toBe('回答の完了時')
   } finally {
     await stock.close()
   }

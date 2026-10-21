@@ -114,10 +114,19 @@ async function pick(page: Page, label: string, option: string) {
 test('G8 作業の詳細・折りたたむタイミング・パフォーマンスと使用状況は、標準の画面と同じ既定を選んで始まる', async ({ page }) => {
   await visit(page, '/settings')
   await expect.poll(() => shown(page, '作業の詳細')).toBe('詳細')
-  await expect.poll(() => shown(page, '作業の詳細を折りたたむタイミング')).toBe('回答の完了時')
+  await expect.poll(() => shown(page, '折りたたむタイミング')).toBe('回答の完了時')
   await expect.poll(() => shown(page, 'パフォーマンスと使用状況')).toBe('詳細')
   await expect(section(page)).toContainText('ツール呼び出しをどこまで詳しく表示するかを選びます。')
   await shot(page, 'general-chat-display')
+})
+
+test('G17 幅 320px でも「一般」の題名が切れない', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await visit(page, '/settings')
+  await expect(section(page).locator('m3e-form-field label[slot="label"]')).toHaveCount(3)
+  const clipped = await section(page).locator('m3e-form-field label[slot="label"]').evaluateAll(labels =>
+    labels.filter(label => label.scrollWidth > label.clientWidth).map(label => label.textContent))
+  expect(clipped).toEqual([])
 })
 
 test('G9 選ぶとその項目だけを ui-chat に保存し、選んだ表示に変わる', async ({ page }) => {
@@ -126,7 +135,7 @@ test('G9 選ぶとその項目だけを ui-chat に保存し、選んだ表示�
   await pick(page, '作業の詳細', '完全に展開')
   await expect.poll(() => shown(page, '作業の詳細')).toBe('完全に展開')
   await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ transcriptView: 'verbose' })
-  await pick(page, '作業の詳細を折りたたむタイミング', '次のメッセージの送信時')
+  await pick(page, '折りたたむタイミング', '次のメッセージの送信時')
   await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ transcriptView: 'verbose', collapseTiming: 'next-input' })
   await pick(page, 'パフォーマンスと使用状況', '簡潔')
   await expect.poll(async () => (await stored(page, 'ui-chat')).value).toEqual({
@@ -151,9 +160,9 @@ test('G10 標準の画面が保存した値が反映される。古い normal �
 test('G11 保存が競合したら読み直したと知らせ、選んだ値は残して「もう一度保存する」で保存できる', async ({ page }) => {
   await expose(page)
   await visit(page, '/settings', 'settings-conflict')
-  await pick(page, '作業の詳細を折りたたむタイミング', '次のメッセージの送信時')
+  await pick(page, '折りたたむタイミング', '次のメッセージの送信時')
   await expect(page.getByText('ほかの場所で設定が変わりました。読み直しました')).toBeVisible()
-  await expect.poll(() => shown(page, '作業の詳細を折りたたむタイミング')).toBe('次のメッセージの送信時')
+  await expect.poll(() => shown(page, '折りたたむタイミング')).toBe('次のメッセージの送信時')
   expect((await stored(page, 'ui-chat')).user).toEqual({})
   await section(page).getByRole('button', { name: 'もう一度保存する' }).click()
   await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ collapseTiming: 'next-input' })

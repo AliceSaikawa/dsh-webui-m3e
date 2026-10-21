@@ -128,11 +128,19 @@ test('作業の詳細・折りたたむタイミング・パフォーマンス�
   assert.deepEqual(labels('performanceUsage', 'en'), ['compact=Compact', 'detailed=Detailed'])
   assert.deepEqual(labels('performanceUsage', 'zh'), ['compact=简洁', 'detailed=详细'])
   assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'ja').display.label),
-    ['作業の詳細', '作業の詳細を折りたたむタイミング', 'パフォーマンスと使用状況'])
+    ['作業の詳細', '折りたたむタイミング', 'パフォーマンスと使用状況'])
   assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'en').display.label),
-    ['Work details', 'When to Collapse Work Details', 'Performance & usage'])
+    ['Work details', 'Collapse timing', 'Performance & usage'])
   assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'zh').display.label),
     ['工作步骤展示', '工作步骤收起时机', '性能与用量'])
+})
+
+test('題名は 1 行のラベルに入る長さにする（幅 320px で使える 185px に、日本語 15 字・英語 20 字まで）', () => {
+  for (const [code, limit] of [['ja', 15], ['en', 20], ['zh', 12]] as const) {
+    for (const item of generalEntries([chat()], messagesOf(generalMessages, code))) {
+      assert.ok(item.display.label.length <= limit, `${code}: ${item.display.label}`)
+    }
+  }
 })
 
 test('保存した値がないときは標準の画面と同じ既定を選んだ形で出し、古い normal・expanded は「詳細」に読み替える', () => {

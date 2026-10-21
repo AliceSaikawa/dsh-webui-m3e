@@ -26,7 +26,7 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 標準 | Standard | 标准 | `settings.transcript.standard` | 一致 |
 | 詳細 | Detailed | 详细 | `settings.transcript.detailed`、`settings.performance.detailed` | 一致 |
 | 完全に展開 | Verbose | 完全展开 | `settings.transcript.verbose` | 英語は Verbose（「詳細」と別） |
-| 作業の詳細を折りたたむタイミング | When to Collapse Work Details | 工作步骤收起时机 | `settings.collapse.title` | 一致 |
+| 折りたたむタイミング | Collapse timing | 工作步骤收起时机 | `settings.collapse.title`（英語は When to Collapse Work Details） | 標準の画面の題は「作業の詳細を折りたたむタイミング」に当たるが、フォームの題は 1 行で切れるため（幅 320px で日本語の全文は 198px、使える幅は 185px）、日本語と英語は短くした。中国語は DSH のままで収まる。何を折りたたむかは説明文に書いた |
 | 回答の完了時 | On completion | 回答结束后 | `settings.collapse.completion` | 一致 |
 | 次のメッセージの送信時 | On next message | 下次有新消息时 | `settings.collapse.nextInput` | 一致 |
 | パフォーマンスと使用状況 | Performance & usage | 性能与用量 | `settings.performance.title` | 一致 |

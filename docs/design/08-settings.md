@@ -37,7 +37,7 @@
 - **一般**：標準の画面の「設定 → 一般」にある項目のうち、M3E でも変えられるものです。「この端末」と「DSH の設定」の間に置きます。値は標準の画面と同じ名前空間・同じ項目に保存するので、どちらで変えてももう一方に反映されます。Host がその名前空間や項目を返さないときは、その行を出しません。
   - コーディングビューを表示（スイッチ）：`ui-settings` の `enabled`（既定 `true`）。オフにすると、モードの一覧と新しい会話から PTC と最小が隠れます（Issue #143 の動き。下の実装メモ）。
   - 作業の詳細（選択）：`ui-chat` の `transcriptView`。簡潔（`compact`）・標準（`standard`）・詳細（`detailed`）・完全に展開（`verbose`）。保存した値がないときは、標準の画面（デスクトップアプリ以外）と同じく「詳細」を選んだ形で出す。古い保存値の `normal`・`expanded` は「詳細」として出す。
-  - 作業の詳細を折りたたむタイミング（選択）：`ui-chat` の `collapseTiming`。回答の完了時（`completion`、既定）・次のメッセージの送信時（`next-input`）。
+  - 折りたたむタイミング（選択。標準の画面では「作業の詳細を折りたたむタイミング」）：`ui-chat` の `collapseTiming`。回答の完了時（`completion`、既定）・次のメッセージの送信時（`next-input`）。
   - パフォーマンスと使用状況（選択）：`ui-chat` の `performanceUsage`。簡潔（`compact`）・詳細（`detailed`、既定）。
 - **DSH の設定**：次の 5 行です。2 行目には、そのページの主な値を出します。
 
@@ -1327,3 +1327,4 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **選択の部品**：`FieldEditor` の選択（`m3e-select`）に、`FieldDisplay.choices` で標準の画面と同じ順・同じ訳の選択肢を渡す。Host のスキーマに選択肢のどれかがなければ、その行を出さない（`generalEntries`）。保存は項目 1 つの差分（`{ transcriptView: 'verbose' }` など）で、ほかの項目は変えない。
 - **試験**：`tests/08-general.test.ts`（選択肢の順と 3 言語の訳、既定と古い値の読み替え、スキーマに選択肢がない Host、項目ごとの保存の差分と revision、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G8〜G12、`e2e-dsh/settings-general.spec.ts` の G-real-3。選択の表示は、`m3e-select` の `selected`（選ばれた選択肢）で確かめる（要素の文字列には全選択肢が含まれるため）。
 - **未確認**：デスクトップアプリ（`dshDesktop`）での既定（`standard`）。M3E は常に携帯向けなので「詳細」を既定にした。iOS 実機。
+- **レビューへの対応（幅 320px のラベル）**：`m3e-form-field` のラベルは 1 行で、はみ出す分を切る。「作業の詳細を折りたたむタイミング」は 320px で全文 198px に対し使える幅 185px で切れていた（340px 以上は収まる）。日本語を「折りたたむタイミング」、英語を `Collapse timing` に短くし、何を折りたたむかは説明文（「作業の詳細を自動で折りたたむタイミングを選びます。」）に残した。中国語の `工作步骤收起时机` は DSH のままで収まる。`e2e/settings-general.spec.ts` の G17 が、幅 320px で「一般」の全行のラベルが切れないこと（`scrollWidth` が `clientWidth` 以下）を確かめる。ラベルの折り返しは、`m3e-form-field` の浮くラベルの高さが固定で、ほかの設定の画面も変わるため行わなかった。
