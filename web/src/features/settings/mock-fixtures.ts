@@ -276,6 +276,27 @@ const published: { ns: string; autoGenerate: boolean; schema: unknown; base: Set
     0: {"type":"object","dict":{"enabled":1}},
     1: {"type":"boolean","meta":{"default":true}},
   } } },
+  // dsh-client-ui-chat stores the Chat display preferences. `transcriptView` has no default in the Host
+  // (the client picks one) and also accepts the legacy `normal` and `expanded`; the other three carry defaults.
+  { ns: "ui-chat", autoGenerate: false, base: {"collapseTiming":"completion","performanceUsage":"detailed","linkOpening":"sidebar"}, schema: { uid: 0, refs: {
+    0: {"type":"object","meta":{"default":{}},"dict":{"transcriptView":1,"collapseTiming":8,"performanceUsage":11,"linkOpening":14}},
+    1: {"type":"union","meta":{"loose":true},"list":[2,3,4,5,6,7]},
+    2: {"type":"const","value":"compact","meta":{"required":true}},
+    3: {"type":"const","value":"standard","meta":{"required":true}},
+    4: {"type":"const","value":"detailed","meta":{"required":true}},
+    5: {"type":"const","value":"verbose","meta":{"required":true}},
+    6: {"type":"const","value":"normal","meta":{"required":true}},
+    7: {"type":"const","value":"expanded","meta":{"required":true}},
+    8: {"type":"union","meta":{"default":"completion"},"list":[9,10]},
+    9: {"type":"const","value":"completion","meta":{"required":true}},
+    10: {"type":"const","value":"next-input","meta":{"required":true}},
+    11: {"type":"union","meta":{"default":"detailed"},"list":[12,13]},
+    12: {"type":"const","value":"compact","meta":{"required":true}},
+    13: {"type":"const","value":"detailed","meta":{"required":true}},
+    14: {"type":"union","meta":{"default":"sidebar"},"list":[15,16]},
+    15: {"type":"const","value":"sidebar","meta":{"required":true}},
+    16: {"type":"const","value":"new-tab","meta":{"required":true}},
+  } } },
   { ns: "ui-theme", autoGenerate: false, base: {"preference":"system","fontSize":14,"codeFontSize":11,"terminalFontSize":13,"textFontFamily":"","codeFontFamily":"","terminalFontFamily":""}, schema: { uid: 0, refs: {
     0: {"type":"object","dict":{"preference":1,"fontSize":5,"codeFontSize":6,"terminalFontSize":7,"textFontFamily":8,"codeFontFamily":9,"terminalFontFamily":10}},
     1: {"type":"union","list":[2,3,4]},

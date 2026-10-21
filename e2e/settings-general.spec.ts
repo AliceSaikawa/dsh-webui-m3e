@@ -36,6 +36,8 @@ test('G1 設定のトップに「一般」があり、コーディングビュ�
   // The section sits between the device card and the DSH pages.
   const headings = await page.locator('.settings-section > h2').allTextContents()
   expect(headings).toEqual(['この端末', '一般', 'DSH の設定'])
+  // Rows follow the stock order of the ones M3E offers: coding view, work details, collapse timing, performance.
+  await expect(section(page).locator('.settings-field')).toHaveCount(4)
   await shot(page, 'general-coding-view')
 })
 
@@ -99,4 +101,71 @@ test('G7 一般の行は DSH の設定の汎用ページには出ない', async 
   await visit(page, '/settings/other')
   await expect(page.getByRole('switch', { name: 'コーディングビューを表示' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'ui-settings' })).toHaveCount(0)
+})
+
+const choice = (page: Page, label: string) => section(page).locator(`m3e-select[aria-label="${label}"]`)
+// The select's own text also lists every option, so read the option it has selected.
+const shown = (page: Page, label: string) => choice(page, label).evaluate((el: any) => el.selected.map((option: any) => option.textContent.trim()).join(','))
+async function pick(page: Page, label: string, option: string) {
+  await choice(page, label).click()
+  await page.locator('m3e-option').filter({ hasText: option }).last().click()
+}
+
+test('G8 作業の詳細・折りたたむタイミング・パフォーマンスと使用状況は、標準の画面と同じ既定を選んで始まる', async ({ page }) => {
+  await visit(page, '/settings')
+  await expect.poll(() => shown(page, '作業の詳細')).toBe('詳細')
+  await expect.poll(() => shown(page, '作業の詳細を折りたたむタイミング')).toBe('回答の完了時')
+  await expect.poll(() => shown(page, 'パフォーマンスと使用状況')).toBe('詳細')
+  await expect(section(page)).toContainText('ツール呼び出しをどこまで詳しく表示するかを選びます。')
+  await shot(page, 'general-chat-display')
+})
+
+test('G9 選ぶとその項目だけを ui-chat に保存し、選んだ表示に変わる', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings')
+  await pick(page, '作業の詳細', '完全に展開')
+  await expect.poll(() => shown(page, '作業の詳細')).toBe('完全に展開')
+  await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ transcriptView: 'verbose' })
+  await pick(page, '作業の詳細を折りたたむタイミング', '次のメッセージの送信時')
+  await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ transcriptView: 'verbose', collapseTiming: 'next-input' })
+  await pick(page, 'パフォーマンスと使用状況', '簡潔')
+  await expect.poll(async () => (await stored(page, 'ui-chat')).value).toEqual({
+    transcriptView: 'verbose', collapseTiming: 'next-input', performanceUsage: 'compact', linkOpening: 'sidebar' })
+  // Leaving the settings tab and coming back reads the saved values back (a reload would reset the mock).
+  await action(page, 'モード').click()
+  await page.goBack()
+  await expect.poll(() => shown(page, '作業の詳細')).toBe('完全に展開')
+  await expect.poll(() => shown(page, 'パフォーマンスと使用状況')).toBe('簡潔')
+})
+
+test('G10 標準の画面が保存した値が反映される。古い normal は「詳細」として出す', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings')
+  await saveElsewhere(page, 'ui-chat', { transcriptView: 'compact', performanceUsage: 'compact' })
+  await expect.poll(() => shown(page, '作業の詳細')).toBe('簡潔')
+  await expect.poll(() => shown(page, 'パフォーマンスと使用状況')).toBe('簡潔')
+  await saveElsewhere(page, 'ui-chat', { transcriptView: 'normal' })
+  await expect.poll(() => shown(page, '作業の詳細')).toBe('詳細')
+})
+
+test('G11 保存が競合したら読み直したと知らせ、選んだ値は残して「もう一度保存する」で保存できる', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings', 'settings-conflict')
+  await pick(page, '作業の詳細を折りたたむタイミング', '次のメッセージの送信時')
+  await expect(page.getByText('ほかの場所で設定が変わりました。読み直しました')).toBeVisible()
+  await expect.poll(() => shown(page, '作業の詳細を折りたたむタイミング')).toBe('次のメッセージの送信時')
+  expect((await stored(page, 'ui-chat')).user).toEqual({})
+  await section(page).getByRole('button', { name: 'もう一度保存する' }).click()
+  await expect.poll(async () => (await stored(page, 'ui-chat')).user).toEqual({ collapseTiming: 'next-input' })
+})
+
+test('G12 Host が拒否したら理由を項目の下に出す。書き込めない DSH では選べない', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings', 'settings-rejected')
+  await pick(page, '作業の詳細', '簡潔')
+  await expect(section(page).getByRole('alert')).toHaveText('この値は管理者の設定によって許可されていません。')
+  expect((await stored(page, 'ui-chat')).user).toEqual({})
+  await visit(page, '/settings', 'settings-readonly')
+  await expect(choice(page, '作業の詳細')).toHaveJSProperty('disabled', true)
+  await expect(choice(page, 'パフォーマンスと使用状況')).toHaveJSProperty('disabled', true)
 })

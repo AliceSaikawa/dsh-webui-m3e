@@ -18,7 +18,7 @@ export interface FieldDisplay {
   effective?(stored: SettingValue | undefined): SettingValue | undefined
 }
 
-export type GeneralRowId = 'codingView'
+export type GeneralRowId = 'codingView' | 'transcriptView' | 'collapseTiming' | 'performanceUsage'
 
 /** One preference of the stock Settings → General, stored where the stock screen stores it. */
 interface GeneralRow {
@@ -40,6 +40,14 @@ interface GeneralRow {
 export const generalRows: readonly GeneralRow[] = [
   // dsh-client-ui-settings DeveloperToolsPreference: `enabled`, true unless saved otherwise.
   { id: 'codingView', ns: 'ui-settings', key: 'enabled', kind: 'switch', schemaKind: 'switch', fallback: true },
+  // dsh-client-ui-chat (`ui-chat`): work details. The Host has no default for `transcriptView`; the stock
+  // client uses `detailed` outside the desktop app and reads the saved `normal`/`expanded` as `detailed`.
+  { id: 'transcriptView', ns: 'ui-chat', key: 'transcriptView', kind: 'select', schemaKind: 'select', fallback: 'detailed',
+    choices: ['compact', 'standard', 'detailed', 'verbose'], legacy: { normal: 'detailed', expanded: 'detailed' } },
+  { id: 'collapseTiming', ns: 'ui-chat', key: 'collapseTiming', kind: 'select', schemaKind: 'select', fallback: 'completion',
+    choices: ['completion', 'next-input'] },
+  { id: 'performanceUsage', ns: 'ui-chat', key: 'performanceUsage', kind: 'select', schemaKind: 'select', fallback: 'detailed',
+    choices: ['compact', 'detailed'] },
 ]
 
 /** The value the stock screen shows for a stored one. */
@@ -51,6 +59,12 @@ export function effectiveValue(row: Pick<GeneralRow, 'fallback' | 'legacy'>, sto
 function rowText(id: GeneralRowId, text: GeneralTexts): { title: string; description: string; choiceLabels?: Readonly<Record<string, string>> } {
   switch (id) {
     case 'codingView': return { title: text.codingViewTitle, description: text.codingViewDescription }
+    case 'transcriptView': return { title: text.transcriptViewTitle, description: text.transcriptViewDescription, choiceLabels: {
+      compact: text.transcriptCompact, standard: text.transcriptStandard, detailed: text.transcriptDetailed, verbose: text.transcriptVerbose } }
+    case 'collapseTiming': return { title: text.collapseTimingTitle, description: text.collapseTimingDescription, choiceLabels: {
+      completion: text.collapseCompletion, 'next-input': text.collapseNextInput } }
+    case 'performanceUsage': return { title: text.performanceUsageTitle, description: text.performanceUsageDescription, choiceLabels: {
+      compact: text.performanceCompact, detailed: text.performanceDetailed } }
   }
 }
 

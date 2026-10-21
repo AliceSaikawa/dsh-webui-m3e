@@ -110,3 +110,88 @@ test('書き込めない DSH では何も送らない', async () => {
   assert.equal(await store.edit('ui-settings', ['enabled'], false), false)
   assert.deepEqual(calls, [])
 })
+
+const chat = () => settingsFixtures().find(item => item.ns === 'ui-chat')!
+const entry = (id: string, locale: 'ja' | 'en' | 'zh' = 'ja', rows: SettingsNamespace[] = [chat()]) =>
+  generalEntries(rows, messagesOf(generalMessages, locale)).find(item => item.id === id)!
+
+test('作業の詳細・折りたたむタイミング・パフォーマンスと使用状況は ui-chat の選択として、標準の画面と同じ選択肢を同じ順で出す', () => {
+  const labels = (id: string, locale: 'ja' | 'en' | 'zh') => entry(id, locale).display.choices!.map(choice => `${choice.value}=${choice.label}`)
+  assert.deepEqual(generalEntries([chat()], ja).map(item => item.id), ['transcriptView', 'collapseTiming', 'performanceUsage'])
+  assert.deepEqual(labels('transcriptView', 'ja'), ['compact=簡潔', 'standard=標準', 'detailed=詳細', 'verbose=完全に展開'])
+  assert.deepEqual(labels('transcriptView', 'en'), ['compact=Compact', 'standard=Standard', 'detailed=Detailed', 'verbose=Verbose'])
+  assert.deepEqual(labels('transcriptView', 'zh'), ['compact=简洁', 'standard=标准', 'detailed=详细', 'verbose=完全展开'])
+  assert.deepEqual(labels('collapseTiming', 'ja'), ['completion=回答の完了時', 'next-input=次のメッセージの送信時'])
+  assert.deepEqual(labels('collapseTiming', 'en'), ['completion=On completion', 'next-input=On next message'])
+  assert.deepEqual(labels('collapseTiming', 'zh'), ['completion=回答结束后', 'next-input=下次有新消息时'])
+  assert.deepEqual(labels('performanceUsage', 'ja'), ['compact=簡潔', 'detailed=詳細'])
+  assert.deepEqual(labels('performanceUsage', 'en'), ['compact=Compact', 'detailed=Detailed'])
+  assert.deepEqual(labels('performanceUsage', 'zh'), ['compact=简洁', 'detailed=详细'])
+  assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'ja').display.label),
+    ['作業の詳細', '作業の詳細を折りたたむタイミング', 'パフォーマンスと使用状況'])
+  assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'en').display.label),
+    ['Work details', 'When to Collapse Work Details', 'Performance & usage'])
+  assert.deepEqual(['transcriptView', 'collapseTiming', 'performanceUsage'].map(id => entry(id, 'zh').display.label),
+    ['工作步骤展示', '工作步骤收起时机', '性能与用量'])
+})
+
+test('保存した値がないときは標準の画面と同じ既定を選んだ形で出し、古い normal・expanded は「詳細」に読み替える', () => {
+  const shown = (id: string, stored: unknown) => entry(id).display.effective!(stored as never)
+  assert.equal(shown('transcriptView', undefined), 'detailed')
+  assert.equal(shown('transcriptView', 'normal'), 'detailed')
+  assert.equal(shown('transcriptView', 'expanded'), 'detailed')
+  assert.equal(shown('transcriptView', 'verbose'), 'verbose')
+  assert.equal(shown('collapseTiming', undefined), 'completion')
+  assert.equal(shown('performanceUsage', undefined), 'detailed')
+  assert.equal(shown('performanceUsage', 'compact'), 'compact')
+})
+
+test('Host のスキーマが選択肢を持たなければ、その行だけを出さない', () => {
+  const narrowed: SettingsNamespace = { ...chat(), schema: { uid: 0, refs: {
+    0: { type: 'object', dict: { transcriptView: 1, collapseTiming: 4, performanceUsage: 7 } },
+    1: { type: 'union', list: [2, 3] }, 2: { type: 'const', value: 'compact' }, 3: { type: 'const', value: 'standard' },
+    4: { type: 'union', list: [5, 6] }, 5: { type: 'const', value: 'completion' }, 6: { type: 'const', value: 'next-input' },
+    7: { type: 'union', list: [8, 9] }, 8: { type: 'const', value: 'compact' }, 9: { type: 'const', value: 'detailed' },
+  } } }
+  assert.deepEqual(generalEntries([narrowed], ja).map(item => item.id), ['collapseTiming', 'performanceUsage'])
+})
+
+test('選んだ値は、その項目だけを ui-chat に書き、ほかの項目と revision を保つ', async () => {
+  const { store, calls } = harness()
+  await store.reload()
+  assert.equal(await store.edit('ui-chat', ['transcriptView'], 'verbose'), true)
+  assert.equal(await store.edit('ui-chat', ['collapseTiming'], 'next-input'), true)
+  assert.equal(await store.edit('ui-chat', ['performanceUsage'], 'compact'), true)
+  assert.deepEqual(calls.map(call => [call.patch, call.revision]), [
+    [{ transcriptView: 'verbose' }, 0], [{ collapseTiming: 'next-input' }, 1], [{ performanceUsage: 'compact' }, 2]])
+  assert.deepEqual(stored(store, 'ui-chat').value, { collapseTiming: 'next-input', performanceUsage: 'compact', linkOpening: 'sidebar', transcriptView: 'verbose' })
+})
+
+test('選択肢にない値は送らない', async () => {
+  const { store, calls } = harness()
+  await store.reload()
+  assert.equal(await store.edit('ui-chat', ['performanceUsage'], 'verbose'), false)
+  assert.deepEqual(calls, [])
+})
+
+test('ui-chat でも、競合は読み直して入力を残し、拒否は項目の下に理由を出す', async () => {
+  const conflict = harness('settings-conflict')
+  const notices: string[] = []
+  conflict.store.subscribeNotice(message => notices.push(message))
+  await conflict.store.reload()
+  const input = conflict.store.input('ui-chat', ['collapseTiming'])
+  input.change('next-input')
+  await input.flush()
+  assert.deepEqual(notices, ['ほかの場所で設定が変わりました。読み直しました'])
+  assert.equal(input.getSnapshot().value, 'next-input')
+  await input.retry()
+  assert.equal((stored(conflict.store, 'ui-chat').value as { collapseTiming: string }).collapseTiming, 'next-input')
+  const rejected = harness('settings-rejected')
+  await rejected.store.reload()
+  assert.equal(await rejected.store.edit('ui-chat', ['transcriptView'], 'compact'), false)
+  assert.equal(rejected.store.getSnapshot().fieldErrors[fieldKey('ui-chat', ['transcriptView'])], 'この値は管理者の設定によって許可されていません。')
+  const readonly = harness('settings-readonly')
+  await readonly.store.reload()
+  assert.equal(await readonly.store.edit('ui-chat', ['transcriptView'], 'compact'), false)
+  assert.deepEqual(readonly.calls, [])
+})

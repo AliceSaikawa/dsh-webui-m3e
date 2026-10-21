@@ -36,6 +36,9 @@
   - 「外観」：今の値を 2 行目に出し、タップで外観のシート。
 - **一般**：標準の画面の「設定 → 一般」にある項目のうち、M3E でも変えられるものです。「この端末」と「DSH の設定」の間に置きます。値は標準の画面と同じ名前空間・同じ項目に保存するので、どちらで変えてももう一方に反映されます。Host がその名前空間や項目を返さないときは、その行を出しません。
   - コーディングビューを表示（スイッチ）：`ui-settings` の `enabled`（既定 `true`）。オフにすると、モードの一覧と新しい会話から PTC と最小が隠れます（Issue #143 の動き。下の実装メモ）。
+  - 作業の詳細（選択）：`ui-chat` の `transcriptView`。簡潔（`compact`）・標準（`standard`）・詳細（`detailed`）・完全に展開（`verbose`）。保存した値がないときは、標準の画面（デスクトップアプリ以外）と同じく「詳細」を選んだ形で出す。古い保存値の `normal`・`expanded` は「詳細」として出す。
+  - 作業の詳細を折りたたむタイミング（選択）：`ui-chat` の `collapseTiming`。回答の完了時（`completion`、既定）・次のメッセージの送信時（`next-input`）。
+  - パフォーマンスと使用状況（選択）：`ui-chat` の `performanceUsage`。簡潔（`compact`）・詳細（`detailed`、既定）。
 - **DSH の設定**：次の 5 行です。2 行目には、そのページの主な値を出します。
 
 | 行 | ページ | 名前空間 |
@@ -1314,3 +1317,13 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **言語**：文言は `messages.ts` の `generalMessages` に日本語・英語・中国語を同じ変更で足した。`DISPLAY_LOCALES` は `['ja']` のままなので、画面は日本語（11-i18n の決まり）。`FieldEditor` の固定の文言（「保存しました」「もう一度保存する」など）は設定の移行 PR まで日本語のまま。
 - **画面の外観**：390px 幅で、「この端末」と「DSH の設定」の間に「一般」の見出しとスイッチ 1 行（説明つき）が出る。
 - **未確認**：iOS 実機。
+
+### 2026-10-21：設定の「一般」②作業の詳細・パフォーマンスと使用状況（`feat/settings-chat-display`）
+
+- **DSH で確かめた契約**（インストール済みの `@deepseek-ai/dsh` 0.2.1-rc.2 の `dsh-client-ui-chat/lib/client.js`・`lib/index.js` を読み取りで確認）：名前空間 `ui-chat`（`CHAT_SETTINGS_NAMESPACE`）。`transcriptView`：`compact`・`standard`・`detailed`・`verbose` と、古い保存値の `normal`・`expanded`（標準の画面は `detailed` と読み、選択肢には出さず、書き戻さない）。Host のスキーマには既定がなく（`.loose()`）、標準の画面が `dshDesktop` のあるデスクトップアプリでは `standard`、それ以外では `detailed` を使う。`collapseTiming`：`completion`（既定）・`next-input`。`performanceUsage`：`compact`・`detailed`（既定）。`linkOpening`：`sidebar`（既定）・`new-tab`（次の PR で扱う）。標準の画面の文言は、英語が Work details／Compact・Standard・Detailed・Verbose、When to Collapse Work Details／On completion・On next message、Performance & usage／Compact・Detailed。中国語は 工作步骤展示／简洁・标准・详细・完全展开、工作步骤收起时机／回答结束后・下次有新消息时、性能与用量／简洁・详细。
+- **隔離した実 DSH（0.2.1-rc.2、`e2e-dsh`）で確かめたこと**：`settings.describe()` の `ui-chat` は `autoGenerate: false`、`applies: 'live'`、何も保存していないときの `value` は `{ collapseTiming: 'completion', performanceUsage: 'detailed', linkOpening: 'sidebar' }`（`transcriptView` は無い）。偽データの `ui-chat`（`mock-fixtures.ts`）は、この実物の写しで、`e2e-dsh/rpc.spec.ts` の S5 の照合（スキーマの形・`value`・`autoGenerate`）が成功する。`e2e-dsh/settings-general.spec.ts` の G-real-3 で、M3E で 3 項目を変えると標準の画面の設定ダイアログ（Work details／When to Collapse Work Details／Performance & usage）が変わり、標準の画面で変えると M3E の選択が変わること、再読み込みしても残ることを確かめた。
+- **標準の画面と同じ値の読み方**：保存した値がない `transcriptView` は「詳細」、`collapseTiming` は「回答の完了時」、`performanceUsage` は「詳細」として出す（`general.ts` の `fallback` と `legacy`）。M3E は `transcriptView` を自分では書き戻さない（選んだときだけ保存する）。
+- **M3E のチャットの表示はこの値をまだ読んでいない**：`web/src/` で `transcriptView`・`collapseTiming`・`performanceUsage` を読むのは、この設定の行だけ。チャットの詳細度や統計の見せ方を M3E の画面に反映するのは別の作業で、行の説明には「標準の画面の表示に使われます」と書いた。
+- **選択の部品**：`FieldEditor` の選択（`m3e-select`）に、`FieldDisplay.choices` で標準の画面と同じ順・同じ訳の選択肢を渡す。Host のスキーマに選択肢のどれかがなければ、その行を出さない（`generalEntries`）。保存は項目 1 つの差分（`{ transcriptView: 'verbose' }` など）で、ほかの項目は変えない。
+- **試験**：`tests/08-general.test.ts`（選択肢の順と 3 言語の訳、既定と古い値の読み替え、スキーマに選択肢がない Host、項目ごとの保存の差分と revision、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G8〜G12、`e2e-dsh/settings-general.spec.ts` の G-real-3。選択の表示は、`m3e-select` の `selected`（選ばれた選択肢）で確かめる（要素の文字列には全選択肢が含まれるため）。
+- **未確認**：デスクトップアプリ（`dshDesktop`）での既定（`standard`）。M3E は常に携帯向けなので「詳細」を既定にした。iOS 実機。

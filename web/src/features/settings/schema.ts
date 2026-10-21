@@ -164,7 +164,7 @@ export function decodeSchema(input: unknown): SchemaNode {
  * Namespaces with a dedicated row in the General section (general.ts). They are
  * excluded from the generic pages; every row's namespace must be listed here.
  */
-export const generalNamespaces = ['ui-settings'] as const
+export const generalNamespaces = ['ui-settings', 'ui-chat'] as const
 
 export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Record<SettingsPage, SettingsNamespace[]> {
   const groups: Record<SettingsPage, SettingsNamespace[]> = { models: [], permission: [], agent: [], providers: [], tools: [], other: [] }
