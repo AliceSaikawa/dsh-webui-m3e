@@ -29,6 +29,9 @@ export function GoalStrip({ sessionId }: { readonly sessionId: string }) {
   const model = presence.strip.model
 
   function openEdit() {
+    const goal = presence.current?.goal
+    if (!goal) return
+    const ref = { id: goal.id, revision: goal.revision }
     editDialog.current?.()
     editDialog.current = openDialog(close => <TextPromptDialog
       title={text.editGoalDialogTitle}
@@ -37,7 +40,7 @@ export function GoalStrip({ sessionId }: { readonly sessionId: string }) {
       multiline
       confirmLabel={text.editGoalConfirm}
       onCancel={close}
-      onConfirm={async value => { await presence.editObjective(value); close() }}
+      onConfirm={async value => { await presence.editObjective({ ref, objective: value }); close() }}
     />, { label: text.editGoalDialogLabel })
   }
 

@@ -241,3 +241,57 @@ for (const scenario of [undefined, 'goal-disarmed', 'goal-blocked', 'goal-exhaus
     })).toEqual(stripView)
   })
 }
+
+// Issue #154: the edit dialog saves against the goal it was opened on. A goal
+// updated or replaced meanwhile is not overwritten with input written from the old text.
+async function changeGoalElsewhere(page: Page, change: 'updated' | 'replaced', latest: string) {
+  await page.evaluate(async ({ change, latest }) => {
+    const ctx = (window as any).__goalStrip
+    if (change === 'replaced') { ctx.mock.appendEvent('approval-sheet', 'command/run', { name: 'goal', args: latest }); return }
+    const current = await ctx.remote.goals.get('approval-sheet')
+    await ctx.remote.goals.edit('approval-sheet', { id: current.value.id, revision: current.value.revision }, { objective: latest })
+  }, { change, latest })
+}
+const storedObjective = (page: Page) => page.evaluate(async () =>
+  (await (window as any).__goalStrip.remote.goals.get('approval-sheet')).value.objective as string)
+
+const editSurfaces = {
+  strip: { path: '/s/approval-sheet', open: openEdit },
+  screen: { path: '/s/approval-sheet/goal', open: async (page: Page) => {
+    await page.getByRole('button', { name: '目標を編集', exact: true }).click()
+    await expect(editDialog(page)).toBeVisible()
+    return editDialog(page).getByLabel('目標', { exact: true })
+  } },
+} as const
+
+for (const [surface, change] of [['strip', 'updated'], ['strip', 'replaced'], ['screen', 'updated'], ['screen', 'replaced']] as const) {
+  test(`154 ${surface}: 編集中にゴールが${change === 'updated' ? '更新される' : '置き換えられる'}と、古い入力では保存せず入力を残す`, async ({ page }) => {
+    await expose(page)
+    await visit(page, editSurfaces[surface].path)
+    await expect(page.getByText(OBJECTIVE, { exact: true }).first()).toBeVisible()
+    const field = await editSurfaces[surface].open(page)
+    await expect(field).toHaveValue(OBJECTIVE)
+    await field.fill('古い目標から書いた入力')
+    const latest = change === 'updated' ? '別の端末で変えた目標' : '別の端末で立てた目標'
+    await changeGoalElsewhere(page, change, latest)
+    await expect(page.getByText(latest, { exact: true }).first()).toBeAttached()
+    await editDialog(page).getByRole('button', { name: '保存', exact: true }).click()
+    await expect(editDialog(page).getByRole('alert')).toHaveText(SAVE_FAILED)
+    await expect(field).toHaveValue('古い目標から書いた入力')
+    expect(await storedObjective(page)).toBe(latest)
+    // Reopened, the dialog starts from the latest goal and saves against it.
+    await editDialog(page).getByRole('button', { name: 'キャンセル', exact: true }).click()
+    await expect(editDialog(page)).toHaveCount(0)
+    // The strip reports the conflict and offers only 読み直す until the goal is read again.
+    if (surface === 'strip') {
+      await expect(strip(page).getByRole('alert')).toHaveText(REFRESHED)
+      await strip(page).getByRole('button', { name: '読み直す', exact: true }).click()
+    }
+    const reopened = await editSurfaces[surface].open(page)
+    await expect(reopened).toHaveValue(latest)
+    await reopened.fill('最新を確かめて書いた目標')
+    await editDialog(page).getByRole('button', { name: '保存', exact: true }).click()
+    await expect(editDialog(page)).toHaveCount(0)
+    expect(await storedObjective(page)).toBe('最新を確かめて書いた目標')
+  })
+}

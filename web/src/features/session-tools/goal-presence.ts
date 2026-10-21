@@ -44,12 +44,14 @@ export interface GoalPresence extends GoalPresenceState, GoalPresenceModel {
   complete(): Promise<void>
   clear(): Promise<void>
   /**
+   * Saves against `ref`, the goal the dialog was opened on, so the Host's
+   * revision check rejects input written from an older or replaced goal.
    * No-op when unmounted or the trimmed objective is unchanged. Throws
    * text.mutateFailed / text.mutateRefreshed so the prompt dialog stays open
    * with its inline error. Uses GoalsEditRemote.edit then the same observation
    * merge path as pause/resume.
    */
-  editObjective(objective: string): Promise<void>
+  editObjective(edit: { readonly ref: GoalRef; readonly objective: string }): Promise<void>
 }
 
 /**
@@ -153,14 +155,13 @@ export function useGoalPresence(sessionId: string): GoalPresence {
     }
   }
 
-  async function editObjective(objective: string) {
+  async function editObjective({ ref, objective }: { readonly ref: GoalRef; readonly objective: string }) {
     const trimmed = objective.trim()
     if (!alive.current) return
     if (goal && trimmed === goal.objective) return
     if (!editor || !trimmed || lock.current || !canMutate || !canEdit || !goal) {
       throw new Error(text.mutateFailed)
     }
-    const ref = { id: goal.id, revision: goal.revision }
     lock.current = true
     setBusy(true)
     setError('')
@@ -203,6 +204,6 @@ export function useGoalPresence(sessionId: string): GoalPresence {
       if (!goal) return
       await mutate('clear', { id: goal.id, revision: goal.revision })
     },
-    editObjective: (value: string) => latestEdit.current(value),
+    editObjective: edit => latestEdit.current(edit),
   }
 }

@@ -34,6 +34,7 @@ function GoalContent({ sessionId }: { sessionId: string }) {
 
   function openEdit() {
     if (!goal || !presence.canEdit || !presence.canMutate) return
+    const ref = { id: goal.id, revision: goal.revision }
     editDialog.current = openDialog(close => <TextPromptDialog
       title={text.editGoalDialogTitle}
       label={text.editGoalField}
@@ -41,7 +42,7 @@ function GoalContent({ sessionId }: { sessionId: string }) {
       multiline
       confirmLabel={text.editGoalConfirm}
       onCancel={close}
-      onConfirm={async value => { await presence.editObjective(value); close() }}
+      onConfirm={async value => { await presence.editObjective({ ref, objective: value }); close() }}
     />, { label: text.editGoalDialogLabel })
   }
 
