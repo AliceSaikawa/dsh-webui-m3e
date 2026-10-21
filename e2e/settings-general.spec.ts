@@ -123,7 +123,7 @@ test('G8 作業の詳細・折りたたむタイミング・パフォーマン�
 test('G17 幅 320px でも「一般」の題名が切れない', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 })
   await visit(page, '/settings')
-  await expect(section(page).locator('m3e-form-field label[slot="label"]')).toHaveCount(3)
+  await expect(section(page).locator('m3e-form-field label[slot="label"]')).toHaveCount(4)
   const clipped = await section(page).locator('m3e-form-field label[slot="label"]').evaluateAll(labels =>
     labels.filter(label => label.scrollWidth > label.clientWidth).map(label => label.textContent))
   expect(clipped).toEqual([])
