@@ -150,3 +150,72 @@ test('79b 再試行が再び失敗しても、Host が作った会話で下書�
   await expect(input(page)).toHaveValue('')
   await expect(unfinished(page)).toHaveCount(0)
 })
+
+// Issue #153: the Host publishes the conversation it mints before the create
+// response arrives. That conversation's composer is not part of the shared
+// retry, so input written there must survive the response.
+type PublishedFirstWindow = Window & {
+  __m3eTestMockContextReady?: (ctx: any) => void
+  __m3eTestMinted?: string
+  releaseAttach?: () => void
+}
+async function preparePublishedFirst(page: Page, fail: boolean) {
+  await page.addInitScript(({ sessionId, workspaceId, stale, fail }) => {
+    const attachment = JSON.stringify({ workspaceId, sessionId, baseline: { text: stale } })
+    for (const key of [`new:${workspaceId}`, `session:${sessionId}`]) {
+      localStorage.setItem(`m3e:composer:${key}`, stale)
+      localStorage.setItem(`m3e:composer:${key}:workspaceAttachment`, attachment)
+    }
+    const target = window as PublishedFirstWindow
+    const gate = new Promise<void>(resolve => { target.releaseAttach = resolve })
+    target.__m3eTestMockContextReady = ctx => {
+      const create = ctx.sessions.create.bind(ctx.sessions)
+      ctx.mock.patch('sessions.create', async (input: { sessionId?: string; workspaceId?: string } = {}) => {
+        if (!input.sessionId || !input.workspaceId) return create(input)
+        const created: string = await create(input)
+        target.__m3eTestMinted = created
+        await gate
+        if (!fail) return created
+        ctx.mock.updateWorkspace(input.workspaceId, (workspace: { sessionIds: string[] }) => ({ sessionIds: workspace.sessionIds.filter(id => id !== created) }))
+        const details = { sessionId: created, workspaceId: input.workspaceId }
+        throw Object.assign(new Error('ワークスペースへ登録できませんでした。'), { rpcError: { code: 'session/workspace-attach-failed', message: 'ワークスペースへ登録できませんでした。', details } })
+      })
+    }
+  }, { sessionId: recordedId, workspaceId, stale, fail })
+}
+
+for (const outcome of ['success', 'failure'] as const) {
+  test(`153 ${outcome}: 応答の前に新しい会話で書いた本文は、再試行の完了で上書きされない`, async ({ page }) => {
+    await preparePublishedFirst(page, outcome === 'failure')
+    await visit(page, `/new?ws=${workspaceId}`)
+    await expect(input(page)).toHaveValue(stale)
+    await button(page, 'ワークスペースへ登録し直す').click()
+    await expect(retrying(page)).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as PublishedFirstWindow).__m3eTestMinted ?? '')).not.toBe('')
+    const minted = await page.evaluate(() => (window as PublishedFirstWindow).__m3eTestMinted!)
+    expect(minted).not.toBe(recordedId)
+    await page.evaluate(id => { location.hash = `#/s/${id}` }, minted)
+    await expect(input(page)).toBeEnabled()
+    await input(page).fill('新しい会話を開いて書いた本文')
+    await page.evaluate(() => (window as PublishedFirstWindow).releaseAttach?.())
+    if (outcome === 'failure') await expect(unfinished(page)).toBeVisible()
+    else await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)))
+    await expect(input(page)).toHaveValue('新しい会話を開いて書いた本文')
+    expect(await currentSession(page)).toBe(minted)
+    if (outcome === 'failure') {
+      // The minted conversation is the one the next retry names.
+      await expect(await storedRetryTarget(page)).toEqual({ workspaceId, sessionId: minted, baseline: { text: '新しい会話を開いて書いた本文' } })
+      await expect(button(page, 'ワークスペースへ登録し直す')).toBeEnabled()
+    } else {
+      await expect(unfinished(page)).toHaveCount(0)
+    }
+    // The retried body stays on the new screen as an ordinary draft.
+    await page.evaluate(id => { location.hash = `#/new?ws=${id}` }, workspaceId)
+    await expect(input(page)).toHaveValue(stale)
+    await expect(unfinished(page)).toHaveCount(0)
+    // The recorded conversation only copied the same body, so the copy is gone.
+    await page.evaluate(id => { location.hash = `#/s/${id}` }, recordedId)
+    await expect(input(page)).toHaveValue('')
+    await expect(unfinished(page)).toHaveCount(0)
+  })
+}
