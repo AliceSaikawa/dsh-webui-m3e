@@ -17,7 +17,9 @@ test('専用の設定ページを保持し autoGenerate が false の提供元�
   assert.deepEqual(groups.models.map(item => item.ns), ['agent-default-model', 'subagent-model-selection-settings'])
   assert.deepEqual(groups.agent, [])
   assert.deepEqual(Object.values(groups).flat().map(item => item.ns).includes('agent-preset-registry'), false)
-  assert.deepEqual(groups.tools.map(item => item.ns), ['bash-sandbox', 'pwsh-sandbox', 'locale'])
+  assert.deepEqual(groups.tools.map(item => item.ns), ['bash-sandbox', 'pwsh-sandbox'])
+  // The language has its own row in the General section.
+  assert.equal(Object.values(groups).flat().some(item => item.ns === 'locale'), false)
   assert.equal(groups.permission.length, 1)
   assert.deepEqual(groups.providers, [])
   assert.deepEqual(groups.other, [])

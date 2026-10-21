@@ -28,7 +28,7 @@ test('設定の偽データは全ページと全種類、反映時期、除外�
     assert.equal(description.namespaces.length, 16)
     const grouped = groupNamespaces(description.namespaces)
     assert.deepEqual(Object.fromEntries(Object.entries(grouped).map(([page, items]) => [page, items.length])), {
-      models: 2, permission: 1, agent: 1, providers: 0, tools: 5, other: 1,
+      models: 2, permission: 1, agent: 1, providers: 0, tools: 4, other: 1,
     })
     assert.deepEqual(new Set(description.namespaces.map(item => item.applies)), new Set(['live']))
     for (const item of description.namespaces.filter(row => row.ns === 'example-extension')) {

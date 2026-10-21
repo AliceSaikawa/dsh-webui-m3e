@@ -74,6 +74,9 @@ export const generalMessages = defineMessages({
     performanceUsageDescription: 'パフォーマンスと使用状況の情報をどこまで詳しく表示するかを選びます。標準の画面の表示に使われます。',
     performanceCompact: '簡潔',
     performanceDetailed: '詳細',
+    languageTitle: '言語',
+    languageDescription: 'DSH の言語設定で、標準の画面と共通です。M3E の画面は今のところ日本語で表示します。',
+    languageDevice: '端末の言語に合わせる',
   },
   en: {
     title: 'General',
@@ -93,6 +96,9 @@ export const generalMessages = defineMessages({
     performanceUsageDescription: 'Choose how much performance and usage information to show. The standard screen uses this setting.',
     performanceCompact: 'Compact',
     performanceDetailed: 'Detailed',
+    languageTitle: 'Language',
+    languageDescription: "The DSH language setting, shared with the standard screen. This screen is shown in Japanese for now.",
+    languageDevice: 'Match device language',
   },
   zh: {
     title: '通用设置',
@@ -112,6 +118,9 @@ export const generalMessages = defineMessages({
     performanceUsageDescription: '选择性能与用量信息展示的详细程度。标准界面使用此设置。',
     performanceCompact: '简洁',
     performanceDetailed: '详细',
+    languageTitle: '语言',
+    languageDescription: 'DSH 的语言设置，与标准界面共用。此界面目前仅以日语显示。',
+    languageDevice: '跟随设备语言',
   },
 })
 

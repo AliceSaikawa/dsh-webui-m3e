@@ -47,7 +47,7 @@ test('保存した値がなければ標準の画面と同じくオン（true）�
   const [entry] = generalEntries([row('ui-settings')], ja)
   assert.equal(entry!.display.effective!(undefined), true)
   assert.equal(entry!.display.effective!(false), false)
-  assert.equal(effectiveValue({ fallback: 'detailed', legacy: { normal: 'detailed' } }, 'normal'), 'detailed')
+  assert.equal(effectiveValue({ fallback: 'detailed', legacy: { normal: 'detailed' }, schemaKind: 'select' }, 'normal'), 'detailed')
 })
 
 test('名前空間がない Host、期待と違う型の Host では行を出さない（推測で出さない）', () => {
@@ -201,5 +201,74 @@ test('ui-chat でも、競合は読み直して入力を残し、拒否は項目
   const readonly = harness('settings-readonly')
   await readonly.store.reload()
   assert.equal(await readonly.store.edit('ui-chat', ['transcriptView'], 'compact'), false)
+  assert.deepEqual(readonly.calls, [])
+})
+
+const locale = (value: Record<string, string> = {}): SettingsNamespace => ({ ...settingsFixtures().find(item => item.ns === 'locale')!, value })
+
+test('言語の行は locale の preference を、端末の言語に合わせる・English・中文 から選ぶ形で出す', () => {
+  const language = (code: 'ja' | 'en' | 'zh', rows = [locale()]) => generalEntries(rows, messagesOf(generalMessages, code)).find(item => item.id === 'language')!
+  assert.deepEqual(language('ja').display.choices, [{ label: '端末の言語に合わせる', value: null }, { label: 'English', value: 'en' }, { label: '中文', value: 'zh' }])
+  assert.deepEqual([language('ja'), language('en'), language('zh')].map(item => item.display.label), ['言語', 'Language', '语言'])
+  assert.deepEqual([language('en'), language('zh')].map(item => item.display.choices![0]!.label), ['Match device language', '跟随设备语言'])
+  assert.deepEqual({ kind: language('ja').display.kind, path: language('ja').field.path, ns: language('ja').namespace.ns }, { kind: 'select', path: ['preference'], ns: 'locale' })
+  // Nothing stored (the draft of an empty text field is '') shows the first choice; a stored language shows itself.
+  assert.equal(language('ja').display.effective!(undefined), null)
+  assert.equal(language('ja').display.effective!(''), null)
+  assert.equal(language('ja').display.effective!('zh'), 'zh')
+})
+
+test('標準の画面が出さない言語タグが保存されていたら、そのタグを選択肢に足して出す', () => {
+  const choices = generalEntries([locale({ preference: 'ja' })], ja).find(item => item.id === 'language')!.display.choices!
+  assert.deepEqual(choices.map(choice => choice.value), [null, 'en', 'zh', 'ja'])
+  assert.equal(choices[3]!.label, 'ja')
+})
+
+test('言語は汎用ページに出ず、Web 検索とシェルのページから外れる', () => {
+  const groups = groupNamespaces([{ ...locale(), autoGenerate: false }, { ...row('bash-sandbox') }])
+  assert.deepEqual(groups.tools.map(item => item.ns), ['bash-sandbox'])
+  assert.ok(generalNamespaces.includes('locale'))
+})
+
+test('言語を選ぶと locale に { preference } を書き、「端末の言語に合わせる」は保存値を消す', async () => {
+  const ctx = createMockContext({ extensions: [{ extendMock }] })
+  const remote = ctx.remote.settings as SettingsMockRemote
+  const mutations: unknown[] = []
+  const api: SettingsApi = { describe: () => remote.describe(), update: (ns, patch, revision) => remote.update(ns, patch, revision),
+    mutate: (ns, ops, revision) => { mutations.push(structuredClone(ops)); return remote.mutate(ns, ops, revision) } }
+  const store = createSettingsStore(api)
+  await store.reload()
+  const input = store.input('locale', ['preference'])
+  input.change('zh')
+  await input.flush()
+  assert.deepEqual(stored(store, 'locale').value, { preference: 'zh' })
+  await input.reset()
+  assert.deepEqual(mutations, [[{ op: 'unset', path: ['preference'] }]])
+  assert.deepEqual(stored(store, 'locale').value, {})
+  assert.equal(input.getSnapshot().value, '')
+  // The Host's own pattern refuses a malformed tag.
+  assert.equal(await store.edit('locale', ['preference'], 'not a locale'), false)
+  ctx.dispose()
+})
+
+test('言語の競合・拒否・書き込み不可も、ほかの行と同じに扱う', async () => {
+  const conflict = harness('settings-conflict')
+  const notices: string[] = []
+  conflict.store.subscribeNotice(message => notices.push(message))
+  await conflict.store.reload()
+  const input = conflict.store.input('locale', ['preference'])
+  input.change('en')
+  await input.flush()
+  assert.deepEqual(notices, ['ほかの場所で設定が変わりました。読み直しました'])
+  assert.equal(input.getSnapshot().value, 'en')
+  await input.retry()
+  assert.deepEqual(stored(conflict.store, 'locale').value, { preference: 'en' })
+  const rejected = harness('settings-rejected')
+  await rejected.store.reload()
+  assert.equal(await rejected.store.edit('locale', ['preference'], 'en'), false)
+  assert.equal(rejected.store.getSnapshot().fieldErrors[fieldKey('locale', ['preference'])], 'この値は管理者の設定によって許可されていません。')
+  const readonly = harness('settings-readonly')
+  await readonly.store.reload()
+  assert.equal(await readonly.store.edit('locale', ['preference'], 'en'), false)
   assert.deepEqual(readonly.calls, [])
 })

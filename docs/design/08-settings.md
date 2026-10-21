@@ -39,6 +39,8 @@
   - 作業の詳細（選択）：`ui-chat` の `transcriptView`。簡潔（`compact`）・標準（`standard`）・詳細（`detailed`）・完全に展開（`verbose`）。保存した値がないときは、標準の画面（デスクトップアプリ以外）と同じく「詳細」を選んだ形で出す。古い保存値の `normal`・`expanded` は「詳細」として出す。
   - 折りたたむタイミング（選択。標準の画面では「作業の詳細を折りたたむタイミング」）：`ui-chat` の `collapseTiming`。回答の完了時（`completion`、既定）・次のメッセージの送信時（`next-input`）。
   - パフォーマンスと使用状況（選択）：`ui-chat` の `performanceUsage`。簡潔（`compact`）・詳細（`detailed`、既定）。
+  - 言語（選択）：`locale` の `preference`。「端末の言語に合わせる」（保存値を消す。未設定）・English（`en`）・中文（`zh`）。標準の画面の内蔵言語と同じ。標準の画面が出さない言語タグが保存されていれば、そのタグも選択肢に足して出す。選んでも、M3E の画面は日本語のまま（`DISPLAY_LOCALES`）。
+  - リンクの開き方（`ui-chat` の `linkOpening`）は出さない。理由は下の実装メモ。
 - **DSH の設定**：次の 5 行です。2 行目には、そのページの主な値を出します。
 
 | 行 | ページ | 名前空間 |
@@ -47,7 +49,7 @@
 | 権限 | `#/settings/permission` | `permission` |
 | エージェント | `#/settings/agent` | `agent-presets`、`agent-loop` |
 | 提供元と API キー | `#/settings/providers` | `llm-*`（`llm-deepseek`、`llm-pi-ai`、`llm-retry` など、`llm-` で始まるもの全部）と認証情報 |
-| Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`、`locale` |
+| Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`（`locale` は「一般」の言語の行に移した） |
 
 - `ui-` で始まる名前空間と `ui-onboarding` は、今の画面向けなので出しません。例外は、上の「一般」に専用の行がある名前空間（`general.ts` の `generalRows`、`schema.ts` の `generalNamespaces`）で、これも汎用のページには出しません。上の表にない名前空間が `describe()` にあれば、「そのほか」の行を足し、名前空間の名前をそのまま見出しにしたページで出します。
 - 一番下に、この UI の版（`package.json` の `version`）と、接続先の DSH の版（取れれば）を小さく出します。
@@ -1328,3 +1330,15 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **試験**：`tests/08-general.test.ts`（選択肢の順と 3 言語の訳、既定と古い値の読み替え、スキーマに選択肢がない Host、項目ごとの保存の差分と revision、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G8〜G12、`e2e-dsh/settings-general.spec.ts` の G-real-3。選択の表示は、`m3e-select` の `selected`（選ばれた選択肢）で確かめる（要素の文字列には全選択肢が含まれるため）。
 - **未確認**：デスクトップアプリ（`dshDesktop`）での既定（`standard`）。M3E は常に携帯向けなので「詳細」を既定にした。iOS 実機。
 - **レビューへの対応（幅 320px のラベル）**：`m3e-form-field` のラベルは 1 行で、はみ出す分を切る。「作業の詳細を折りたたむタイミング」は 320px で全文 198px に対し使える幅 185px で切れていた（340px 以上は収まる）。日本語を「折りたたむタイミング」、英語を `Collapse timing` に短くし、何を折りたたむかは説明文（「作業の詳細を自動で折りたたむタイミングを選びます。」）に残した。中国語の `工作步骤收起时机` は DSH のままで収まる。`e2e/settings-general.spec.ts` の G17 が、幅 320px で「一般」の全行のラベルが切れないこと（`scrollWidth` が `clientWidth` 以下）を確かめる。ラベルの折り返しは、`m3e-form-field` の浮くラベルの高さが固定で、ほかの設定の画面も変わるため行わなかった。
+
+### 2026-10-21：設定の「一般」③言語とリンクの開き方（`feat/settings-language`）
+
+- **DSH で確かめた契約**（インストール済みの `@deepseek-ai/dsh` 0.2.1-rc.2 の `dsh-client-locale/lib/client.js` を読み取りで確認）：名前空間 `locale`、項目 `preference`、文字列で `^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$`、任意（未設定は保存しない）。内蔵の言語は `zh`（表示名「中文」）と `en`（「English」）だけ（`LOCALE_IDS`、`BUILT_IN_LOCALE_METADATA`）。標準の画面の選択は `setLocale(id)` で、`preference` に `id` を保存する。保存値がなければブラウザの言語（`resolveInitialLocale`）、どれも合わなければ英語。標準の画面は「端末の言語に合わせる」の選択肢を持たず、保存値を消す操作もない。標準の画面の行の題は英語 `Language`、中国語 `语言`。
+- **「端末の言語に合わせる」は M3E の追加**：標準の画面にない選択肢で、`settings.mutate('locale', [{ op: 'unset', path: ['preference'] }], revision)` で保存値を消す。保存値がなければ標準の画面もブラウザの言語に従うので、動作は標準の画面の「未設定」の状態と同じ。文言は DSH の辞書にないため、`docs/i18n/glossary.md` に「なし」と書いた。
+- **日本語は選択肢に足さない**：標準の画面の内蔵言語に日本語はなく、`ja` を保存しても標準の画面は登録がないとしてブラウザの言語に戻る。M3E は日本語の利用者に「端末の言語に合わせる」を使ってもらう。すでに `ja` など別の言語タグが保存されているときは、そのタグをそのまま選択肢に足して選択済みで出す（`general.ts` の `open`）。
+- **隔離した実 DSH（0.2.1-rc.2、`e2e-dsh`）で確かめたこと**：`settings.describe()` の `locale` は `autoGenerate: false`、何も保存していないとき `value: {}`、`applies: 'live'`。`e2e-dsh/settings-general.spec.ts` の G-real-4 で、M3E で「中文」を選ぶと標準の画面の設定ダイアログが中国語になり行が「中文」を指すこと、標準の画面で English を選ぶと M3E が English になること、再読み込みしても残ること、「端末の言語に合わせる」で保存値が消えることを確かめた。
+- **汎用ページから言語を外した**：`locale` は「Web 検索とシェル」のページにスキーマ生成で出ていたが、専用の行に移したので `groupNamespaces` から外した（`generalNamespaces` に足し、許可リストと `namespaceTitle` から削除）。`tests/08-rpc-contract.test.ts` と `tests/08-settings.test.ts` の期待を、`locale` が `tools` に入らないものに変えた。表示が変わった理由は、同じ設定を 2 か所に出さないため。
+- **M3E の言語表示は変わらない**：`DISPLAY_LOCALES` は `['ja']` のまま。英語・中国語を選んでも、`locale.preference` が変わって標準の画面が切り替わるだけで、M3E の画面と `<html lang>` は日本語（`e2e` の G14 で確かめた）。行の説明にその旨（「M3E の画面は今のところ日本語で表示します」）を書いた。英語・中国語を表示に使えるようにする PR で、この一文を外す。
+- **リンクの開き方は出さなかった**：標準の画面は、アプリ内ブラウザ（サイドバーの `browser` タブ）が使えるときだけ `linkOpening` の行を出す（`LinkOpeningRow` の `useBrowserAvailable`）。0.2.1-rc.2 の標準の Web 画面にはその行がなく（実 DSH で設定ダイアログを確認）、M3E にはアプリ内ブラウザの有無を知る手段も、リンクを開く場所を選ぶ画面もない（`Markdown.tsx` は常に新しいタブで開く）。値の保存先（`ui-chat` の `linkOpening`、`sidebar`・`new-tab`、既定 `sidebar`）は確かめたが、効かない行を足さないことにした。必要になれば `generalRows` に 1 行足すだけでよい（偽データのスキーマには `linkOpening` が入っている）。
+- **試験**：`tests/08-general.test.ts`（選択肢と 3 言語の題、既定の読み替え、知らない言語タグ、`unset` の保存、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G13〜G16、`e2e-dsh/settings-general.spec.ts` の G-real-4。
+- **未確認**：`zh-Hant` など標準の画面が出さない言語タグを実 DSH に保存したときの標準の画面の動き（コードを読んだだけ）。iOS 実機。

@@ -36,8 +36,8 @@ test('G1 設定のトップに「一般」があり、コーディングビュ�
   // The section sits between the device card and the DSH pages.
   const headings = await page.locator('.settings-section > h2').allTextContents()
   expect(headings).toEqual(['この端末', '一般', 'DSH の設定'])
-  // Rows follow the stock order of the ones M3E offers: coding view, work details, collapse timing, performance.
-  await expect(section(page).locator('.settings-field')).toHaveCount(4)
+  // Rows follow the stock order of the ones M3E offers: coding view, work details, collapse timing, performance, language.
+  await expect(section(page).locator('.settings-field')).toHaveCount(5)
   await shot(page, 'general-coding-view')
 })
 
@@ -177,4 +177,58 @@ test('G12 Host が拒否したら理由を項目の下に出す。書き込め�
   await visit(page, '/settings', 'settings-readonly')
   await expect(choice(page, '作業の詳細')).toHaveJSProperty('disabled', true)
   await expect(choice(page, 'パフォーマンスと使用状況')).toHaveJSProperty('disabled', true)
+})
+
+test('G13 言語は「端末の言語に合わせる」で始まり、English・中文 を選べる。「Web 検索とシェル」のページには出ない', async ({ page }) => {
+  await visit(page, '/settings')
+  await expect.poll(() => shown(page, '言語')).toBe('端末の言語に合わせる')
+  await expect(section(page)).toContainText('DSH の言語設定で、標準の画面と共通です。')
+  await choice(page, '言語').click()
+  await expect(page.locator('m3e-option:visible')).toHaveText(['端末の言語に合わせる', 'English', '中文'])
+  await shot(page, 'general-language')
+  await page.keyboard.press('Escape')
+  await action(page, 'Web 検索とシェル').click()
+  await expect(page.getByRole('heading', { name: '言語と地域' })).toHaveCount(0)
+  await expect(page.locator('m3e-select[aria-label="言語"]')).toHaveCount(0)
+})
+
+test('G14 言語を選ぶと locale の preference に保存し、「端末の言語に合わせる」で消す。M3E の画面は日本語のまま', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings')
+  await pick(page, '言語', '中文')
+  await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'zh' })
+  await expect.poll(() => shown(page, '言語')).toBe('中文')
+  // English or Chinese is requested, but only Japanese is displayable so far (DISPLAY_LOCALES).
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
+  await expect(section(page).getByRole('heading', { name: '一般', exact: true })).toBeVisible()
+  await pick(page, '言語', 'English')
+  await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'en' })
+  await pick(page, '言語', '端末の言語に合わせる')
+  await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({})
+  await expect.poll(() => shown(page, '言語')).toBe('端末の言語に合わせる')
+  expect((await stored(page, 'locale')).value).toEqual({})
+})
+
+test('G15 標準の画面が保存した言語が反映される。知らない言語タグはそのまま出す', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings')
+  await saveElsewhere(page, 'locale', { preference: 'en' })
+  await expect.poll(() => shown(page, '言語')).toBe('English')
+  await saveElsewhere(page, 'locale', { preference: 'ja' })
+  await expect.poll(() => shown(page, '言語')).toBe('ja')
+})
+
+test('G16 言語の保存の競合・拒否・書き込み不可も、ほかの行と同じに扱う', async ({ page }) => {
+  await expose(page)
+  await visit(page, '/settings', 'settings-conflict')
+  await pick(page, '言語', 'English')
+  await expect(page.getByText('ほかの場所で設定が変わりました。読み直しました')).toBeVisible()
+  expect((await stored(page, 'locale')).user).toEqual({})
+  await section(page).getByRole('button', { name: 'もう一度保存する' }).click()
+  await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'en' })
+  await visit(page, '/settings', 'settings-rejected')
+  await pick(page, '言語', '中文')
+  await expect(section(page).getByRole('alert')).toHaveText('この値は管理者の設定によって許可されていません。')
+  await visit(page, '/settings', 'settings-readonly')
+  await expect(choice(page, '言語')).toHaveJSProperty('disabled', true)
 })
