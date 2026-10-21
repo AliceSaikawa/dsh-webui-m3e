@@ -1,6 +1,6 @@
 # Git の運用
 
-このリポジトリ（`AliceSaikawa/dsh-webui-m3e`）で作業する人と AI エージェント（Claude Code、Codex、DSH など）の、worktree・ブランチ・コミット・PR・マージの決まりです。2026-10-16 に決め、2026-10-20 にコミットのトレーラとマージの手順を変えました。[設計書の README](design/README.md) や担当の設計書とここが食い違うときは、この文書を優先します。
+このリポジトリ（`AliceSaikawa/dsh-webui-m3e`）で作業する人と AI エージェント（Claude Code、Codex、DSH など）の、worktree、ブランチ、コミット、PR、マージの手順です。2026-10-16 に決め、2026-10-20 にマージの手順を変えました。コミットと PR の形は [AGENTS.md](../AGENTS.md) の「コミットとプルリクエスト」が正本です。設計書と手順が食い違うときは、この文書を優先します。メッセージの形が食い違うときは、AGENTS.md を優先します。
 
 ## 0. 方針
 
@@ -74,8 +74,8 @@ git push --force-with-lease --force-if-includes origin <ブランチ>
 
 ## 3. ブランチ
 
-- 名前は `<type>/issue-<番号>-<短い英語の名前>` です。Issue が無ければ `<type>/<短い英語の名前>` にします。type は §4 と同じ一覧から選びます。
-  - 例: `fix/issue-79-draft-handoff`、`feat/issue-78-i18n-foundation`、`ci/pr-checks-e2e`
+- 名前は `<type>/issue-<番号>-<短い英語の名前>` です。Issue が無ければ `<type>/<短い英語の名前>` にします。type は AGENTS.md のコミットの type から選びます。
+  - 例: `fix/issue-79-draft-handoff`、`feat/issue-78-i18n-foundation`、`chore/pr-checks`
 - 段階 2 の `feat/<設計書番号>-<名前>` は過去の名前です。新しくは使いません。
 - 1 本のブランチ（1 本の PR）は、1 つの目的に絞ります。squash すると main の 1 コミットになるので、PR の粒度がそのままコミットの粒度になります。
 - 途中で見つけた別の不具合（ルール・設計書・CI の不備を含む）は、別のブランチと PR で直します。
@@ -95,31 +95,15 @@ git push --force-with-lease --force-if-includes origin <ブランチ>
 
 ### メッセージ
 
-ブランチのコミットも、main に残る squash のコミット（§7）も、同じ形にします。
+件名、本文、PR のタイトル、squash の本文、トレーラは [AGENTS.md](../AGENTS.md) の「コミットとプルリクエスト」に従います。
 
-```text
-<type>(<scope>): <subject in English>
-
-<なぜ変えたか。件名の言い直しはしない>
-
-AI-Agent: <ハーネス> / <モデル>
-```
-
-- 件名は Conventional Commits の `type(scope): subject` です。type は `feat`、`fix`、`perf`、`refactor`、`docs`、`test`、`chore`、`ci` のどれかです。scope には変えた領域（`settings`、`composer` など）を書き、省略してもかまいません。
-- **件名は英語**で、短い命令形にし、末尾にピリオドを付けません。変更の中心になる実在のシンボルがあれば、その名前を入れます。例: `fix(settings): keep pending drafts across reset`
-- 本文には、理由とレビューで迷いそうな判断を書きます。件名を繰り返しません。本文の言語は日本語でも英語でもかまいません。
-- 段落や箇条の途中で改行しません。英語の本文も、72 桁などで折り返しません。1 文には 1 つのことを書き、言い換えずに実在の名前（シンボル、パス、コマンド）を使います。
+- ブランチの中のコミットは、PR のタイトルより緩くてかまいません。main に残る件名は PR のタイトルです。
+- 本文の言語は日本語でも英語でもかまいません。件名は英語です。
+- 段落や箇条の途中で改行しません。英語の本文も、字数で折り返しません。1 文には 1 つのことを書きます。
 - ブランチのコミットの本文には `#` で始まる行を書きません。エディタで `git commit` すると、git がコメントとして消すためです。
 - 個人情報、ローカルの絶対パス、認証値を書きません。
-
-### トレーラ
-
-- AI が書いたコミットには、書いた AI ごとに `AI-Agent: <ハーネス> / <モデル>` を 1 行ずつ付けます。モデルが分からなければ `unknown` と書きます。
-- ハーネスは製品の名前で書き、`Cursor`、`OpenCode`、`DeepSeek Harness`、`Claude Code`、`Codex CLI` の表記に揃えます。ここにないハーネスは、製品の正式な名前を書きます。
-- モデルは、ハーネスが示す ID をそのまま書きます。例: `claude-opus-5-5`、`deepseek-v4.1-flash-free`
-- `Co-authored-by` は、使ったハーネスに公式の行があるときだけ付けます。例: Cursor の `Co-authored-by: Cursor Agent <cursoragent@cursor.com>`。使っていないハーネスやモデルの行は付けず、メールアドレスも作りません。
-- トレーラは本文の **最後** に置き、前に空行を 1 つはさみます。git がトレーラとして読めるようにするためです。
-- 2026-10-20 より前のコミットには、`AI-Harness`、`AI-Model`、`AI-Effort`、`AI-Duration`、`AI-Cost`、`AI-Task` の 6 行が付いています。書き換えません。
+- `AI-Harness`、`AI-Model`、`AI-Agent` は書きません。ツールが自動で付ける `Co-authored-by` だけ、最後の行として残します。メールアドレスは作りません。
+- 2026-10-20 より前のコミットには、`AI-Harness`、`AI-Model`、`AI-Effort`、`AI-Duration`、`AI-Cost`、`AI-Task` が付いているものがあります。2026-10-20 以降の一部には `AI-Agent` が付いています。過去の履歴は書き換えません。
 
 ## 5. main への追従
 
@@ -137,11 +121,11 @@ AI-Agent: <ハーネス> / <モデル>
 
 - レビューできて単独でマージできるまとまりができたら、すぐに PR を出します。大きな PR を 1 本出すより、狭い PR を数本出します。目安は数百行（試験を含む）です。千行を超えそうなら、分け方を先に相談します。
 - PR はドラフトにせず、レビューできる状態で開きます。
-- **タイトルが、main に残るコミットの件名になります。** §4 の形式（英語）で書きます。
-- **本文は、レビューのための説明です。** main には残りません。main のコミットの本文は、マージのときにこれをもとに書きます（§7）。差分を持っているレビュー担当が 1 分で読める説明にします。作業の記録ではありません。次の節をこの順に置き、書くことのない節は消します。
+- **タイトルが、main に残るコミットの件名になります。** AGENTS.md の形で書きます。
+- **本文は、レビューのための説明です。** main には残りません。main のコミットの本文は、§7 の星の一覧です。差分を持っているレビュー担当が 1 分で読める説明にします。作業の記録ではありません。検証の結果と試験の件数はここに書きます。次の節をこの順に置き、書くことのない節は消します。
   ```text
   ## Why
-  <意図と方針を 1〜2 段落で>
+  <意図と方針を 1 つか 2 つの段落で>
 
   ## Scope
   - <変えた実在のシンボルとパス。名前を変えたなら新旧の両方>
@@ -150,19 +134,19 @@ AI-Agent: <ハーネス> / <モデル>
   - <レビューで聞かれそうな、選ばなかった案とその理由>
 
   ## Blast radius
-  <何に影響し、なぜ安全か（または危ないか）を 1〜3 文で>
+  <何に影響し、なぜ安全か、または危ないかを 1 文から 3 文で>
 
   ## Verification
-  - <実際に流した方法と結果。例: `pnpm test` が成功、偽データの e2e の 08c が成功>
+  - <実際に流した方法と結果。例: `pnpm test` が成功した>
   - 確かめていないこと: <あれば>
 
-  Closes #<番号>
+  Fixes #<番号>
   ```
-  - トレーラは書きません。main のコミットのトレーラは、マージのときにブランチのコミットから集めます（§7）。
+  - トレーラは書きません。`Co-authored-by` は、マージのときにブランチのコミットから集めます（§7）。
   - 全体を 40 行以内にします。超えそうなら削ります。
   - Scope はファイルごとの説明文にしません。実装の手順、レビュー指摘への対応の経緯、SHA の列挙、rebase の経緯、エージェントごとの報告、長いログや表も書きません。必要なら、ファイルや Issue のコメントにしてリンクします。
   - `## Summary` や `## Test plan` のような決まり文句の節は使いません。
-  - Closes の行は Issue を閉じるときだけにし、関連を示すだけなら `Refs #<番号>` にします。
+  - `Fixes` の行は Issue を直すときだけにし、関連を示すだけなら `Refs #<番号>` にします。
   - 本文は、レビューで変わった中身に合わせて、マージの前に直します。
 - PR を開いたら URL を報告して、次の作業に進みます。CI の監視やマージは、頼まれたときだけ行います。
 
@@ -173,26 +157,23 @@ AI-Agent: <ハーネス> / <モデル>
 1. CI（`all checks`）が通っていること。ただし、CI が通っただけで安全とは見なしません。
 2. PR ごとに、作った担当とは別の、独立したセッション（サブエージェントなど）でレビューします。blocking の指摘は、その PR のブランチに新しいコミットとして直し、レビューか再確認を受け直します。
 3. 最後に CI が走ったあとで main が進んでいれば、§5 の条件に当てはまるかを確かめます。当てはまれば main に追従し、検査をやり直します。共有しているブランチ（§1）では、rebase ではなく main をマージで取り込みます（§5）。
-4. main に残すコミットメッセージを §4 の形で書きます。**`tmp/pr-<番号>-commit.txt` には本文だけ**（段落、`Closes` か `Refs`、トレーラ）を書き、**件名は書きません**。件名は 5 で `--subject` に渡します。ファイルにも書くと、件名が二重になります。
+4. main に残すコミットメッセージを AGENTS.md の形で書きます。**`tmp/pr-<番号>-commit.txt` には本文だけ**を書き、**件名は書きません**。件名は 5 で `--subject` に渡します。ファイルにも書くと、件名が二重になります。
    - 件名は、PR のタイトルの末尾に ` (#<番号>)` を付けたものです。
-   - 本文は、見出しも箇条書きも使わない 1〜3 段落の文章にします。使う人から見て何が変わったか、レビューで迷いそうな判断、確かめていない大事なことを書きます。ファイルの一覧、検証のログ、レビューの経緯は書きません。どれも PR に残ります。
-   - 本文のあとに、PR の本文にある `Closes #<番号>` か `Refs #<番号>` の行を置きます。PR の本文になければ書きません。
-   - 最後にトレーラを置きます。`AI-Agent` と `Co-authored-by` は、ブランチのコミットから重複なしで集めます。前の形式のコミットは、`AI-Harness` と `AI-Model` を組にして `AI-Agent` に直します（片方が空の行は除きます）。トレーラのないコミットには、トレーラを足しません。セッションの記録など確かな根拠で AI が書いたと分かるときだけ足し（モデルが分からなければ `unknown`）、推測で帰属を作りません。
+   - 本文は、ブランチの各コミットを `* subject` の行で並べます。各行の次は、使う人から見て何が変わるかを 1 文か 2 文で書きます。検証の件数、ファイルの一覧、レビューの経緯は書きません。どれも PR に残ります。
+   - 星の一覧のあとに、PR の本文にある `Fixes #<番号>` か `Refs #<番号>` の行を置きます。PR の本文になければ書きません。
+   - 最後に `Co-authored-by` だけを置きます。ブランチのコミットから、重複なしで集めます。`AI-Agent`、`AI-Harness`、`AI-Model` は集めず、新しい行も作りません。付いていないコミットに、推測で行を足しません。
      ```bash
-     git fetch origin   # 古い origin/main を基準にしない
-     git log --format='%(trailers:key=AI-Agent,valueonly)' origin/main..origin/<ブランチ> | grep . | sed 's/^/AI-Agent: /' | sort -u
+     git fetch origin
      git log --format='%(trailers:key=Co-authored-by,valueonly)' origin/main..origin/<ブランチ> | grep . | sed 's/^/Co-authored-by: /' | sort -u
-     # 前の形式のコミット
-     git log --format='%(trailers:key=AI-Harness,valueonly,separator=) / %(trailers:key=AI-Model,valueonly,separator=)' origin/main..origin/<ブランチ> | grep -Ev '^ / | / $' | sed 's/^/AI-Agent: /' | sort -u
      ```
-     新しい形式と前の形式で同じ AI があるときは、`AI-Agent` の行が重複していないかを見て、重複を除きます。
-   - ファイルの末尾は「本文 → 空行 → `Closes`/`Refs` → 空行 → トレーラ」の順にします。`Closes` とトレーラを同じ段落に置くと、git がトレーラを読めず、トレーラが空になります。
+   - ファイルの末尾は、星の一覧、空行、`Fixes` か `Refs`、空行、`Co-authored-by` の順にします。`Fixes` と `Co-authored-by` を同じ段落に置くと、git がトレーラを読めず、トレーラが空になります。`Fixes` も `Co-authored-by` も無ければ、星の一覧だけで終わります。
      ```text
-     <本文の段落>
+     * docs: add a changelog
 
-     Closes #<番号>
+     The changelog lists changes a person using the product can see. A release pull request moves Unreleased entries under that version.
 
-     AI-Agent: Codex CLI / gpt-5
+     Fixes #<番号>
+
      Co-authored-by: Cursor Agent <cursoragent@cursor.com>
      ```
 5. squash でマージします。
