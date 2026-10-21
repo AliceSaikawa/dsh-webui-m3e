@@ -82,3 +82,32 @@ test('#103 今と同じプリセットを選び直しても /permission を送�
   await expect(chip(page)).toHaveAttribute('aria-label', '権限：フル アクセス')
   await expect.poll(() => commandRuns(page)).toBe(before + 1)
 })
+
+// DSH accepts any string key for a custom preset; only `custom` and `auto` are reserved.
+const prototypeNamedPresets = `
+  const original = ctx.remote.permissionPresets.catalog.bind(ctx.remote.permissionPresets);
+  ctx.remote.permissionPresets.catalog = async () => {
+    const result = await original();
+    if (!result.ok) return result;
+    return { ok: true, value: { ...result.value, options: [...result.value.options,
+      { value: 'constructor', name: '作業用の権限', description: 'Host の説明' },
+      { value: 'toString', name: '', description: undefined },
+      { value: '__proto__', name: 'プロトの権限', description: undefined }] } };
+  };
+`
+
+test('#155 constructor・toString・__proto__ のカスタム権限を、ほかのカスタム候補と同じく出して選べる', async ({ page }) => {
+  await expose(page, prototypeNamedPresets)
+  await visit(page, '/s/readme-review')
+  await chip(page).click()
+  await expect(sheet(page)).toBeVisible()
+  const rows = sheet(page).locator('.composer-sheet-row')
+  await expect(rows).toHaveCount(5)
+  await expect(rows.nth(2)).toHaveAccessibleName(/^作業用の権限 /)
+  await expect(rows.nth(2).locator('small')).toHaveText('Host の説明')
+  await expect(rows.nth(3)).toHaveAccessibleName(/^toString/)
+  await expect(rows.nth(4)).toHaveAccessibleName(/^プロトの権限/)
+  for (const index of [2, 3, 4]) await expect(rows.nth(index).locator('.composer-sheet-icon')).toHaveText('shield')
+  await rows.nth(2).click()
+  await expect(chip(page)).toHaveAttribute('aria-label', '権限：作業用の権限')
+})
