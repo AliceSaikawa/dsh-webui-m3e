@@ -49,3 +49,28 @@ export const agentPresetMessages = defineMessages({
 })
 
 export type AgentPresetTexts = typeof agentPresetMessages.ja
+
+/**
+ * The "一般" section at the top of the settings tab: preferences the stock
+ * screen keeps under Settings → General. Terms follow the stock dictionaries
+ * (`dsh-client-ui-settings-general`); see docs/i18n/glossary.md.
+ */
+export const generalMessages = defineMessages({
+  ja: {
+    title: '一般',
+    codingViewTitle: 'コーディングビューを表示',
+    codingViewDescription: 'オフにすると、PTC モードと最小モードを選べなくなります。標準の画面では、トレースやコードの差分の表示も切り替わります。',
+  },
+  en: {
+    title: 'General',
+    codingViewTitle: 'Show coding view',
+    codingViewDescription: 'When off, PTC mode and Minimal mode are hidden. The standard screen also hides the trajectory and code diffs.',
+  },
+  zh: {
+    title: '通用设置',
+    codingViewTitle: '显示代码工作视图',
+    codingViewDescription: '关闭后，将隐藏 PTC 模式和极简模式。标准界面也会隐藏轨迹和代码差异。',
+  },
+})
+
+export type GeneralTexts = typeof generalMessages.ja

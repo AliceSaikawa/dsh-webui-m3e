@@ -8,6 +8,7 @@ import { showSnackbar } from '../../app/overlay/index.ts'
 import { formatSetting, selectFieldState, type SettingField, type SettingValue, type SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
 import { settingFieldAccess } from './field-access.ts'
+import type { FieldDisplay } from './general.ts'
 
 interface FieldsProps {
   fields: SettingField[]
@@ -15,6 +16,7 @@ interface FieldsProps {
   state: SettingsState
   store: SettingsStore
 }
+
 export function SchemaFields({ fields, ...props }: FieldsProps) {
   return <>{fields.map((field, index) => field.kind === 'group'
     ? <fieldset className="settings-group" key={`${field.path.join('/')}:${index}`}>
@@ -53,16 +55,19 @@ function GroupReset({ field, namespace, state, store }: Omit<FieldsProps, 'field
   </div>
 }
 
-function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField }) {
+export function FieldEditor({ field: stored, display, namespace, state, store }: Omit<FieldsProps, 'fields'> & { field: SettingField; display?: FieldDisplay }) {
   const id = useId()
+  const field: SettingField = display
+    ? { ...stored, kind: display.kind, label: display.label, description: display.description, ...(display.choices ? { options: display.choices.map(choice => ({ ...choice })) } : {}) }
+    : stored
   const disabled = !state.writable || field.disabled || store.isResetting(namespace.ns, field.path)
   const [input] = useState(() => store.input(namespace.ns, field.path))
   const editing = useSyncExternalStore(input.subscribe, input.getSnapshot, input.getSnapshot)
   const draft = String(editing.value ?? '')
-  const choice = editing.value
+  const choice = display?.effective ? display.effective(editing.value) : editing.value
   const selection = selectFieldState(field, choice)
   const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
-  const timing = 'すぐ反映されます'
+  const timing = display ? '' : 'すぐ反映されます'
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
     clearTimeout(leaveTimer.current)
@@ -84,6 +89,8 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
   function changeText(value: string) { input.changeDeferred(value) }
   function changeChoice(value: SettingValue) {
     if (disabled) return
+    // A dedicated row's `null` choice means "no stored value".
+    if (display && value === null) return input.reset()
     input.change(value)
     return input.flush()
   }
@@ -129,7 +136,7 @@ function FieldEditor({ field, namespace, state, store }: Omit<FieldsProps, 'fiel
       <p>保存済みの値：{formatSetting(field.value)}</p>
       <M3eButton disabled={disabled || editing.saving} onClick={() => { void input.retry() }}>もう一度保存する</M3eButton>
     </div>}
-    {field.kind !== 'masked' && field.overridden && field.path.length > 0 && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || editing.saving || store.isResetting(namespace.ns, field.path)}
+    {!display && field.kind !== 'masked' && field.overridden && field.path.length > 0 && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || !access.reset || editing.saving || store.isResetting(namespace.ns, field.path)}
       onClick={() => { void reset() }} aria-label={`${field.label}を既定値に戻す`}>既定値に戻す</M3eButton>}
     {access.resetBlocked && <p className="settings-field-help">保護された項目や変更できない項目があるため、まとめて既定値に戻せません。</p>}
     {editing.saving && <div className="settings-saving" role="status">保存しています…</div>}

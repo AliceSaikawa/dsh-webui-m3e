@@ -160,10 +160,18 @@ export function decodeSchema(input: unknown): SchemaNode {
   return visit(input.uid, new Set(), 0)
 }
 
+/**
+ * Namespaces with a dedicated row in the General section (general.ts). They are
+ * excluded from the generic pages; every row's namespace must be listed here.
+ */
+export const generalNamespaces = ['ui-settings'] as const
+
 export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Record<SettingsPage, SettingsNamespace[]> {
   const groups: Record<SettingsPage, SettingsNamespace[]> = { models: [], permission: [], agent: [], providers: [], tools: [], other: [] }
   for (const row of namespaces) {
-    if (row.ns.startsWith('ui-')) continue
+    // `ui-*` belongs to the stock screen. The ones M3E edits have a dedicated row in the
+    // General section (general.ts) and, like the rest, never become generic forms.
+    if (row.ns.startsWith('ui-') || (generalNamespaces as readonly string[]).includes(row.ns)) continue
     // The dedicated mode page owns both the roster and selectedDefault, so this
     // namespace never appears as a generic form.
     if (row.ns === 'agent-preset-registry') continue

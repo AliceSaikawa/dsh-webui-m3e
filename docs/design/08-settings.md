@@ -20,6 +20,7 @@
 
 - `web/src/features/settings/` の全部（`routes.tsx` と `SettingsScreen.tsx` は 00 の仮の部品を置き換える）
 - `tests/08-*.test.ts`
+- `e2e/settings-*.spec.ts`、`e2e-dsh/settings-general.spec.ts`（「一般」の行の試験）
 - この設計書の「実装メモ」
 
 ## 入口
@@ -33,6 +34,8 @@
 - **この端末**
   - 「今の画面に戻す」：00 の `backToClassic()`。押す前に確認のダイアログ（「この端末では DSH の標準の画面を使います。M3E の画面には、標準の画面の設定からいつでも戻れます」）を挟みます。
   - 「外観」：今の値を 2 行目に出し、タップで外観のシート。
+- **一般**：標準の画面の「設定 → 一般」にある項目のうち、M3E でも変えられるものです。「この端末」と「DSH の設定」の間に置きます。値は標準の画面と同じ名前空間・同じ項目に保存するので、どちらで変えてももう一方に反映されます。Host がその名前空間や項目を返さないときは、その行を出しません。
+  - コーディングビューを表示（スイッチ）：`ui-settings` の `enabled`（既定 `true`）。オフにすると、モードの一覧と新しい会話から PTC と最小が隠れます（Issue #143 の動き。下の実装メモ）。
 - **DSH の設定**：次の 5 行です。2 行目には、そのページの主な値を出します。
 
 | 行 | ページ | 名前空間 |
@@ -43,7 +46,7 @@
 | 提供元と API キー | `#/settings/providers` | `llm-*`（`llm-deepseek`、`llm-pi-ai`、`llm-retry` など、`llm-` で始まるもの全部）と認証情報 |
 | Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`、`locale` |
 
-- `ui-` で始まる名前空間と `ui-onboarding` は、今の画面向けなので出しません。上の表にない名前空間が `describe()` にあれば、「そのほか」の行を足し、名前空間の名前をそのまま見出しにしたページで出します。
+- `ui-` で始まる名前空間と `ui-onboarding` は、今の画面向けなので出しません。例外は、上の「一般」に専用の行がある名前空間（`general.ts` の `generalRows`、`schema.ts` の `generalNamespaces`）で、これも汎用のページには出しません。上の表にない名前空間が `describe()` にあれば、「そのほか」の行を足し、名前空間の名前をそのまま見出しにしたページで出します。
 - 一番下に、この UI の版（`package.json` の `version`）と、接続先の DSH の版（取れれば）を小さく出します。
 
 ### 設定の詳細ページ（スキーマから作る）
@@ -1297,3 +1300,17 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **偽データ**：`ui-settings`（`enabled: true`）を足した。シナリオ `coding-tools-off`、`coding-tools-off-default-ptc`、`coding-tools-off-default-ptc-no-standard`。
 - **入れていないこと**：新しい会話の画面のモードを選ぶチップ、会話のヘッダーのモードの表示、Creator モードの入口（M3E には #138 で入れていない。入れるかどうかは別の Issue）。
 - **実 DSH での確認**：隔離した Host（0.2.1-rc.2、`e2e-dsh` の起動手順。コミットしない使い捨ての試験）で、`settings.describe()` の `ui-settings` が `autoGenerate: false`・`value: { enabled: true }`・`applies: 'live'`・`enabled` は `boolean`（既定 `true`）であることを確かめ、偽データの形と合わせた。同じ Host で既定を `ptc`、`enabled` を `false` にして `#/settings/modes` を開くと、PTC と最小が隠れ、`selectedDefault` が `standard` に保存された。`enabled` を `true` に戻すと 4 件に戻った。この確認は、M3E の 0.0.8 を 0.2.1-rc.2 に載せた状態で行ったもので、標準の画面からの切り替え（`/` から `/m3e/` への移動）は通らなかったため、`/m3e/` を直接開いている（0.2.1-rc.2 対応の別の作業の範囲）。
+
+### 2026-10-21：設定の「一般」①コーディングビュー（`feat/settings-coding-view`）
+
+標準の画面の「設定 → 一般」にあって M3E にない項目を、3 本の PR に分けて足します。この PR は土台と「コーディングビューを表示」です。次の PR で作業の詳細・パフォーマンスと使用状況、その次で言語とリンクの開き方を足します。
+
+- **DSH で確かめた契約**（インストール済みの `@deepseek-ai/dsh` 0.2.1-rc.2 の `dsh-client-ui-settings/lib/client.js` と `dsh-client-ui-settings-general/lib/client.js` を読み取りで確認）：名前空間 `ui-settings`（`DEVELOPER_TOOLS_NAMESPACE`）、項目 `enabled`、型は真偽、既定 `true`（`DeveloperToolsSettingsFields`）。標準の画面は、保存された値が届くまで `false` として扱う（`getSnapshot: () => scope.getSnapshot().value?.enabled ?? false`）。標準の画面の文言は、英語が「Show coding view」と説明「Shows trajectory, code diffs, and all Agent presets」、中国語が「显示代码工作视图」と説明「开启后，显示轨迹、本轮代码差异，可选择完整的 Agent 预设切换」。
+- **隔離した実 DSH（0.2.1-rc.2、`e2e-dsh`）で確かめたこと**：`settings.describe()` の `ui-settings` は `autoGenerate: false`、`value: { enabled: true }`、`applies: 'live'`、スキーマは真偽。`e2e-dsh/settings-general.spec.ts` で、M3E のスイッチで変えると標準の画面の設定ダイアログ（`Show coding view`）が再読み込みなしで変わり、標準の画面で戻すと M3E のスイッチも戻ること、オフにすると M3E のモードの一覧から PTC と最小が消えてオンで戻ることを確かめた。試験の最後に値をオンへ戻す。
+- **仕組み**：`general.ts` が行の表（`generalRows`：名前空間・項目・部品の種類・既定値・古い保存値の読み替え）と、Host のスキーマと照らして出す行を決める `generalEntries` を持つ。部品は共通設定の `FieldEditor` をそのまま使い、題名・説明・選択肢の表示だけを `FieldDisplay` で差し替える。そのため、下書き・revision・直列化・競合（「ほかの場所で設定が変わりました。読み直しました」と「もう一度保存する」）・拒否（項目の下に理由）・書き込み不可（無効にして案内）は、共通設定と同じ決まりのまま。スキーマが期待した部品の種類でない行、選択肢が足りない行は、推測せずに出さない。
+- **PTC と最小を隠す判定の所在**（依頼の 4）：新しく足したものではなく、Issue #143 で入れた `agent-presets.ts` の `codingToolsDisabled`（`CODING_TOOLS_NS = 'ui-settings'`、`enabled === false` のときだけオフ）が、`useAgentPresetRoster`（`AgentPresetsPage.tsx`）で `useSettings()` の名前空間を読んで判定している。`settings.update('ui-settings', …)` の保存と、標準の画面からの変更（`settings/document-updated`）は同じストアに入るので、このスイッチの値にそのまま従う。`grep` で `ui-settings` を探すと定数の 1 か所に見えるが、読んでいるのはこの関数。試験：`tests/08-general.test.ts`（保存した値を `codingToolsDisabled` が読む）、`e2e/settings-general.spec.ts` の G2。
+- **`ui-` の除外**（`schema.ts` の `groupNamespaces`）：`generalNamespaces`（専用の行がある名前空間）を足し、`ui-` で始まるものと合わせて汎用のページから外す。ほかの `ui-*`（`ui-theme` など）はこれまでどおり出さない。
+- **読み込み中・エラーの案内**：「設定を読み込んでいます…」「この DSH では設定を変更できません」などの案内（`SettingsStatus`）は、「一般」の上に 1 つだけ置いた（以前は「DSH の設定」の見出しの下）。「一般」の行が先に出て、案内が下にあると、無効の理由が見えないため。案内の文字は変えていない。
+- **言語**：文言は `messages.ts` の `generalMessages` に日本語・英語・中国語を同じ変更で足した。`DISPLAY_LOCALES` は `['ja']` のままなので、画面は日本語（11-i18n の決まり）。`FieldEditor` の固定の文言（「保存しました」「もう一度保存する」など）は設定の移行 PR まで日本語のまま。
+- **画面の外観**：390px 幅で、「この端末」と「DSH の設定」の間に「一般」の見出しとスイッチ 1 行（説明つき）が出る。
+- **未確認**：iOS 実機。

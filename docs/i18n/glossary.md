@@ -15,6 +15,12 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | メッセージの操作 | Message actions | 消息操作 | なし | シートの題名。M3E の言い方 |
 | テキストを選択 | Select text | 选择文本 | なし | M3E の新しい操作。「選択」は DSH の「选择」に合わせた |
 | 分岐 | branch | 分支 | `message.branch` | 名詞。動詞は「分岐する／branch／分支」 |
+| 一般 | General | 通用设置 | `general.nav`（`dsh-client-ui-settings-general`） | 設定の見出し |
+| コーディングビューを表示 | Show coding view | 显示代码工作视图 | `developerTools.title`（`dsh-client-ui-settings-general`） | 一致 |
+| トレース | trajectory | 轨迹 | `developerTools.description`（`dsh-client-ui-settings-general`） | DSH の英語は trajectory、中国語は 轨迹 |
+| コードの差分 | code diffs | 代码差异 | 同上 | 一致 |
+| PTC モード | PTC mode | PTC 模式 | `guidePtcIntro`（`dsh-client-ui-agent-preset`。中国語は「PTC 模式」） | 一致 |
+| 最小モード | Minimal mode | 极简模式 | `guideMinimalIntro`（`dsh-client-ui-agent-preset`。中国語は「极简模式」） | 一致。DSH の中国語は 最小 ではなく 极简 |
 
 ## 書き方
 
