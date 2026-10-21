@@ -224,6 +224,24 @@ test('標準の画面が出さない言語タグが保存されていたら、�
   assert.equal(choices[3]!.label, 'ja')
 })
 
+test('保存値の大文字・小文字は標準の画面と同じく区別せず、EN は English、ZH は 中文 の行として出す', () => {
+  for (const [stored, shown] of [['EN', 'en'], ['Zh', 'zh'], ['en', 'en']] as const) {
+    const language = generalEntries([locale({ preference: stored })], ja).find(item => item.id === 'language')!
+    assert.deepEqual(language.display.choices!.map(choice => choice.value), [null, 'en', 'zh'], stored)
+    assert.equal(language.display.effective!(stored), shown, stored)
+  }
+  // Only the case is ignored: a region tag is a different tag for the stock screen.
+  const regional = generalEntries([locale({ preference: 'en-US' })], ja).find(item => item.id === 'language')!
+  assert.deepEqual(regional.display.choices!.map(choice => choice.value), [null, 'en', 'zh', 'en-US'])
+  assert.equal(regional.display.effective!('en-US'), 'en-US')
+})
+
+test('言語の説明は「端末の言語に合わせる」の実際の動き（English か中文のときだけ従い、ほかは English）を 3 言語で書く', () => {
+  assert.match(messagesOf(generalMessages, 'ja').languageDescription, /English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English/)
+  assert.match(messagesOf(generalMessages, 'en').languageDescription, /only for English or Chinese and uses English for any other language, Japanese included/)
+  assert.match(messagesOf(generalMessages, 'zh').languageDescription, /仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文/)
+})
+
 test('言語は汎用ページに出ず、Web 検索とシェルのページから外れる', () => {
   const groups = groupNamespaces([{ ...locale(), autoGenerate: false }, { ...row('bash-sandbox') }])
   assert.deepEqual(groups.tools.map(item => item.ns), ['bash-sandbox'])

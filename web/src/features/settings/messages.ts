@@ -75,7 +75,7 @@ export const generalMessages = defineMessages({
     performanceCompact: '簡潔',
     performanceDetailed: '詳細',
     languageTitle: '言語',
-    languageDescription: 'DSH の言語設定で、標準の画面と共通です。M3E の画面は今のところ日本語で表示します。',
+    languageDescription: 'DSH の言語設定で、標準の画面と共通です。「端末の言語に合わせる」を選ぶと、標準の画面は端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります。M3E の画面は今のところ日本語で表示します。',
     languageDevice: '端末の言語に合わせる',
   },
   en: {
@@ -97,7 +97,7 @@ export const generalMessages = defineMessages({
     performanceCompact: 'Compact',
     performanceDetailed: 'Detailed',
     languageTitle: 'Language',
-    languageDescription: "The DSH language setting, shared with the standard screen. This screen is shown in Japanese for now.",
+    languageDescription: 'The DSH language setting, shared with the standard screen. With "Match device language", the standard screen follows the device only for English or Chinese and uses English for any other language, Japanese included. This screen is shown in Japanese for now.',
     languageDevice: 'Match device language',
   },
   zh: {
@@ -119,7 +119,7 @@ export const generalMessages = defineMessages({
     performanceCompact: '简洁',
     performanceDetailed: '详细',
     languageTitle: '语言',
-    languageDescription: 'DSH 的语言设置，与标准界面共用。此界面目前仅以日语显示。',
+    languageDescription: 'DSH 的语言设置，与标准界面共用。选择“跟随设备语言”时，标准界面仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文。此界面目前仅以日语显示。',
     languageDevice: '跟随设备语言',
   },
 })

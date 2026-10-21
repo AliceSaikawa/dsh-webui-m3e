@@ -59,10 +59,16 @@ export const generalRows: readonly GeneralRow[] = [
 ]
 
 /** The value the stock screen shows for a stored one. */
-export function effectiveValue(row: Pick<GeneralRow, 'fallback' | 'legacy' | 'schemaKind'>, stored: SettingValue | undefined): SettingValue | undefined {
+export function effectiveValue(row: Pick<GeneralRow, 'fallback' | 'legacy' | 'schemaKind' | 'choices' | 'open'>, stored: SettingValue | undefined): SettingValue | undefined {
   // The draft of a text field with nothing stored is '' (see `inputValue` in store.ts).
   if (stored === undefined || (stored === '' && row.schemaKind === 'text')) return row.fallback
-  return typeof stored === 'string' ? row.legacy?.[stored] ?? stored : stored
+  if (typeof stored !== 'string') return stored
+  return row.legacy?.[stored] ?? (row.open ? sameChoice(row, stored) : undefined) ?? stored
+}
+
+/** The stock client compares language tags in lower case (`localeKey`), so `EN` is the choice `en`. */
+function sameChoice(row: Pick<GeneralRow, 'choices'>, stored: string): string | undefined {
+  return row.choices?.find(choice => choice === stored.toLowerCase())
 }
 
 function rowText(id: GeneralRowId, text: GeneralTexts): { title: string; description: string; choiceLabels?: Readonly<Record<string, string>>; unsetLabel?: string } {
@@ -102,7 +108,7 @@ export function generalEntries(namespaces: readonly SettingsNamespace[], text: G
     if (row.choices && field.kind === 'select' && !row.choices.every(choice => offered?.includes(choice))) return []
     const { title, description, choiceLabels, unsetLabel } = rowText(row.id, text)
     const stored = valueAt(namespace.value, [row.key])
-    const values = [...(row.choices ?? []), ...(row.open && typeof stored === 'string' && !row.choices?.includes(stored) ? [stored] : [])]
+    const values = [...(row.choices ?? []), ...(row.open && typeof stored === 'string' && !sameChoice(row, stored) ? [stored] : [])]
     const choices: { label: string; value: string | null }[] | undefined = row.choices && [
       ...(row.unsettable && unsetLabel !== undefined ? [{ label: unsetLabel, value: null }] : []),
       ...values.map(value => ({ label: choiceLabels?.[value] ?? value, value })),
