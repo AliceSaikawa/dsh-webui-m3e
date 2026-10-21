@@ -30,6 +30,9 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 回答の完了時 | On completion | 回答结束后 | `settings.collapse.completion` | 一致 |
 | 次のメッセージの送信時 | On next message | 下次有新消息时 | `settings.collapse.nextInput` | 一致 |
 | パフォーマンスと使用状況 | Performance & usage | 性能与用量 | `settings.performance.title` | 一致 |
+| 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
+| 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
+| English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
 
 ## 書き方
 
