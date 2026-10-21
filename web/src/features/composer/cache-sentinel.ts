@@ -4,7 +4,7 @@
  * 状態の取得口が 404 になるので何も出さない。
  * 判定の規則は cache-sentinel の docs/spec-ui.md §E2 と同じ(src/client/banner.ts の写し)。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** 状態の取得口(cache-sentinel の STATUS_PATH)。 */
 export const CACHE_SENTINEL_STATUS_PATH = 'api/cache-sentinel.status'
@@ -83,12 +83,17 @@ function appBase(): string {
 /**
  * 表示中のセッションの状態を、表示開始時・30 秒ごと・画面が前面に戻ったときに取り直す。
  * `enabled` が偽(新しい会話の入力欄・偽データの画面)のときは取得しない。
+ * 取得は重なることがあるので、最後に始めた取得の結果だけを表示に使う。
  */
 export function useCacheSentinel(sessionId: string, enabled: boolean) {
   const [status, setStatus] = useState<CacheSentinelStatus>()
+  // 取得ごとに進める番号。セッションの切り替え・無効化・画面を閉じたときも進め、終わる前の応答を捨てる。
+  const latest = useRef(0)
   const refresh = useCallback(async () => {
     if (!enabled || sessionId === '') return
-    setStatus(await fetchCacheSentinelStatus(sessionId, appBase()))
+    const ticket = ++latest.current
+    const next = await fetchCacheSentinelStatus(sessionId, appBase())
+    if (ticket === latest.current) setStatus(next)
   }, [enabled, sessionId])
 
   useEffect(() => {
@@ -98,7 +103,7 @@ export function useCacheSentinel(sessionId: string, enabled: boolean) {
     const timer = setInterval(() => { void refresh() }, CACHE_SENTINEL_POLL_MS)
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh() }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
+    return () => { latest.current++; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
   }, [enabled, sessionId, refresh])
 
   return { banner: cacheSentinelBanner(status, Date.now()), refresh }
