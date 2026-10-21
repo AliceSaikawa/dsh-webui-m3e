@@ -21,7 +21,7 @@ jobs:
             echo "PR title is ${#TITLE} characters. The limit is 72." >&2
             exit 1
           fi
-          if printf '%s\n' "$TITLE" | grep -Eq '^(feat|fix|docs|refactor|test|chore)(\([A-Za-z0-9][A-Za-z0-9._-]*\))?(!)?: [a-z].*[^[:space:].]$'; then
+          if printf '%s\n' "$TITLE" | grep -Eq '^(feat|fix|docs|refactor|test|chore)(\([A-Za-z0-9][A-Za-z0-9._-]*\))?(!)?: [a-z](.*[^[:space:].])?$'; then
             exit 0
           fi
           echo "PR title must be a Conventional Commits subject." >&2
