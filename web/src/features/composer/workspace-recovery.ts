@@ -116,11 +116,13 @@ export function retryWorkspaceAttachment(options: { draftKey: string; sessions: 
 }
 
 interface Baseline {
-  /** The Host minted a new identity, so the destination has no earlier input of its own. */
+  /** The Host minted a new identity, so no draft holds this recovery's state for it yet. */
   fresh: boolean
   /** What the created conversation held when registration failed. Missing for states saved before it was recorded. */
   recorded: WorkspaceAttachmentBaseline | undefined
 }
+/** A minted identity did not exist when registration failed, so it held no input then. */
+const MINTED_BASELINE: WorkspaceAttachmentBaseline = { text: '', input: { images: [] } }
 function settle(draft: Draft): Draft {
   const { workspaceAttachment: _attachment, workspaceAttachmentError: _attachmentError, ...rest } = draft
   return rest
@@ -142,8 +144,9 @@ function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Ba
   const ownsSource = sourceKey === draftKey || source.workspaceAttachment?.sessionId === attachment.sessionId
   const destinationDraft = readDraft(destination)
   // A state saved before the failure body was recorded can only be judged by the source it still copies.
-  const destinationUnchanged = baseline.fresh
-    || matchesBaseline(destinationDraft, baseline.recorded)
+  // A minted conversation can reach the list before the create response, and
+  // input written there in the meantime is newer than the retried body.
+  const destinationUnchanged = matchesBaseline(destinationDraft, baseline.recorded)
     || (baseline.recorded === undefined && sameContent(destinationDraft, source))
   // The destination keeps the input it receives, so a retry state written there
   // records that input even when the Host minted a new identity.
@@ -161,13 +164,15 @@ function handOff(draftKey: string, attachment: WorkspaceAttachment, baseline: Ba
     return
   }
   // The conversation holds an input written after the failure, so it is kept.
-  if (settled) writeDraft(destination, settle(destinationDraft))
+  // A minted conversation also takes over the retry state, recording that input.
+  if (settled || baseline.fresh) writeDraft(destination, forDestination(destinationDraft))
   if (!ownsSource) return
   if (matchesBaseline(source, baseline.recorded)) {
     // The source still copied the failure body, which the conversation has moved past.
     if (clearOrigin) clearDraft(sourceKey)
     else if (settled) writeDraft(sourceKey, settle(source))
-  } else if (settled) {
+  } else if (settled || (baseline.fresh && clearOrigin)) {
+    // Once the minted conversation can be opened it holds the retry, so the source keeps its body as an ordinary draft.
     writeDraft(sourceKey, settle(source))
   }
 }
@@ -182,10 +187,10 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
     return { sessionId: attachment.sessionId, sessionReady: false, error: new Error('画像の準備が終わってから登録をやり直してください。') }
   }
   const baseline: Baseline = { fresh: false, recorded: attachment.baseline }
-  // A fresh identity has no earlier input of its own, so the retry may move the origin there.
+  // A fresh identity held nothing at the failure, so the retry may move the origin there only while it is still empty.
   const baselineFor = (sessionId: string): Baseline => sessionId === attachment.sessionId
     ? baseline
-    : { fresh: true, recorded: undefined }
+    : { fresh: true, recorded: MINTED_BASELINE }
   const settleReported = (reported: WorkspaceAttachment, source: Draft): void => settleSuperseded(attachment, reported, source)
   try {
     // DSH 0.2.1 reuses the named Session only while it is an unarchived blank

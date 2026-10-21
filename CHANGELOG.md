@@ -19,6 +19,12 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+### Fixed
+
+- **composer:** ワークスペース登録の再試行で Host が別の会話を作っても、その会話に先に書いた下書きを残す。再試行していた本文は、再試行を始めた画面に残る ([#169](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/169))
+- **session-tools:** ゴールの編集は、ダイアログを開いたときの目標に保存する。開いている間に届いた更新は、古い入力では上書きせず、入力を残して失敗を知らせる ([#170](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/170))
+- **composer:** cache-sentinel の表示は、最後に始めた状態の取得だけを使う。先に始めた遅い応答では、許可中の表示を警告に戻さない ([#171](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/171))
+
 ## [0.0.9-rc.4] - 2026-10-21
 
 対応する DSH は **0.2.1-rc.2** だけです。0.2.0-rc.2 では起動しません。0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を使ってください。

@@ -465,3 +465,49 @@ test('sending from either screen is refused while the shared retry is pending', 
   await recovery
   assert.equal(readDraft(h.sessionKey).text, '保つ本文')
 })
+
+// Issue #153: the conversation the Host mints can reach the list before the
+// create response, and its composer is not part of the shared retry. Input
+// written there is newer than the retried body, so both are kept.
+for (const outcome of ['success', 'failure'] as const) {
+  for (const from of ['new screen', 'recorded conversation'] as const) {
+    test(`${outcome} from the ${from}: input written in the minted conversation before the response is kept`, async () => {
+      const h = setup(`minted-edited-${outcome}-${from === 'new screen' ? 'origin' : 'session'}`)
+      const minted = `minted-edited-${outcome}-${from === 'new screen' ? 'origin' : 'session'}-new`
+      const draftKey = from === 'new screen' ? h.originKey : h.sessionKey
+      h.hostMints(minted)
+      if (outcome === 'success') h.succeed()
+      const release = held(h)
+      const recovery = retryWorkspaceAttachment({ draftKey, sessions: h.sessions })
+      const written: Draft = { text: '新しい会話を開いて書いた本文', images: [], permission: 'read-only' }
+      writeDraft(`session:${minted}`, written)
+      release()
+      const result = await recovery
+      assert.equal(result.sessionId, minted)
+      assert.equal(result.sessionReady, true)
+      const destination = readDraft(`session:${minted}`)
+      assert.equal(destination.text, '新しい会話を開いて書いた本文')
+      assert.deepEqual(destination.images, [])
+      assert.equal(destination.permission, 'read-only')
+      assert.equal(destination.model, undefined)
+      assert.equal(destination.plan, undefined)
+      if (outcome === 'success') {
+        assert.equal(result.error, undefined)
+        assert.equal(destination.workspaceAttachment, undefined)
+      } else {
+        assert.ok(result.error)
+        // The minted conversation is the one the next retry names, and it records its own input.
+        assert.deepEqual(destination.workspaceAttachment, { workspaceId: h.attachment.workspaceId, sessionId: minted,
+          baseline: { text: '新しい会話を開いて書いた本文', input: { images: [], model: undefined, permission: 'read-only', plan: undefined } } })
+      }
+      // The retried body stays as an ordinary draft on the screen the retry started from.
+      const source = readDraft(draftKey)
+      assert.equal(source.text, '保つ本文')
+      assert.deepEqual(source.images, [{ id: 'image-test' }])
+      assert.equal(source.permission, 'limited')
+      assert.equal(source.workspaceAttachment, undefined)
+      // The other screen only copied the same body, so the copy is dropped.
+      assert.deepEqual(readDraft(draftKey === h.originKey ? h.sessionKey : h.originKey), { text: '', images: [] })
+    })
+  }
+}
