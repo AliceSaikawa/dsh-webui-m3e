@@ -9,6 +9,7 @@ import { useDsh } from '../../dsh/services.ts'
 import { appearanceLabels, confirmClassic, openAppearance, themeColorLabel } from './AppearanceSheet.tsx'
 import { useAgentPresetRoster } from './AgentPresetsPage.tsx'
 import { presetDisplayText } from './agent-presets.ts'
+import { GeneralSection } from './GeneralSection.tsx'
 import { agentPresetMessages } from './messages.ts'
 import { groupNamespaces, pageSummary, settingsPages } from './schema.ts'
 import { useSettings } from './use-settings.ts'
@@ -57,9 +58,10 @@ export function SettingsScreen() {
         </M3eListAction>
       </M3eActionList>
     </section>
+    <SettingsStatus state={state} reload={store.reload} />
+    <GeneralSection state={state} store={store} />
     <section className="settings-section" aria-labelledby="settings-dsh">
       <h2 id="settings-dsh">DSH の設定</h2>
-      <SettingsStatus state={state} reload={store.reload} />
       <M3eActionList className="settings-card">
         {settingsPages.filter(page => page.id !== 'other' || groups.other.length > 0).flatMap(page => {
           const row = <M3eListAction key={page.id} onClick={() => navigate(`/settings/${page.id}`)}>

@@ -69,7 +69,7 @@ const names: Record<string, string> = {
   'agent-default-model': '既定のモデル', 'subagent-model-selection-settings': 'サブエージェントのモデル',
   permission: '権限', 'agent-loop': 'エージェントの動作',
   'web-search-deepseek': 'Web 検索', web: 'Web の提供元', 'web-deepseek-api': 'Web 検索と取得 API',
-  'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル', locale: '言語と地域',
+  'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル',
   defaultPreset: '新しい会話の権限',
   timeoutMs: '待機時間', maxOutputBytes: '出力の上限',
   enabled: '有効にする', model: 'モデル', default: '既定のモデル', provider: '提供元',
@@ -160,21 +160,29 @@ export function decodeSchema(input: unknown): SchemaNode {
   return visit(input.uid, new Set(), 0)
 }
 
+/**
+ * Namespaces with a dedicated row in the General section (general.ts). They are
+ * excluded from the generic pages; every row's namespace must be listed here.
+ */
+export const generalNamespaces = ['ui-settings', 'ui-chat', 'locale'] as const
+
 export function groupNamespaces(namespaces: readonly SettingsNamespace[]): Record<SettingsPage, SettingsNamespace[]> {
   const groups: Record<SettingsPage, SettingsNamespace[]> = { models: [], permission: [], agent: [], providers: [], tools: [], other: [] }
   for (const row of namespaces) {
-    if (row.ns.startsWith('ui-')) continue
+    // `ui-*` belongs to the stock screen. The ones M3E edits have a dedicated row in the
+    // General section (general.ts) and, like the rest, never become generic forms.
+    if (row.ns.startsWith('ui-') || (generalNamespaces as readonly string[]).includes(row.ns)) continue
     // The dedicated mode page owns both the roster and selectedDefault, so this
     // namespace never appears as a generic form.
     if (row.ns === 'agent-preset-registry') continue
     // Explicit M3E editors mirror the stock custom pages. Other suppressed
     // entries (including provider internals) must not become generic forms.
-    if (!row.autoGenerate && !['agent-default-model', 'subagent-model-selection-settings', 'permission', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns)) continue
+    if (!row.autoGenerate && !['agent-default-model', 'subagent-model-selection-settings', 'permission', 'bash-sandbox', 'pwsh-sandbox'].includes(row.ns)) continue
     const page: SettingsPage = row.ns.startsWith('llm-') ? 'providers'
       : ['agent-default-model', 'subagent-model-selection-settings'].includes(row.ns) ? 'models'
       : row.ns === 'permission' ? 'permission'
       : row.ns === 'agent-loop' ? 'agent'
-      : ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'pwsh-sandbox', 'locale'].includes(row.ns) ? 'tools' : 'other'
+      : ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'pwsh-sandbox'].includes(row.ns) ? 'tools' : 'other'
     groups[page].push(row)
   }
   return groups
