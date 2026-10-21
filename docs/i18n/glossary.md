@@ -21,6 +21,18 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | コードの差分 | code diffs | 代码差异 | 同上 | 一致 |
 | PTC モード | PTC mode | PTC 模式 | `guidePtcIntro`（`dsh-client-ui-agent-preset`。中国語は「PTC 模式」） | 一致 |
 | 最小モード | Minimal mode | 极简模式 | `guideMinimalIntro`（`dsh-client-ui-agent-preset`。中国語は「极简模式」） | 一致。DSH の中国語は 最小 ではなく 极简 |
+| 作業の詳細 | Work details | 工作步骤展示 | `settings.transcript.title`（`dsh-client-ui-chat`） | 一致 |
+| 簡潔 | Compact | 简洁 | `settings.transcript.compact`、`settings.performance.compact` | 一致 |
+| 標準 | Standard | 标准 | `settings.transcript.standard` | 一致 |
+| 詳細 | Detailed | 详细 | `settings.transcript.detailed`、`settings.performance.detailed` | 一致 |
+| 完全に展開 | Verbose | 完全展开 | `settings.transcript.verbose` | 英語は Verbose（「詳細」と別） |
+| 折りたたむタイミング | Collapse timing | 工作步骤收起时机 | `settings.collapse.title`（英語は When to Collapse Work Details） | 標準の画面の題は「作業の詳細を折りたたむタイミング」に当たるが、フォームの題は 1 行で切れるため（幅 320px で日本語の全文は 198px、使える幅は 185px）、日本語と英語は短くした。中国語は DSH のままで収まる。何を折りたたむかは説明文に書いた |
+| 回答の完了時 | On completion | 回答结束后 | `settings.collapse.completion` | 一致 |
+| 次のメッセージの送信時 | On next message | 下次有新消息时 | `settings.collapse.nextInput` | 一致 |
+| パフォーマンスと使用状況 | Performance & usage | 性能与用量 | `settings.performance.title` | 一致 |
+| 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
+| 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
+| English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
 
 ## 書き方
 

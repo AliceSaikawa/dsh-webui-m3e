@@ -296,7 +296,7 @@ test('名前空間を 5 ページとその他に分け、従来の画面用設�
   assert.deepEqual(Object.fromEntries(Object.entries(groups).map(([page, values]) => [page, values.map(row => row.ns)])), {
     models: ['agent-default-model', 'subagent-model-selection-settings'], permission: ['permission'],
     agent: ['agent-loop'], providers: ['llm-deepseek', 'llm-pi-ai', 'llm-retry', 'llm-future'],
-    tools: ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox', 'locale'], other: ['new-plugin', 'llm', 'ui'],
+    tools: ['web', 'web-search-deepseek', 'web-deepseek-api', 'bash-sandbox'], other: ['new-plugin', 'llm', 'ui'],
   })
   assert.equal(groups.models[0], rows[0])
   assert.deepEqual(rows.map(row => row.ns), ids)

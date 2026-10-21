@@ -36,6 +36,11 @@
   - 「外観」：今の値を 2 行目に出し、タップで外観のシート。
 - **一般**：標準の画面の「設定 → 一般」にある項目のうち、M3E でも変えられるものです。「この端末」と「DSH の設定」の間に置きます。値は標準の画面と同じ名前空間・同じ項目に保存するので、どちらで変えてももう一方に反映されます。Host がその名前空間や項目を返さないときは、その行を出しません。
   - コーディングビューを表示（スイッチ）：`ui-settings` の `enabled`（既定 `true`）。オフにすると、モードの一覧と新しい会話から PTC と最小が隠れます（Issue #143 の動き。下の実装メモ）。
+  - 作業の詳細（選択）：`ui-chat` の `transcriptView`。簡潔（`compact`）・標準（`standard`）・詳細（`detailed`）・完全に展開（`verbose`）。保存した値がないときは、標準の画面（デスクトップアプリ以外）と同じく「詳細」を選んだ形で出す。古い保存値の `normal`・`expanded` は「詳細」として出す。
+  - 折りたたむタイミング（選択。標準の画面では「作業の詳細を折りたたむタイミング」）：`ui-chat` の `collapseTiming`。回答の完了時（`completion`、既定）・次のメッセージの送信時（`next-input`）。
+  - パフォーマンスと使用状況（選択）：`ui-chat` の `performanceUsage`。簡潔（`compact`）・詳細（`detailed`、既定）。
+  - 言語（選択）：`locale` の `preference`。「端末の言語に合わせる」（保存値を消す。未設定）・English（`en`）・中文（`zh`）。標準の画面の内蔵言語と同じ。標準の画面が出さない言語タグが保存されていれば、そのタグも選択肢に足して出す。選んでも、M3E の画面は日本語のまま（`DISPLAY_LOCALES`）。
+  - リンクの開き方（`ui-chat` の `linkOpening`）は出さない。理由は下の実装メモ。
 - **DSH の設定**：次の 5 行です。2 行目には、そのページの主な値を出します。
 
 | 行 | ページ | 名前空間 |
@@ -44,7 +49,7 @@
 | 権限 | `#/settings/permission` | `permission` |
 | エージェント | `#/settings/agent` | `agent-presets`、`agent-loop` |
 | 提供元と API キー | `#/settings/providers` | `llm-*`（`llm-deepseek`、`llm-pi-ai`、`llm-retry` など、`llm-` で始まるもの全部）と認証情報 |
-| Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`、`locale` |
+| Web 検索とシェル | `#/settings/tools` | `web`、`web-search-deepseek`、`web-deepseek-api`、`shell`（`locale` は「一般」の言語の行に移した） |
 
 - `ui-` で始まる名前空間と `ui-onboarding` は、今の画面向けなので出しません。例外は、上の「一般」に専用の行がある名前空間（`general.ts` の `generalRows`、`schema.ts` の `generalNamespaces`）で、これも汎用のページには出しません。上の表にない名前空間が `describe()` にあれば、「そのほか」の行を足し、名前空間の名前をそのまま見出しにしたページで出します。
 - 一番下に、この UI の版（`package.json` の `version`）と、接続先の DSH の版（取れれば）を小さく出します。
@@ -1314,3 +1319,28 @@ close と key recheck close は、新しく入った保存先照会の待機を 
 - **言語**：文言は `messages.ts` の `generalMessages` に日本語・英語・中国語を同じ変更で足した。`DISPLAY_LOCALES` は `['ja']` のままなので、画面は日本語（11-i18n の決まり）。`FieldEditor` の固定の文言（「保存しました」「もう一度保存する」など）は設定の移行 PR まで日本語のまま。
 - **画面の外観**：390px 幅で、「この端末」と「DSH の設定」の間に「一般」の見出しとスイッチ 1 行（説明つき）が出る。
 - **未確認**：iOS 実機。
+
+### 2026-10-21：設定の「一般」②作業の詳細・パフォーマンスと使用状況（`feat/settings-chat-display`）
+
+- **DSH で確かめた契約**（インストール済みの `@deepseek-ai/dsh` 0.2.1-rc.2 の `dsh-client-ui-chat/lib/client.js`・`lib/index.js` を読み取りで確認）：名前空間 `ui-chat`（`CHAT_SETTINGS_NAMESPACE`）。`transcriptView`：`compact`・`standard`・`detailed`・`verbose` と、古い保存値の `normal`・`expanded`（標準の画面は `detailed` と読み、選択肢には出さず、書き戻さない）。Host のスキーマには既定がなく（`.loose()`）、標準の画面が `dshDesktop` のあるデスクトップアプリでは `standard`、それ以外では `detailed` を使う。`collapseTiming`：`completion`（既定）・`next-input`。`performanceUsage`：`compact`・`detailed`（既定）。`linkOpening`：`sidebar`（既定）・`new-tab`（次の PR で扱う）。標準の画面の文言は、英語が Work details／Compact・Standard・Detailed・Verbose、When to Collapse Work Details／On completion・On next message、Performance & usage／Compact・Detailed。中国語は 工作步骤展示／简洁・标准・详细・完全展开、工作步骤收起时机／回答结束后・下次有新消息时、性能与用量／简洁・详细。
+- **隔離した実 DSH（0.2.1-rc.2、`e2e-dsh`）で確かめたこと**：`settings.describe()` の `ui-chat` は `autoGenerate: false`、`applies: 'live'`、何も保存していないときの `value` は `{ collapseTiming: 'completion', performanceUsage: 'detailed', linkOpening: 'sidebar' }`（`transcriptView` は無い）。偽データの `ui-chat`（`mock-fixtures.ts`）は、この実物の写しで、`e2e-dsh/rpc.spec.ts` の S5 の照合（スキーマの形・`value`・`autoGenerate`）が成功する。`e2e-dsh/settings-general.spec.ts` の G-real-3 で、M3E で 3 項目を変えると標準の画面の設定ダイアログ（Work details／When to Collapse Work Details／Performance & usage）が変わり、標準の画面で変えると M3E の選択が変わること、再読み込みしても残ることを確かめた。
+- **標準の画面と同じ値の読み方**：保存した値がない `transcriptView` は「詳細」、`collapseTiming` は「回答の完了時」、`performanceUsage` は「詳細」として出す（`general.ts` の `fallback` と `legacy`）。M3E は `transcriptView` を自分では書き戻さない（選んだときだけ保存する）。
+- **M3E のチャットの表示はこの値をまだ読んでいない**：`web/src/` で `transcriptView`・`collapseTiming`・`performanceUsage` を読むのは、この設定の行だけ。チャットの詳細度や統計の見せ方を M3E の画面に反映するのは別の作業で、行の説明には「標準の画面の表示に使われます」と書いた。
+- **選択の部品**：`FieldEditor` の選択（`m3e-select`）に、`FieldDisplay.choices` で標準の画面と同じ順・同じ訳の選択肢を渡す。Host のスキーマに選択肢のどれかがなければ、その行を出さない（`generalEntries`）。保存は項目 1 つの差分（`{ transcriptView: 'verbose' }` など）で、ほかの項目は変えない。
+- **試験**：`tests/08-general.test.ts`（選択肢の順と 3 言語の訳、既定と古い値の読み替え、スキーマに選択肢がない Host、項目ごとの保存の差分と revision、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G8〜G12、`e2e-dsh/settings-general.spec.ts` の G-real-3。選択の表示は、`m3e-select` の `selected`（選ばれた選択肢）で確かめる（要素の文字列には全選択肢が含まれるため）。
+- **未確認**：デスクトップアプリ（`dshDesktop`）での既定（`standard`）。M3E は常に携帯向けなので「詳細」を既定にした。iOS 実機。
+- **レビューへの対応（幅 320px のラベル）**：`m3e-form-field` のラベルは 1 行で、はみ出す分を切る。「作業の詳細を折りたたむタイミング」は 320px で全文 198px に対し使える幅 185px で切れていた（340px 以上は収まる）。日本語を「折りたたむタイミング」、英語を `Collapse timing` に短くし、何を折りたたむかは説明文（「作業の詳細を自動で折りたたむタイミングを選びます。」）に残した。中国語の `工作步骤收起时机` は DSH のままで収まる。`e2e/settings-general.spec.ts` の G17 が、幅 320px で「一般」の全行のラベルが切れないこと（`scrollWidth` が `clientWidth` 以下）を確かめる。ラベルの折り返しは、`m3e-form-field` の浮くラベルの高さが固定で、ほかの設定の画面も変わるため行わなかった。
+
+### 2026-10-21：設定の「一般」③言語とリンクの開き方（`feat/settings-language`）
+
+- **DSH で確かめた契約**（インストール済みの `@deepseek-ai/dsh` 0.2.1-rc.2 の `dsh-client-locale/lib/client.js` を読み取りで確認）：名前空間 `locale`、項目 `preference`、文字列で `^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$`、任意（未設定は保存しない）。内蔵の言語は `zh`（表示名「中文」）と `en`（「English」）だけ（`LOCALE_IDS`、`BUILT_IN_LOCALE_METADATA`）。標準の画面の選択は `setLocale(id)` で、`preference` に `id` を保存する。保存値がなければブラウザの言語（`resolveInitialLocale`）、どれも合わなければ英語。標準の画面は「端末の言語に合わせる」の選択肢を持たず、保存値を消す操作もない。標準の画面の行の題は英語 `Language`、中国語 `语言`。
+- **「端末の言語に合わせる」は M3E の追加**：標準の画面にない選択肢で、`settings.mutate('locale', [{ op: 'unset', path: ['preference'] }], revision)` で保存値を消す。保存値がなければ標準の画面は、ブラウザの言語（`navigator.languages`。`zh-TW` のように主言語が合えば合う）が内蔵の `zh` か `en` に合うときだけその言語になり、合わなければ英語になる（`detectBrowserLocale`・`resolveInitialLocale`）。つまり日本語の端末では、標準の画面は英語になる一方、M3E は日本語のまま（M3E の言語の決め方は 11-i18n）。この違いは、行の説明に「標準の画面は端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります」と書いた。選択肢の名前は、依頼で決めた「端末の言語に合わせる」のままにした。文言は DSH の辞書にないため、`docs/i18n/glossary.md` に「なし」と書いた。
+- **日本語は選択肢に足さない**：標準の画面の内蔵言語に日本語はなく、`ja` を保存しても標準の画面は登録がないとしてブラウザの言語に戻る。M3E の画面を日本語のままにしたい利用者は「端末の言語に合わせる」を使う（標準の画面は英語になる。上の項目）。すでに `ja` など別の言語タグが保存されているときは、そのタグをそのまま選択肢に足して選択済みで出す（`general.ts` の `open`）。
+- **隔離した実 DSH（0.2.1-rc.2、`e2e-dsh`）で確かめたこと**：`settings.describe()` の `locale` は `autoGenerate: false`、何も保存していないとき `value: {}`、`applies: 'live'`。`e2e-dsh/settings-general.spec.ts` の G-real-4 で、M3E で「中文」を選ぶと標準の画面の設定ダイアログが中国語になり行が「中文」を指すこと、標準の画面で English を選ぶと M3E が English になること、再読み込みしても残ること、「端末の言語に合わせる」で保存値が消えることを確かめた。
+- **汎用ページから言語を外した**：`locale` は「Web 検索とシェル」のページにスキーマ生成で出ていたが、専用の行に移したので `groupNamespaces` から外した（`generalNamespaces` に足し、許可リストと `namespaceTitle` から削除）。`tests/08-rpc-contract.test.ts` と `tests/08-settings.test.ts` の期待を、`locale` が `tools` に入らないものに変えた。表示が変わった理由は、同じ設定を 2 か所に出さないため。
+- **M3E の言語表示は変わらない**：`DISPLAY_LOCALES` は `['ja']` のまま。英語・中国語を選んでも、`locale.preference` が変わって標準の画面が切り替わるだけで、M3E の画面と `<html lang>` は日本語（`e2e` の G14 で確かめた）。行の説明にその旨（「M3E の画面は今のところ日本語で表示します」）を書いた。英語・中国語を表示に使えるようにする PR で、この一文を外す。
+- **リンクの開き方は出さなかった**：標準の画面は、アプリ内ブラウザ（サイドバーの `browser` タブ）が使えるときだけ `linkOpening` の行を出す（`LinkOpeningRow` の `useBrowserAvailable`）。0.2.1-rc.2 の標準の Web 画面にはその行がなく（実 DSH で設定ダイアログを確認）、M3E にはアプリ内ブラウザの有無を知る手段も、リンクを開く場所を選ぶ画面もない（`Markdown.tsx` は常に新しいタブで開く）。値の保存先（`ui-chat` の `linkOpening`、`sidebar`・`new-tab`、既定 `sidebar`）は確かめたが、効かない行を足さないことにした。必要になれば `generalRows` に 1 行足すだけでよい（偽データのスキーマには `linkOpening` が入っている）。
+- **試験**：`tests/08-general.test.ts`（選択肢と 3 言語の題、既定の読み替え、知らない言語タグ、`unset` の保存、競合・拒否・書き込み不可）、`e2e/settings-general.spec.ts` の G13〜G16、`e2e-dsh/settings-general.spec.ts` の G-real-4。
+- **未確認**：`zh-Hant` など標準の画面が出さない言語タグを実 DSH に保存したときの標準の画面の動き（コードを読んだだけ）。iOS 実機。
+- **担当外で未更新のもの（レビューの指摘）**：`docs/ui-spec.md` の「設定タブ」は、まだ「一般」の区分がなく、105 行の「Web 検索とシェル」の名前空間に `locale` を含めたまま。設計書 08 の表と実装は更新したが、`docs/ui-spec.md` は担当ファイルの外（README の「変更してよいファイル」）なので変えていない。統合の担当、または変更を許可された担当が、次を反映する。「一般」の区分を「この端末」と「DSH の設定」の間に置き、コーディングビュー・作業の詳細・折りたたむタイミング・パフォーマンスと使用状況・言語の 5 行を並べる（保存先は上の各節）。「Web 検索とシェル」から `locale` を外す。
+- **レビューへの対応（保存値の大文字・小文字）**：標準の画面は言語の登録を `toLowerCase()` で引く（`localeKey`）ので、`EN`・`Zh` が保存されていれば English・中文 として扱う。M3E も、保存値を小文字にして `en`・`zh` に一致すれば、その行を選択済みで出し、別の行を足さない（`general.ts` の `sameChoice`）。大文字小文字だけを無視し、`en-US` のような地域つきの標準の画面が引けないタグは、これまでどおりそのタグを選択肢に足して出す。コードを読んで確かめたもので、実 DSH に `EN` を保存しての確認はしていない。試験：`tests/08-general.test.ts`、`e2e/settings-general.spec.ts` の G15。
