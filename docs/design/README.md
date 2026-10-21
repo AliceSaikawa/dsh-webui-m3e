@@ -53,7 +53,7 @@ Canvas の見た目と `docs/ui-spec.md` が食い違うときは、`docs/ui-spe
 - `package.json`、ロックファイル、`web/src/app/`、`web/src/dsh/` を変えていないか（段階 1 を除く）
 - 00 の仮の部品の引数と戻り値の形を変えていないか
 - 設計書の「完了条件」を満たしているか。「未確認のこと」の扱いが実装メモに書いてあるか
-- コミットのトレーラが揃っているか
+- コミットと PR の形が AGENTS.md に合っているか。`AI-Harness`、`AI-Model`、`AI-Agent` を新しく付けていないか
 
 段階 2 の各機能は、段階 1 が main に入ってから始めます。段階 2 の機能どうしは、互いの完成を待ちません。ほかの機能の部品は、段階 1 が作る「仮の部品」（決まった形の関数と、中身が空の画面）を通して使います。
 
@@ -120,9 +120,9 @@ pnpm build
 
 ## コミット
 
-- メッセージの形と、AI が書いたコミットに付けるトレーラ（`AI-Agent`）は、[git-workflow.md](../git-workflow.md) の §4 に従います。
+- コミットと PR の形は、[AGENTS.md](../../AGENTS.md) の「コミットとプルリクエスト」に従います。
 - コミットメッセージに個人情報を書きません。`--force-with-lease` を付けない `git push --force` と、`git reset --hard` は使いません。`--force-with-lease` は自分のブランチには許可なしで使え、人と共有しているブランチでは許可を取ります。
-- ブランチ・コミット・PR・マージの決まりは [git-workflow.md](../git-workflow.md) にまとめてあります。この文書と食い違うときは、git-workflow.md を優先します。
+- worktree、ブランチ、push、マージの手順は [git-workflow.md](../git-workflow.md) にまとめてあります。手順がこの文書と食い違うときは、git-workflow.md を優先します。メッセージの形が食い違うときは、AGENTS.md を優先します。
 
 ## Codex に渡す指示の例
 

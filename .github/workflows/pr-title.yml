@@ -1,0 +1,31 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    name: conventional commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the pull request title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ "${#TITLE}" -gt 72 ]; then
+            echo "PR title is ${#TITLE} characters. The limit is 72." >&2
+            exit 1
+          fi
+          if printf '%s\n' "$TITLE" | grep -Eq '^(feat|fix|docs|refactor|test|chore)(\([A-Za-z0-9][A-Za-z0-9._-]*\))?(!)?: [a-z](.*[^[:space:].])?$'; then
+            exit 0
+          fi
+          echo "PR title must be a Conventional Commits subject." >&2
+          echo "Allowed types are feat, fix, docs, refactor, test, and chore." >&2
+          echo "The subject starts with a lowercase letter and does not end with a period." >&2
+          printf '%s\n' "$TITLE" >&2
+          exit 1
