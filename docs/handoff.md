@@ -97,6 +97,10 @@
 - Simulator のホーム画面に、テスト用の「m3e」アイコンを追加しました。不要なら長押しで削除してください。
 - シミュレーターの文字入力は日本語入力を通るため、改行が確定として扱われます。入力欄の伸び方は `?fill` で確かめてください。
 
+## GitHub Releases 配布の記録（2026-10-22、v0.0.9）
+
+**2026-10-22 に [v0.0.9 をリリースしました](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.9)。** PR #185 を squash マージした main `cee8f414971b3f9fd5706bad10973e955a4f9359` にタグ `v0.0.9` と安定版 Release を付けました。対応 DSH は **0.2.1-rc.2** だけです。添付は `dsh-webui-m3e-0.0.9.tgz`（4,619,445 バイト）、SHA-256 は `f967b5f5ec5af1103d3212127934e20131baf1f697a0d5f033d952574c30daa0` です。公開後の添付 URL 取得でも SHA-256 は一致しました。npm には出していません。マージ後の確認は型検査・単体 1,515 件（失敗 0、skip 2）・ビルド・配布検査 19 ファイルです。偽データ e2e はローカルで 386 件成功（timeout で 39 件未実行）。実 DSH の隔離導入確認は未実施です。README 3 言語の Quick Start も 0.0.9 向けに直しています（同じ文書更新の PR）。
+
 ## GitHub Releases 配布の記録（2026-10-05、Issue #18）
 
 **2026-10-05 に [v0.0.8 をリリースしました](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8)。** 指示役が PR #20 を通常のマージで取り込んだ main `d00515e0776f46608a5c3ffe70eb529974ecf744` を確認し、同じコミットにタグ v0.0.8 とリリースを作成しました。当面は GitHub Releases の添付 tgz の URL で配ります。npm レジストリにはアカウントが無いため未公開で、名前だけでは追加できません。公開状況と検証記録はこちらと development.md、dsh-compatibility.md に残します。README の 3 言語はリリースされた状態の文面のため変更していません。
