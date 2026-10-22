@@ -161,7 +161,7 @@ export function safeJsonCopy(input: unknown): { value: SafeJson | undefined; omi
     const value = jsonValue(raw, key)
     if (value === null || typeof value === 'boolean' || typeof value === 'string') return value
     if (typeof value === 'number') return Number.isFinite(value) ? value : null
-    if (typeof value === 'bigint') throw new TypeError('BigInt は JSON にできません。')
+    if (typeof value === 'bigint') throw new TypeError('BigInt cannot be represented in JSON.')
     if (typeof value !== 'object') return undefined
     // Compare originals as well: a toJSON result can be a fresh object that leads back to its owner.
     const seen = (item: unknown) => item === value || item === raw

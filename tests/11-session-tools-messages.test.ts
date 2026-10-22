@@ -8,9 +8,9 @@ import type { SessionJob } from '../web/src/dsh/services.ts'
 const job = (id: string, status: SessionJob['status'], startedAt: number, finishedAt?: number): SessionJob =>
   ({ id, kind: 'bash', label: id, status, startedAt, finishedAt, output: { total: 0, earliest: 0 } }) as SessionJob
 
-test('session-tools の辞書のキーはそろい、訳は未着手（null）のまま', () => {
+test('session-tools の辞書のキーはそろい、訳もそろっている', () => {
   assert.deepEqual(catalogProblems(sessionToolsMessages), [])
-  assert.deepEqual(untranslatedLocales(sessionToolsMessages), ['en', 'zh'])
+  assert.deepEqual(untranslatedLocales(sessionToolsMessages), [])
 })
 
 test('移行待ち・外部タスク・移行が必要の文言が辞書に入っている', () => {
