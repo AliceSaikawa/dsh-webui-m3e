@@ -19,6 +19,10 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+## [0.0.9-rc.5] - 2026-10-22
+
+対応する DSH は **0.2.1-rc.2** だけです。0.2.0-rc.2 では起動しません。0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を使ってください。
+
 ### Fixed
 
 - **composer:** ワークスペース登録の再試行で Host が別の会話を作っても、その会話に先に書いた下書きを残す。再試行していた本文は、再試行を始めた画面に残る ([#169](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/169))
@@ -156,7 +160,8 @@ DeepSeek Harness（DSH）0.2.0-rc.2 に対応した、最初の配布版です�
 - 期限つきの質問への回答に対応
 - 配布物の検査と、本番のビルドに偽データが入らないことの検査を追加
 
-[Unreleased]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.4...HEAD
+[Unreleased]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.5...HEAD
+[0.0.9-rc.5]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.4...v0.0.9-rc.5
 [0.0.9-rc.4]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.3...v0.0.9-rc.4
 [0.0.9-rc.3]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.2...v0.0.9-rc.3
 [0.0.9-rc.2]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.1...v0.0.9-rc.2
