@@ -245,6 +245,10 @@ test('言語の説明は「端末の言語に合わせる」の実際の動き�
   assert.match(messagesOf(generalMessages, 'ja').languageDescription, /English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English/)
   assert.match(messagesOf(generalMessages, 'en').languageDescription, /only for English or Chinese and uses English for any other language, Japanese included/)
   assert.match(messagesOf(generalMessages, 'zh').languageDescription, /仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文/)
+  // The description follows requestedLocale: the first supported language in the device's order, then English.
+  assert.match(messagesOf(generalMessages, 'ja').languageDescription, /端末の言語を優先順に見て、日本語・English・中文（簡体字）のうち最初にあるものを使い、どれもなければ English/)
+  assert.match(messagesOf(generalMessages, 'en').languageDescription, /the first of Japanese, English or Chinese \(Simplified\) in the device’s language order, and English if none is there/)
+  assert.match(messagesOf(generalMessages, 'zh').languageDescription, /按设备语言的优先顺序，使用日语、英文、中文（简体）中最先出现的一种；都没有时使用英文/)
 })
 
 test('言語は汎用ページに出ず、Web 検索とシェルのページから外れる', () => {
