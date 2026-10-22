@@ -1,7 +1,11 @@
 import type { ConnectionState, RemoteResult } from '../../dsh/services.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
+import type { Locale } from '../../i18n/locale.ts'
 import { buildPatch, buildReset, parseFieldInput, type SettingField, type SettingPath, type SettingValue, type SettingsDescription, type SettingsNamespace } from './schema.ts'
 import { findSettingField, settingFieldAccess } from './field-access.ts'
 import { createSettingInput } from './input.ts'
+import { settingsSchemaMessages, settingsStoreMessages } from './messages.ts'
 import type { PermissionCatalog } from '../composer/api.ts'
 
 export interface SettingsApi {
@@ -20,20 +24,28 @@ export interface SettingsState extends SettingsDescription {
   resetting: Record<string, number>
 }
 export const fieldKey = (ns: string, path: SettingPath): string => JSON.stringify([ns, ...path])
-const failureMessage = '設定を読み込めませんでした。接続を確認して、もう一度お試しください。'
-const interruptedMessage = '接続が切れたため保存を中断しました。入力は残っています。接続が戻ったら保存済みの値を確認して、もう一度保存してください。'
-const changedMessage = 'ほかの場所で設定が変わりました。入力は残っています。保存済みの値を確認して、もう一度保存してください。'
-const rejectedMessage = 'この値は設定できません。入力内容を確認してください。'
+const storeText = () => messagesOf(settingsStoreMessages, currentLocale())
+const schemaText = () => messagesOf(settingsSchemaMessages, currentLocale())
+
+const JAPANESE_REASON = /^[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01\uff08\uff09\uff1a\uff1f]+$/u
+const JAPANESE_REASON_LETTER = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u
+const CHINESE_REASON = /^[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uff01\uff08\uff09\uff0c\uff1a\uff1f]+$/u
+const CHINESE_REASON_HAN = /[\u3400-\u4dbf\u4e00-\u9fff]/u
+
 /**
  * A rejection reason written for people (for example an administrator's
- * policy) is shown as is. Only Japanese letters and Japanese punctuation are
- * accepted: ASCII or full-width letters and digits, paths and other symbols may
- * carry input values or internal details, so such reasons get a fixed message.
+ * policy) is shown as is. Japanese and Chinese accept only their letters and
+ * punctuation: ASCII or full-width letters and digits, paths and other symbols
+ * may carry input values or internal details, so such reasons get a fixed
+ * message. English reasons cannot be told apart from such details, so English
+ * always gets the fixed message.
  */
-export function displayableRejection(message: unknown): string {
-  return typeof message === 'string' && message.length <= 200
-    && /^[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff01\uff08\uff09\uff1a\uff1f]+$/u.test(message)
-    && /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/u.test(message) ? message : rejectedMessage
+export function displayableRejection(message: unknown, locale: Locale = 'ja'): string {
+  const text = messagesOf(settingsStoreMessages, locale)
+  if (typeof message !== 'string' || message.length > 200) return text.rejected
+  if (locale === 'zh') return CHINESE_REASON.test(message) && CHINESE_REASON_HAN.test(message) ? message : text.rejected
+  if (locale === 'en') return text.rejected
+  return JAPANESE_REASON.test(message) && JAPANESE_REASON_LETTER.test(message) ? message : text.rejected
 }
 const within = (path: SettingPath, parent: SettingPath) => parent.every((part, index) => path[index] === part)
 const inputValue = (field: SettingField) => ['text', 'number'].includes(field.kind)
@@ -109,7 +121,7 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
         if (!field) return { ok: false }
         let parsed = value
         if (!reset && ['text', 'number'].includes(field.kind)) {
-          const result = parseFieldInput(field, String(value ?? ''))
+          const result = parseFieldInput(field, String(value ?? ''), schemaText(), currentLocale())
           if (!result.ok) { publish({ fieldErrors: { ...state.fieldErrors, [key]: result.message } }); return { ok: false } }
           parsed = result.value
         }
@@ -172,7 +184,7 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
     try {
       const [result, permissionCatalog] = await Promise.all([api.describe(), readPermissions?.().catch(() => undefined)])
       if (ticket !== sequence || epoch !== connectionEpoch) return false
-      if (!result.ok) { publish({ phase: 'error', error: failureMessage, writable: false }); return false }
+      if (!result.ok) { publish({ phase: 'error', error: storeText().loadFailed, writable: false }); return false }
       const generation = { ...state.generation }
       const updated = new Set<string>()
       const namespaces = result.value.namespaces.map(row => {
@@ -191,11 +203,11 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
         return !updated.has(ns!) && namespaces.some(row => row.ns === ns)
       }))
       publish({ phase: 'ready', error: null, writable: result.value.writable, namespaces, generation, permissionCatalog, fieldErrors })
-      for (const row of namespaces) syncInputs(row, updated.has(row.ns) ? changedMessage : undefined)
+      for (const row of namespaces) syncInputs(row, updated.has(row.ns) ? storeText().changed : undefined)
       for (const entry of inputs.values()) if (!find(entry.ns)) entry.input.replace(undefined)
       return true
     } catch {
-      if (ticket === sequence && epoch === connectionEpoch) publish({ phase: 'error', error: failureMessage, writable: false })
+      if (ticket === sequence && epoch === connectionEpoch) publish({ phase: 'error', error: storeText().loadFailed, writable: false })
       return false
     }
   }
@@ -215,7 +227,7 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
     const generation = { ...state.generation }
     for (const row of state.namespaces) generation[row.ns] = (generation[row.ns] ?? 0) + 1
     publish({ phase: 'loading', error: null, writable: false, busy: {}, fieldErrors: {}, generation, resetting: {} })
-    for (const entry of inputs.values()) entry.input.interrupt(interruptedMessage)
+    for (const entry of inputs.values()) entry.input.interrupt(storeText().interrupted)
     return next === 'connected' ? reload() : false
   }
   function documentUpdated(ns: unknown, revision?: unknown): void {
@@ -269,16 +281,16 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
           accepted = true
         } else if (result.error.code === 'settings/conflict') {
           publish({ generation: invalidate(ns) })
-          for (const entry of inputs.values()) if (entry.ns === ns) entry.input.interrupt(changedMessage)
+          for (const entry of inputs.values()) if (entry.ns === ns) entry.input.interrupt(storeText().changed)
           const loaded = await reload()
-          if (epoch === connectionEpoch) notices.forEach(notice => notice(loaded ? 'ほかの場所で設定が変わりました。読み直しました' : 'ほかの場所で設定が変わりました。読み直せなかったため、再読み込みしてください。'))
+          if (epoch === connectionEpoch) notices.forEach(notice => notice(loaded ? storeText().conflictReloaded : storeText().conflictReloadFailed))
         } else {
           const reason = result.error.code === 'settings/rejected'
-            ? displayableRejection(result.error.message) : 'この変更は保存できませんでした。入力内容と接続を確認してください。'
+            ? displayableRejection(result.error.message, currentLocale()) : storeText().changeRejected
           if (editVersion === (edits.get(key) ?? 0) && find(ns)?.revision === row.revision) publish({ fieldErrors: { ...state.fieldErrors, [key]: reason } })
         }
       } catch {
-        if (epoch === connectionEpoch && editVersion === (edits.get(key) ?? 0) && find(ns)?.revision === row.revision) publish({ fieldErrors: { ...state.fieldErrors, [key]: '設定を保存できませんでした。接続を確認してください。' } })
+        if (epoch === connectionEpoch && editVersion === (edits.get(key) ?? 0) && find(ns)?.revision === row.revision) publish({ fieldErrors: { ...state.fieldErrors, [key]: storeText().saveFailed } })
       } finally {
         if (epoch === connectionEpoch) {
           saving--
@@ -306,10 +318,10 @@ export function createSettingsStore(api: SettingsApi, readPermissions?: () => Pr
       if (value !== undefined && field.kind === 'select' && !field.options?.some(option => Object.is(option.value, value))) return undefined
       return {
         send: () => value === undefined
-          ? api.mutate(ns, buildReset(path), row.revision)
+          ? api.mutate(ns, buildReset(path, schemaText()), row.revision)
           : ns === 'permission' && path.length === 1 && path[0] === 'defaultPreset'
             ? api.mutate(ns, [{ op: 'set', path: [...path], value }], row.revision)
-            : api.update(ns, buildPatch(path, value), row.revision),
+            : api.update(ns, buildPatch(path, value, schemaText()), row.revision),
         resetPath: value === undefined && field.kind === 'group' ? path : undefined,
       }
     })

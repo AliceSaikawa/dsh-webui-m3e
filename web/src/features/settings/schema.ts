@@ -1,7 +1,12 @@
 import type { ProviderState } from './providers.ts'
 import type { PermissionCatalog } from '../composer/api.ts'
 import { presetDisplayName } from '../../dsh/permission-presets.ts'
+import { permissionPresetMessages } from '../../dsh/messages.ts'
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { formatNumber } from '../../i18n/format.ts'
+import type { Locale } from '../../i18n/locale.ts'
 import { matchesNumberStep } from './number-step.ts'
+import { settingsSchemaMessages } from './messages.ts'
 
 export type SettingValue = null | boolean | number | string | SettingValue[] | { [key: string]: SettingValue }
 export type SettingObject = { [key: string]: SettingValue }
@@ -56,43 +61,87 @@ export interface SettingField {
   omitted?: boolean
 }
 export const settingsPages = [
-  { id: 'models', title: 'モデル', icon: 'smart_toy' },
-  { id: 'permission', title: '権限', icon: 'shield' },
-  { id: 'agent', title: 'エージェント', icon: 'tune' },
-  { id: 'providers', title: '提供元と API キー', icon: 'key' },
-  { id: 'tools', title: 'Web 検索とシェル', icon: 'travel_explore' },
-  { id: 'other', title: 'そのほか', icon: 'tune' },
+  { id: 'models', icon: 'smart_toy' },
+  { id: 'permission', icon: 'shield' },
+  { id: 'agent', icon: 'tune' },
+  { id: 'providers', icon: 'key' },
+  { id: 'tools', icon: 'travel_explore' },
+  { id: 'other', icon: 'tune' },
 ] as const
 export type SettingsPage = typeof settingsPages[number]['id']
 
-const names: Record<string, string> = {
-  'agent-default-model': '既定のモデル', 'subagent-model-selection-settings': 'サブエージェントのモデル',
-  permission: '権限', 'agent-loop': 'エージェントの動作',
-  'web-search-deepseek': 'Web 検索', web: 'Web の提供元', 'web-deepseek-api': 'Web 検索と取得 API',
-  'bash-sandbox': 'シェル', 'pwsh-sandbox': 'シェル',
-  defaultPreset: '新しい会話の権限',
-  timeoutMs: '待機時間', maxOutputBytes: '出力の上限',
-  enabled: '有効にする', model: 'モデル', default: '既定のモデル', provider: '提供元',
-  name: '名前', mode: '動作モード', maxSteps: '最大ステップ数', timeout: '待機時間',
-  maxRetries: '再試行の上限', count: '回数', temperature: '応答の多様性',
-  retry: '再試行', interval: '間隔', command: 'コマンド', language: '言語',
-  searchProvider: '検索の提供元', fetchProvider: '取得の提供元',
-  apiKey: 'API キー', apiKeyEnv: 'API キーの環境変数', baseURL: '接続先', sendOriginalQuestion: '元の質問を送る',
-  reasoningEffort: '推論の強さ',
+/** The texts these functions use; tests may pass another language's catalog. */
+export type SettingsSchemaTexts = Translation<typeof settingsSchemaMessages.ja>
+
+const schemaText = (): SettingsSchemaTexts => messagesOf(settingsSchemaMessages, 'ja')
+
+const NAME_KEYS: Readonly<Record<string, keyof SettingsSchemaTexts>> = {
+  'agent-default-model': 'nameAgentDefaultModel', 'subagent-model-selection-settings': 'nameSubagentModel',
+  permission: 'namePermission', 'agent-loop': 'nameAgentLoop',
+  'web-search-deepseek': 'nameWebSearch', web: 'nameWeb', 'web-deepseek-api': 'nameWebApi',
+  'bash-sandbox': 'nameShell', 'pwsh-sandbox': 'nameShell',
+  defaultPreset: 'nameDefaultPreset',
+  timeoutMs: 'nameTimeout', maxOutputBytes: 'nameMaxOutputBytes',
+  enabled: 'nameEnabled', model: 'nameModel', default: 'nameDefault', provider: 'nameProvider',
+  name: 'nameName', mode: 'nameMode', maxSteps: 'nameMaxSteps', timeout: 'nameTimeout',
+  maxRetries: 'nameMaxRetries', count: 'nameCount', temperature: 'nameTemperature',
+  retry: 'nameRetry', interval: 'nameInterval', command: 'nameCommand', language: 'nameLanguage',
+  searchProvider: 'nameSearchProvider', fetchProvider: 'nameFetchProvider',
+  apiKey: 'nameApiKey', apiKeyEnv: 'nameApiKeyEnv', baseURL: 'nameBaseURL', sendOriginalQuestion: 'nameSendOriginalQuestion',
+  reasoningEffort: 'nameReasoningEffort',
 }
-export const namespaceTitle = (ns: string): string => names[ns] ?? ns
+
+const PAGE_KEYS: Readonly<Record<SettingsPage, keyof SettingsSchemaTexts>> = {
+  models: 'pageModels', permission: 'pagePermission', agent: 'pageAgent',
+  providers: 'pageProviders', tools: 'pageTools', other: 'pageOther',
+}
+
+function knownName(name: string, text: SettingsSchemaTexts): string | undefined {
+  const key = Object.hasOwn(NAME_KEYS, name) ? NAME_KEYS[name] : undefined
+  return key === undefined ? undefined : text[key] as string
+}
+
+export function namespaceTitle(ns: string, text: SettingsSchemaTexts = schemaText()): string {
+  return knownName(ns, text) ?? ns
+}
+
+export function settingsPageTitle(page: SettingsPage, text: SettingsSchemaTexts = schemaText()): string {
+  return text[PAGE_KEYS[page]] as string
+}
 
 // Some DSH fields carry neither a title nor a description, so their names alone
 // would be opaque. Add what this UI knows about the value of the Web provider
 // selection (the stock page writes `deepseek-official`/`deepseek-search-api` and
 // `http`/`deepseek-fetch-api`) so the plain text fields stay usable without it.
-const fieldNotes: Record<string, string> = {
-  'web.searchProvider': '検索に使う提供元の名前です。DeepSeek の Messages 検索は deepseek-official、Web 検索 API は deepseek-search-api です。',
-  'web.fetchProvider': 'ページを取得する提供元の名前です。標準のページ取得は http、Web 検索 API は deepseek-fetch-api です。',
+const FIELD_NOTE_KEYS: Readonly<Record<string, keyof SettingsSchemaTexts>> = {
+  'web.searchProvider': 'noteWebSearchProvider',
+  'web.fetchProvider': 'noteWebFetchProvider',
 }
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const safeKey = (key: string) => !['__proto__', 'prototype', 'constructor'].includes(key)
-const japanese = (value?: string) => value && /[\u3040-\u30ff\u3400-\u9fff]/.test(value) ? value : undefined
+
+const HAN = /[\u3400-\u4dbf\u4e00-\u9fff]/u
+const KANA = /[\u3040-\u30ff]/u
+const JAPANESE_TEXT = /[\u3040-\u30ff\u3400-\u9fff]/u
+const PRINTABLE_ASCII = /^[\x20-\x7e]+$/u
+const ASCII_LETTER = /[A-Za-z]/u
+
+/**
+ * A Host title or description is shown only when it is written in the page
+ * language. Japanese keeps the original test; Chinese accepts Han characters
+ * without kana; English accepts printable ASCII with at least one letter.
+ */
+export function hostTextInLocale(value: string | undefined, locale: Locale): string | undefined {
+  if (!value) return undefined
+  if (locale === 'ja') return JAPANESE_TEXT.test(value) ? value : undefined
+  if (locale === 'zh') return HAN.test(value) && !KANA.test(value) ? value : undefined
+  return PRINTABLE_ASCII.test(value) && ASCII_LETTER.test(value) ? value : undefined
+}
+
+interface SchemaContext {
+  readonly text: SettingsSchemaTexts
+  readonly locale: Locale
+}
 
 // Limits, checked against the bundled DSH 0.2.0-rc.2 forms (docs/design/08-settings.md, Issue #77):
 // the largest form (llm-pi-ai) has 144 nodes, 153 decode visits, depth 10, and 19 fields at most.
@@ -197,13 +246,12 @@ export function valueAt(value: unknown, path: SettingPath): SettingValue | undef
   return current as SettingValue | undefined
 }
 
-const tooComplex = '設定の定義が複雑なため表示できません。標準の画面で確認してください。'
-const notice = (shown: number): SettingField => ({
-  path: [], kind: 'readonly', omitted: true, label: '表示していない項目', overridden: false, disabled: true, required: false,
-  description: shown ? `設定の項目や値が多いため、先頭の ${shown} 項目だけを表示しています。残りの項目は標準の画面で確認してください。` : tooComplex,
+const notice = (context: SchemaContext, shown: number): SettingField => ({
+  path: [], kind: 'readonly', omitted: true, label: context.text.notShownLabel, overridden: false, disabled: true, required: false,
+  description: shown
+    ? context.text.notShownDescription(formatNumber(context.locale, shown, { useGrouping: false }))
+    : context.text.tooComplex,
 })
-const unknownDescription = '設定の定義を読み切れないため、値を表示しません。標準の画面で確認してください。'
-const largeValueDescription = '値が大きいため表示を省略しました。標準の画面で確認してください。'
 
 /** Paths with prefix queries in O(depth). */
 class PathSet {
@@ -228,23 +276,27 @@ class PathSet {
  * exceed a limit; the rest is replaced by one notice pointing to the stock settings page.
  * A node whose definition is unknown (truncated) becomes a value-less placeholder on its own.
  */
-export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog): SettingField[] {
+export function schemaFields(namespace: SettingsNamespace, catalog?: PermissionCatalog,
+  text: SettingsSchemaTexts = schemaText(), locale: Locale = 'ja'): SettingField[] {
+  const context: SchemaContext = { text, locale }
+  const permissionText = messagesOf(permissionPresetMessages, locale)
   let fields: SettingField[]
-  try { fields = boundedSchemaFields(namespace) } catch (error) {
+  try { fields = boundedSchemaFields(namespace, context) } catch (error) {
     if (!(error instanceof SchemaTooComplex)) throw error
     // Never show an incompletely redacted value after a traversal limit.
-    return [notice(0)]
+    return [notice(context, 0)]
   }
   return fields.map(field => {
     const updated = namespace.ns === 'permission' && field.kind !== 'masked' && !field.omitted && field.path.length === 1 && field.path[0] === 'defaultPreset'
       ? { ...field, kind: 'select' as const, value: field.value ?? catalog?.defaultPreset,
-          disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: presetDisplayName(option.value, option.name), value: option.value })) ?? [] }
+          disabled: field.disabled || !catalog, options: catalog?.defaultOptions.map(option => ({ label: presetDisplayName(option.value, option.name, permissionText), value: option.value })) ?? [] }
       : field
-    const note = updated.path.length === 1 ? fieldNotes[`${namespace.ns}.${updated.path[0]}`] : undefined
+    const noteKey = updated.path.length === 1 ? FIELD_NOTE_KEYS[`${namespace.ns}.${updated.path[0]}`] : undefined
+    const note = noteKey === undefined ? undefined : text[noteKey] as string
     return note ? { ...updated, description: updated.description ? `${updated.description}\n${note}` : note } : updated
   })
 }
-function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
+function boundedSchemaFields(namespace: SettingsNamespace, context: SchemaContext): SettingField[] {
   const schema = decodeSchema(namespace.schema)
   let protectionWork = 0, valueWork = 0, fieldCount = 0
   const protectedPaths = new PathSet((namespace.secrets ?? []).map(entry => entry.path))
@@ -343,9 +395,11 @@ function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
       : node.type === 'union' && node.list?.length && node.list.every(child => child.type === 'const' && (child.value === null || ['string', 'boolean', 'number'].includes(typeof child.value))) ? 'select' : 'readonly'
     // Ordinary optional fields remain editable; only metadata identifies masked values.
     if (!['group', 'masked'].includes(kind) && !path.length) kind = 'readonly'
-    const label = japanese(meta.title) ?? names[path.at(-1) ?? ''] ?? `項目 ${index + 1}`
+    const label = hostTextInLocale(meta.title, context.locale) ?? knownName(path.at(-1) ?? '', context.text)
+      ?? context.text.itemLabel(formatNumber(context.locale, index + 1, { useGrouping: false }))
     const result: SettingField = {
-      path, kind, label, description: japanese(meta.description) ?? (meta.description ? '説明は標準の画面で確認できます。' : ''),
+      path, kind, label, description: hostTextInLocale(meta.description, context.locale)
+        ?? (meta.description ? context.text.descriptionOnStandardScreen : ''),
       overridden: valueAt(namespace.user, path) !== undefined,
       disabled: inheritedDisabled || meta.disabled === true, required: meta.required === true,
       min: meta.min, max: meta.max, step: meta.step,
@@ -358,25 +412,28 @@ function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
       return result
     }
     // An unknown definition at or below a read-only value may hide a password role.
-    if (kind !== 'group' && (unknownPaths.covers(path) || unknownPaths.touches(path))) return omit(unknownDescription)
+    if (kind !== 'group' && (unknownPaths.covers(path) || unknownPaths.touches(path))) return omit(context.text.unknownDescription)
     if (kind === 'group') {
       result.children = fields(node, path, result.disabled)
       return result
     }
     try { result.value = visibleAt(path) } catch (error) {
       if (!(error instanceof ValueTooLarge)) throw error
-      return omit(largeValueDescription)
+      return omit(context.text.largeValueDescription)
     }
     if (kind === 'select') result.options = node.list!.map((child, optionIndex) => ({
       value: child.value as string | number | boolean | null,
-      label: japanese(child.meta?.description) ?? japanese(child.meta?.title) ?? (typeof child.value === 'boolean' ? child.value ? '有効' : '無効' : child.value === null ? '指定しない' : String(child.value ?? `選択肢 ${optionIndex + 1}`)),
+      label: hostTextInLocale(child.meta?.description, context.locale) ?? hostTextInLocale(child.meta?.title, context.locale)
+        ?? (typeof child.value === 'boolean' ? child.value ? context.text.optionEnabled : context.text.optionDisabled
+          : child.value === null ? context.text.optionUnspecified
+          : String(child.value ?? context.text.optionFallback(formatNumber(context.locale, optionIndex + 1, { useGrouping: false })))),
     }))
     return result
   }
 
   if (schema.meta?.role === 'password') protectedPaths.add([])
   if (protectedPaths.covers([])) return [field(schema, [], 0, false)]
-  if (schema.truncated) return [notice(0)]
+  if (schema.truncated) return [notice(context, 0)]
 
   // Top-level items in display order: the same walk as fields(schema, []).
   interface Item { node: SchemaNode; path: string[]; index: number; disabled: boolean; password: boolean }
@@ -416,103 +473,114 @@ function boundedSchemaFields(namespace: SettingsNamespace): SettingField[] {
     if (safe) try { result.push(field(item.node, item.path, item.index, item.disabled)); continue } catch (error) {
       if (!(error instanceof SchemaTooComplex)) throw error
     }
-    result.push(notice(result.length))
+    result.push(notice(context, result.length))
     break
   }
   return result
 }
 
-export function selectFieldState(field: Pick<SettingField, 'options'>, value: SettingValue | undefined): { index: number; placeholder?: string } {
+export function selectFieldState(field: Pick<SettingField, 'options'>, value: SettingValue | undefined,
+  text: SettingsSchemaTexts = schemaText()): { index: number; placeholder?: string } {
   const index = field.options?.findIndex(option => Object.is(option.value, value)) ?? -1
-  return { index, placeholder: index >= 0 ? undefined : value === undefined ? '未設定' : '現在の値は選択肢にありません' }
+  return { index, placeholder: index >= 0 ? undefined : value === undefined ? text.notSet : text.notInOptions }
 }
 
-export function parseFieldInput(field: SettingField, input: string): { ok: true; value: string | number | undefined } | { ok: false; message: string } {
+export function parseFieldInput(field: SettingField, input: string, text: SettingsSchemaTexts = schemaText(),
+  locale: Locale = 'ja'): { ok: true; value: string | number | undefined } | { ok: false; message: string } {
   if (field.kind !== 'number') {
     if (!input.trim()) return field.required
-      ? { ok: false, message: '値を入力してください。' }
+      ? { ok: false, message: text.valueRequired }
       : { ok: true, value: undefined }
     return { ok: true, value: input }
   }
-  if (!input.trim()) return { ok: false, message: '数値を入力してください。' }
+  if (!input.trim()) return { ok: false, message: text.numberRequired }
   const value = Number(input)
-  if (!Number.isFinite(value)) return { ok: false, message: '有効な数値を入力してください。' }
-  if (field.min !== undefined && value < field.min) return { ok: false, message: `${field.min} 以上にしてください。` }
-  if (field.max !== undefined && value > field.max) return { ok: false, message: `${field.max} 以下にしてください。` }
-  if (!matchesNumberStep(value, field.min, field.step)) return { ok: false, message: `${field.step} 刻みで入力してください。` }
+  if (!Number.isFinite(value)) return { ok: false, message: text.numberInvalid }
+  if (field.min !== undefined && value < field.min) {
+    return { ok: false, message: text.numberMin(formatNumber(locale, field.min, { useGrouping: false })) }
+  }
+  if (field.max !== undefined && value > field.max) {
+    return { ok: false, message: text.numberMax(formatNumber(locale, field.max, { useGrouping: false })) }
+  }
+  if (!matchesNumberStep(value, field.min, field.step)) {
+    return { ok: false, message: text.numberStep(formatNumber(locale, field.step ?? 0, { useGrouping: false })) }
+  }
   return { ok: true, value }
 }
 
-export function buildPatch(path: SettingPath, value: SettingValue): SettingObject {
-  checkPath(path)
+export function buildPatch(path: SettingPath, value: SettingValue, text: SettingsSchemaTexts = schemaText()): SettingObject {
+  checkPath(path, text)
   return path.reduceRight<SettingValue>((nested, key) => ({ [key]: nested }), value) as SettingObject
 }
-export function buildReset(path: SettingPath): { op: 'unset'; path: string[] }[] {
-  checkPath(path)
+export function buildReset(path: SettingPath, text: SettingsSchemaTexts = schemaText()): { op: 'unset'; path: string[] }[] {
+  checkPath(path, text)
   return [{ op: 'unset', path: [...path] }]
 }
-function checkPath(path: SettingPath): void {
-  if (!path.length || path.some(key => !key || !safeKey(key))) throw new Error('設定項目の場所が不正です。')
+function checkPath(path: SettingPath, text: SettingsSchemaTexts): void {
+  if (!path.length || path.some(key => !key || !safeKey(key))) throw new Error(text.invalidPath)
 }
 
-export function formatSetting(value: SettingValue | undefined): string {
-  if (value === undefined || value === null) return '未設定'
-  if (typeof value === 'boolean') return value ? '有効' : '無効'
+export function formatSetting(value: SettingValue | undefined, text: SettingsSchemaTexts = schemaText()): string {
+  if (value === undefined || value === null) return text.notSet
+  if (typeof value === 'boolean') return value ? text.optionEnabled : text.optionDisabled
   return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
 }
 
-export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNamespace[], catalog?: PermissionCatalog): string {
+export function pageSummary(page: SettingsPage, namespaces: readonly SettingsNamespace[], catalog?: PermissionCatalog,
+  text: SettingsSchemaTexts = schemaText(), locale: Locale = 'ja'): string {
   const leaves = (fields: SettingField[]): SettingField[] => fields.flatMap(field => field.children ? leaves(field.children) : field)
-  const fields = new Map(namespaces.map(namespace => [namespace.ns, leaves(schemaFields(namespace, catalog))]))
+  const fields = new Map(namespaces.map(namespace => [namespace.ns, leaves(schemaFields(namespace, catalog, text, locale))]))
   // Select documented setting paths after redaction, never raw values or schema order.
   const fieldAt = (ns: string, key: string) => fields.get(ns)?.find(field => field.path.length === 1 && field.path[0] === key && ['text', 'select', 'number', 'switch'].includes(field.kind))
   const textAt = (ns: string, key: string) => {
     const field = fieldAt(ns, key)
     if (!field || field.value === undefined || field.value === null || field.value === '') return undefined
-    return field.options?.find(option => Object.is(option.value, field.value))?.label ?? formatSetting(field.value)
+    return field.options?.find(option => Object.is(option.value, field.value))?.label ?? formatSetting(field.value, text)
   }
-  const labeled = (label: string, value: string | undefined) => value === undefined ? undefined : `${label}：${value}`
-  const join = (values: (string | undefined)[]) => values.filter(value => value !== undefined).join('・') || '設定項目を確認'
+  const labeled = (label: string, value: string | undefined) => value === undefined ? undefined : text.labeled(label, value)
+  const join = (values: (string | undefined)[]) => values.filter(value => value !== undefined).join(text.listSeparator) || text.summaryPlaceholder
   if (page === 'models') {
     const model = textAt('agent-default-model', 'model')
     const effort = textAt('agent-default-model', 'reasoningEffort')
-    return model === undefined ? '既定のモデル：未設定' : join([model, labeled('推論の強さ', effort)])
+    return model === undefined ? text.summaryDefaultModelUnset : join([model, labeled(text.nameReasoningEffort, effort)])
   }
   if (page === 'permission') {
     const field = fieldAt('permission', 'defaultPreset')
     const value = field?.value
-    if (typeof value !== 'string' || value === '') return 'プリセット：未設定'
+    if (typeof value !== 'string' || value === '') return text.summaryPresetUnset
     const matched = field?.options?.find(option => Object.is(option.value, value))?.label
     if (matched !== undefined) return matched
-    // No loaded catalog: show the built-in Japanese name, or Custom for an unmatched value.
-    const name = presetDisplayName(value, '')
-    return name === value ? 'カスタム' : name
+    // No loaded catalog: show the built-in name in this language, or Custom for an unmatched value.
+    const name = presetDisplayName(value, '', messagesOf(permissionPresetMessages, locale))
+    return name === value ? text.summaryCustom : name
   }
   if (page === 'agent') return join([
-    labeled('ツールの同時実行数', textAt('agent-loop', 'maxParallelToolCalls')),
+    labeled(text.summaryParallelToolCalls, textAt('agent-loop', 'maxParallelToolCalls')),
   ])
   if (page === 'tools') return join([
-    labeled('検索モデル', textAt('web-search-deepseek', 'model')),
-    labeled('検索の上限回数', textAt('web-search-deepseek', 'maxUses')),
+    labeled(text.summarySearchModel, textAt('web-search-deepseek', 'model')),
+    labeled(text.summarySearchMaxUses, textAt('web-search-deepseek', 'maxUses')),
   ])
-  if (page === 'providers') return '登録状況を読み込み中…'
+  if (page === 'providers') return text.providerLoading
   return [...fields.values()].flat()
     .filter(field => ['text', 'select', 'number', 'switch'].includes(field.kind) && field.value !== undefined)
-    .slice(0, 2).map(field => `${field.label}：${formatSetting(field.value)}`).join('・') || '設定項目を確認'
+    .slice(0, 2).map(field => text.labeled(field.label, formatSetting(field.value, text))).join(text.listSeparator) || text.summaryPlaceholder
 }
 
 /** Only registration states enter the top-level summary, never key material. */
-export function providerSummary(state: Pick<ProviderState, 'phase' | 'rows'>): string {
-  if (state.phase === 'loading') return '登録状況を読み込み中…'
-  if (state.phase === 'error') return '登録状況を確認できません'
-  if (!state.rows.length) return '提供元はありません'
+export function providerSummary(state: Pick<ProviderState, 'phase' | 'rows'>,
+  text: SettingsSchemaTexts = schemaText(), locale: Locale = 'ja'): string {
+  if (state.phase === 'loading') return text.providerLoading
+  if (state.phase === 'error') return text.providerCheckFailed
+  if (!state.rows.length) return text.providerNone
   const counts = { registered: 0, missing: 0, unnecessary: 0, unknown: 0, unset: 0 }
   for (const row of state.rows) counts[row.status]++
+  const count = (value: number) => formatNumber(locale, value, { useGrouping: false })
   return [
-    counts.registered && `登録済み ${counts.registered}`,
-    counts.missing && `未登録 ${counts.missing}`,
-    counts.unset && `未設定 ${counts.unset}`,
-    counts.unnecessary && `キー不要 ${counts.unnecessary}`,
-    counts.unknown && `未確認 ${counts.unknown}`,
-  ].filter(Boolean).join('・')
+    counts.registered && text.providerRegistered(count(counts.registered)),
+    counts.missing && text.providerMissing(count(counts.missing)),
+    counts.unset && text.providerUnset(count(counts.unset)),
+    counts.unnecessary && text.providerUnnecessary(count(counts.unnecessary)),
+    counts.unknown && text.providerUnknown(count(counts.unknown)),
+  ].filter(Boolean).join(text.listSeparator)
 }

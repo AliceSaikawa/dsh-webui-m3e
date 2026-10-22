@@ -3,9 +3,13 @@ import { useDsh } from '../../dsh/services.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import { createProviderStore, PROVIDER_EVENTS, type ProviderRemote } from './providers.ts'
 import { providerSummary } from './schema.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
+import { settingsSchemaMessages } from './messages.ts'
 
 export function useProviderSummary(): string {
   const { remote, connection } = useDsh()
+  const text = useMessages(settingsSchemaMessages)
+  const locale = useLocale()
   const store = useMemo(() => createProviderStore(remote as unknown as ProviderRemote), [remote])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   useEffect(() => {
@@ -23,5 +27,5 @@ export function useProviderSummary(): string {
       store.connectionChanged(false)
     }
   }, [remote, connection, store])
-  return providerSummary(state)
+  return providerSummary(state, text, locale)
 }

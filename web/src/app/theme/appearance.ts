@@ -31,13 +31,13 @@ function subscribe(listener: () => void) {
 export function useAppearance(): Appearance { return useSyncExternalStore(subscribe, getAppearance, () => 'system') }
 
 export const DEFAULT_THEME_COLOR = '#6750A4'
-export const THEME_COLOR_PRESETS: readonly { color: string; label: string }[] = [
-  { color: '#6750A4', label: '紫（既定）' },
-  { color: '#0B57D0', label: '青' },
-  { color: '#006A6A', label: '青緑' },
-  { color: '#386A20', label: '緑' },
-  { color: '#8C4A00', label: '橙' },
-  { color: '#B3261E', label: '赤' },
+export const THEME_COLOR_PRESETS: readonly { color: string }[] = [
+  { color: '#6750A4' },
+  { color: '#0B57D0' },
+  { color: '#006A6A' },
+  { color: '#386A20' },
+  { color: '#8C4A00' },
+  { color: '#B3261E' },
 ]
 const colorStorageKey = 'dsh-m3e-theme-color'
 const defaultThemeColor = DEFAULT_THEME_COLOR.toLowerCase()
