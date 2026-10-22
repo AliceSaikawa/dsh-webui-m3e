@@ -2,7 +2,7 @@
 
 画面の文言を英語・中国語（簡体字）に訳すときの用語をそろえる表です（Issue #78、[docs/design/11-i18n.md](../design/11-i18n.md)）。DSH 標準画面の辞書（`@deepseek-ai/dsh-client-locale` と各 `dsh-client-ui-*` の英語・中国語の辞書）にある語は、それに合わせます。DSH にない語は「DSH のキー」の欄に「なし」と書き、訳した理由をメモに残します。訳を足す PR では、この表に新しい用語を足します。
 
-DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動していません。
+DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動していません。訳はすべての画面にそろい、2026-10-22 から英語・中国語の画面で使われています。
 
 | 日本語 | 英語 | 中国語（簡体字） | DSH 標準画面の辞書のキー | メモ |
 |---|---|---|---|---|
@@ -103,7 +103,7 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
 | 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
 | English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
-| 対応待ち | Needs attention | 待处理 | なし | 承認と質問の待ち行列の画面の題名。対応待ち・検索・質問と承認・プラグインのほかの語は [terms/inbox-search-interactions-plugins.md](terms/inbox-search-interactions-plugins.md) |
+| 対応待ち | Needs attention | 待处理 | なし | 承認と質問の待ち行列の画面の題名。下端のタブの名前は Inbox。対応待ち・検索・質問と承認・プラグインのほかの語は [terms/inbox-search-interactions-plugins.md](terms/inbox-search-interactions-plugins.md) |
 | 検索 | Search | 搜索 | `search`（`dsh-client-locale`） | 一致 |
 | 承認 | approval | 审批 | `status.compact.approval`（`dsh-client-ui-workspace`。Approval／待审批） | ツールの実行の承認。中国語は 批准 ではなく 审批 |
 | ツールの承認 | Tool approval | 工具审批 | `status.compact.approval`（`dsh-client-ui-workspace`） | 承認のシートの題名 |
@@ -112,6 +112,22 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | プラグイン | plugin | 插件 | `panel.title`（`dsh-client-ui-cordis`。Cordis plugins／Cordis 插件） | 一致 |
 | バンドル | bundle | 捆绑包 | なし | プラグインのバンドル |
 | プロファイル | profile | profile | `reasonStopProfile`（`dsh-client-ui-plugin-manager`） | DSH の中国語も profile のまま。配置 は設定の意味になるので使わない |
+| 日本語（言語の選択肢） | 日本語 | 日本語 | なし | M3E が足した選択肢。言語名は自称で訳さない。標準画面は `ja` を登録していないので、選ぶと標準画面はブラウザの言語に従う |
+| 読み直す | Reload | 重新加载 | `action.reload`（`dsh-client-ui-model-selection`） | ページ全体の読み直しは 刷新 |
+| もう一度お試しください。 | Try again. | 请重试。 | `fileOpen.retry`（`dsh-client-ui-reference`。Retry／重试） | 文末の決まり文句 |
+
+## 機能ごとの表
+
+機能ごとに選んだ語は、次の表にあります。上の表と食い違うときは、上の表に合わせます。
+
+- [共通の部品・会話・DSH のエラー](terms/shell.md)
+- [一覧（ホーム）とワークスペース](terms/home.md)
+- [チャット](terms/chat.md)
+- [入力欄](terms/composer.md)
+- [セッションツールとトレース](terms/session-tools-trace.md)
+- [対応待ち・検索・質問と承認・プラグイン](terms/inbox-search-interactions-plugins.md)
+- [設定](terms/settings.md)
+- [設定の提供元と API キー・モデル](terms/settings-providers.md)
 
 ## 書き方
 

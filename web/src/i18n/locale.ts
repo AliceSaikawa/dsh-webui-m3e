@@ -17,12 +17,11 @@ export const FALLBACK_LOCALE = 'en' satisfies Locale
 
 /**
  * Languages whose translations are complete enough to switch the whole page.
- * Until the translation PRs land, an English or Chinese reader would get a page
- * that is still written in Japanese, so the page language, `lang` and formats
- * stay Japanese for them as well. Add a language here only when every
- * dictionary has it (tests/i18n.test.ts enforces this).
+ * A language joins only when every dictionary has it (tests/11-i18n.test.ts
+ * enforces this); otherwise its reader would get a page still written in
+ * Japanese, so the page language, `lang` and formats stay Japanese for them.
  */
-export const DISPLAY_LOCALES: readonly Locale[] = ['ja']
+export const DISPLAY_LOCALES: readonly Locale[] = ['ja', 'en', 'zh']
 
 /** Same shape DSH accepts for `locale.preference` (dsh-client-locale LOCALE_ID_PATTERN). */
 const LOCALE_TAG = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u

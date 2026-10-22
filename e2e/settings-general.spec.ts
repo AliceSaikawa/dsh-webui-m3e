@@ -179,13 +179,13 @@ test('G12 Host が拒否したら理由を項目の下に出す。書き込め�
   await expect(choice(page, 'パフォーマンスと使用状況')).toHaveJSProperty('disabled', true)
 })
 
-test('G13 言語は「端末の言語に合わせる」で始まり、English・中文 を選べる。「Web 検索とシェル」のページには出ない', async ({ page }) => {
+test('G13 言語は「端末の言語に合わせる」で始まり、日本語・English・中文 を選べる。「Web 検索とシェル」のページには出ない', async ({ page }) => {
   await visit(page, '/settings')
   await expect.poll(() => shown(page, '言語')).toBe('端末の言語に合わせる')
-  await expect(section(page)).toContainText('DSH の言語設定で、標準の画面と共通です。')
-  await expect(section(page)).toContainText('標準の画面は端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります。')
+  await expect(section(page)).toContainText('DSH の言語設定で、標準の画面と共通です。M3E の画面はこの言語で表示し')
+  await expect(section(page)).toContainText('端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります。')
   await choice(page, '言語').click()
-  await expect(page.locator('m3e-option:visible')).toHaveText(['端末の言語に合わせる', 'English', '中文'])
+  await expect(page.locator('m3e-option:visible')).toHaveText(['端末の言語に合わせる', '日本語', 'English', '中文'])
   await shot(page, 'general-language')
   await page.keyboard.press('Escape')
   await action(page, 'Web 検索とシェル').click()
@@ -193,32 +193,45 @@ test('G13 言語は「端末の言語に合わせる」で始まり、English・
   await expect(page.locator('m3e-select[aria-label="言語"]')).toHaveCount(0)
 })
 
-test('G14 言語を選ぶと locale の preference に保存し、「端末の言語に合わせる」で消す。M3E の画面は日本語のまま', async ({ page }) => {
+test('G14 言語を選ぶと locale の preference に保存し、M3E の画面もその言語に切り替わる。「端末の言語に合わせる」で消す', async ({ page }) => {
   await expose(page)
   await visit(page, '/settings')
   await pick(page, '言語', '中文')
   await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'zh' })
-  await expect.poll(() => shown(page, '言語')).toBe('中文')
-  // English or Chinese is requested, but only Japanese is displayable so far (DISPLAY_LOCALES).
-  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
-  await expect(section(page).getByRole('heading', { name: '一般', exact: true })).toBeVisible()
-  await pick(page, '言語', 'English')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+  await expect(section(page).getByRole('heading', { name: '通用设置', exact: true })).toBeVisible()
+  await expect.poll(() => shown(page, '语言')).toBe('中文')
+  await pick(page, '语言', 'English')
   await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'en' })
-  await pick(page, '言語', '端末の言語に合わせる')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect.poll(() => shown(page, 'Language')).toBe('English')
+  // The language names stay in their own language on every page language.
+  await choice(page, 'Language').click()
+  await expect(page.locator('m3e-option:visible')).toHaveText(['Match device language', '日本語', 'English', '中文'])
+  await page.locator('m3e-option').filter({ hasText: 'Match device language' }).last().click()
   await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({})
+  // Nothing stored: the browser language (ja-JP) is used again.
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
   await expect.poll(() => shown(page, '言語')).toBe('端末の言語に合わせる')
   expect((await stored(page, 'locale')).value).toEqual({})
+  await pick(page, '言語', '日本語')
+  await expect.poll(async () => (await stored(page, 'locale')).user).toEqual({ preference: 'ja' })
+  await expect.poll(() => shown(page, '言語')).toBe('日本語')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ja')
 })
 
-test('G15 標準の画面が保存した言語が反映される。知らない言語タグはそのまま出す', async ({ page }) => {
+test('G15 標準の画面が保存した言語が反映される。知らない言語タグはそのまま出し、画面は English になる', async ({ page }) => {
   await expose(page)
   await visit(page, '/settings')
   await saveElsewhere(page, 'locale', { preference: 'en' })
-  await expect.poll(() => shown(page, '言語')).toBe('English')
+  await expect.poll(() => shown(page, 'Language')).toBe('English')
   await saveElsewhere(page, 'locale', { preference: 'ZH' })
-  await expect.poll(() => shown(page, '言語')).toBe('中文')
+  await expect.poll(() => shown(page, '语言')).toBe('中文')
   await saveElsewhere(page, 'locale', { preference: 'ja' })
-  await expect.poll(() => shown(page, '言語')).toBe('ja')
+  await expect.poll(() => shown(page, '言語')).toBe('日本語')
+  await saveElsewhere(page, 'locale', { preference: 'fr' })
+  await expect.poll(() => shown(page, 'Language')).toBe('fr')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 })
 
 test('G16 言語の保存の競合・拒否・書き込み不可も、ほかの行と同じに扱う', async ({ page }) => {
