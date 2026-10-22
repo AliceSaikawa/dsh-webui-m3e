@@ -8,7 +8,7 @@ import { settingsSchemaMessages } from './messages.ts'
 
 export function useProviderSummary(): string {
   const { remote, connection } = useDsh()
-  const text = useMessages(settingsSchemaMessages)
+  const schemaText = useMessages(settingsSchemaMessages)
   const locale = useLocale()
   const store = useMemo(() => createProviderStore(remote as unknown as ProviderRemote), [remote])
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
@@ -27,5 +27,5 @@ export function useProviderSummary(): string {
       store.connectionChanged(false)
     }
   }, [remote, connection, store])
-  return providerSummary(state, text, locale)
+  return providerSummary(state, schemaText, locale)
 }

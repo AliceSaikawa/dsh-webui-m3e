@@ -65,7 +65,7 @@ test('I16 R4 main parity: 全種類の既存行は70件の参照先なしカス�
         const target = row(keys, id)
         assert.deepEqual([target.ref, target.status, target.writable], id === 'inactive-other'
           ? ['INACTIVE_OTHER_API_KEY', 'missing', false] : [undefined, 'unnecessary', false])
-        assert.deepEqual(await keys.save(target, 'fake-no-write'), { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' })
+        assert.deepEqual(await keys.save(target, 'fake-no-write'), { ok: false, code: 'changed', message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' })
         assert.equal((await keys.remove(target)).ok, false)
       }
       assert.equal(row(keys, 'openai').needsReference, true)

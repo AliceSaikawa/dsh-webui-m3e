@@ -5,7 +5,7 @@ import { createCustomProviderStore } from '../web/src/features/settings/custom-p
 import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
 import { applyMockOperations } from '../web/src/features/settings/mock-mutations.ts'
 import { validMockValue } from '../web/src/features/settings/mock-validation.ts'
-import { createProviderStore, type ProviderRemote, type ProviderRow } from '../web/src/features/settings/providers.ts'
+import { createProviderStore, type KeyOutcome, type ProviderRemote, type ProviderRow } from '../web/src/features/settings/providers.ts'
 import { createMockContext } from '../web/src/dsh/mock/context.ts'
 import { extendMock } from '../web/src/features/settings/mock.ts'
 import type { SettingsOperation } from '../web/src/features/settings/store.ts'
@@ -91,7 +91,7 @@ function harness() {
   const keys = {
     async load() { return true },
     getSnapshot() { return { phase: 'ready' as const, busy: false, error: null, rows: Object.keys(row.value.providers ?? {}).map(id => ({ id, name: id, ns: 'llm-pi-ai', path: ['providers', id], ref: 'LOCAL_API_API_KEY', needsReference: false, status: 'missing', writable: true } as ProviderRow)) } },
-    async save(_row: ProviderRow, value: string) { keyWrites.push(value); return keyFails ? { ok: false as const, message: '拒否' } : { ok: true as const } },
+    async save(_row: ProviderRow, value: string): Promise<KeyOutcome> { keyWrites.push(value); return keyFails ? { ok: false, code: 'rejected', message: '拒否' } : { ok: true } },
   }
   const lookup = { calls: [] as string[], info: { configured: false, writable: true } as { configured: boolean; writable: boolean } | undefined, gate: undefined as Promise<void> | undefined }
   const store = createCustomProviderStore(remote, keys, undefined, undefined, async ref => { lookup.calls.push(ref); await lookup.gate; return lookup.info })

@@ -22,16 +22,23 @@ import {
 import { namespaceTitle } from './schema.ts'
 import type { SettingsNamespace } from './schema.ts'
 import { fieldKey, type SettingsState, type SettingsStore } from './store.ts'
+import { useMessages } from '../../i18n/index.ts'
+import { modelMessages, settingsSchemaMessages } from './messages.ts'
+import type { ModelSettingsTexts } from './model-settings.ts'
+
+type ModelTexts = ReturnType<typeof useMessages<typeof modelMessages.ja>>
 
 interface PanelProps { namespaces: SettingsNamespace[]; state: SettingsState; store: SettingsStore }
 type CatalogState = { phase: 'loading' | 'ready' | 'error'; catalog?: ModelCatalog; error?: string }
 
-function catalogError(cause: unknown): string {
+function catalogError(cause: unknown, text: ModelTexts): string {
   if (cause instanceof Error && /[\u3040-\u30ff\u3400-\u9fff]/.test(cause.message)) return cause.message
-  return remoteErrorMessage(cause, 'モデル一覧を取得できませんでした。接続を確認してください。')
+  return remoteErrorMessage(cause, text.catalogFailed)
 }
 
 export function ModelsPanel({ namespaces, state, store }: PanelProps) {
+  const text = useMessages(modelMessages)
+  const schemaText = useMessages(settingsSchemaMessages)
   const { remote, connection } = useDsh()
   const connectionState = useSnapshot(connection.state)
   const api = useMemo(() => composerApi(remote), [remote])
@@ -43,7 +50,7 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
     void api.modelCatalog().then(value => {
       if (ticket === request.current) setCatalog({ phase: 'ready', catalog: value })
     }).catch(cause => {
-      if (ticket === request.current) setCatalog(previous => ({ ...previous, phase: 'error', error: catalogError(cause) }))
+      if (ticket === request.current) setCatalog(previous => ({ ...previous, phase: 'error', error: catalogError(cause, text) }))
     })
   }
   useEffect(() => {
@@ -54,22 +61,22 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
   }, [api, remote, connectionState])
   const choices = catalog.catalog ? modelChoices(catalog.catalog) : []
   return <>
-    {catalog.phase === 'loading' && <p role="status">モデル一覧を読み込み中…</p>}
+    {catalog.phase === 'loading' && <p role="status">{text.loading}</p>}
     {catalog.phase === 'error' && <div className="settings-notice">
       <p role="alert">{catalog.error}</p>
-      <M3eButton onClick={load}>もう一度読み込む</M3eButton>
+      <M3eButton onClick={load}>{text.reload}</M3eButton>
     </div>}
     {catalog.catalog && catalog.catalog.failures.length > 0 && <div className="settings-notice" role="status">
-      <p>一部のモデル一覧を取得できませんでした。</p>
-      {catalog.catalog.failures.map(item => <p key={item.id}>{item.name}：{catalogError(new Error(item.message))}</p>)}
-      <M3eButton onClick={load}>もう一度読み込む</M3eButton>
+      <p>{text.partial}</p>
+      {catalog.catalog.failures.map(item => <p key={item.id}>{text.failureRow(item.name, catalogError(new Error(item.message), text))}</p>)}
+      <M3eButton onClick={load}>{text.reload}</M3eButton>
     </div>}
     {namespaces.map(namespace => <section className="settings-namespace" key={namespace.ns}>
-      <h2>{namespaceTitle(namespace.ns)}</h2>
+      <h2>{namespaceTitle(namespace.ns, schemaText)}</h2>
       <div className="settings-fields" key={`${namespace.ns}:${state.generation[namespace.ns] ?? 0}`}>
         {namespace.ns === 'agent-default-model'
-          ? <DefaultModel namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} />
-          : <SubagentModels namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} />}
+          ? <DefaultModel namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} text={text} schemaText={schemaText} />
+          : <SubagentModels namespace={namespace} state={state} store={store} choices={choices} available={catalog.phase === 'ready'} loading={catalog.phase === 'loading'} text={text} schemaText={schemaText} />}
       </div>
     </section>)}
   </>
@@ -77,25 +84,24 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
 
 type Choice = ReturnType<typeof modelChoices>[number]
 interface EditorProps { namespace: SettingsNamespace; state: SettingsState; store: SettingsStore; choices: Choice[]; available: boolean; loading: boolean }
-const timing = (_row: SettingsNamespace) => 'すぐ反映されます'
-
-function EditStatus({ namespace, state, saving, saved, reset }: {
+function EditStatus({ namespace, state, saving, saved, reset, text, schemaText }: {
   namespace: SettingsNamespace; state: SettingsState; saving: boolean; saved: boolean; reset(): void
+  text: ModelTexts; schemaText: ReturnType<typeof useMessages<typeof settingsSchemaMessages.ja>>
 }) {
   const key = fieldKey(namespace.ns, namespace.ns === 'agent-default-model' ? ['model'] : ['enabled'])
   const error = state.fieldErrors[key]
   const overridden = Object.keys(namespace.user ?? {}).length > 0
   return <div className="settings-field">
-    <p className="settings-field-help">{timing(namespace)}</p>
+    <p className="settings-field-help">{text.appliedImmediately}</p>
     {error && <p className="settings-error" role="alert">{error}</p>}
     {overridden && <M3eButton variant="text" className="settings-reset" disabled={!state.writable || saving}
-      onClick={reset} aria-label={`${namespaceTitle(namespace.ns)}を既定値に戻す`}>既定値に戻す</M3eButton>}
-    {saving && <div className="settings-saving" role="status">保存しています…</div>}
-    {saved && !saving && !error && <div className="settings-saving" role="status">保存しました</div>}
+      onClick={reset} aria-label={text.resetLabel(namespaceTitle(namespace.ns, schemaText))}>{text.resetToDefault}</M3eButton>}
+    {saving && <div className="settings-saving" role="status">{text.saving}</div>}
+    {saved && !saving && !error && <div className="settings-saving" role="status">{text.saved}</div>}
   </div>
 }
 
-function DefaultModel({ namespace, state, store, choices, available }: EditorProps) {
+function DefaultModel({ namespace, state, store, choices, available, text, schemaText }: EditorProps & { text: ModelTexts; schemaText: ReturnType<typeof useMessages<typeof settingsSchemaMessages.ja>> }) {
   const modelId = useId()
   const effortId = useId()
   const [draft, setDraft] = useState<ModelSelection | undefined>(() => savedModel(namespace.value))
@@ -104,10 +110,10 @@ function DefaultModel({ namespace, state, store, choices, available }: EditorPro
   const modelSelect = useRef<M3eSelectElement>(null)
   const effortSelect = useRef<M3eSelectElement>(null)
   const current = draft
-  const selection = modelSelectionState(current, choices)
+  const selection = modelSelectionState(current, choices, text as ModelSettingsTexts)
   const choice = choices.find(item => item.value === selection.value)
   const reasoning = choice?.model.reasoning
-  const effort = effortSelectionState(current, choice)
+  const effort = effortSelectionState(current, choice, text as ModelSettingsTexts)
   const error = state.fieldErrors[fieldKey(namespace.ns, ['model'])]
   useEffect(() => { if (!saving) setDraft(savedModel(namespace.value)) }, [namespace.value, saving])
   useEffect(() => {
@@ -137,40 +143,40 @@ function DefaultModel({ namespace, state, store, choices, available }: EditorPro
   }
   return <>
     <div className="settings-field"><M3eFormField variant="outlined" error={Boolean(error)}>
-      <label slot="label" htmlFor={modelId}>モデル</label>
-      <M3eSelect ref={modelSelect} id={modelId} aria-label="モデル"
+      <label slot="label" htmlFor={modelId}>{text.modelLabel}</label>
+      <M3eSelect ref={modelSelect} id={modelId} aria-label={text.modelLabel}
         disabled={!state.writable || saving || !available || choices.length === 0}
         onChange={event => {
           const value = (event.currentTarget as M3eSelectElement).value
           const selected = choices.find(item => item.value === value)
           if (selected) void save(chooseModel(selected))
         }}>
-        {!current && <M3eOption value="" disabled>未設定</M3eOption>}
+        {!current && <M3eOption value="" disabled>{text.modelUnset}</M3eOption>}
         {selection.unknownLabel && <span slot="value">{selection.unknownLabel}</span>}
         {selection.unknownLabel && <M3eOption value={selection.value} disabled>{selection.unknownLabel}</M3eOption>}
         {choices.map(item => <M3eOption key={item.value} value={item.value}>{item.label}</M3eOption>)}
       </M3eSelect>
     </M3eFormField></div>
     <div className="settings-field" hidden={!reasoning}><M3eFormField variant="outlined" floatLabel="always" error={Boolean(error)}>
-      <label slot="label" htmlFor={effortId}>推論の強さ</label>
-      <M3eSelect ref={effortSelect} id={effortId} aria-label="推論の強さ" disabled={!state.writable || saving || !available}
+      <label slot="label" htmlFor={effortId}>{text.reasoningEffort}</label>
+      <M3eSelect ref={effortSelect} id={effortId} aria-label={text.reasoningEffort} disabled={!state.writable || saving || !available}
         onChange={event => {
           const value = (event.currentTarget as M3eSelectElement).value ?? ''
           if (current && typeof value === 'string' && (value === '' || reasoning?.efforts.some(item => item.id === value)))
             void save(withReasoningEffort(current, value))
         }}>
-        {!effort.value && <span slot="value">既定（モデルに任せる）</span>}
-        <M3eOption value="">既定（モデルに任せる）</M3eOption>
+        {!effort.value && <span slot="value">{text.effortDefault}</span>}
+        <M3eOption value="">{text.effortDefault}</M3eOption>
         {effort.unknownLabel && <span slot="value">{effort.unknownLabel}</span>}
         {effort.unknownLabel && <M3eOption value={effort.value} disabled>{effort.unknownLabel}</M3eOption>}
         {reasoning?.efforts.map((item, index) => <M3eOption key={item.id} value={item.id}>{reasoningEffortLabel(item.id, index)}</M3eOption>)}
       </M3eSelect>
     </M3eFormField></div>
-    <EditStatus namespace={namespace} state={state} saving={saving} saved={saved} reset={() => { void reset() }} />
+    <EditStatus namespace={namespace} state={state} saving={saving} saved={saved} reset={() => { void reset() }} text={text} schemaText={schemaText} />
   </>
 }
 
-function SubagentModels({ namespace, state, store, choices, available, loading }: EditorProps) {
+function SubagentModels({ namespace, state, store, choices, available, loading, text, schemaText }: EditorProps & { text: ModelTexts; schemaText: ReturnType<typeof useMessages<typeof settingsSchemaMessages.ja>> }) {
   const [draft, setDraft] = useState<SubagentSelection>(() => subagentSelection(namespace.value))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -225,18 +231,18 @@ function SubagentModels({ namespace, state, store, choices, available, loading }
   const checked = (target: { provider: string; model: string }) => draft.allowedModels.some(item => item.provider === target.provider && item.model === target.model)
   return <>
     <div className="settings-field settings-switch-row">
-      <div><span>有効にする</span>
-        {!draft.enabled && !canEnableSubagent(draft) && <p className="settings-field-help">先に使ってよいモデルを 1 つ以上選んでください</p>}
+      <div><span>{text.enable}</span>
+        {!draft.enabled && !canEnableSubagent(draft) && <p className="settings-field-help">{text.allowFirst}</p>}
       </div>
-      <M3eSwitch aria-label="サブエージェントのモデルを有効にする" checked={draft.enabled}
+      <M3eSwitch aria-label={text.subagentSwitch} checked={draft.enabled}
         disabled={!state.writable || !available || (!draft.enabled && !canEnableSubagent(draft))}
         onChange={event => changeEnabled((event.currentTarget as M3eSwitchElement).checked)} />
     </div>
     <div className="settings-field">
-      <h3>使わせてよいモデル</h3>
-      {loading && <p className="settings-field-help">モデル一覧を読み込み中…</p>}
-      {available && choices.length === 0 && <p className="settings-field-help">選べるモデルがありません。</p>}
-      {draft.enabled && draft.allowedModels.length === 1 && <p className="settings-field-help">有効の間は 1 つ以上必要です</p>}
+      <h3>{text.allowedModels}</h3>
+      {loading && <p className="settings-field-help">{text.loading}</p>}
+      {available && choices.length === 0 && <p className="settings-field-help">{text.noChoices}</p>}
+      {draft.enabled && draft.allowedModels.length === 1 && <p className="settings-field-help">{text.keepOne}</p>}
       <div className="settings-model-options">
         {choices.map(item => <label className="settings-model-option" key={item.value}>
           <M3eCheckbox aria-label={item.label} checked={checked({ provider: item.provider, model: item.model.id })}
@@ -245,13 +251,13 @@ function SubagentModels({ namespace, state, store, choices, available, loading }
           <span>{item.label}</span>
         </label>)}
         {unknown.map(item => <label className="settings-model-option" key={modelValue(item)}>
-          <M3eCheckbox aria-label={`一覧にないモデル：${item.provider} / ${item.model}`} checked
+          <M3eCheckbox aria-label={text.unknownModel(item.provider, item.model)} checked
             disabled={!state.writable || !available || !canToggleAllowedModel(draft, item, false)}
             onChange={event => changeAllowed(item, (event.currentTarget as HTMLElement & { checked: boolean }).checked)} />
-          <span>一覧にないモデル：{item.provider} / {item.model}</span>
+          <span>{text.unknownModel(item.provider, item.model)}</span>
         </label>)}
       </div>
     </div>
-    <EditStatus namespace={namespace} state={state} saving={saving} saved={saved} reset={reset} />
+    <EditStatus namespace={namespace} state={state} saving={saving} saved={saved} reset={reset} text={text} schemaText={schemaText} />
   </>
 }

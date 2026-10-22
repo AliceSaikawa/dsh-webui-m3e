@@ -40,6 +40,15 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 登録済み／未登録 | Registered／Not registered | 已注册／未注册 | なし | API キーの登録状況 |
 | 既定値に戻す | Reset to default | 恢复默认值 | なし | 項目を既定に戻す操作 |
 | 外観 | Appearance | 外观 | `appearance.title`（`dsh-client-ui-theme`） | 一致 |
+| カスタムプロバイダー | custom provider | 自定义提供方 | なし | 設定で足した提供元。設定の提供元と API キー・モデルのほかの語は [terms/settings-providers.md](terms/settings-providers.md) |
+| 登録状況 | registration status | 注册状态 | なし | API キーの登録状況 |
+| 登録を消す | Remove registration | 移除注册 | なし | API キーの登録を外す操作。提供元とキーの結び付きを外す操作なので、中国語は 删除 ではなく 移除 |
+| キーの参照先 | key reference | 密钥引用名称 | なし | 設定に書く環境変数の名前 |
+| ベース URL | base URL | 接入地址 | なし | 中国語は設定の「接続先」と同じ 接入地址 |
+| モデル一覧 | model list | 模型列表 | なし | 提供元から取得した選択肢の一覧 |
+| 使わせてよいモデル | Allowed models | 可使用的模型 | なし | サブエージェントに許すモデル |
+| 詳細（折りたたみ） | Details | 详情 | なし | モデルごとの折りたたみの見出し。表示の細かさの「詳細＝Detailed／详细」とは別の語 |
+| 削除 | Delete | 删除 | なし | 一覧から項目を消す操作（「モデルを削除＝Delete model／删除模型」） |
 | 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
 | 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
 | English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
