@@ -10,7 +10,7 @@ import { compareText, formatDateTime, formatNumber, intlLocale, numberFormat } f
 import { catalogProblems, defineMessages, isCatalog, messagesOf, untranslatedLocales, type Catalog, type Messages, type Translation } from '../web/src/i18n/catalog.ts'
 import { createLocaleStore } from '../web/src/i18n/store.ts'
 import { currentLocale, localeStore } from '../web/src/i18n/current.ts'
-import { connectLocalePreference, localePreferenceOf } from '../web/src/i18n/dsh.ts'
+import { connectLocalePreference, localePreferenceOf, waitAtMost } from '../web/src/i18n/dsh.ts'
 import { bootMessages } from '../web/src/app/messages.ts'
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -255,6 +255,40 @@ test('describe が投げても、settings のない DSH でも何もしない', 
   assert.equal(store.getSnapshot().requested, 'ja')
   stop()
   connectLocalePreference({ remote: {} }, store)()
+})
+
+test('最初の読み込みが終わると ready が解決し、そのときには DSH の言語になっている', async () => {
+  const fake = fakeRemote()
+  const store = createLocaleStore({ languages: ['ja-JP'], available: LOCALES })
+  const stop = connectLocalePreference(fake, store)
+  let settled = false
+  void stop.ready.then(() => { settled = true })
+  await tick()
+  assert.equal(settled, false, 'waits for the first read')
+  fake.answer('en')
+  await stop.ready
+  assert.equal(store.getSnapshot().requested, 'en')
+  stop()
+  // A failed read and a DSH without settings also settle, so the first paint is never held.
+  const failed = connectLocalePreference({ remote: { settings: { describe: () => Promise.reject(new Error('x')) } } }, store)
+  await failed.ready
+  await connectLocalePreference({ remote: {} }, store).ready
+})
+
+test('最初の描画の待ちは、読み込みが終わるか時間切れのどちらか早いほうで進む', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let done = false
+  void waitAtMost(new Promise(() => {}), 1000).then(() => { done = true })
+  t.mock.timers.tick(999)
+  await tick()
+  assert.equal(done, false)
+  t.mock.timers.tick(1)
+  await tick()
+  assert.equal(done, true, 'a read that never ends does not hold the page')
+  let early = false
+  void waitAtMost(Promise.reject(new Error('x')), 1000).then(() => { early = true })
+  await tick()
+  assert.equal(early, true, 'a failed read lets the page paint at once')
 })
 
 // --- Formats ---------------------------------------------------------------

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
 import type { Connection, DshRemote } from '../dsh/services.ts'
 import { messagesOf, type Catalog, type Messages, type Translation } from './catalog.ts'
-import { connectLocalePreference } from './dsh.ts'
+import { connectLocalePreference, type LocalePreferenceConnection } from './dsh.ts'
+export { FIRST_LOCALE_WAIT_MS, waitAtMost } from './dsh.ts'
 import type { Locale } from './locale.ts'
 import { browserLanguages, localeStore } from './current.ts'
 import type { LocaleSnapshot } from './store.ts'
@@ -30,9 +31,9 @@ export function startLocale(): void {
 }
 
 /** Start following DSH's `locale.preference` once the client context exists. */
-export function connectDshLocale(ctx: unknown): () => void {
+export function connectDshLocale(ctx: unknown): LocalePreferenceConnection {
   const root = ctx as { readonly remote?: DshRemote; readonly connection?: Connection } | null
-  if (!root?.remote) return () => {}
+  if (!root?.remote) return Object.assign(() => {}, { ready: Promise.resolve() })
   return connectLocalePreference({ remote: root.remote, connection: root.connection }, localeStore)
 }
 
