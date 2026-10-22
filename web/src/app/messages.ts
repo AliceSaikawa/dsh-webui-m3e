@@ -15,14 +15,14 @@ export const bootMessages = defineMessages({
   },
   en: {
     notHost: 'Could not start. This page was not served by the DSH Host. To open the development screen, add ?mock to the URL.',
-    incompatible: (version: string) => `Could not start. This version of DSH may not support the M3E screen. The M3E screen has been checked with DSH ${version}.`,
+    incompatible: (version: string) => `Could not start. The M3E screen may not support this version of DSH. The M3E screen has been checked with DSH ${version}.`,
     failed: 'Could not start. Reload the page.',
     reload: 'Reload',
     classic: 'Return to the standard screen',
   },
   zh: {
     notHost: '启动失败。此页面不是由 DSH 主机提供的页面。开发用页面请在网址后添加 ?mock 打开。',
-    incompatible: (version: string) => `启动失败。此版本的 DSH 可能不支持 M3E 页面。M3E 页面已在 DSH ${version} 上验证。`,
+    incompatible: (version: string) => `启动失败。M3E 页面可能不支持此版本的 DSH。M3E 页面已在 DSH ${version} 上验证。`,
     failed: '启动失败，请刷新页面。',
     reload: '刷新',
     classic: '返回标准界面',

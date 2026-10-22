@@ -53,7 +53,7 @@ export const remoteErrorMessages = defineMessages({
     writerHeld: 'Another operation is using this conversation. Wait for it to finish, then try again.',
     forkUnavailable: 'You cannot branch the conversation from this point.',
     queueItemNotFound: 'This message is no longer in the queue.',
-    steerUnavailable: 'This message cannot steer the running operation.',
+    steerUnavailable: 'This message cannot interrupt the running operation.',
     attachmentInvalid: 'Could not send the attachment. Check its contents and size.',
     workspaceInvalidPath: 'This folder cannot be used. Check the path.',
     workspaceNameConflict: 'A workspace with the same name already exists.',
@@ -116,21 +116,21 @@ export const permissionPresetMessages = defineMessages({
     readOnly: 'Read Only',
     workspaceWrite: 'Workspace Write',
     dangerFullAccess: 'Full access',
-    autoReview: 'Auto review',
+    autoReview: 'Auto review (experimental)',
     custom: 'Custom',
-    workspaceWriteDescription: 'Write inside the workspace and permitted temporary directories; wider retries require approval.',
-    dangerFullAccessDescription: 'Full file access without approval prompts.',
-    autoReviewDescription: 'Run without a sandbox after an experimental same-model review of every native tool call and PTC inner call.',
+    workspaceWriteDescription: 'Can write inside the workspace and permitted temporary folders. Asks before widening the scope.',
+    dangerFullAccessDescription: 'Can access all files without asking.',
+    autoReviewDescription: 'Runs without a sandbox. Each time a tool is called, the same model checks it as an experiment.',
   },
   zh: {
     readOnly: '仅可查看',
     workspaceWrite: '工作区内修改',
     dangerFullAccess: '完全权限',
-    autoReview: '自动审查',
+    autoReview: '自动审查（实验性）',
     custom: '自定义',
-    workspaceWriteDescription: '可在工作区与允许的临时目录内写入；扩大范围时需要审批。',
+    workspaceWriteDescription: '可在工作区和允许的临时文件夹内写入。扩大范围时会先确认。',
     dangerFullAccessDescription: '无需确认即可访问所有文件。',
-    autoReviewDescription: '无沙箱运行；每次原生工具调用和 PTC 内层调用前由同一模型进行实验性审查。',
+    autoReviewDescription: '无沙箱运行。每次调用工具时，由同一模型进行实验性检查。',
   },
 })
 
@@ -161,32 +161,6 @@ export const navigationErrorMessages = defineMessages({
     childChanged: '子对话的信息已变化，请重试。',
     childUnavailable: '无法加载子对话的信息。',
     openFailed: '无法打开对话。',
-  },
-})
-
-/**
- * Internal rejection reasons of the interaction store
- * (web/src/dsh/interactions-store.ts). The sheet shows its own failure text;
- * these messages only explain the cause to callers and in logs.
- */
-export const interactionErrorMessages = defineMessages({
-  ja: {
-    questionCancelled: '回答の前に質問が取り消されました。',
-    approvalCancelled: '承認の要求が取り消されました。',
-    requestFinished: 'この要求への回答はすでに終了しています。',
-    alreadyRegistered: 'この接続には対応待ちの受け取りがすでに登録されています。',
-  },
-  en: {
-    questionCancelled: 'The question was cancelled before it was answered.',
-    approvalCancelled: 'The approval request was cancelled.',
-    requestFinished: 'This request has already been answered.',
-    alreadyRegistered: 'This connection already has a handler for pending requests.',
-  },
-  zh: {
-    questionCancelled: '问题在回答前已被取消。',
-    approvalCancelled: '审批请求已取消。',
-    requestFinished: '此请求已结束，无法再回答。',
-    alreadyRegistered: '此连接已注册待处理请求的处理程序。',
   },
 })
 

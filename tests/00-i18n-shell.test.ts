@@ -2,13 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { messagesOf, untranslatedLocales } from '../web/src/i18n/catalog.ts'
 import { bootMessages, errorMessages, markdownMessages, overlayMessages, shellMessages } from '../web/src/app/messages.ts'
-import { interactionErrorMessages, navigationErrorMessages, permissionPresetMessages, remoteErrorMessages, serviceErrorMessages } from '../web/src/dsh/messages.ts'
+import { navigationErrorMessages, permissionPresetMessages, remoteErrorMessages, serviceErrorMessages } from '../web/src/dsh/messages.ts'
 import { conversationMessages } from '../web/src/features/conversation/messages.ts'
 import { conversationChoices } from '../web/src/features/conversation/conversation-choices.ts'
 
 test('every shell catalog has English and Chinese', () => {
   for (const catalog of [bootMessages, errorMessages, shellMessages, overlayMessages, markdownMessages,
-    remoteErrorMessages, permissionPresetMessages, navigationErrorMessages, interactionErrorMessages,
+    remoteErrorMessages, permissionPresetMessages, navigationErrorMessages,
     serviceErrorMessages, conversationMessages]) {
     assert.deepEqual(untranslatedLocales(catalog), [])
   }
@@ -25,7 +25,8 @@ test('shell texts come from the page language', () => {
   assert.equal(zh.staleMinutes(5), '正在显示 5 分钟前的数据')
   assert.equal(messagesOf(bootMessages, 'en').classic, 'Return to the standard screen')
   assert.equal(messagesOf(bootMessages, 'zh').classic, '返回标准界面')
-  assert.equal(messagesOf(bootMessages, 'zh').incompatible('1.2.3'), '启动失败。此版本的 DSH 可能不支持 M3E 页面。M3E 页面已在 DSH 1.2.3 上验证。')
+  assert.equal(messagesOf(bootMessages, 'en').incompatible('1.2.3'), 'Could not start. The M3E screen may not support this version of DSH. The M3E screen has been checked with DSH 1.2.3.')
+  assert.equal(messagesOf(bootMessages, 'zh').incompatible('1.2.3'), '启动失败。M3E 页面可能不支持此版本的 DSH。M3E 页面已在 DSH 1.2.3 上验证。')
 })
 
 test('error and markdown texts come from the page language', () => {
@@ -45,7 +46,10 @@ test('host failures and permission presets come from the page language', () => {
   assert.equal(messagesOf(permissionPresetMessages, 'en').dangerFullAccess, 'Full access')
   assert.equal(messagesOf(permissionPresetMessages, 'zh').readOnly, '仅可查看')
   assert.equal(messagesOf(navigationErrorMessages, 'en').sessionMissing, 'The conversation was not found.')
-  assert.equal(messagesOf(interactionErrorMessages, 'zh').requestFinished, '此请求已结束，无法再回答。')
+  assert.equal(en.steerUnavailable, 'This message cannot interrupt the running operation.')
+  assert.equal(messagesOf(permissionPresetMessages, 'en').autoReview, 'Auto review (experimental)')
+  assert.equal(messagesOf(permissionPresetMessages, 'zh').autoReview, '自动审查（实验性）')
+  assert.equal(messagesOf(permissionPresetMessages, 'en').autoReviewDescription, 'Runs without a sandbox. Each time a tool is called, the same model checks it as an experiment.')
   assert.equal(messagesOf(serviceErrorMessages, 'en').connectionMissing, 'No DSH connection is configured.')
 })
 
