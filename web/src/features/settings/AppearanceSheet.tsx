@@ -7,15 +7,29 @@ import {
   THEME_COLOR_PRESETS, backToClassic, normalizeThemeColor, setAppearance, setThemeColor, useAppearance, useThemeColor,
   type Appearance,
 } from '../../app/theme/index.ts'
+import { currentLocale, messagesOf, useMessages } from '../../i18n/index.ts'
+import { appearanceMessages, type AppearanceTexts } from './messages.ts'
 import { createFrameThrottledWriter, type FrameThrottledWriter } from './frame-throttle.ts'
 
-export const appearanceLabels: Record<Appearance, string> = {
-  system: '端末の設定に合わせる', light: 'ライト', dark: 'ダーク',
+const APPEARANCES: readonly Appearance[] = ['system', 'light', 'dark']
+
+const COLOR_KEYS: Readonly<Record<string, keyof AppearanceTexts>> = {
+  '#6750a4': 'colorPurple',
+  '#0b57d0': 'colorBlue',
+  '#006a6a': 'colorTeal',
+  '#386a20': 'colorGreen',
+  '#8c4a00': 'colorOrange',
+  '#b3261e': 'colorRed',
 }
 
-export function themeColorLabel(color: string): string {
+export function appearanceLabel(value: Appearance, text: AppearanceTexts): string {
+  return value === 'light' ? text.light : value === 'dark' ? text.dark : text.system
+}
+
+export function themeColorLabel(color: string, text: AppearanceTexts): string {
   const normalized = normalizeThemeColor(color)
-  return THEME_COLOR_PRESETS.find(preset => preset.color.toLowerCase() === normalized)?.label ?? 'ほかの色'
+  const key = normalized === undefined ? undefined : COLOR_KEYS[normalized]
+  return key === undefined ? text.otherColor : text[key] as string
 }
 
 /**
@@ -33,6 +47,7 @@ function useThemeColorWriter(): FrameThrottledWriter<string> {
 }
 
 function AppearanceSheet() {
+  const text = useMessages(appearanceMessages)
   const appearance = useAppearance()
   const color = useThemeColor()
   // The input shows the picked color right away, ahead of the throttled store.
@@ -42,19 +57,20 @@ function AppearanceSheet() {
   const custom = !THEME_COLOR_PRESETS.some(preset => preset.color.toLowerCase() === color)
   const titleId = useId()
   return <div className="settings-sheet">
-    <h2 id={titleId}>外観</h2>
-    <p className="muted">この端末だけに適用されます。</p>
+    <h2 id={titleId}>{text.appearance}</h2>
+    <p className="muted">{text.appliedToDevice}</p>
     <M3eRadioGroup className="settings-appearance-options" aria-labelledby={titleId}>
-      {(Object.keys(appearanceLabels) as Appearance[]).map(value => <label className="settings-appearance-option" key={value}>
-        <M3eRadio value={value} checked={appearance === value} aria-label={appearanceLabels[value]}
+      {APPEARANCES.map(value => <label className="settings-appearance-option" key={value}>
+        <M3eRadio value={value} checked={appearance === value} aria-label={appearanceLabel(value, text)}
           onChange={() => setAppearance(value)} />
-        <span>{appearanceLabels[value]}</span>
+        <span>{appearanceLabel(value, text)}</span>
       </label>)}
     </M3eRadioGroup>
-    <h3>画面の色</h3>
-    <p className="muted">選んだ色から配色を作ります。</p>
-    <div className="settings-color-options" role="group" aria-label="画面の色">
-      {THEME_COLOR_PRESETS.map(({ color: presetColor, label }) => {
+    <h3>{text.screenColor}</h3>
+    <p className="muted">{text.screenColorDescription}</p>
+    <div className="settings-color-options" role="group" aria-label={text.screenColor}>
+      {THEME_COLOR_PRESETS.map(({ color: presetColor }) => {
+        const label = themeColorLabel(presetColor, text)
         const selected = presetColor.toLowerCase() === color
         return <button key={presetColor} type="button" className="settings-color-swatch"
           aria-label={label} aria-pressed={selected} title={label}
@@ -68,9 +84,9 @@ function AppearanceSheet() {
       })}
     </div>
     <label className="settings-color-custom">
-      <span>ほかの色</span>
+      <span>{text.otherColor}</span>
       {/* aria-pressed is not allowed on a color input, so the selected state goes in its name. */}
-      <input type="color" value={picked} aria-label={custom ? 'ほかの色（選択中）' : 'ほかの色'}
+      <input type="color" value={picked} aria-label={custom ? text.otherColorSelected : text.otherColor}
         onChange={event => { setPicked(event.currentTarget.value); writeColor.throttled(event.currentTarget.value) }} />
       {custom && <Icon name="check" />}
     </label>
@@ -78,16 +94,17 @@ function AppearanceSheet() {
 }
 
 export function openAppearance(): void {
-  openSheet(<AppearanceSheet />, { label: '外観' })
+  openSheet(<AppearanceSheet />, { label: messagesOf(appearanceMessages, currentLocale()).appearance })
 }
 
 export function confirmClassic(): void {
+  const text = messagesOf(appearanceMessages, currentLocale())
   openDialog(close => <>
-    <h2>今の画面に戻す</h2>
-    <p>この端末では DSH の標準の画面を使います。M3E の画面には、標準の画面の設定からいつでも戻れます</p>
+    <h2>{text.backToClassic}</h2>
+    <p>{text.backToClassicDescription}</p>
     <div className="actions settings-actions">
-      <M3eButton variant="text" onClick={close}>キャンセル</M3eButton>
-      <M3eButton onClick={() => { close(); backToClassic() }}>今の画面に戻す</M3eButton>
+      <M3eButton variant="text" onClick={close}>{text.cancel}</M3eButton>
+      <M3eButton onClick={() => { close(); backToClassic() }}>{text.backToClassic}</M3eButton>
     </div>
-  </>, { label: '今の画面に戻す確認' })
+  </>, { label: text.backToClassicConfirmLabel })
 }
