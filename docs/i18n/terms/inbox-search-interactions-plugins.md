@@ -33,6 +33,8 @@
 | 停止中 | Stopping | 正在停止 | `input.stop`（`dsh-client-ui-conversation`、Stop generating／停止生成） | プラグインの `unloading`。中国語は 停止中 だと日本語と同形なので 正在停止 にした |
 | 未起動 | Not started | 未启动 | なし | プラグインの起動前 |
 | バンドル | bundle | 捆绑包 | なし | プラグインのバンドル。DSH に該当語なし |
+| プロファイル | profile | profile | `reasonStopProfile`（`dsh-client-ui-plugin-manager`） | DSH の中国語も profile のまま。配置 は設定の意味になるので使わない |
+| インストール先 | where to install | 安装位置 | なし | `ambiguous-install` の文。日本語の「インストール先」の意味で訳した |
 | 同梱 | Bundled | 随附安装 | なし | `installed`（インストール済み／已安装）と対にする |
 | 版 | Version | 版本 | `panel.version`（`dsh-client-ui-cordis`、Version／版本） | 一致 |
 | 読み直す | Reload | 重新加载 | `action.reload`（`dsh-client-ui-model-selection`、Reload／重新加载） | 一致。`retry` の「もう一度読み込む」は Load again／重新加载 と同じ中国語になるが、日本語が違うので別キーのまま |
