@@ -32,6 +32,17 @@ test('home counts and sentences build each language as one whole message', () =>
   assert.equal(zh.selectedCount(2), '已选择 2 个会话')
 })
 
+test('home texts keep the meaning of the Japanese', () => {
+  // The close button leaves every non-normal mode (select and reorder), not only selection.
+  assert.equal(en.exitActions, 'Done')
+  // The folder list limit keeps the number the Japanese states.
+  assert.deepEqual([ja.foldersTruncated, en.foldersTruncated, zh.foldersTruncated], [
+    '1,000 件を超えるフォルダは一部だけ表示します',
+    'More than 1,000 folders; only some are shown',
+    '文件夹超过 1,000 个，仅显示一部分',
+  ])
+})
+
 test('home sentences that quote a name keep the quotes of their own language', () => {
   assert.equal(ja.removeWorkspaceDescription('repo'), '「repo」の登録を解除します。フォルダの中身は消えません。')
   assert.equal(en.removeWorkspaceDescription('repo'), 'This removes “repo” from the workspace list. The folder contents will be kept.')

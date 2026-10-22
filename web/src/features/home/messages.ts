@@ -134,7 +134,7 @@ export const homeMessages = defineMessages({
     listMenu: 'Session list menu',
     listFallbackTitle: 'Sessions',
     done: 'Done',
-    exitActions: 'Exit selection',
+    exitActions: 'Done',
     newSession: 'New session',
     sortModeTitle: 'Reorder',
     selectedCount: (count: number) => `${count} selected`,
@@ -223,7 +223,7 @@ export const homeMessages = defineMessages({
     reloadFolders: 'Reload',
     loadingFolders: 'Loading folders…',
     noVisibleFolders: 'There are no folders to show here.',
-    foldersTruncated: 'Only some of the folders are shown',
+    foldersTruncated: 'More than 1,000 folders; only some are shown',
     adding: 'Adding…',
     addHere: 'Add this folder',
 
@@ -335,7 +335,7 @@ export const homeMessages = defineMessages({
     reloadFolders: '重新加载',
     loadingFolders: '正在加载文件夹…',
     noVisibleFolders: '此处没有可显示的文件夹。',
-    foldersTruncated: '仅显示一部分文件夹',
+    foldersTruncated: '文件夹超过 1,000 个，仅显示一部分',
     adding: '正在添加…',
     addHere: '添加此文件夹',
 
