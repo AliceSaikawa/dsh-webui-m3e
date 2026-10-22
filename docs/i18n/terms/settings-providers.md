@@ -5,7 +5,7 @@
 | 日本語 | 英語 | 中国語（簡体字） | DSH 標準画面の辞書のキー | メモ |
 |---|---|---|---|---|
 | 提供元 | provider | 提供方 | なし | DSH の辞書は provider=提供方。既存の設定画面でも同じ語を使う |
-| 提供元と登録状況 | Providers and API keys | 提供方与 API 密钥 | なし | 提供元タブの一覧の見出し |
+| 提供元と登録状況 | Providers and registration status | 提供方与注册状态 | なし | 提供元タブの一覧の見出し。ページの題名「提供元と API キー」（Providers & API keys／提供方与 API 密钥）とは別の語 |
 | 登録状況 | registration status / key status | 注册状态 | なし | キーの登録状況。中国語は「注册状态」で統一 |
 | API キー | API key | API 密钥 | `api key`（dsh-dictionary.tsv） | 値を訳さない |
 | API キー：登録済み | API key: registered | API 密钥：已注册 | なし | 一覧の行の状態。中国語は全角コロン |
