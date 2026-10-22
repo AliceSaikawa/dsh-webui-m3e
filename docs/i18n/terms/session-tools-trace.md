@@ -8,7 +8,7 @@
 | コンテキストの使用率 | Context usage | 上下文用量 | なし（`stats.dialog.usageTitle` は Token usage／Token 用量） | M3E の言い方 |
 | キャッシュヒット率 | Cache hit rate | 缓存命中率 | `stats.cacheHit`（`dsh-client-ui-chat`。英語は Cache hit {percent}%、中国語は 缓存命中 {percent}%） | 率の文言を M3E で足した |
 | トークン | token / tokens | token | `stats.dialog.usageTitle`（`dsh-client-ui-chat`。中国語は Token 用量） | 中国語は DSH と同じく token（訳さない） |
-| ジョブ | job | 任务 | `count.idle.other`（`dsh-client-ui-jobs`。英語 background jobs、中国語 后台任务） | メニューの短い項目は Jobs／任务 |
+| ジョブ | job | 任务 | `count.idle.other`（`dsh-client-ui-jobs`。英語 background jobs、中国語 后台任务） | メニューの短い項目は Jobs／任务。種別の分からないジョブも Job／任务 と出す |
 | サブエージェント | subagent | 子智能体 | `count.total.other`（`dsh-client-ui-subagent`） | 一致 |
 | ゴール | goal | 目标 | `token.goal`（`dsh-client-ui-commands`） | 一致 |
 | 進行中（ゴール） | Ongoing | 进行中 | `phase.active`（`dsh-client-ui-goal`。英語 Ongoing Goal、中国語 进行中的目标） | 状態の語だけを辞書にした |
