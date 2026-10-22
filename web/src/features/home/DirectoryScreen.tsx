@@ -12,10 +12,14 @@ import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.
 import { directoryPicker, isNativeUnavailable, nativeUnavailableMessage, type DirectoryListing } from './directory.ts'
 import { setCurrentWorkspace } from './preferences.ts'
 import { shortenHomePath } from './data.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { currentLocale, useMessages } from '../../i18n/index.ts'
+import { homeMessages } from './messages.ts'
 import './home.css'
 
 export function DirectoryScreen() {
   const { remote, workspaces } = useDsh()
+  const text = useMessages(homeMessages)
   const picker = directoryPicker(remote)
   const { connected } = useConnection()
   const [listing, setListing] = useState<DirectoryListing | null>(null)
@@ -30,7 +34,7 @@ export function DirectoryScreen() {
     abort.current?.abort()
     const controller = new AbortController(); abort.current = controller
     setLoading(true); setError(''); setNativeOnly(false)
-    if (!picker) { setError('フォルダの選択を利用できません。'); setLoading(false); return }
+    if (!picker) { setError(text.pickerUnavailable); setLoading(false); return }
     try {
       const next = unwrapRemoteResult(await picker.list(path, controller.signal))
       if (controller.signal.aborted || !mounted.current) return
@@ -38,7 +42,7 @@ export function DirectoryScreen() {
     } catch (failure) {
       if (controller.signal.aborted || !mounted.current) return
       const native = isNativeUnavailable(failure)
-      const message = native ? nativeUnavailableMessage : remoteErrorMessage(failure)
+      const message = native ? nativeUnavailableMessage() : remoteErrorMessage(failure)
       setNativeOnly(native); setError(message); showSnackbar(message)
     } finally { if (!controller.signal.aborted && mounted.current) setLoading(false) }
   }
@@ -52,13 +56,13 @@ export function DirectoryScreen() {
   function createFolder() {
     if (!listing || !picker || saving || loading || !connected) return
     const path = listing.path
-    openDialog(close => <TextPromptDialog title="新しいフォルダ" label="フォルダ名" onCancel={close} onConfirm={async name => {
+    openDialog(close => <TextPromptDialog title={text.newFolder} label={text.folderNameLabel} onCancel={close} onConfirm={async name => {
       try {
         unwrapRemoteResult(await picker.createDirectory(path, name))
-        close(); showSnackbar('フォルダを作りました')
+        close(); showSnackbar(messagesOf(homeMessages, currentLocale()).folderCreated)
         if (mounted.current) await load(path)
       } catch (failure) { showSnackbar(remoteErrorMessage(failure)) }
-    }} />, { label: '新しいフォルダ' })
+    }} />, { label: text.newFolder })
   }
   async function addWorkspace() {
     if (!listing || saving || loading || !connected || error) return
@@ -66,30 +70,30 @@ export function DirectoryScreen() {
     try {
       const item = await workspaces.create({ path: listing.path })
       setCurrentWorkspace(item.workspaceId)
-      if (mounted.current) { showSnackbar('ワークスペースを追加しました'); back() }
+      if (mounted.current) { showSnackbar(messagesOf(homeMessages, currentLocale()).workspaceAdded); back() }
     } catch (failure) { if (mounted.current) showSnackbar(remoteErrorMessage(failure)) }
     finally { if (mounted.current) setSaving(false) }
   }
   return <section className="screen page-screen home-picker"><header className="top-bar">
-    <M3eIconButton aria-label="フォルダの選択を閉じる" disabled={saving} onClick={back}><Icon name="close" /></M3eIconButton><h1>フォルダを選ぶ</h1>
+    <M3eIconButton aria-label={text.closePicker} disabled={saving} onClick={back}><Icon name="close" /></M3eIconButton><h1>{text.chooseFolder}</h1>
   </header><ConnectionBanner /><main className="screen-content" data-scroll-area>
-    <p className="home-picker-explanation">DSH が動いている機械のフォルダを選んでください。</p>
-    {listing && <nav aria-label="フォルダの階層" className="home-crumbs"><M3eChipSet>
+    <p className="home-picker-explanation">{text.pickerExplanation}</p>
+    {listing && <nav aria-label={text.folderHierarchy} className="home-crumbs"><M3eChipSet>
       {listing.crumbs.map(crumb => <M3eAssistChip key={crumb.path} disabled={loading || saving || !connected} aria-current={crumb.path === listing.path ? 'location' : undefined}
         onClick={() => { void load(crumb.path) }}>{crumb.path === listing.home ? '~' : crumb.name}</M3eAssistChip>)}
     </M3eChipSet></nav>}
     {listing && <p className="home-current-path">{shortenHomePath(listing.path, listing.home)}</p>}
-    {error && <div className="home-picker-error" role="alert"><p>{error}</p>{!nativeOnly && <M3eButton disabled={!connected || loading} onClick={() => { void load(currentPath.current) }}>もう一度読み込む</M3eButton>}</div>}
-    {loading ? <p className="home-picker-explanation" role="status">フォルダを読み込んでいます…</p> : listing && <>
+    {error && <div className="home-picker-error" role="alert"><p>{error}</p>{!nativeOnly && <M3eButton disabled={!connected || loading} onClick={() => { void load(currentPath.current) }}>{text.reloadFolders}</M3eButton>}</div>}
+    {loading ? <p className="home-picker-explanation" role="status">{text.loadingFolders}</p> : listing && <>
       <ul className="home-folders">{listing.entries.filter(entry => !entry.hidden).map(entry => <li key={entry.path}>
         <button type="button" className="home-folder-row" disabled={saving || !connected} onClick={() => { void load(entry.path) }}>
           <Icon name="folder" /><span>{entry.name}</span><Icon name="chevron_right" /></button>
       </li>)}</ul>
-      {!listing.entries.some(entry => !entry.hidden) && <p className="home-picker-explanation">この中に表示できるフォルダはありません。</p>}
-      {listing.truncated && <p className="home-picker-explanation" role="status">1,000 件を超えるフォルダは一部だけ表示します</p>}
+      {!listing.entries.some(entry => !entry.hidden) && <p className="home-picker-explanation">{text.noVisibleFolders}</p>}
+      {listing.truncated && <p className="home-picker-explanation" role="status">{text.foldersTruncated}</p>}
     </>}
   </main><footer className="page-footer home-picker-footer">
-    <M3eButton variant="outlined" disabled={!listing || loading || saving || !connected || !!error} onClick={createFolder}><Icon name="create_new_folder" />新しいフォルダ</M3eButton>
-    <M3eButton variant="filled" disabled={!listing || loading || saving || !connected || !!error} onClick={() => { void addWorkspace() }}>{saving ? '追加しています…' : 'ここを追加'}</M3eButton>
+    <M3eButton variant="outlined" disabled={!listing || loading || saving || !connected || !!error} onClick={createFolder}><Icon name="create_new_folder" />{text.newFolder}</M3eButton>
+    <M3eButton variant="filled" disabled={!listing || loading || saving || !connected || !!error} onClick={() => { void addWorkspace() }}>{saving ? text.adding : text.addHere}</M3eButton>
   </footer></section>
 }

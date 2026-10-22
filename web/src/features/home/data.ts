@@ -1,4 +1,11 @@
 import type { SessionSummary, WorkspaceView } from '../../dsh/services.ts'
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { formatDateTime } from '../../i18n/format.ts'
+import type { Locale } from '../../i18n/locale.ts'
+import { homeMessages } from './messages.ts'
+
+/** The texts this feature shows. Tests and callers may pass them explicitly. */
+export type HomeMessages = Translation<typeof homeMessages.ja>
 
 export function selectWorkspace(items: readonly WorkspaceView[], savedId?: string | null): WorkspaceView | undefined {
   return items.find(item => item.workspaceId === savedId) ?? items[0]
@@ -53,18 +60,19 @@ export function pinnedFirstInOrder(rows: readonly SessionSummary[], pinnedIds: r
   return { rows: [...rows.filter(row => pinned.has(row.id)), ...rows.filter(row => !pinned.has(row.id))], pinned }
 }
 
-export function formatUpdatedAt(timestamp: number, now = new Date()): string {
+export function formatUpdatedAt(timestamp: number, now = new Date(), locale: Locale = 'ja',
+  text: HomeMessages = messagesOf(homeMessages, 'ja')): string {
+  if (!Number.isFinite(timestamp)) return text.updatedUnknown
   const date = new Date(timestamp)
-  if (!Number.isFinite(timestamp) || Number.isNaN(date.getTime())) return '日時不明'
-  const pad = (value: number) => String(value).padStart(2, '0')
+  if (Number.isNaN(date.getTime())) return text.updatedUnknown
   if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()) {
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+    return formatDateTime(locale, date, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) ?? text.updatedUnknown
   }
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`
+  return formatDateTime(locale, date, { year: 'numeric', month: '2-digit', day: '2-digit' }) ?? text.updatedUnknown
 }
 
-export function folderName(path?: string): string {
-  if (!path) return '作業フォルダなし'
+export function folderName(path?: string, text: HomeMessages = messagesOf(homeMessages, 'ja')): string {
+  if (!path) return text.noFolder
   return path.split(/[\\/]/u).filter(Boolean).at(-1) ?? path
 }
 

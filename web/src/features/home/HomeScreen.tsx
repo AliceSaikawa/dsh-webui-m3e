@@ -13,7 +13,9 @@ import { getOverlays } from '../../app/overlay/store.ts'
 import { useDsh } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
+import { useMessages } from '../../i18n/index.ts'
 import { selectWorkspace, orderSessions, pinnedFirst, pinnedFirstInOrder, visibleSessions, type ArchivedFilter, type OrderBy } from './data.ts'
+import { homeMessages } from './messages.ts'
 import { useHomePreferences, setCurrentWorkspace, setShowSubagents, setArchivedFilter, setOrderBy } from './preferences.ts'
 import { attempt, renameWorkspace, sessionActions, workspaceActions } from './actions.tsx'
 import { WorkspaceDrawer } from './WorkspaceDrawer.tsx'
@@ -26,19 +28,20 @@ import './home.css'
 
 type Mode = 'normal' | 'sort' | 'select'
 
-const ARCHIVED_FILTER_ITEMS: readonly { value: ArchivedFilter; label: string; icon: string }[] = [
-  { value: 'default', label: 'アーカイブ済みを隠す', icon: 'visibility_off' },
-  { value: 'show', label: 'アーカイブ済みも表示', icon: 'visibility' },
-  { value: 'only', label: 'アーカイブ済みだけ表示', icon: 'inventory_2' },
+const ARCHIVED_FILTER_ITEMS: readonly { value: ArchivedFilter; labelKey: 'archivedHide' | 'archivedShow' | 'archivedOnly'; icon: string }[] = [
+  { value: 'default', labelKey: 'archivedHide', icon: 'visibility_off' },
+  { value: 'show', labelKey: 'archivedShow', icon: 'visibility' },
+  { value: 'only', labelKey: 'archivedOnly', icon: 'inventory_2' },
 ]
 
-const ORDER_ITEMS: readonly { value: OrderBy; label: string; icon: string }[] = [
-  { value: 'updated', label: '最近の更新順', icon: 'schedule' },
-  { value: 'manual', label: '手動の順', icon: 'format_list_numbered' },
+const ORDER_ITEMS: readonly { value: OrderBy; labelKey: 'orderUpdated' | 'orderManual'; icon: string }[] = [
+  { value: 'updated', labelKey: 'orderUpdated', icon: 'schedule' },
+  { value: 'manual', labelKey: 'orderManual', icon: 'format_list_numbered' },
 ]
 
 export function HomeScreen() {
   const dsh = useDsh()
+  const text = useMessages(homeMessages)
   const list = useSnapshot(dsh.sessions.list)
   const snapshot = useSnapshot(dsh.workspaces.list)
   const preferences = useHomePreferences()
@@ -51,10 +54,11 @@ export function HomeScreen() {
   const unpinned = rows.filter(row => !pinned.has(row.id) && !archivedIds.has(row.id))
   const operable = rows.some(row => canEditHomeSession(row) && !archivedIds.has(row.id))
   const unpinnedIndex = new Map(unpinned.map((row, index) => [row.id, index]))
-  const sortCaption = pinned.size ? 'つまみをドラッグして順番を変更（ピン留めした行は固定した順に並びます）' : 'つまみをドラッグして順番を変更'
-  const orderSuffix = preferences.orderBy === 'updated' ? '・最近の更新順' : ''
-  const listCaption = (preferences.archivedFilter === 'only' ? `${rows.length} 件のアーカイブ済みセッション`
-    : preferences.archivedFilter === 'show' ? `${rows.length} 件のセッション（アーカイブ済みを含む）` : `${rows.length} 件のセッション`) + orderSuffix
+  const sortCaption = pinned.size ? text.sortCaptionPinned : text.sortCaption
+  const updatedOrder = preferences.orderBy === 'updated'
+  const listCaption = preferences.archivedFilter === 'only' ? text.listCaptionArchived(rows.length, updatedOrder)
+    : preferences.archivedFilter === 'show' ? text.listCaptionWithArchived(rows.length, updatedOrder)
+      : text.listCaption(rows.length, updatedOrder)
   const { connected } = useConnection()
   const directory = useDirectoryAvailability(dsh.remote, connected)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -103,10 +107,10 @@ export function HomeScreen() {
     const completed: string[] = []
     try {
       for (const id of ids) { await dsh.workspaces.archiveSession(id); completed.push(id) }
-      showSnackbar(ids.length === 1 ? 'アーカイブしました' : `${completed.length} 件をアーカイブしました`)
+      showSnackbar(ids.length === 1 ? text.archiveDoneOne : text.archiveDone(completed.length))
       setMode('normal')
     } catch (error) {
-      showSnackbar(`${completed.length ? `${completed.length} 件をアーカイブしました。` : ''}${remoteErrorMessage(normalizeWorkspaceError(error))}`)
+      showSnackbar(text.archiveFailed(completed.length, remoteErrorMessage(normalizeWorkspaceError(error))))
     } finally {
       setSelected(value => new Set([...value].filter(id => !completed.includes(id))))
       busyRef.current = false; setBusy(false)
@@ -122,25 +126,25 @@ export function HomeScreen() {
     if (refreshPending.current || !connected) return
     refreshPending.current = true; setRefreshing(true); setRefreshError('')
     try { await dsh.sessions.refresh() }
-    catch (error) { setRefreshError(remoteErrorMessage(error, 'セッション一覧を読み込めませんでした。もう一度お試しください。')) }
+    catch (error) { setRefreshError(remoteErrorMessage(error, text.refreshFailed)) }
     finally { refreshPending.current = false; setRefreshing(false) }
   }
   const changeMode = (value: Mode) => { menu.current?.hide(); setMode(value); setSelected(new Set()) }
   const toolbar = <>
-    {mode === 'normal' ? <M3eIconButton aria-label="ワークスペースを切り替え" onClick={event => { if (event.currentTarget instanceof HTMLElement) drawerTrigger.current = event.currentTarget; setDrawerOpen(true) }}><Icon name="menu" /></M3eIconButton>
-      : <M3eIconButton aria-label="操作を終了" disabled={busy} onClick={() => changeMode('normal')}><Icon name="close" /></M3eIconButton>}
-    <h1 className="home-title">{mode === 'sort' ? '並べ替え' : mode === 'select' ? `${selectedIds.length} 件選択中` : workspace?.title ?? '一覧'}</h1>
-    {mode === 'normal' && <M3eIconButton aria-label="一覧のメニュー" onClick={event => { if (event.currentTarget instanceof HTMLElement) void menu.current?.toggle(event.currentTarget) }}><Icon name="more_vert" /></M3eIconButton>}
-    {mode === 'sort' && <M3eButton disabled={busy} onClick={() => changeMode('normal')}>完了</M3eButton>}
-    {mode === 'select' && <M3eButton disabled={busy || !connected || !selectedIds.length} onClick={() => { void archive(selectedIds) }}>{selectedIds.length} 件をアーカイブ</M3eButton>}
+    {mode === 'normal' ? <M3eIconButton aria-label={text.workspaceSwitcher} onClick={event => { if (event.currentTarget instanceof HTMLElement) drawerTrigger.current = event.currentTarget; setDrawerOpen(true) }}><Icon name="menu" /></M3eIconButton>
+      : <M3eIconButton aria-label={text.exitActions} disabled={busy} onClick={() => changeMode('normal')}><Icon name="close" /></M3eIconButton>}
+    <h1 className="home-title">{mode === 'sort' ? text.sortModeTitle : mode === 'select' ? text.selectedCount(selectedIds.length) : workspace?.title ?? text.listFallbackTitle}</h1>
+    {mode === 'normal' && <M3eIconButton aria-label={text.listMenu} onClick={event => { if (event.currentTarget instanceof HTMLElement) void menu.current?.toggle(event.currentTarget) }}><Icon name="more_vert" /></M3eIconButton>}
+    {mode === 'sort' && <M3eButton disabled={busy} onClick={() => changeMode('normal')}>{text.done}</M3eButton>}
+    {mode === 'select' && <M3eButton disabled={busy || !connected || !selectedIds.length} onClick={() => { void archive(selectedIds) }}>{text.archiveSelected(selectedIds.length)}</M3eButton>}
   </>
   return <M3eDrawerContainer ref={drawer} start={drawerOpen} startMode="over" className="home-drawer-container"
     onChange={event => { if (event.target === drawer.current) setDrawerOpen(drawer.current?.start ?? false) }}>
     <WorkspaceDrawer items={snapshot.items} currentId={workspace?.workspaceId} homePath={directory.homePath} open={drawerOpen}
       canAdd={directory.canAdd} connected={connected} onClose={() => setDrawerOpen(false)}
       onSelect={id => { setCurrentWorkspace(id); setDrawerOpen(false) }}
-      onActions={item => { setDrawerOpen(false); workspaceActions(dsh, item, snapshot.items) }} />
-    <TabScaffold topBar={toolbar} fab={mode === 'normal' && <M3eFab aria-label="新しいセッション" disabled={!connected || !workspace || loading}
+      onActions={item => { setDrawerOpen(false); workspaceActions(dsh, item, snapshot.items, text) }} />
+    <TabScaffold topBar={toolbar} fab={mode === 'normal' && <M3eFab aria-label={text.newSession} disabled={!connected || !workspace || loading}
       onClick={() => { if (workspace) navigate(`/new?ws=${encodeURIComponent(workspace.workspaceId)}`) }}><Icon name="add" /></M3eFab>}>
       <div className="home-list" onTouchStart={event => {
         const touch = event.touches[0], scroll = event.currentTarget.closest('[data-scroll-area]')
@@ -157,49 +161,49 @@ export function HomeScreen() {
         pullStart.current = null; pullDistance.current = 0; setPull(0)
         if (distance >= 72) void refresh()
       }} onTouchCancel={() => { pullStart.current = null; pullDistance.current = 0; setPull(0) }}>
-        {(pull > 20 || refreshing) && <p className="home-refresh" role="status">{refreshing ? '読み直しています…' : pull >= 72 ? '離して読み直す' : '下に引っぱって読み直す'}</p>}
+        {(pull > 20 || refreshing) && <p className="home-refresh" role="status">{refreshing ? text.refreshing : pull >= 72 ? text.releaseToRefresh : text.pullToRefresh}</p>}
         {snapshot.error && <p className="home-error" role="alert">{remoteErrorMessage(snapshot.error)}</p>}
         {refreshError && <p className="home-error" role="alert">{refreshError}</p>}
         {((loading && slowLoading) || snapshot.error || refreshError) && <div className="home-list-recovery">
-          {loading && !refreshError && !snapshot.error && <p role="status">一覧の読み込みが完了していません。</p>}
-          {list.phase === 'pending' || refreshError ? <M3eButton disabled={!connected || refreshing} onClick={() => { void refresh() }}>セッション一覧を読み直す</M3eButton> : null}
-          <M3eButton onClick={() => window.location.reload()}>画面を再読み込み</M3eButton>
+          {loading && !refreshError && !snapshot.error && <p role="status">{text.loadingIncomplete}</p>}
+          {list.phase === 'pending' || refreshError ? <M3eButton disabled={!connected || refreshing} onClick={() => { void refresh() }}>{text.reloadSessions}</M3eButton> : null}
+          <M3eButton onClick={() => window.location.reload()}>{text.reloadPage}</M3eButton>
         </div>}
-        {loading ? <div aria-label="セッションを読み込み中" role="status" className="home-skeletons">{[1, 2, 3, 4].map(id => <div className="home-skeleton" key={id}><span /><div><i /><i /></div></div>)}</div>
-          : !workspace ? <div className="home-empty"><Icon name="create_new_folder" /><h2>ワークスペースがありません</h2><p>作業するフォルダを追加してください。</p>
-            {directory.canAdd && <M3eButton variant="filled" disabled={!connected} onClick={() => navigate('/workspaces/add')}>ワークスペースを追加</M3eButton>}
-            {!directory.canAdd && directory.ready && <p className="muted">フォルダの選択を利用できません。</p>}</div>
+        {loading ? <div aria-label={text.loadingSessions} role="status" className="home-skeletons">{[1, 2, 3, 4].map(id => <div className="home-skeleton" key={id}><span /><div><i /><i /></div></div>)}</div>
+          : !workspace ? <div className="home-empty"><Icon name="create_new_folder" /><h2>{text.noWorkspace}</h2><p>{text.noWorkspaceHint}</p>
+            {directory.canAdd && <M3eButton variant="filled" disabled={!connected} onClick={() => navigate('/workspaces/add')}>{text.addWorkspace}</M3eButton>}
+            {!directory.canAdd && directory.ready && <p className="muted">{text.pickerUnavailable}</p>}</div>
           : rows.length === 0 ? (preferences.archivedFilter === 'only'
-            ? <div className="home-empty"><Icon name="inventory_2" /><h2>アーカイブ済みのセッションはありません</h2></div>
-            : <div className="home-empty"><Icon name="chat_bubble" /><h2>まだセッションがありません</h2><p>右下の ＋ から始められます</p></div>)
-          : <><p className="home-list-caption">{mode === 'sort' ? sortCaption : mode === 'select' ? 'アーカイブするセッションを選択' : listCaption}</p>
-            <ul className="home-sessions" aria-label="セッション一覧">{rows.map(row => {
+            ? <div className="home-empty"><Icon name="inventory_2" /><h2>{text.noArchivedSessions}</h2></div>
+            : <div className="home-empty"><Icon name="chat_bubble" /><h2>{text.noSessions}</h2><p>{text.noSessionsHint}</p></div>)
+          : <><p className="home-list-caption">{mode === 'sort' ? sortCaption : mode === 'select' ? text.selectCaption : listCaption}</p>
+            <ul className="home-sessions" aria-label={text.sessionsLabel}>{rows.map(row => {
               const position = unpinnedIndex.get(row.id) ?? -1
               const archived = archivedIds.has(row.id)
               return <SessionRow key={row.id} row={row} mode={mode} pinned={pinned.has(row.id)} archived={archived}
                 selected={selected.has(row.id)} disabled={busy} canMutate={connected} first={position === 0} last={position === unpinned.length - 1}
                 onToggle={() => { if (canEditHomeSession(row)) setSelected(value => { const next = new Set(value); if (next.has(row.id)) next.delete(row.id); else next.add(row.id); return next }) }}
-                onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) }, pinned.has(row.id), archived)} onArchive={() => { void archive([row.id]) }}
+                onActions={() => sessionActions(dsh, row, () => { void archive([row.id]) }, pinned.has(row.id), archived, text)} onArchive={() => { void archive([row.id]) }}
                 onMove={before => { void move(row.id, before) }} onMoveUp={() => { void move(row.id, unpinned[position - 1]?.id) }}
                 onMoveDown={() => { void move(row.id, unpinned[position + 2]?.id) }} />
             })}</ul></>}
       </div>
     </TabScaffold>
-    <M3eMenu ref={menu} aria-label="一覧のメニュー" className="home-menu" positionX="before">
+    <M3eMenu ref={menu} aria-label={text.listMenu} className="home-menu" positionX="before">
       {ORDER_ITEMS.map(item => <M3eMenuItem key={item.value} role="menuitemradio" aria-checked={preferences.orderBy === item.value ? 'true' : 'false'}
         onClick={() => { menu.current?.hide(); setOrderBy(item.value) }}>
-        <Icon slot="icon" name={item.icon} />{item.label}
+        <Icon slot="icon" name={item.icon} />{text[item.labelKey]}
         {preferences.orderBy === item.value && <Icon slot="trailing-icon" name="check" />}
       </M3eMenuItem>)}
-      {preferences.orderBy === 'manual' && <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />並べ替え</M3eMenuItem>}
-      <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />選んでアーカイブ</M3eMenuItem>
-      <M3eMenuItem disabled={!workspace || !connected || loading} onClick={() => { menu.current?.hide(); if (workspace) renameWorkspace(dsh, workspace) }}><Icon slot="icon" name="edit" />名前を変える</M3eMenuItem>
+      {preferences.orderBy === 'manual' && <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('sort')}><Icon slot="icon" name="swap_vert" />{text.sortAction}</M3eMenuItem>}
+      <M3eMenuItem disabled={!workspace || !operable || !connected || loading} onClick={() => changeMode('select')}><Icon slot="icon" name="checklist" />{text.selectAndArchive}</M3eMenuItem>
+      <M3eMenuItem disabled={!workspace || !connected || loading} onClick={() => { menu.current?.hide(); if (workspace) renameWorkspace(dsh, workspace, text) }}><Icon slot="icon" name="edit" />{text.renameAction}</M3eMenuItem>
       <M3eMenuItem role="menuitemcheckbox" aria-checked={preferences.showSubagents} onClick={() => { menu.current?.hide(); setShowSubagents(!preferences.showSubagents) }}>
-        <Icon slot="icon" name="account_tree" />サブエージェントも表示<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>
+        <Icon slot="icon" name="account_tree" />{text.showSubagents}<span slot="trailing-icon" inert><M3eSwitch checked={preferences.showSubagents} tabIndex={-1} aria-hidden="true" /></span>
       </M3eMenuItem>
       {ARCHIVED_FILTER_ITEMS.map(item => <M3eMenuItem key={item.value} role="menuitemradio" aria-checked={preferences.archivedFilter === item.value ? 'true' : 'false'}
         onClick={() => { menu.current?.hide(); setArchivedFilter(item.value) }}>
-        <Icon slot="icon" name={item.icon} />{item.label}
+        <Icon slot="icon" name={item.icon} />{text[item.labelKey]}
         {preferences.archivedFilter === item.value && <Icon slot="trailing-icon" name="check" />}
       </M3eMenuItem>)}
     </M3eMenu>

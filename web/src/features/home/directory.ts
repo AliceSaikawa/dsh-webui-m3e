@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
 import { remoteFailureOf, unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
+import { homeMessages } from './messages.ts'
 
 export interface DirectoryEntry { name: string; path: string; hidden: boolean }
 export interface DirectoryListing { path: string; home: string; crumbs: DirectoryEntry[]; entries: DirectoryEntry[]; truncated: boolean }
@@ -8,7 +11,11 @@ export interface DirectoryPicker {
   list(path: string | undefined, signal?: AbortSignal): Promise<RemoteResult<DirectoryListing>>
   createDirectory(path: string, name: string): Promise<RemoteResult<string>>
 }
-export const nativeUnavailableMessage = 'この DSH は端末のフォルダ選択だけに対応しているため、iPhone などのブラウザからワークスペースを追加できません。'
+
+/** The picker's "no native folder support" text in the page language. */
+export function nativeUnavailableMessage(): string {
+  return messagesOf(homeMessages, currentLocale()).nativeUnavailable
+}
 
 export function directoryPicker(remote: DshRemote): DirectoryPicker | undefined {
   const value = remote.directoryPicker as Partial<DirectoryPicker> | undefined

@@ -8,7 +8,9 @@ import { completionStatus } from '../../dsh/completion-status.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { showSnackbar } from '../../app/overlay/index.ts'
+import { useLocale, useMessages } from '../../i18n/index.ts'
 import { folderName, formatUpdatedAt, modelIcon } from './data.ts'
+import { homeMessages } from './messages.ts'
 import { useRowGesture } from './gestures.ts'
 import { canEditHomeSession, openHomeSession } from './session-navigation.ts'
 import deepseekIcon from './model-icons/deepseek.svg'
@@ -19,6 +21,8 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   onToggle(): void; onActions(): void; onArchive(): void; onMove(before?: string): void; onMoveUp(): void; onMoveDown(): void
 }) {
   const { sessions, ctx } = useDsh()
+  const text = useMessages(homeMessages)
+  const locale = useLocale()
   const status = useSnapshot(completionStatus(ctx))
   const editable = canEditHomeSession(row)
   const selectable = editable && !archived
@@ -31,17 +35,17 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
     if (pendingOpen.current) return
     pendingOpen.current = true; setOpening(true)
     openingLifetime.current = new AbortController()
-    try { await openHomeSession(sessions, row, navigate, () => active.current, openingLifetime.current.signal) }
-    catch (error) { if (active.current) showSnackbar(remoteErrorMessage(error, '子の会話を開けませんでした。読み直してお試しください。')) }
+    try { await openHomeSession(sessions, row, navigate, () => active.current, openingLifetime.current.signal, text) }
+    catch (error) { if (active.current) showSnackbar(remoteErrorMessage(error, text.subagentOpenFailed)) }
     finally { pendingOpen.current = false; if (active.current) setOpening(false) }
   }
   const pending = usePendingInteractions(row.id)
-  const state = pending.length ? '返事待ち' : row.running ? '実行中' : status.byId[row.id]?.completionUnread ? '完了・未読' : ''
+  const state = pending.length ? text.statePending : row.running ? text.stateRunning : status.byId[row.id]?.completionUnread ? text.stateUnread : ''
   const stateIcon = pending.length ? 'front_hand' : row.running ? 'progress_activity' : 'check'
   const selection = row.projectionValues?.modelSelection as { lastUsed?: unknown } | undefined
   const icon = modelIcon(selection?.lastUsed)
   const gesture = useRowGesture({ disabled: disabled || opening || (mode !== 'normal' && !editable), onClick: () => {
-    if (archived) { showSnackbar('アーカイブ済みのセッションは開けません。アーカイブを戻してから開いてください。'); return }
+    if (archived) { showSnackbar(text.archivedNotOpenable); return }
     if (mode === 'select' && selectable) onToggle()
     else if (mode === 'normal') void open()
   }, onLongPress: mode === 'normal' && canMutate && editable ? onActions : undefined, onSwipe: mode === 'normal' && canMutate && editable && !archived ? onArchive : undefined })
@@ -49,22 +53,22 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
   const [dragging, setDragging] = useState(false)
   const [destination, setDestination] = useState('')
   return <li className={`home-session ${dragging ? 'home-session-dragging' : ''} ${archived ? 'home-session-archived' : ''}`} data-session-id={row.id} data-pinned={pinned ? 'true' : undefined} data-archived={archived ? 'true' : undefined}>
-    {gesture.offset !== 0 && <div className="home-archive-background" aria-hidden="true"><Icon name="inventory_2" /><span>アーカイブ</span></div>}
+    {gesture.offset !== 0 && <div className="home-archive-background" aria-hidden="true"><Icon name="inventory_2" /><span>{text.archive}</span></div>}
     <div className="home-session-surface" style={{ transform: `translateX(${gesture.offset}px)` }}>
       <button type="button" className="home-session-button" {...gesture.handlers} disabled={disabled || opening || mode === 'sort' || (mode === 'select' && !selectable)}
-        aria-label={`${row.displayTitle}${archived ? '、アーカイブ済み' : ''}${pinned ? '、ピン留め' : ''}${state ? `、${state}` : ''}${editable ? '' : '、子の会話・閲覧のみ'}`} aria-pressed={mode === 'select' && selectable ? selected : undefined}
+        aria-label={text.rowName(row.displayTitle, archived, pinned, state, editable)} aria-pressed={mode === 'select' && selectable ? selected : undefined}
         onContextMenu={event => event.preventDefault()}>
         {mode === 'select' && <span inert className="home-selection"><M3eCheckbox checked={selectable && selected} disabled={!selectable} tabIndex={-1} aria-hidden="true" /></span>}
         <span className="home-model-avatar" aria-hidden="true">
           {icon.kind === 'initial' ? icon.initial : <span className="home-model-glyph" style={{ '--home-model-icon': `url("${icon.kind === 'deepseek' ? deepseekIcon : genericIcon}")` } as CSSProperties} />}
           {state && <span className={`home-session-state ${pending.length ? 'home-state-pending' : ''}`}><Icon name={stateIcon} /></span>}
         </span>
-        <span className="home-session-text"><span className="home-session-heading">{archived && <Icon name="inventory_2" className="home-row-archived" />}{pinned && <Icon name="push_pin" filled className="home-row-pin" />}<strong>{row.displayTitle}</strong></span><small>{folderName(row.cwd)} ・ {formatUpdatedAt(row.updatedAt)}</small>
-          {!editable && <small>{opening ? '子の会話を開いています…' : '子の会話・閲覧のみ'}</small>}
+        <span className="home-session-text"><span className="home-session-heading">{archived && <Icon name="inventory_2" className="home-row-archived" />}{pinned && <Icon name="push_pin" filled className="home-row-pin" />}<strong>{row.displayTitle}</strong></span><small>{folderName(row.cwd, text)}{text.rowSeparator}{formatUpdatedAt(row.updatedAt, new Date(), locale, text)}</small>
+          {!editable && <small>{opening ? text.subagentOpening : text.subagentOnly}</small>}
           {state && <span className="home-sr-only">{state}</span>}</span>
         {mode === 'normal' && <Icon name="chevron_right" className="home-row-chevron" />}
       </button>
-      {mode === 'sort' && editable && !pinned && !archived && <button type="button" className="home-drag-handle" aria-label={`${row.displayTitle}を並べ替え。上下キーでも移動できます`}
+      {mode === 'sort' && editable && !pinned && !archived && <button type="button" className="home-drag-handle" aria-label={text.reorderHandle(row.displayTitle)}
         disabled={disabled || !canMutate} onKeyDown={event => {
           if (event.key === 'ArrowUp' && !first) { event.preventDefault(); onMoveUp() }
           if (event.key === 'ArrowDown' && !last) { event.preventDefault(); onMoveDown() }
@@ -80,7 +84,7 @@ export function SessionRow({ row, mode, selected, disabled, canMutate, first, la
           const candidates = [...(list?.querySelectorAll<HTMLElement>('[data-session-id]') ?? [])].filter(node => node.dataset.sessionId !== row.id && node.dataset.pinned !== 'true' && node.dataset.archived !== 'true')
           const target = candidates.find(node => { const rect = node.getBoundingClientRect(); return event.clientY < rect.top + rect.height / 2 })
           drag.current.before = target?.dataset.sessionId
-          setDestination(target ? `${target.querySelector('strong')?.textContent ?? ''}の前へ` : '最後へ')
+          setDestination(target ? text.moveBefore(target.querySelector('strong')?.textContent ?? '') : text.moveLast)
           const scroll = list?.closest('[data-scroll-area]')
           if (scroll) { const rect = scroll.getBoundingClientRect(); if (event.clientY > rect.bottom - 48) scroll.scrollTop += 16; if (event.clientY < rect.top + 48) scroll.scrollTop -= 16 }
         }} onPointerUp={() => {
