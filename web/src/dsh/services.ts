@@ -1,5 +1,8 @@
 import { createContext, createElement, useContext, useMemo, type ReactNode } from 'react'
 import type { ObservableSnapshot } from './use-snapshot.ts'
+import { messagesOf } from '../i18n/catalog.ts'
+import { currentLocale } from '../i18n/current.ts'
+import { serviceErrorMessages } from './messages.ts'
 
 export type { ObservableSnapshot } from './use-snapshot.ts'
 
@@ -310,6 +313,6 @@ export function DshProvider({ ctx, children }: { ctx: unknown; children: ReactNo
 
 export function useDsh(): DshServices {
   const services = useContext(ServicesContext)
-  if (services === null) throw new Error('DSH の接続先が設定されていません。')
+  if (services === null) throw new Error(messagesOf(serviceErrorMessages, currentLocale()).connectionMissing)
   return services
 }

@@ -22,6 +22,7 @@ import { Composer } from '../composer/Composer.tsx'
 import { presentInteraction } from '../interactions/InteractionSheet.tsx'
 import { PendingChip } from '../interactions/PendingChip.tsx'
 import { ConversationPickerButton } from './ConversationPicker.tsx'
+import { conversationMessages } from './messages.ts'
 import { SessionMenuButton } from '../session-tools/SessionMenu.tsx'
 
 export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: string; tab?: 'chat' | 'trace' }) {
@@ -29,6 +30,7 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   const list = useSnapshot(sessions.list)
   const { snapshot } = useSession(sessionId)
   const error = useMessages(errorMessages)
+  const text = useMessages(conversationMessages)
   const access = sessionAccess(list.byId[sessionId], snapshot)
   const pending = usePendingInteractions(sessionId)
   const current = pending.find(item => !item.deferred)
@@ -57,26 +59,26 @@ export function ConversationScreen({ sessionId, tab = 'chat' }: { sessionId: str
   }, [current])
   const base = `/s/${encodeURIComponent(sessionId)}`
   return <section className="screen conversation-screen"><header className="top-bar">
-    <M3eIconButton aria-label="戻る" onClick={back}><Icon name="arrow_back" /></M3eIconButton>
-    <h1>{list.byId[sessionId]?.displayTitle ?? '会話'}</h1><ConversationPickerButton sessionId={sessionId} /><SessionMenuButton sessionId={sessionId} />
+    <M3eIconButton aria-label={text.back} onClick={back}><Icon name="arrow_back" /></M3eIconButton>
+    <h1>{list.byId[sessionId]?.displayTitle ?? text.title}</h1><ConversationPickerButton sessionId={sessionId} /><SessionMenuButton sessionId={sessionId} />
   </header><ConnectionBanner />
-    <M3eTabs className="conversation-tabs" stretch disableSwipe disablePagination variant="primary" previousPageLabel="前のタブ" nextPageLabel="次のタブ">
-      <M3eTab ref={element => { chatTabRef.current = element }} selected={tab === 'chat'} onClick={() => navigate(base, { replace: true })}>チャット</M3eTab>
-      <M3eTab ref={element => { traceTabRef.current = element }} selected={tab === 'trace'} onClick={() => navigate(`${base}/trace`, { replace: true })}>トレース</M3eTab>
+    <M3eTabs className="conversation-tabs" stretch disableSwipe disablePagination variant="primary" previousPageLabel={text.previousTab} nextPageLabel={text.nextTab}>
+      <M3eTab ref={element => { chatTabRef.current = element }} selected={tab === 'chat'} onClick={() => navigate(base, { replace: true })}>{text.chatTab}</M3eTab>
+      <M3eTab ref={element => { traceTabRef.current = element }} selected={tab === 'trace'} onClick={() => navigate(`${base}/trace`, { replace: true })}>{text.traceTab}</M3eTab>
     </M3eTabs>
     <main ref={contentRef} className="screen-content conversation-content">
       {snapshot.openState === 'error' ? <div className="conversation-panel" data-scroll-area><ErrorState icon="chat_error" title={error.openFailedTitle} message={remoteErrorMessage(snapshot.openError)} actions={[{ label: error.back, onClick: back }, { label: error.retryOpen, primary: true, onClick: () => window.location.reload() }]} /></div>
         : <>
-          <RetainedScrollPanel active={tab === 'chat'} label="チャット">
+          <RetainedScrollPanel active={tab === 'chat'} label={text.chatTab}>
             <ChatView sessionId={sessionId} active={tab === 'chat'} />
           </RetainedScrollPanel>
-          <RetainedScrollPanel active={tab === 'trace'} label="トレース">
+          <RetainedScrollPanel active={tab === 'trace'} label={text.traceTab}>
             <TraceView sessionId={sessionId} active={tab === 'trace'} />
           </RetainedScrollPanel>
         </>}
     </main>
     {tab === 'chat' && snapshot.openState !== 'error' && <footer className="conversation-footer"><PendingChip sessionId={sessionId} />{!composerHidden && (access.canCompose
       ? <Composer target={{ kind: 'session', sessionId }} />
-      : <p>{access.mode === 'one-shot' ? 'このサブエージェントの会話は読むだけです。' : '子の会話の情報を確認できないため、読むだけです。'}</p>)}</footer>}
+      : <p>{access.mode === 'one-shot' ? text.readOnlySubagent : text.readOnlyUnknownChild}</p>)}</footer>}
   </section>
 }

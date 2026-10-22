@@ -1,5 +1,12 @@
 import type { ISessions, SessionListState, SessionTarget, SubagentAddress } from './services.ts'
 import { RemoteCallError } from './remote-result.ts'
+import { messagesOf, type Translation } from '../i18n/catalog.ts'
+import { currentLocale } from '../i18n/current.ts'
+import { navigationErrorMessages } from './messages.ts'
+
+type NavigationErrorTexts = Translation<typeof navigationErrorMessages.ja>
+/** Resolved when the error is thrown, so a language change is picked up without a reload. */
+const errorText = (): NavigationErrorTexts => messagesOf(navigationErrorMessages, currentLocale())
 
 const refreshes = new WeakMap<ISessions['list'], Map<string, Promise<void>>>()
 function refresh(sessions: Pick<ISessions, 'list' | 'refreshProjections'>, id: string): Promise<void> {
@@ -29,11 +36,11 @@ export async function resolveConversationTarget(sessions: Pick<ISessions, 'list'
   const row = list.byId[sessionId]
   const retained = sessions.subagentAddress(sessionId)
   if (row?.origin !== 'subagent' && retained === undefined) {
-    if (!row) throw new Error('会話が見つかりません。')
+    if (!row) throw new Error(errorText().sessionMissing)
     return sessionId
   }
   const parentSessionId = row?.parentId ?? retained?.parentSessionId
-  if (!parentSessionId) throw new Error('親の会話が見つかりません。')
+  if (!parentSessionId) throw new Error(errorText().parentMissing)
   let address = subagentCatalogAddress(list, parentSessionId, sessionId)
   if (!address) {
     try { await refresh(sessions, parentSessionId) } catch (error) { if (!isActive()) return undefined; throw error }
@@ -42,9 +49,9 @@ export async function resolveConversationTarget(sessions: Pick<ISessions, 'list'
     const failure = latest.projectionsBySession[parentSessionId]?.error
     if (failure) throw new RemoteCallError(failure)
     const current = latest.byId[sessionId]
-    if (row && (!current || current.origin !== row.origin || current.parentId !== row.parentId)) throw new Error('子の会話の情報が変わりました。もう一度お試しください。')
+    if (row && (!current || current.origin !== row.origin || current.parentId !== row.parentId)) throw new Error(errorText().childChanged)
     address = subagentCatalogAddress(latest, parentSessionId, sessionId)
   }
-  if (!address) throw new Error('子の会話の情報を読み込めませんでした。')
+  if (!address) throw new Error(errorText().childUnavailable)
   return isActive() ? address : undefined
 }

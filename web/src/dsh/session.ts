@@ -4,6 +4,9 @@ import { journalOf } from './session-journal.ts'
 import { useSnapshot } from './use-snapshot.ts'
 import { remoteFailureOf } from './remote-result.ts'
 import { conversationSelection } from './conversation-selection.ts'
+import { messagesOf } from '../i18n/catalog.ts'
+import { currentLocale } from '../i18n/current.ts'
+import { navigationErrorMessages } from './messages.ts'
 
 export type { AssistantStream, SessionJournal } from './session-journal.ts'
 export type { ISession, SessionFace, SessionSnapshot } from './services.ts'
@@ -19,7 +22,7 @@ function missingSession(id: string, pending: boolean, error?: unknown): Observab
   const snapshot: SessionSnapshot = {
     sessionId: id, pendingSubmissions: [], running: false, subagent: null,
     removed: !pending && error === undefined, openState: pending ? 'loading' : 'error',
-    openError: pending ? null : remoteFailureOf(error) ?? { code: 'session/not-found', message: '会話が見つかりません。', details: {} },
+    openError: pending ? null : remoteFailureOf(error) ?? { code: 'session/not-found', message: messagesOf(navigationErrorMessages, currentLocale()).sessionMissing, details: {} },
     hasMore: false, loadingOlder: false, promptError: null, blank: true,
     lastAgentError: null, promptAttempted: false, awaitingFirstTurn: false,
   }

@@ -3,7 +3,14 @@ import { observable } from './mock/observable.ts'
 import { resolveConversationTarget } from './session-navigation.ts'
 import { RemoteCallError } from './remote-result.ts'
 import { conversationSessionId } from '../app/conversation-route.ts'
+import { messagesOf, type Translation } from '../i18n/catalog.ts'
+import { currentLocale } from '../i18n/current.ts'
+import { navigationErrorMessages } from './messages.ts'
 export { conversationSessionId } from '../app/conversation-route.ts'
+
+type NavigationErrorTexts = Translation<typeof navigationErrorMessages.ja>
+/** Resolved when the error is thrown, so a language change is picked up without a reload. */
+const errorText = (): NavigationErrorTexts => messagesOf(navigationErrorMessages, currentLocale())
 
 export const MAIN_VIEW_SOURCE = 'm3e.mainView'
 export interface ConversationSelectionState { sessionId?: string; pending: boolean; error?: unknown; visibleSessionId?: string }
@@ -93,7 +100,7 @@ export class ConversationSelection {
     try {
       const resolved = typeof target === 'string' ? await resolveConversationTarget(this.sessions, target, active) : target
       if (!active() || resolved === undefined) return false
-      if (typeof resolved !== 'string' && resolved.mode === 'unknown') throw new Error('子の会話の情報を読み込めませんでした。')
+      if (typeof resolved !== 'string' && resolved.mode === 'unknown') throw new Error(errorText().childUnavailable)
       reference = this.sessions.retain(resolved, { source: 'm3e.navigation', signal: lifetime })
       const binding = await reference.ready
       if (!active()) return false
@@ -107,7 +114,7 @@ export class ConversationSelection {
     } finally { reference?.release(); this.preparations.delete(controller) }
   }
   private checkOpen(snapshot: { openState: string; openError: import('./services.ts').RemoteFailure | null }): void {
-    if (snapshot.openState === 'error') throw new RemoteCallError(snapshot.openError ?? { code: 'session/open-failed', message: '会話を開けませんでした。', details: {} })
+    if (snapshot.openState === 'error') throw new RemoteCallError(snapshot.openError ?? { code: 'session/open-failed', message: errorText().openFailed, details: {} })
   }
   private async open(target: SessionTarget, revision: number): Promise<boolean> {
     const active = () => revision === this.revision
@@ -126,7 +133,7 @@ export class ConversationSelection {
       if (!active()) return false
       const resolved = typeof target === 'string' ? await resolveConversationTarget(this.sessions, target, active) : target
       if (!active() || resolved === undefined) return false
-      if (typeof resolved !== 'string' && resolved.mode === 'unknown') throw new Error('子の会話の情報を読み込めませんでした。')
+      if (typeof resolved !== 'string' && resolved.mode === 'unknown') throw new Error(errorText().childUnavailable)
       const acquired = this.sessions.retain(resolved, { source: MAIN_VIEW_SOURCE })
       // Transfer ownership synchronously. This async operation only borrows it
       // from here on; stale completions must never release the owner's reference.

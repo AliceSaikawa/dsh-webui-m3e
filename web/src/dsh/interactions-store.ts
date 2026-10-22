@@ -1,4 +1,7 @@
 import type { ISessions, RemoteResult, SessionBinding } from './services.ts'
+import { messagesOf } from '../i18n/catalog.ts'
+import { currentLocale } from '../i18n/current.ts'
+import { interactionErrorMessages } from './messages.ts'
 
 /** Browser-side copies of the DSH approval and question wire contracts. */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
@@ -132,8 +135,11 @@ export function isPlanReview(pending: PendingInteraction): pending is PendingQue
   return pending.kind === 'question' && pending.items.some((item) => item.intent?.kind === 'plan-review')
 }
 
+/** Resolved at throw time: the page language can change without a reload. */
+const errorText = () => messagesOf(interactionErrorMessages, currentLocale())
+
 function questionAbortError(): Error {
-  return Object.assign(new Error('回答の前に質問が取り消されました。'), {
+  return Object.assign(new Error(errorText().questionCancelled), {
     name: 'UserQuestionError',
     code: 'ASK_ABORTED',
   })
@@ -163,7 +169,7 @@ export class InteractionStore {
         displayReason, answer,
       }),
       request.signal,
-      () => request.signal?.reason ?? new Error('承認の要求が取り消されました。'),
+      () => request.signal?.reason ?? new Error(errorText().approvalCancelled),
     )
   }
 
@@ -184,7 +190,7 @@ export class InteractionStore {
       submitting: false, visible: 0,
       pending: { key, kind: 'question', sessionId, callId, deferred: false, items: [...questions],
         answer: async (value) => {
-          if (this.#questions.get(key) !== card || card.submitting) throw new Error('この要求への回答はすでに終了しています。')
+          if (this.#questions.get(key) !== card || card.submitting) throw new Error(errorText().requestFinished)
           if (card.live) { card.live.answer(value); return }
           if (!card.rpc) throw questionAbortError()
           card.submitting = true
@@ -342,7 +348,7 @@ export class InteractionStore {
       }
       const onAbort = (): void => { finish(() => reject(abortReason())) }
       const answer = (value: T): Promise<void> => {
-        if (!finish(() => resolve(value))) return Promise.reject(new Error('この要求への回答はすでに終了しています。'))
+        if (!finish(() => resolve(value))) return Promise.reject(new Error(errorText().requestFinished))
         return Promise.resolve()
       }
       if (signal?.aborted) {
@@ -390,7 +396,7 @@ const registrations = new WeakMap<InteractionContext, { store: InteractionStore;
 export function registerInteractionHandlers(ctx: InteractionContext, store: InteractionStore): () => void {
   const registered = registrations.get(ctx)
   if (registered !== undefined) {
-    if (registered.store !== store) throw new Error('この接続には対応待ちの受け取りがすでに登録されています。')
+    if (registered.store !== store) throw new Error(errorText().alreadyRegistered)
     return registered.dispose
   }
   const existing = new Set(store.getSnapshot().map(pending => pending.key))

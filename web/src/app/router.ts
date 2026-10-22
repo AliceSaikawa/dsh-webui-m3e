@@ -24,7 +24,8 @@ export function initializeRouter(): void {
 
 export function navigate(path: string, options: { replace?: boolean } = {}): void {
   const hash = path.replace(/^#/, '')
-  if (!hash.startsWith('/') || hash.startsWith('//')) throw new Error('画面のパスは / から指定してください')
+  // Developer error: the path is written in the code, so this text is never shown.
+  if (!hash.startsWith('/') || hash.startsWith('//')) throw new Error('A screen path must start with /')
   initializeRouter()
   if (readHash() === '#' + hash) return
   const replace = options.replace ?? shouldReplace(readHash(), hash)
