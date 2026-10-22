@@ -73,9 +73,9 @@ test('数値の入力の誤りは、選んだ言語の辞書で返す', () => {
   const field = numberField()
   assert.deepEqual(parseFieldInput(field, '0', schemaEn, 'en'), { ok: false, message: 'Enter 1 or more.' })
   assert.deepEqual(parseFieldInput(field, '6', schemaEn, 'en'), { ok: false, message: 'Enter 5 or less.' })
-  assert.deepEqual(parseFieldInput(field, '1.5', schemaEn, 'en'), { ok: false, message: 'Enter a multiple of 2.' })
+  assert.deepEqual(parseFieldInput(field, '1.5', schemaEn, 'en'), { ok: false, message: 'Enter a value in steps of 2.' })
   assert.deepEqual(parseFieldInput(field, '0', schemaZh, 'zh'), { ok: false, message: '请输入 1 或更大的值。' })
-  assert.deepEqual(parseFieldInput(field, '1.5', schemaZh, 'zh'), { ok: false, message: '请输入 2 的倍数。' })
+  assert.deepEqual(parseFieldInput(field, '1.5', schemaZh, 'zh'), { ok: false, message: '请按 2 的步长输入。' })
   assert.deepEqual(parseFieldInput(field, '3', schemaEn, 'en'), { ok: true, value: 3 })
   // The Japanese output must stay identical.
   assert.deepEqual(parseFieldInput(field, '0'), { ok: false, message: '1 以上にしてください。' })
@@ -116,6 +116,12 @@ test('設定のページ名と組み込みモードの名前は、選んだ言�
   assert.equal(presetDisplayText({ id: 'standard', isDefault: true }, messagesOf(agentPresetMessages, 'en')).name, 'Standard mode')
   assert.equal(presetDisplayText({ id: 'cordis', isDefault: false }, messagesOf(agentPresetMessages, 'zh')).name, '创造模式')
   assert.equal(presetDisplayText({ id: 'standard', isDefault: true }, messagesOf(agentPresetMessages, 'ja')).name, '標準モード')
+  // The minimal mode description says only what the Japanese says.
+  assert.deepEqual(['ja', 'en', 'zh'].map(locale => presetDisplayText({ id: 'minimal', isDefault: false }, messagesOf(agentPresetMessages, locale as 'ja' | 'en' | 'zh')).description), [
+    'ターミナルのツールだけを使って作業します。基本的な性能を確かめたり比べたりするのに使えます。',
+    'Works with terminal tools only. Useful for checking and comparing basic performance.',
+    '只使用终端工具工作。可用于检查和比较基础表现。',
+  ])
   // A custom declaration owns its copy in every language.
   assert.equal(presetDisplayText({ id: 'standard', isDefault: false, name: 'My mode' }, messagesOf(agentPresetMessages, 'en')).name, 'My mode')
 })

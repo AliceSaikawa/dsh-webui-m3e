@@ -87,6 +87,9 @@ export function FieldEditor({ field: stored, display, namespace, state, store }:
   const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = display ? '' : text.appliedImmediately
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The cleanup below runs after a language change too, so it reads the label of the latest render.
+  const labelRef = useRef(field.label)
+  labelRef.current = field.label
   useEffect(() => {
     clearTimeout(leaveTimer.current)
     leaveTimer.current = undefined
@@ -97,7 +100,7 @@ export function FieldEditor({ field: stored, display, namespace, state, store }:
         void input.leave().then(() => {
           const left = input.getSnapshot()
           if (left.dirty || store.getSnapshot().fieldErrors[fieldKey(namespace.ns, field.path)]) {
-            showSnackbar(messagesOf(settingsFieldMessages, currentLocale()).saveFailed(field.label))
+            showSnackbar(messagesOf(settingsFieldMessages, currentLocale()).saveFailed(labelRef.current))
           }
         })
       }, 0)
