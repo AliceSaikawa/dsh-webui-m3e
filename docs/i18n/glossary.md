@@ -15,6 +15,17 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | メッセージの操作 | Message actions | 消息操作 | なし | シートの題名。M3E の言い方 |
 | テキストを選択 | Select text | 选择文本 | なし | M3E の新しい操作。「選択」は DSH の「选择」に合わせた |
 | 分岐 | branch | 分支 | `message.branch` | 名詞。動詞は「分岐する／branch／分支」 |
+| チャット | Chat | 对话 | `view.chat`（`dsh-client-ui-chat`） | 会話の画面とタブの名前。一致。チャットのほかの語は [terms/chat.md](terms/chat.md) |
+| 失敗 | Failed | 失败 | `row.failed`（`dsh-client-ui-chat`） | 状態の名前。一致 |
+| 完了 | Completed | 已完成 | `command.done`（`dsh-client-ui-chat`） | 一致 |
+| ツール呼び出し | Tool call | 工具调用 | なし | 結果のブロックの種類の名前 |
+| 引数 | Arguments | 参数 | `row.commandArguments`（`dsh-client-ui-chat`。Command arguments／命令参数） | ツールの引数の見出し |
+| 結果 | Result | 结果 | `detail.field.result`（`dsh-client-ui-chat`） | 一致 |
+| 所要時間 | Duration | 用时 | `stats.dialog.toolTime`（`dsh-client-ui-chat`。Tool time／工具调用用时） | 中国語は DSH の 用时 に合わせた |
+| 添付画像 | Attached image | 附件图片 | なし | 名前のない画像の代わりの名前 |
+| 添付ファイル | Attached file | 附件文件 | なし | 名前のないファイルの代わりの名前。表示するときの言語で選ぶ |
+| コマンド | Command | 指令 | `command.title`（`dsh-client-ui-chat`） | 一致。コマンド名が届かないときは、各言語の文の中でこの語を使う |
+| 再読み込み | Retry | 重试 | `retry`（`dsh-client-locale`） | 一致 |
 | 一般 | General | 通用设置 | `general.nav`（`dsh-client-ui-settings-general`） | 設定の見出し |
 | コーディングビューを表示 | Show coding view | 显示代码工作视图 | `developerTools.title`（`dsh-client-ui-settings-general`） | 一致 |
 | トレース | trajectory | 轨迹 | `developerTools.description`（`dsh-client-ui-settings-general`） | DSH の英語は trajectory、中国語は 轨迹 |

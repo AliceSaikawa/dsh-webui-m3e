@@ -18,6 +18,7 @@
 | ミリ秒／秒／分 | ms／s／min | 毫秒／秒／分 | `duration.milliseconds`・`duration.secondUnit`・`duration.minuteUnit` | 単位は辞書に置き、数は `formatNumber(…, { useGrouping: false })` |
 | バイト | bytes | 字节 | `row.imageSize`（{bytes} bytes／{bytes} 字节） | 添付の大きさ。KB・MB は訳さない |
 | 添付画像 | Attached image | 附件图片 | `image.dialog`（Image preview／图片预览） | 名前のない画像の代わりの名前 |
+| 添付ファイル | Attached file | 附件文件 | なし | 名前のないファイルの代わりの名前。表示するときの言語で選ぶ |
 | 画像を拡大 | Enlarge image | 放大图片 | `image.open`（View full image／查看大图） | 押すと全画面になるボタン。DSH は「大図（大图）」なので 放大 に寄せた |
 | 画像を読み込めませんでした。 | Could not load the image. | 无法加载图片。 | `image.failed`（Image preview unavailable／图片无法预览） | 失敗の文 |
 | 再読み込み | Retry | 重试 | `retry`（`dsh-client-locale`） | 一致（DSH は Retry／重试） |
@@ -32,7 +33,7 @@
 | AI のメッセージ | AI message | AI 消息 | なし | 読み上げ用の名。短く保つ |
 | 自分のメッセージ | Your message | 你的消息 | なし | 読み上げ用の名。短く保つ |
 | 送信中のメッセージ | Sending message | 发送中的消息 | `queue.sending`（Sending…／发送中…） | 読み上げ用の名 |
-| コマンド | Command | 指令 | `command.title`（Command／指令） | コマンド名が届かないときの代わりの名前 |
+| コマンド | Command | 指令 | `command.title`（Command／指令） | コマンド名が届かないときは、各言語の文の中でこの語を使う（英語 Command failed、中国語 指令执行失败） |
 | コマンド入力 | Command input | 指令输入 | `input.send` の並び（`dsh-client-ui-conversation`） | 読み上げ用の名 |
 | エラー種別 | Error type | 错误类型 | なし | ツールの失敗の見出し |
 | エラーコード | Error code | 错误代码 | なし | ツールの失敗の見出し |
