@@ -26,7 +26,7 @@
 | 未設定 | Not set | 未设置 | なし | 値がない項目 |
 | 有効／無効 | Enabled／Disabled | 启用／禁用 | なし | 真偽値の選択肢 |
 | 登録済み／未登録 | Registered／Not registered | 已注册／未注册 | なし | API キーの登録状況 |
-| 設定 | Settings | 设置 | `title`、`general.nav`（`dsh-client-ui-settings-general`） | 一致 |
+| 設定 | Settings | 设置 | `title`（`dsh-client-ui-settings-general`） | 一致（`general.nav` は「一般／通用设置」） |
 | この端末 | This device | 此设备 | なし | 設定の「この端末」の節 |
 | 今の画面に戻す | Return to the standard screen | 返回标准界面 | なし | M3E を閉じて DSH 標準の画面に戻す操作。設定の一覧と外観のシート、起動失敗の画面で同じ文にする |
 | DSH の標準の画面 | the standard DSH screen | DSH 的标准界面 | なし | M3E に対して、DSH がもとから持つ画面。中国語は 标准界面 |

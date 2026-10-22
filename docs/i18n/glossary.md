@@ -30,6 +30,16 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 回答の完了時 | On completion | 回答结束后 | `settings.collapse.completion` | 一致 |
 | 次のメッセージの送信時 | On next message | 下次有新消息时 | `settings.collapse.nextInput` | 一致 |
 | パフォーマンスと使用状況 | Performance & usage | 性能与用量 | `settings.performance.title` | 一致 |
+| 設定 | Settings | 设置 | `title`（`dsh-client-ui-settings-general`） | 一致。設定のほかの語は [terms/settings.md](terms/settings.md) |
+| モード | mode | 模式 | `guidePtcIntro` などの文中（`dsh-client-ui-agent-preset`） | エージェントの構成。設定の一覧の見出しは Modes／模式 |
+| 提供元 | provider | 提供方 | `detail.field.provider`（`dsh-client-ui-conversation`） | 中国語は 提供商 ではなく DSH の 提供方 |
+| API キー | API key | API 密钥 | なし | 中国語は 密钥 |
+| 推論の強さ | Reasoning effort | 推理等级 | `menu.effort`（`dsh-client-ui-model-selection`） | 中国語は DSH に合わせた。DSH の英語は Effort |
+| 未設定 | Not set | 未设置 | なし | 値がない項目 |
+| 有効／無効 | Enabled／Disabled | 启用／禁用 | なし | 真偽値の選択肢 |
+| 登録済み／未登録 | Registered／Not registered | 已注册／未注册 | なし | API キーの登録状況 |
+| 既定値に戻す | Reset to default | 恢复默认值 | なし | 項目を既定に戻す操作 |
+| 外観 | Appearance | 外观 | `appearance.title`（`dsh-client-ui-theme`） | 一致 |
 | 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
 | 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
 | English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
