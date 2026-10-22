@@ -41,6 +41,9 @@ function searchError(error: unknown, text: SearchText): Pick<SearchState, 'error
 /** Kept per controller connection so returning from a conversation restores the tab. */
 export function createSearchController(sessions: Pick<ISessions, 'search'>, text: SearchText = messagesOf(searchMessages, 'ja')) {
   let state: SearchState = { input: '', query: '', phase: 'idle', composing: false, items: [], hasMore: false, error: null, retryable: false }
+  // The screen updates this on every render and on a language change, so texts
+  // produced later (async results, retry) use the latest language.
+  let currentText = text
   const listeners = new Set<() => void>()
   let timer: ReturnType<typeof setTimeout> | undefined
   let request: AbortController | undefined
@@ -68,10 +71,10 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>, text
       const result = await sessions.search(query, current.signal)
       if (current.signal.aborted || version !== revision) return
       if (result.ok) publish({ phase: 'ready', items: result.value.items, hasMore: result.value.hasMore })
-      else publish({ phase: 'error', ...searchError(result.error, text) })
+      else publish({ phase: 'error', ...searchError(result.error, currentText) })
     } catch (error) {
       if (current.signal.aborted || version !== revision) return
-      publish({ phase: 'error', ...searchError(error, text) })
+      publish({ phase: 'error', ...searchError(error, currentText) })
     } finally {
       if (request === current) request = undefined
     }
@@ -79,6 +82,12 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>, text
   const schedule = () => { timer = setTimeout(() => { void run() }, 300) }
   return {
     getSnapshot: () => state,
+    /**
+     * The screen calls this on every render. Texts captured at creation would
+     * stay in the old language after a language change, because the controller
+     * outlives the renders that made it (see docs/design/11-i18n.md).
+     */
+    setText(next: SearchText) { currentText = next },
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     setInput(input: string, isComposing = false) {
       const query = normalizeQuery(input)
@@ -88,13 +97,13 @@ export function createSearchController(sessions: Pick<ISessions, 'search'>, text
       if (!changed && !confirmed) { publish({ input, composing: isComposing }); return }
       cancel()
       if (changed) scrollTop = 0
-      const error = isComposing ? null : queryError(query, text)
+      const error = isComposing ? null : queryError(query, currentText)
       const phase = isComposing ? 'composing' : error ? 'error' : shouldSearch(query) ? 'waiting' : 'idle'
       publish({ input, query, composing: isComposing, phase, items: [], hasMore: false, error, retryable: false })
       if (phase === 'waiting') schedule()
     },
     retry() {
-      if (!shouldSearch(state.query) || state.composing || !state.retryable || queryError(state.query, text)) return
+      if (!shouldSearch(state.query) || state.composing || !state.retryable || queryError(state.query, currentText)) return
       cancel()
       publish({ phase: 'waiting', error: null, retryable: false })
       schedule()
@@ -117,5 +126,7 @@ const controllers = new WeakMap<ISessions, ReturnType<typeof createSearchControl
 export function searchControllerFor(sessions: ISessions, text: SearchText = messagesOf(searchMessages, 'ja')) {
   let controller = controllers.get(sessions)
   if (!controller) { controller = createSearchController(sessions, text); controllers.set(sessions, controller) }
+  // The cached controller keeps its state, but the texts belong to the current render.
+  else controller.setText(text)
   return controller
 }

@@ -17,7 +17,8 @@ test('局所化された文言は、文字列ならそのまま、対象の言�
   assert.equal(localizedText('そのまま', 'ja'), 'そのまま')
   assert.deepEqual(localizedText({ en: 'Notes', ja: 'メモ' }, 'ja'), 'メモ')
   assert.equal(localizedText({ en: 'Notes', ja: 'メモ' }, 'en'), 'Notes')
-  assert.equal(localizedText({ en: 'Notes', ja: 'メモ' }, 'zh'), 'メモ')
+  // A Chinese reader gets DSH's fallback language, English, before Japanese.
+  assert.equal(localizedText({ en: 'Notes', ja: 'メモ' }, 'zh'), 'Notes')
   assert.equal(localizedText({ en: 'Notes' }, 'ja'), 'Notes')
 })
 
