@@ -1,16 +1,19 @@
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { QueuedMessage, SessionFace } from '../../dsh/services.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { composerMessages, type ComposerMessages } from './messages.ts'
 
 export function queueEditPrompt(
   face: Pick<SessionFace, 'updateQueue'>,
   item: Pick<QueuedMessage, 'id' | 'text' | 'content'>,
   close: () => void,
+  text: ComposerMessages = messagesOf(composerMessages, 'ja'),
 ) {
   return {
-    title: '順番待ちのメッセージを編集',
+    title: text.queueEditTitle,
     label: item.content.some(part => part.type !== 'text')
-      ? 'メッセージ（編集すると添付画像は外れます）'
-      : 'メッセージ',
+      ? text.queueEditWithImages
+      : text.queueEditMessage,
     initialValue: item.text ?? '',
     multiline: true,
     rows: 3,

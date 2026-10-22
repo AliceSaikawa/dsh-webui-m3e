@@ -1,5 +1,6 @@
 import type { ISessions } from '../../dsh/services.ts'
 import { clearDraft, readDraft, writeDraft, type Draft, type WorkspaceAttachment, type WorkspaceAttachmentBaseline } from './drafts.ts'
+import { composerText } from './messages.ts'
 
 export type { WorkspaceAttachment, WorkspaceAttachmentBaseline } from './drafts.ts'
 export interface WorkspaceRecoveryResult { sessionId?: string; sessionReady?: boolean; error?: unknown }
@@ -181,10 +182,10 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
   const initial = readDraft(draftKey)
   const attachment = initial.workspaceAttachment
   if (!attachment || !usableId(attachment.sessionId) || !usableId(attachment.workspaceId)) {
-    return { error: new Error('ワークスペースへの登録をやり直す会話がありません。') }
+    return { error: new Error(composerText().recoveryConversationMissing) }
   }
   if ((initial.preparingImages ?? 0) > 0) {
-    return { sessionId: attachment.sessionId, sessionReady: false, error: new Error('画像の準備が終わってから登録をやり直してください。') }
+    return { sessionId: attachment.sessionId, sessionReady: false, error: new Error(composerText().recoveryImagesPreparing) }
   }
   const baseline: Baseline = { fresh: false, recorded: attachment.baseline }
   // A fresh identity held nothing at the failure, so the retry may move the origin there only while it is still empty.
@@ -206,7 +207,7 @@ async function runRecovery({ draftKey, sessions }: { draftKey: string; sessions:
       handOff(draftKey, adopted, adoptedBaseline, { settled: false, clearOrigin: false })
       keepRetryOnCurrent(draftKey, adopted)
       settleReported(adopted, source)
-      return { sessionId: adopted.sessionId, sessionReady, error: new Error('会話の一覧を更新できませんでした。もう一度お試しください。') }
+      return { sessionId: adopted.sessionId, sessionReady, error: new Error(composerText().recoveryListRefreshFailed) }
     }
     handOff(draftKey, adopted, adoptedBaseline, { settled: true, clearOrigin: true })
     settleReported(adopted, source)

@@ -5,12 +5,16 @@
  * 判定の規則は cache-sentinel の docs/spec-ui.md §E2 と同じ(src/client/banner.ts の写し)。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { useMessages } from '../../i18n/index.ts'
+import { composerMessages, type ComposerMessages } from './messages.ts'
 
 /** 状態の取得口(cache-sentinel の STATUS_PATH)。 */
 export const CACHE_SENTINEL_STATUS_PATH = 'api/cache-sentinel.status'
 /** 取得の間隔。 */
 export const CACHE_SENTINEL_POLL_MS = 30_000
-export const CACHE_SENTINEL_UNLOCK_LABEL = '次の 1 回を許可(/unlock)'
+/** The source-language label. Components use the catalog so it follows the page language. */
+export const CACHE_SENTINEL_UNLOCK_LABEL = composerMessages.ja.cacheUnlockLabel
 
 export interface CacheSentinelStatus {
   gate: boolean
@@ -38,15 +42,14 @@ export function parseCacheSentinelStatus(value: unknown): CacheSentinelStatus | 
 }
 
 /** 表示する内容。何も出さないときは undefined。 */
-export function cacheSentinelBanner(status: CacheSentinelStatus | undefined, now: number): CacheSentinelBanner | undefined {
+export function cacheSentinelBanner(status: CacheSentinelStatus | undefined, now: number,
+  text: ComposerMessages = messagesOf(composerMessages, 'ja')): CacheSentinelBanner | undefined {
   if (status === undefined || !status.gate) return undefined
   if (status.state === 'stale' && !status.dryRun) {
-    const elapsed = status.idleMinutes === null ? '' : `(最終応答から ${status.idleMinutes} 分)`
-    return { tone: 'warning', text: `キャッシュ切れ${elapsed}。このまま送ると止められます。`, action: 'unlock' }
+    return { tone: 'warning', text: status.idleMinutes === null ? text.cacheStale : text.cacheStaleWithAge(status.idleMinutes), action: 'unlock' }
   }
   if (status.state === 'unlocked') {
-    const rest = status.unlockExpiresAt === null ? '' : `あと ${Math.max(0, Math.ceil((status.unlockExpiresAt - now) / 60_000))} 分`
-    return { tone: 'info', text: `次の送信を許可中(キャッシュなしの料金になります)。${rest}` }
+    return { tone: 'info', text: status.unlockExpiresAt === null ? text.cacheUnlocked : text.cacheUnlockedRemaining(Math.max(0, Math.ceil((status.unlockExpiresAt - now) / 60_000))) }
   }
   return undefined
 }
@@ -86,6 +89,7 @@ function appBase(): string {
  * 取得は重なることがあるので、最後に始めた取得の結果だけを表示に使う。
  */
 export function useCacheSentinel(sessionId: string, enabled: boolean) {
+  const text = useMessages(composerMessages)
   const [status, setStatus] = useState<CacheSentinelStatus>()
   // 取得ごとに進める番号。セッションの切り替え・無効化・画面を閉じたときも進め、終わる前の応答を捨てる。
   const latest = useRef(0)
@@ -106,5 +110,5 @@ export function useCacheSentinel(sessionId: string, enabled: boolean) {
     return () => { latest.current++; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
   }, [enabled, sessionId, refresh])
 
-  return { banner: cacheSentinelBanner(status, Date.now()), refresh }
+  return { banner: cacheSentinelBanner(status, Date.now(), text), refresh }
 }

@@ -1,3 +1,5 @@
+import { composerText } from './messages.ts'
+
 export interface ReferenceToken {
   start: number
   end: number
@@ -33,7 +35,7 @@ export function replaceReference(
   path: string,
   kind: 'file' | 'directory' = 'file',
 ): { text: string; cursor: number } {
-  if (!isReferencePathSafe(path)) throw new Error('このファイル名は参照に使えません。')
+  if (!isReferencePathSafe(path)) throw new Error(composerText().referenceUnsafe)
   const value = kind === 'directory' && !path.endsWith('/') ? `${path}/` : path
   const mention = /\s/u.test(value) ? `@"${value}"` : `@${value}`
   const suffix = text.slice(token.end)
@@ -67,13 +69,18 @@ export function visibleQueue<T extends { placement: string }>(queue: readonly T[
   return queue.filter(item => item.placement === 'queued' || item.placement === 'steering')
 }
 
-const effortNames = new Map([
-  ['off', 'オフ（考えない）'], ['none', 'なし'], ['minimal', '最小'], ['low', '低'],
-  ['medium', '中'], ['high', '高'], ['xhigh', 'とても高い'], ['max', '最大'],
+type EffortKey = 'effortOff' | 'effortNone' | 'effortMinimal' | 'effortLow'
+  | 'effortMedium' | 'effortHigh' | 'effortXHigh' | 'effortMax'
+const effortKeys = new Map<string, EffortKey>([
+  ['off', 'effortOff'], ['none', 'effortNone'], ['minimal', 'effortMinimal'], ['low', 'effortLow'],
+  ['medium', 'effortMedium'], ['high', 'effortHigh'], ['xhigh', 'effortXHigh'], ['max', 'effortMax'],
 ])
 
+/** The page language is read here because the sheet labels efforts while it renders. */
 export function reasoningEffortLabel(id: string, index: number): string {
-  return effortNames.get(id) ?? `追加の深さ ${index + 1}`
+  const text = composerText()
+  const key = effortKeys.get(id)
+  return key === undefined ? text.effortExtra(index + 1) : text[key]
 }
 
 export const imageMaxEdge = 2048
@@ -89,7 +96,7 @@ export function shouldConvertImage(mediaType: string, width: number, height: num
 
 export function fitImageDimensions(width: number, height: number): { width: number; height: number } {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error('画像の大きさを読み取れませんでした。')
+    throw new Error(composerText().dimensionsUnreadable)
   }
   const scale = Math.min(1, imageMaxEdge / Math.max(width, height))
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }

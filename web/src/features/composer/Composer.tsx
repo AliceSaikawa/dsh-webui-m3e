@@ -30,8 +30,10 @@ import { pendingWorkspaceAttachment, retryWorkspaceAttachment, type WorkspaceRec
 import { commandIcon, permissionIcon } from './presentation.ts'
 import { modelApplyController, modelDisplayName } from './model-picker.ts'
 import { PROVIDER_EVENTS } from '../settings/providers.ts'
-import { CACHE_SENTINEL_UNLOCK_LABEL, useCacheSentinel } from './cache-sentinel.ts'
+import { useCacheSentinel } from './cache-sentinel.ts'
 import { GoalStrip } from '../session-tools/GoalStrip.tsx'
+import { useMessages } from '../../i18n/index.ts'
+import { composerMessages, composerText } from './messages.ts'
 import '../session-tools/session-tools.css'
 import './composer.css'
 
@@ -42,6 +44,7 @@ export function Composer({ target }: { target: ComposerTarget }) {
 }
 
 function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey: string }) {
+  const text = useMessages(composerMessages)
   const services = useDsh()
   const api = useMemo(() => composerApi(services.remote), [services.remote])
   const sessionId = target.kind === 'session' ? target.sessionId : ''
@@ -93,12 +96,12 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   const planActive = target.kind === 'new' ? draft.plan ?? false : plan ? (plan.pending ? !plan.active : plan.active) : false
   const queue = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const permissionOption = permission?.options.find(option => option.value === permission.currentValue)
-  const permissionName = permission ? permissionOption ? presetDisplayName(permissionOption.value, permissionOption.name) : 'カスタム' : '権限'
-  const permissionLabel = permission ? `権限：${permissionName}` : '権限'
+  const permissionName = permission ? permissionOption ? presetDisplayName(permissionOption.value, permissionOption.name) : presetDisplayName('custom', '') : text.permissionFallback
+  const permissionLabel = permission ? text.permissionLabel(permissionName) : text.permissionFallback
   const currentModel = target.kind === 'new' ? draft.model ?? catalog?.default : modelSelection?.next ?? catalog?.default
   const modelName = modelDisplayName(currentModel, catalog)
   const canSend = connected && !busy && !modelState.pending && !preparing && Boolean(draft.text.trim() || draft.images.length) && (target.kind === 'new' ? Boolean(target.workspaceId) : Boolean(face && !snapshot.removed && snapshot.openState === 'open'))
-  const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, '接続や送信内容を確認して、もう一度お試しください。') : '')
+  const sendError = draft.error || (snapshot.promptError?.op === 'send' ? errorText(snapshot.promptError.error, text.sendConfirmFallback, text) : '')
 
   function update(patch: Partial<Draft>) {
     const next = { ...readDraft(draftKey), ...patch }
@@ -120,8 +123,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }, [api])
   const applyModel = useCallback((selection: ModelSelection): Promise<ModelSelection> => modelApply.run(selection, async requested => {
     const current = latestModelContext.current
-    if (current.services.connection.state.getSnapshot() !== 'connected') throw new Error('接続が戻ってからモデルを選んでください。')
-    if (pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)) throw new Error('送信が終わってからモデルを選んでください。')
+    if (current.services.connection.state.getSnapshot() !== 'connected') throw new Error(composerText().modelConnectFirst)
+    if (pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)) throw new Error(composerText().modelAfterSend)
     const textRevision = draftTextRevision(draftKey)
     if (current.target.kind === 'new') {
       writeDraft(draftKey, { ...readDraft(draftKey), model: requested })
@@ -129,7 +132,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       return requested
     }
     if (!current.face || current.snapshot.removed || current.snapshot.openState !== 'open') {
-      throw new Error('会話を開いてからモデルを選んでください。')
+      throw new Error(composerText().modelOpenConversation)
     }
     const selected = await current.api.selectModel(current.sessionId, requested)
     writeDraft(draftKey, { ...readDraft(draftKey), model: undefined })
@@ -186,8 +189,9 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         if (value && withdrawn !== undefined) {
           const name = latestDefaults.current?.options.find(option => option.value === withdrawn)?.name ?? withdrawn
           const fallback = value.options.find(option => option.value === value.currentValue)
+          const messages = composerText()
           writeDraft(draftKey, { ...draft, permission: undefined })
-          showSnackbar(`権限「${presetDisplayName(withdrawn, name)}」は使えなくなったため、${fallback ? `「${presetDisplayName(fallback.value, fallback.name)}」` : '既定'}に戻しました。`)
+          showSnackbar(messages.permissionWithdrawn(presetDisplayName(withdrawn, name), fallback ? presetDisplayName(fallback.value, fallback.name) : undefined))
         }
         latestDefaults.current = value
         setDefaults(value)
@@ -223,7 +227,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       void api.listFiles(sessionId, token.query, abort.signal).then(value => {
         if (!abort.signal.aborted) setFiles(value.filter(file => isReferencePathSafe(file.path)))
       }).catch(error => {
-        if (!abort.signal.aborted) setAuxError(errorText(error, 'ファイルの候補を取得できませんでした。'))
+        if (!abort.signal.aborted) setAuxError(errorText(error, composerText().fileCandidatesFailed))
       })
     }, 150)
     return () => { clearTimeout(timer); abort.abort() }
@@ -260,7 +264,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     if (result.error !== undefined) {
       const key = result.createdId ? `session:${result.createdId}` : draftKey
       const retained = readDraft(key)
-      writeDraft(key, { ...retained, error: retained.deliveryOutcome === 'unknown' ? retained.error : errorText(result.error, retained.error) })
+      writeDraft(key, { ...retained, error: retained.deliveryOutcome === 'unknown' ? retained.error : errorText(result.error, retained.error ?? composerText().errorFailed) })
     }
     locked.current = false
     const restoreFocus = restoreRetryFocus.current
@@ -282,7 +286,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     const key = result.sessionId && result.sessionReady ? `session:${result.sessionId}` : draftKey
     const current = readDraft(key)
     writeDraft(key, { ...current, workspaceAttachmentError: result.error === undefined ? undefined
-      : errorText(result.error, 'ワークスペースへ登録できませんでした。接続を確認して、もう一度お試しください。') })
+      : errorText(result.error, composerText().workspaceRecoveryFailed) })
     locked.current = false
     if (!mounted.current) return
     setBusy(false); setRecovering(false)
@@ -291,7 +295,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   function openModels() {
     setAuxError('')
     closeSheet.current = openSheet(() => <ModelPickerSheet target={target} draftKey={draftKey} modelApply={modelApply}
-      initialCatalog={catalog} loadCatalog={loadCatalog} applyModel={applyModel} />, { label: 'モデルの選択' })
+      initialCatalog={catalog} loadCatalog={loadCatalog} applyModel={applyModel} />, { label: text.modelSheetLabel })
   }
   async function openPermissions() {
     // Keep the chip unchanged while one invocation fetches and opens the sheet.
@@ -300,13 +304,13 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     try {
       const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions()
         : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
-      if (!options) throw new Error('権限の候補を取得できませんでした。会話を開いてからお試しください。')
+      if (!options) throw new Error(text.permissionCandidatesFailed)
       if (!mounted.current) return
       closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} sessionId={sessionId} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
         else if (face) { requireMatched(await face.command(`/permission ${value}`)); update({ permission: undefined }) }
-      }} />, { label: '権限の選び直し' })
-    } catch (error) { if (mounted.current) setAuxError(errorText(error)) }
+      }} />, { label: text.permissionSheetLabel })
+    } catch (error) { if (mounted.current) setAuxError(errorText(error, undefined, text)) }
     finally { openingPermissions.current = false }
   }
   function openPlus() {
@@ -314,69 +318,69 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     closeSheet.current = openSheet(close => <PlusSheet close={close} plan={planActive}
       target={target} draftKey={draftKey} modelApply={modelApply} initialCatalog={catalog} loadCatalog={loadCatalog} applyModel={applyModel}
       onImage={() => imageInput.current?.click()}
-      onReference={() => { insert(draft.text + (draft.text && !/\s$/.test(draft.text) ? ' @' : '@')); if (!sessionId) setAuxError('ファイルの候補は、最初の送信で会話を作ったあとに使えます。') }}
-      onCommand={() => { insert(draft.text.startsWith('/') ? draft.text : '/' + draft.text); if (!sessionId) setAuxError('コマンドの候補は会話を作ったあとに表示します。入力したコマンドは初回送信時に確認します。') }}
+      onReference={() => { insert(draft.text + (draft.text && !/\s$/.test(draft.text) ? ' @' : '@')); if (!sessionId) setAuxError(text.fileSuggestionsNeedSession) }}
+      onCommand={() => { insert(draft.text.startsWith('/') ? draft.text : '/' + draft.text); if (!sessionId) setAuxError(text.commandSuggestionsNeedSession) }}
       onPlan={async active => {
         if (target.kind === 'new') update({ plan: active })
         else {
           const currentFace = latestModelContext.current.face
-          if (!currentFace) throw new Error('会話を開いてから計画モードを切り替えてください。')
+          if (!currentFace) throw new Error(composerText().planOpenConversation)
           requireMatched(await currentFace.command(active ? '/plan' : '/plan off'))
           update({ plan: undefined })
         }
-      }} />, { label: '入力の補助' })
+      }} />, { label: text.plusSheetLabel })
   }
   async function unlockCache() {
     if (!face) return
     setUnlocking(true)
     try { requireMatched(await face.command('/unlock')); setAuxError('') }
-    catch (error) { setAuxError(errorText(error, '送信を許可できませんでした。もう一度お試しください。')) }
+    catch (error) { setAuxError(errorText(error, text.unlockFailed, text)) }
     finally { setUnlocking(false); void sentinel.refresh() }
   }
   async function stop() {
     if (!face) return
-    try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, '停止できませんでした。もう一度お試しください。')) }
+    try { unwrapRemoteResult(await face.cancel()); setAuxError('') } catch (error) { setAuxError(errorText(error, text.stopFailed, text)) }
   }
 
-  if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">サブエージェントの会話は読むだけです</p>
+  if (!sessionAccess(list.byId[sessionId], snapshot).canCompose) return <p className="composer-readonly">{text.readOnlySubagent}</p>
   return <div className="composer" ref={root} data-testid="composer" data-target={target.kind}>
-    {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>ワークスペースへの登録が未完了です</strong>
-      <p>会話は作成済みです。登録し直すと新しい会話が作られることがあり、そのときは入力中の本文もそちらへ移ります。メッセージは送信ボタンから送れます。</p>
+    {draft.workspaceAttachment && <div className="composer-error" role="status"><strong>{text.workspaceRecoveryTitle}</strong>
+      <p>{text.workspaceRecoveryBody}</p>
       {draft.workspaceAttachmentError && <p>{draft.workspaceAttachmentError}</p>}
-      <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>ワークスペースへ登録し直す</M3eButton>
+      <M3eButton disabled={!connected || busy || preparing} onClick={() => { void recoverWorkspace() }}>{text.workspaceRecoveryAction}</M3eButton>
     </div>}
-    {recovering && <p className="composer-notice" role="status">ワークスペースへの登録をやり直しています。終わるまで入力と送信はできません。</p>}
-    {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? '送信結果が不明です' : '送れませんでした'}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={event => { void send(undefined, (event as MouseEvent).detail === 0) }}>もう一度送る</M3eButton></div>}
+    {recovering && <p className="composer-notice" role="status">{text.workspaceRecovering}</p>}
+    {sendError && <div className="composer-error" role="alert"><strong>{draft.deliveryOutcome === 'unknown' ? text.deliveryUnknownTitle : text.deliveryFailedTitle}</strong><p>{sendError}</p><M3eButton disabled={!canSend} onClick={event => { void send(undefined, (event as MouseEvent).detail === 0) }}>{text.resend}</M3eButton></div>}
     {sentinel.banner && <div className={`composer-sentinel composer-sentinel-${sentinel.banner.tone}`} role="status" data-testid="cache-sentinel-banner">
       <p>{sentinel.banner.text}</p>
-      {sentinel.banner.tone === 'warning' && <M3eButton variant="outlined" disabled={!connected || unlocking} onClick={() => { void unlockCache() }}>{CACHE_SENTINEL_UNLOCK_LABEL}</M3eButton>}
+      {sentinel.banner.tone === 'warning' && <M3eButton variant="outlined" disabled={!connected || unlocking} onClick={() => { void unlockCache() }}>{text.cacheUnlockLabel}</M3eButton>}
     </div>}
     {auxError && <p className="composer-notice" role="status">{auxError}</p>}
-    {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, '画像を読み込めませんでした。PNG または JPEG を選び直してください。')}</p>}
-    {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">ファイルとコマンドの候補は、最初の送信で会話を作ったあとに使えます。</p>}
+    {draft.imagePreparationError !== undefined && <p className="composer-notice" role="status">{errorText(draft.imagePreparationError, text.imageLoadFailed, text)}</p>}
+    {!auxError && target.kind === 'new' && suggesting && (token || draft.text.startsWith('/')) && <p className="composer-notice" role="status">{text.suggestionsNeedSession}</p>}
     {target.kind === 'session' && <GoalStrip sessionId={sessionId} />}
-    {queue.length > 0 && <div className="composer-queue"><M3eAssistChip className="composer-queue-chip" variant="elevated" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: '順番待ちの編集' }) }}><Icon slot="icon" name="schedule" />順番待ち {queue.length} 件</M3eAssistChip></div>}
+    {queue.length > 0 && <div className="composer-queue"><M3eAssistChip className="composer-queue-chip" variant="elevated" onClick={() => { closeSheet.current = openSheet(close => <QueueSheet sessionId={sessionId} close={close} />, { label: text.queueSheetLabel }) }}><Icon slot="icon" name="schedule" />{text.queueChip(queue.length)}</M3eAssistChip></div>}
     <div className="composer-input-wrap">
-      {suggesting && !busy && (token ? files.length > 0 : commandMatches.length > 0) && <div className="composer-suggestions" aria-label={token ? 'ファイルの候補' : 'コマンドの候補'}>
+      {suggesting && !busy && (token ? files.length > 0 : commandMatches.length > 0) && <div className="composer-suggestions" aria-label={token ? text.fileSuggestionsLabel : text.commandSuggestionsLabel}>
         {token ? files.map(file => <SheetRow key={file.path} icon={file.kind === 'directory' ? 'folder' : 'description'} onClick={() => { const next = replaceReference(draft.text, token, file.path, file.kind); insert(next.text, next.cursor); setSuggesting(false) }}>{file.path}</SheetRow>) : commandMatches.map(command => <SheetRow key={command.name} icon={commandIcon(command.name)} detail={command.description} onClick={() => { insert(`/${command.name} `); setSuggesting(false) }}>/{command.name}</SheetRow>)}
       </div>}
       <div className="composer-frame">
-        {draft.images.length > 0 && <div className="composer-images">{draft.images.map(image => <figure key={image.id}><img src={image.previewUrl} alt={image.name || '添付画像'} /><M3eIconButton aria-label={`${image.name || '画像'} を外す`} disabled={busy} onClick={() => update({ images: draft.images.filter(item => item.id !== image.id) })}><Icon name="close" /></M3eIconButton></figure>)}</div>}
-        <textarea ref={textArea} id={inputId} rows={1} aria-label="メッセージ入力欄" aria-describedby={hint ? hintId : undefined} placeholder="メッセージを入力" value={draft.text} disabled={busy} onChange={event => { update({ text: event.target.value }); setCursor(event.target.selectionStart); setSuggesting(true) }} onSelect={event => setCursor(event.currentTarget.selectionStart)} onFocus={() => setSuggesting(true)} onKeyDown={event => { if (event.key === 'Escape') setSuggesting(false) }} />
+        {draft.images.length > 0 && <div className="composer-images">{draft.images.map(image => <figure key={image.id}><img src={image.previewUrl} alt={image.name || text.attachmentImageAlt} /><M3eIconButton aria-label={text.removeImage(image.name || text.imageFallbackName)} disabled={busy} onClick={() => update({ images: draft.images.filter(item => item.id !== image.id) })}><Icon name="close" /></M3eIconButton></figure>)}</div>}
+        <textarea ref={textArea} id={inputId} rows={1} aria-label={text.inputLabel} aria-describedby={hint ? hintId : undefined} placeholder={text.inputPlaceholder} value={draft.text} disabled={busy} onChange={event => { update({ text: event.target.value }); setCursor(event.target.selectionStart); setSuggesting(true) }} onSelect={event => setCursor(event.currentTarget.selectionStart)} onFocus={() => setSuggesting(true)} onKeyDown={event => { if (event.key === 'Escape') setSuggesting(false) }} />
         {/* CSS owns the limits: the library's row measurement includes min-height. */}
         <M3eTextareaAutosize ref={autosize} htmlFor={inputId} />
         {hint && <small id={hintId} className="composer-hint">{hint}</small>}
-        {preparing && <small role="status">画像を準備しています…</small>}
+        {preparing && <small role="status">{text.preparingImages}</small>}
         <div className={snapshot.running ? 'composer-controls composer-controls-running' : 'composer-controls'}>
-          <M3eIconButton variant="outlined" aria-label="入力の補助を開く" disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
+          <M3eIconButton variant="outlined" aria-label={text.plusOpenLabel} disabled={busy || preparing} onClick={openPlus}><Icon name="add" /></M3eIconButton>
           <M3eIconButton className="composer-permission" variant="outlined" aria-label={permissionLabel} title={permissionLabel} disabled={!connected || busy} onClick={() => { void openPermissions() }}><Icon name={permissionIcon(permissionOption?.value)} /></M3eIconButton>
           <span className="composer-spacer" />
-          <M3eButton variant="text" className="composer-model" aria-label={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} title={modelName ? `モデル：${modelName}` : 'モデルを選ぶ'} disabled={!connected || busy} onClick={openModels}><span className="composer-model-label">{modelName ?? 'モデル'}</span></M3eButton>
-          {snapshot.running && <M3eIconButton aria-label="実行を停止" disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}
+          <M3eButton variant="text" className="composer-model" aria-label={modelName ? text.modelAria(modelName) : text.selectModel} title={modelName ? text.modelAria(modelName) : text.selectModel} disabled={!connected || busy} onClick={openModels}><span className="composer-model-label">{modelName ?? text.modelFallback}</span></M3eButton>
+          {snapshot.running && <M3eIconButton aria-label={text.stopRun} disabled={!connected} onClick={() => { void stop() }}><Icon name="stop" filled /></M3eIconButton>}
           {snapshot.running ? <M3eSplitButton className="composer-send-group" variant="filled">
-            <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}><Icon slot="icon" name="arrow_upward" />{busy ? '送信中' : '順番待ち'}</M3eButton>
-            <M3eIconButton slot="trailing-button" aria-label="送り方を選ぶ" disabled={!canSend} onClick={() => { closeSheet.current = openSheet(close => <div className="composer-sheet"><h2>送り方を選ぶ</h2><SheetRow icon="schedule" onClick={() => { close(); void send('queue') }}>順番待ち</SheetRow><SheetRow icon="bolt" onClick={() => { close(); void send('steer') }}>割り込み</SheetRow></div>, { label: '送り方を選ぶ' }) }}><Icon name="arrow_drop_down" /></M3eIconButton>
-          </M3eSplitButton> : <M3eIconButton variant="filled" aria-label={busy ? '送信中' : '送信'} disabled={!canSend} onClick={() => { void send('queue') }}><Icon name="arrow_upward" /></M3eIconButton>}
+            <M3eButton slot="leading-button" disabled={!canSend} onClick={() => { void send('queue') }}><Icon slot="icon" name="arrow_upward" />{busy ? text.sending : text.queueMode}</M3eButton>
+            <M3eIconButton slot="trailing-button" aria-label={text.sendMode} disabled={!canSend} onClick={() => { closeSheet.current = openSheet(close => <div className="composer-sheet"><h2>{text.sendMode}</h2><SheetRow icon="schedule" onClick={() => { close(); void send('queue') }}>{text.queueMode}</SheetRow><SheetRow icon="bolt" onClick={() => { close(); void send('steer') }}>{text.steerMode}</SheetRow></div>, { label: text.sendMode }) }}><Icon name="arrow_drop_down" /></M3eIconButton>
+          </M3eSplitButton> : <M3eIconButton variant="filled" aria-label={busy ? text.sending : text.send} disabled={!canSend} onClick={() => { void send('queue') }}><Icon name="arrow_upward" /></M3eIconButton>}
         </div>
       </div>
     </div>

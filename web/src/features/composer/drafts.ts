@@ -78,7 +78,7 @@ export function readDraft(key: string): Draft {
     }
   } catch { /* Ignore unavailable or malformed recovery metadata. */ }
   const draft: Draft = { text, images: [], ...(workspaceAttachment ? { workspaceAttachment } : {}),
-    ...(deliveryOutcome ? { deliveryOutcome, error: uncertainDeliveryMessage } : {}) }
+    ...(deliveryOutcome ? { deliveryOutcome, error: uncertainDeliveryMessage() } : {}) }
   drafts.set(key, draft)
   return draft
 }

@@ -6,6 +6,7 @@ import { submitMessage } from './submission.ts'
 import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-status.ts'
 import { attachmentBaseline, clearWorkspaceOrigin, pendingWorkspaceAttachment, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
 import { modelApplyController } from './model-picker.ts'
+import { composerText } from './messages.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
 export interface DeliveryOptions {
@@ -23,7 +24,7 @@ const flights = new Map<string, Promise<DeliveryResult>>()
 const flightKeys = new Map<Promise<DeliveryResult>, Set<string>>()
 function shareKey(key: string, flight: Promise<DeliveryResult>): void {
   const existing = flights.get(key)
-  if (existing && existing !== flight) throw new Error('この会話の送信が完了してから、もう一度お試しください。')
+  if (existing && existing !== flight) throw new Error(composerText().sendInProgress)
   flights.set(key, flight)
   const keys = flightKeys.get(flight) ?? new Set<string>()
   keys.add(key)
@@ -44,9 +45,9 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
   const active = pendingDelivery(options.draftKey)
   if (active) return active
   // The retry may hand the body over to this draft when it settles; sending now could race that handoff.
-  if (pendingWorkspaceAttachment(options.draftKey)) return Promise.resolve({ error: new Error('ワークスペースへの登録をやり直しています。終わってから送信してください。') })
+  if (pendingWorkspaceAttachment(options.draftKey)) return Promise.resolve({ error: new Error(composerText().recoveryInProgressSend) })
   const modelApply = modelApplyController(options.sessions, options.draftKey)
-  if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new Error('モデルの選択を反映中です。') })
+  if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new Error(composerText().modelApplying) })
   modelApply.setComposerBusy(true)
   const keys = new Set([options.draftKey])
   const flight = runDelivery(options, key => {
@@ -66,30 +67,30 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
 function ensureWritable(face: SessionFace, sessions: DeliveryOptions['sessions']) {
   const snapshot = face.getSnapshot()
   const access = sessionAccess(sessions.list.getSnapshot().byId[face.sessionId], snapshot)
-  if (!access.canCompose) throw new Error('サブエージェントの会話は読むだけです。')
-  if (snapshot.removed) throw new Error('この会話は削除されています。')
+  if (!access.canCompose) throw new Error(composerText().subagentReadOnly)
+  if (snapshot.removed) throw new Error(composerText().conversationRemoved)
   return access
 }
 
 async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: DeliveryOptions, shareFlight: (key: string) => void): Promise<DeliveryResult> {
   if ((readDraft(draftKey).preparingImages ?? 0) > 0) {
-    return { error: new Error('画像を準備しています。準備が終わってから送信してください。') }
+    return { error: new Error(composerText().imagesPreparingSend) }
   }
   const currentDraft = readDraft(draftKey)
   // A failed retry cannot establish what happened to the earlier request.
-  let sending = { ...currentDraft, retryMode: mode, error: currentDraft.deliveryOutcome === 'unknown' ? uncertainDeliveryMessage : undefined as string | undefined }
+  let sending = { ...currentDraft, retryMode: mode, error: currentDraft.deliveryOutcome === 'unknown' ? uncertainDeliveryMessage() : undefined as string | undefined }
   let createdId: string | undefined
   let sessionReady = true
   let destinationReady = false
   let reference: SessionReference | undefined
   try {
-    if (!sending.text.trim() && !sending.images.length) throw new Error('メッセージか画像を追加してください。')
+    if (!sending.text.trim() && !sending.images.length) throw new Error(composerText().addMessageOrImage)
     writeDraft(draftKey, sending)
     let sessionId: string
     if (target.kind === 'new') {
       const retained = sending.workspaceAttachment
       if (retained && !workspaceAttachmentFrom({ code: 'session/workspace-attach-failed', details: retained }, target.workspaceId)) {
-        throw new Error('作成済みの会話を確認できませんでした。会話の一覧から開き直してください。')
+        throw new Error(composerText().createdConversationUnknown)
       }
       createdId = retained
         ? retained.sessionId
@@ -102,7 +103,7 @@ async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: D
     }
     reference = sessions.retain(sessions.subagentAddress(sessionId) ?? sessionId, { source: 'm3e.delivery' })
     const destination = (await reference.ready).session
-    if (destination.getSnapshot().openState === 'error') throw new Error('会話を準備できませんでした。会話を開き直してから送信してください。')
+    if (destination.getSnapshot().openState === 'error') throw new Error(composerText().conversationPrepareFailed)
     destinationReady = true
     ensureWritable(destination, sessions)
 
@@ -145,13 +146,14 @@ async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: D
       }
     }
     if (createdId && sending.workspaceAttachment) sessionReady = await sessionIsAddressable(sessions, createdId)
+    const text = composerText()
     const message = attachmentFailure
-      ? 'メッセージはまだ送信されていません。送信ボタンから送ってください。'
+      ? text.deliveredNotSent
       : target.kind === 'new' && !createdId
-      ? 'セッションを作れませんでした。接続とワークスペースを確認してください。'
-      : 'メッセージを送れませんでした。接続を確認して、もう一度お試しください。'
+      ? text.sessionCreateFailed
+      : text.sendFailed
     const unknown = error instanceof UncertainPromptError || sending.deliveryOutcome === 'unknown'
-    const failed = { ...sending, error: unknown ? uncertainDeliveryMessage : message,
+    const failed = { ...sending, error: unknown ? uncertainDeliveryMessage() : message,
       deliveryOutcome: unknown ? 'unknown' as const : undefined }
     writeDraft(createdId ? `session:${createdId}` : draftKey, failed)
     if (createdId && !sessionReady) writeDraft(draftKey, failed)
