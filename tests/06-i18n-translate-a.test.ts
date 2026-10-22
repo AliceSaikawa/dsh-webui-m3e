@@ -53,7 +53,19 @@ test('プラグインの状態と失敗コードは渡した言語の語を返�
   assert.equal(phaseLabel('unloading', true, messagesOf(pluginMessages, 'en')), 'Stopping')
   assert.equal(phaseLabel('failed', true, messagesOf(pluginMessages, 'zh')), '加载失败')
   assert.equal(bundleErrorLabel('not-bundle', messagesOf(pluginMessages, 'en')), 'This package does not declare a bundle')
-  assert.equal(bundleErrorLabel('stale-approval', messagesOf(pluginMessages, 'zh')), '待审批的内容已过期')
+  assert.equal(bundleErrorLabel('stale-approval', messagesOf(pluginMessages, 'zh')), '审批信息已过期')
+})
+
+test('プラグインの失敗の文は日本語の意味と用語表の語で訳す', () => {
+  const en = messagesOf(pluginMessages, 'en')
+  const zh = messagesOf(pluginMessages, 'zh')
+  assert.equal(en.errorAmbiguousInstall, 'Could not determine where to install')
+  assert.equal(zh.errorAmbiguousInstall, '无法确定安装位置')
+  // DSH's Chinese keeps "profile" in Latin letters; 配置 means configuration.
+  assert.equal(zh.errorStopProfile, 'profile 已停止时无法操作')
+  // 承認 is approval／审批 (docs/i18n/terms/inbox-search-interactions-plugins.md).
+  assert.equal(en.errorStaleApproval, 'The approval information is out of date')
+  assert.equal(zh.errorStaleApproval, '审批信息已过期')
 })
 
 test('検索の失敗文は作成後に渡した言語へ切り替わる', async t => {
@@ -80,6 +92,33 @@ test('検索の失敗文は作成後に渡した言語へ切り替わる', async
   calls[1]!.reject(failure)
   await Promise.resolve()
   assert.equal(controller.getSnapshot().error, '无法从搜索服务获取结果。请稍后重试。')
+})
+
+test('エラーを表示している間に言語を切り替えると、表示中の文も新しい言語になる', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const calls: { reject: (reason: unknown) => void }[] = []
+  const sessions = {
+    search() {
+      return new Promise((_resolve, reject) => { calls.push({ reject }) })
+    },
+  } as unknown as Pick<ISessions, 'search'>
+
+  const controller = createSearchController(sessions, messagesOf(searchMessages, 'ja'))
+  controller.setInput('承認')
+  t.mock.timers.tick(300)
+  calls[0]!.reject(failure)
+  await Promise.resolve()
+  assert.equal(controller.getSnapshot().error, messagesOf(searchMessages, 'ja').serviceFailed)
+  controller.setText(messagesOf(searchMessages, 'en'))
+  assert.equal(controller.getSnapshot().error, 'Could not get results from the search service. Wait a moment and try again.')
+  assert.equal(controller.getSnapshot().retryable, true)
+
+  // An input error is worded again too.
+  controller.setInput('語'.repeat(501))
+  assert.equal(controller.getSnapshot().error, messagesOf(searchMessages, 'en').queryTooLong)
+  controller.setText(messagesOf(searchMessages, 'zh'))
+  assert.equal(controller.getSnapshot().error, messagesOf(searchMessages, 'zh').queryTooLong)
+  assert.equal(controller.getSnapshot().retryable, false)
 })
 
 test('キャッシュした検索コントローラは画面が渡す最新の言語を使う', async t => {
