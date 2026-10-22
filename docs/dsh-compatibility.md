@@ -72,7 +72,7 @@ DSH の内部の型は [web/src/dsh/services.ts](../web/src/dsh/services.ts) に
 | 期限つきの質問 | 表示中だけ `userQuestions.attachWait` で待機を保持します。期限後は `userQuestions` 投影からカードを復元し、`answer` で次ステップへ回答を送ります | `web/src/dsh/interactions-store.ts`、`features/interactions/InteractionSheet.tsx`。取消・再接続・後着応答の世代を区別します |
 | その他の RPC・通知 | `commands.list`、`fileReferences.list`、`session.modelCatalog/selectModel`、`directoryPicker`、`goals`、承認・質問の返答 | 各機能の `api.ts`、`operations.ts`、`web/src/dsh/remote-events.ts`、`interactions-store.ts` |
 | エラー・その他の投影 | `RemoteResult` と `RemoteFailure`、エラーコード、`plan/modelSelection/goal/tokenUsage/contextPressure` の形 | `web/src/dsh/remote-result.ts` と各機能。型・案内の試験と、実際のエラー発生は別に確認します |
-| Host・標準画面 | `webServer.register/renderIndex/tapIndex`、`connection.authorizeIndex`、`settings.general.item`。preload の除去は相対 URL にも対応します | `src/host/index.ts`、`src/client/index.tsx` |
+| Host・標準画面 | `webServer.register/renderIndex/tapIndex`、`connection.authorizeIndex`、`settings.general.item`、`locale`（行の言語）。preload の除去は相対 URL にも対応します | `src/host/index.ts`、`src/client/index.tsx` |
 | Host のフォルダ選択 | macOS / Windows の loopback 起動は条件により `native`、SSH 起動の印があれば `browse` になります | `features/home/directory.ts`、`e2e-dsh/dsh-host.ts` |
 | 偽 LLM との接続 | `/v1/messages` と Messages 形式の SSE、`tool_use/tool_result`、画像の `image` ブロック。ブラウザに届く V4 記録とは別の形式です | `e2e-dsh/fake-llm.ts` |
 

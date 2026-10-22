@@ -9,7 +9,7 @@
 - この端末の選択は、Cookie `dsh-webui`（値は `m3e` か `classic`）に入っています。iPhone のホーム画面に追加した PWA は Safari と別の Cookie を持つので、別々に選べます。
 - サーバーは、DSH が返すすべての index の `<head>` の先頭に、小さなスクリプトを差し込みます（`tapIndex`）。今の画面の index（`/` と `/index.html`）で Cookie が `m3e` なら、今の画面のコードを読み込む前に `/m3e/` へ移動します。判定は [src/shared/ui-choice.ts](../src/shared/ui-choice.ts) にあります。ただし、M3E の画面を表示したタブは `sessionStorage` に印を残し、そのタブで `/` を開いたときは移動しません（Cookie は変わりません）。パソコン（主な入力がマウスやトラックパッド、`(hover: hover) and (pointer: fine)`）では `/` から自動で移動しません。M3E は `/m3e/` を直接開けば使えます。`?ui=m3e` は明示の指定なので、パソコンでも移動します。
 - 切り替える方法は 3 つあります。
-  - 今の画面の「設定 → 一般 → この端末で M3E の画面を使う」
+  - 今の画面の「Settings → General → Use the M3E interface on this device」（行は今の画面の言語で出る。中文なら「设置 → 通用设置 → 在此设备上使用 M3E 界面」）
   - M3E の画面の「今の画面に戻す」ボタン
   - URL の `?ui=m3e` と `?ui=classic`。どちらかの画面が壊れたときの戻り道です。
 - `/` の経路を横取りする方法は使っていません。今の画面を返す処理（fallback）を外から呼び出せないためです。
@@ -17,7 +17,7 @@
 ## 仕組み
 
 - **サーバー側**（[src/host/index.ts](../src/host/index.ts)）: `/m3e` を prefix 経路として登録し、上の切り替えスクリプトを差し込みます。画面本体は、今の UI と同じ `authorizeIndex`（ログイン確認）と `renderIndex`（起動データの埋め込み）を通して返します。標準画面向けの相対 URL の先読み指定を取り除き、M3E の index には `<base href="/">` を入れます。通信は Host のルート、画面遷移は `/m3e/` を基準にします。
-- **今の画面に入る部品**（[src/client/index.tsx](../src/client/index.tsx)）: 設定の一般セクション（`settings.general.item`）に切り替えの行を追加します。React は今の画面が持っているものを使います。M3E の画面はこの部品を読み込みません。
+- **今の画面に入る部品**（[src/client/index.tsx](../src/client/index.tsx)）: 設定の一般セクション（`settings.general.item`）に切り替えの行を追加します。行の文言は今の画面の言語（`locale` サービス）に合わせます。React は今の画面が持っているものを使います。M3E の画面はこの部品を読み込みません。
 - **ブラウザ側の起動**（[web/src/dsh/boot.ts](../web/src/dsh/boot.ts)）: DSH が埋め込む `__DSH_BOOT__` から、ジョブの controller を含む通信用の `TRANSPORT_PLUGINS` と、その依存だけを残して起動します。残したプラグインは個別の URL で読み込みます。DSH は、宣言していない組み合わせの一括 URL には 404 を返すためです。
 - **共有ライブラリ**: 今の UI は、プラグインが外部参照する `@deepseek-ai/cordis` と `@deepseek-ai/dsh-client-store` を自分のビルドから渡しています。この UI では、同じものを自前で同梱して渡します。**版は本番 DSH と合わせる必要があります**。対応する版と固定版は [src/shared/dsh-compat.ts](../src/shared/dsh-compat.ts) の 1 か所にまとめてあり、`package.json` と食い違うと `pnpm test` が止まります。
 - **DSH との境界**: どこが DSH のどの部分に依存しているか、どの版で何を確かめたかは [dsh-compatibility.md](dsh-compatibility.md) にあります。起動の直後に、使う controller のメソッドが揃っているかを `web/src/dsh/contract.ts` で確かめます。

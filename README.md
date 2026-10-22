@@ -85,7 +85,7 @@ On iPhone, choose "Add to Home Screen" from Safari's Share menu to open it like 
 
 In this README, the "standard interface" is DSH's own Web UI (the URL parameter and the setting call it "classic"). Choose which interface to use on this device with any of the following options. Your choice is saved separately on each device.
 
-- In the standard interface: `設定 → 一般 → この端末で M3E の画面を使う` (Settings → General → Use the M3E interface on this device)
+- In the standard interface: `Settings → General → Use the M3E interface on this device` (the row follows the standard interface's language)
 - In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
 - Add `?ui=m3e` or `?ui=classic` to the URL
 
@@ -124,7 +124,7 @@ If something fails, check the following.
 - A download returning 404: check the tag, asset filename and URL in the release list.
 - Missing pnpm: check PATH.
 - A missing UI: check the profile and restart the Host.
-- Opening `/m3e/` without the cookie shows a page that asks you to reopen it from the address bar (the page is shown in Japanese; from v0.0.9-rc.2). If it does not open in 0.0.8, reopen the sign-in URL printed by `dsh web`.
+- Opening `/m3e/` without the cookie shows a page that asks you to reopen it from the address bar (from v0.0.9-rc.2; the page follows the browser language: Japanese, English, or Simplified Chinese, and English for any other language). If it does not open in 0.0.8, reopen the sign-in URL printed by `dsh web`.
 - Failed CLI operations also print a diagnostics path.
 
 For source builds, see the [development and distribution guide](docs/development.md#配布) (Japanese).

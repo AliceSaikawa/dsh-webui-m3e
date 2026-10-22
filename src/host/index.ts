@@ -22,6 +22,7 @@ import { extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { uiChoiceScript } from '../shared/ui-choice.ts'
+import { documentLanguage, requestedLocale, type Locale } from '../../web/src/i18n/locale.ts'
 
 export const name = 'webui-m3e'
 export const inject = ['webServer', 'connection']
@@ -146,30 +147,72 @@ function hasTokenQuery(url: string | undefined): boolean {
 export const UNAUTHORIZED_HEADERS: Readonly<Record<string, string>> = {
   'content-type': HTML_MIME,
   'cache-control': 'no-store',
+  // The page language follows the request's Accept-Language.
+  vary: 'accept-language',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
   'content-security-policy':
     "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 }
 
+/** The explanation page in each language M3E supports. Values may hold `<code>`; nothing comes from the request. */
+const UNAUTHORIZED_TEXT = {
+  ja: {
+    title: 'ログインの情報を確かめられませんでした',
+    cause: 'iPhone の Safari では、裏で閉じられたタブに戻ったときに、ログインの情報が送られないことがあります。このページを再読み込みしても直りません。',
+    action: 'アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。',
+    otherwise: 'それでも開けないときは、ログインの期限が切れたか、ログインしたときと違うアドレスで開いています。<code>dsh web</code> が表示した URL を開き直してください。',
+  },
+  en: {
+    title: 'Could not verify your sign-in',
+    cause: 'In Safari on iPhone, a tab that was closed in the background may not send your sign-in information when you return to it. Reloading this page does not fix it.',
+    action: 'Tap the URL in the address bar, then tap “Go” on the keyboard.',
+    otherwise: 'If it still does not open, your sign-in has expired or you opened a different address from the one you signed in with. Open the URL printed by <code>dsh web</code> again.',
+  },
+  zh: {
+    title: '无法确认登录信息',
+    cause: '在 iPhone 的 Safari 中，返回在后台被关闭的标签页时，可能不会发送登录信息。重新加载此页面也无法解决。',
+    action: '请点击地址栏中的 URL，然后直接点击键盘上的“前往”。',
+    otherwise: '如果仍然无法打开，说明登录已过期，或者打开的地址与登录时不同。请重新打开 <code>dsh web</code> 显示的 URL。',
+  },
+} as const satisfies Record<Locale, Record<'title' | 'cause' | 'action' | 'otherwise', string>>
+
+/**
+ * The browser languages of an `Accept-Language` header, most preferred first.
+ * Ranges with `q=0` and the `*` wildcard name no language and are dropped.
+ */
+export function acceptedLanguages(header: string | undefined): string[] {
+  return (header ?? '').split(',').flatMap((part, index) => {
+    const [tag = '', ...params] = part.trim().split(';')
+    const q = params.map(param => /^\s*q\s*=\s*([0-9.]+)\s*$/iu.exec(param)?.[1]).find(found => found !== undefined)
+    const weight = q === undefined ? 1 : Number(q)
+    return tag.trim() && tag.trim() !== '*' && weight > 0 ? [{ tag: tag.trim(), weight, index }] : []
+  }).sort((left, right) => right.weight - left.weight || left.index - right.index).map(({ tag }) => tag)
+}
+
 /**
  * The fixed page M3E answers with when the browser holds no valid session and
  * the request carries no token. It reads in dark mode too and embeds nothing
- * from the request, so no URL, cookie or header can leak into it.
+ * from the request, so no URL, cookie or header can leak into it. The language
+ * comes from `Accept-Language` the way the M3E page reads the browser language
+ * (docs/design/11-i18n.md): DSH's own language setting is not readable before
+ * sign-in.
  *
  * It offers no reload. In a tab Safari restored, every reload and every
  * navigation the page starts still goes out without the `SameSite=Strict`
  * cookie (WebKit bug 200345); only a URL committed from the address bar sends
  * it again. So the page names that one action instead of a button that fails.
+ * @param locale - the page language.
  * @returns the complete HTML document.
  */
-export function unauthorizedPage(): string {
+export function unauthorizedPage(locale: Locale): string {
+  const text = UNAUTHORIZED_TEXT[locale]
   return `<!doctype html>
-<html lang="ja">
+<html lang="${documentLanguage(locale)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ログインの情報を確かめられませんでした</title>
+<title>${text.title}</title>
 <style>
 :root { color-scheme: light dark; }
 body { margin: 0; padding: 1.5rem; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; line-height: 1.75; }
@@ -181,10 +224,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </head>
 <body>
 <main>
-<h1>ログインの情報を確かめられませんでした</h1>
-<p>iPhone の Safari では、裏で閉じられたタブに戻ったときに、ログインの情報が送られないことがあります。このページを再読み込みしても直りません。</p>
-<p><strong>アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。</strong></p>
-<p>それでも開けないときは、ログインの期限が切れたか、ログインしたときと違うアドレスで開いています。<code>dsh web</code> が表示した URL を開き直してください。</p>
+<h1>${text.title}</h1>
+<p>${text.cause}</p>
+<p><strong>${text.action}</strong></p>
+<p>${text.otherwise}</p>
 </main>
 </body>
 </html>
@@ -222,7 +265,7 @@ export function apply(ctx: Context): void {
           }
           if (written.status === 401 && !hasTokenQuery(req.url)) {
             res.writeHead(401, UNAUTHORIZED_HEADERS)
-            res.end(req.method === 'HEAD' ? undefined : unauthorizedPage())
+            res.end(req.method === 'HEAD' ? undefined : unauthorizedPage(requestedLocale({ languages: acceptedLanguages(req.headers['accept-language']) })))
             return
           }
           // A token exchange, a stale token and any other refusal keep the
