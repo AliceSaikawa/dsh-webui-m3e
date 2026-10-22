@@ -1,4 +1,5 @@
 import type { ChatContentBlock } from './model.ts'
+import { toolDetailText, type ToolDetailMessages } from './messages.ts'
 
 /** Both budgets span all result blocks; character counts use Unicode points. */
 export function clipToolResult(blocks: readonly ChatContentBlock[], lineLimit = 200, characterLimit = 20_000): { blocks: ChatContentBlock[]; truncated: boolean } {
@@ -37,13 +38,13 @@ export function clipToolResult(blocks: readonly ChatContentBlock[], lineLimit = 
 }
 
 /** DSH exposes name/code; some adapters additionally expose a human message. */
-export function toolErrorMessage(error: unknown): string | undefined {
+export function toolErrorMessage(error: unknown, text: ToolDetailMessages = toolDetailText): string | undefined {
   if (typeof error === 'string') return error.trim() ? error : undefined
   if (error === null || typeof error !== 'object' || Array.isArray(error)) return undefined
   const detail = error as Record<string, unknown>
   if (typeof detail.message === 'string' && detail.message.trim()) return detail.message
   const parts: string[] = []
-  if (typeof detail.name === 'string' && detail.name.trim()) parts.push(`エラー種別：${detail.name}`)
-  if (typeof detail.code === 'string' && detail.code.trim()) parts.push(`エラーコード：${detail.code}`)
+  if (typeof detail.name === 'string' && detail.name.trim()) parts.push(text.errorName(detail.name))
+  if (typeof detail.code === 'string' && detail.code.trim()) parts.push(text.errorCode(detail.code))
   return parts.length ? parts.join('\n') : undefined
 }

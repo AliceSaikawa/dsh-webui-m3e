@@ -3,9 +3,18 @@ import type {
   SessionWireEvent,
 } from '../../dsh/services.ts'
 import { streamBlocksOf, type AssistantStream, type StreamBlock } from '../../dsh/session-journal.ts'
+import { formatNumber } from '../../i18n/format.ts'
+import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
+import { chatText, type ChatMessages } from './messages.ts'
 
 /** Unknown content is kept as a label, without attempting to render its payload. */
-export type ChatContentBlock = Exclude<ContentBlock, { type: `plugin:${string}` | 'tool-addition' | 'tool-removal' }>
+/**
+ * A file in a chat row. `name` is missing when the Host sent none; the view
+ * shows the default name in the page language, so it follows a language change.
+ */
+export type ChatFileAttachment = Omit<FileAttachmentRef, 'name'> & { readonly name?: string }
+export type ChatContentBlock = Exclude<ContentBlock, { type: `plugin:${string}` | 'tool-addition' | 'tool-removal' | 'file' }>
+  | { type: 'file'; attachment: ChatFileAttachment }
   | { type: 'unsupported'; originalType: string }
 
 interface RowBase {
@@ -104,12 +113,13 @@ function assistantBlockKey(turn: unknown, step: unknown, index: number, fallback
   return `${assistantStepKey(turn, step) ?? fallback}:${index}`
 }
 
-function fileAttachment(value: unknown): FileAttachmentRef | undefined {
+function fileAttachment(value: unknown): ChatFileAttachment | undefined {
   const attachment = objectOf(value)
   if (attachment === undefined || typeof attachment.attachmentId !== 'string') return undefined
+  const name = stringOf(attachment.name)
   return {
     attachmentId: attachment.attachmentId,
-    name: stringOf(attachment.name) ?? '添付ファイル',
+    ...(name === undefined ? {} : { name }),
     bytes: typeof attachment.bytes === 'number' ? attachment.bytes : 0,
   }
 }
@@ -128,7 +138,7 @@ function imageAttachment(value: unknown): ImageAttachmentRef | undefined {
 }
 
 /** Narrow V4 wire JSON, preserving unknown kinds only as labels. */
-function contentOf(value: unknown): ChatContentBlock[] {
+function contentOf(value: unknown, toolName: string): ChatContentBlock[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((value): ChatContentBlock[] => {
     const block = objectOf(value)
@@ -137,7 +147,7 @@ function contentOf(value: unknown): ChatContentBlock[] {
       return typeof block.text === 'string' ? [{ type: block.type, text: block.text }] : []
     }
     if (block.type === 'tool-call') {
-      return typeof block.id === 'string' ? [{ type: 'tool-call', id: block.id, name: stringOf(block.name) ?? 'ツール', arguments: stringOf(block.arguments) ?? '' }] : []
+      return typeof block.id === 'string' ? [{ type: 'tool-call', id: block.id, name: stringOf(block.name) ?? toolName, arguments: stringOf(block.arguments) ?? '' }] : []
     }
     if (block.type === 'image') {
       const attachment = imageAttachment(block.attachment)
@@ -195,12 +205,12 @@ interface ResultInfo {
   error?: unknown
 }
 
-function resultsOf(event: SessionWireEvent): { callId: string; result: ResultInfo }[] {
+function resultsOf(event: SessionWireEvent, toolName: string): { callId: string; result: ResultInfo }[] {
   const data = objectOf(event.data)
   if (data === undefined) return []
   const message = objectOf(data.message)
   if (message?.role !== 'tool') return []
-  const content = contentOf(message.content)
+  const content = contentOf(message.content, toolName)
   const failure = data.error !== undefined && data.error !== null && data.error !== false
   const callId = stringOf(message.toolCallId)
   return !callId ? [] : [{ callId, result: { event, content, isError: failure || message.isError === true, ...(failure ? { error: data.error } : {}) } }]
@@ -267,14 +277,14 @@ export interface SettledChat {
   readonly rpcIds: ReadonlySet<string>
   readonly keys: ReadonlySet<string>
   readonly shownCalls: ReadonlySet<string>
-  toolRow(callId: string, name: string, args: string, base: RowBase, scope: ToolScope): ToolRow
+  toolRow(callId: string, name: string, args: string, base: RowBase, scope: ToolScope, text?: ChatMessages): ToolRow
 }
 
 /**
  * Build the rows for durable records once per records array. A streaming
  * response only changes the live rows, so these rows keep their identity.
  */
-export function buildSettledChat(records: readonly SessionWireEvent[]): SettledChat {
+export function buildSettledChat(records: readonly SessionWireEvent[], text: ChatMessages = chatText): SettledChat {
   const events = records.filter(isChatEvent).sort((a, b) => a.seq - b.seq)
   const calls = new Map<string, { event: SessionWireEvent; name: string; arguments: string }>()
   const results = new Map<string, ResultInfo>()
@@ -283,9 +293,9 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     const data = objectOf(event.data)
     if (data === undefined) continue
     if (event.type === 'tool/call' && typeof data.callId === 'string') {
-      calls.set(toolCallKey(data, data.callId), { event, name: stringOf(data.name) ?? 'ツール', arguments: stringOf(data.arguments) ?? '' })
+      calls.set(toolCallKey(data, data.callId), { event, name: stringOf(data.name) ?? text.toolFallbackName, arguments: stringOf(data.arguments) ?? '' })
     } else if (event.type === 'tool/result') {
-      for (const { callId, result } of resultsOf(event)) results.set(toolCallKey(data, callId), result)
+      for (const { callId, result } of resultsOf(event, text.toolFallbackName)) results.set(toolCallKey(data, callId), result)
     } else if (event.type === 'command/run') {
       const name = stringOf(data.name)
       if (name !== undefined) {
@@ -303,15 +313,15 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
     if (event.type !== 'assistant/message') continue
     const data = objectOf(event.data)
     const message = objectOf(data?.message)
-    for (const block of contentOf(message?.content)) if (block.type === 'tool-call') assistantCallIds.add(toolCallKey(data ?? {}, block.id))
+    for (const block of contentOf(message?.content, text.toolFallbackName)) if (block.type === 'tool-call') assistantCallIds.add(toolCallKey(data ?? {}, block.id))
   }
-  const toolRow = (callId: string, name: string, args: string, base: RowBase, scope: ToolScope): ToolRow => {
+  const toolRow = (callId: string, name: string, args: string, base: RowBase, scope: ToolScope, rowText: ChatMessages = text): ToolRow => {
     const callKey = toolCallKey(scope, callId)
     const result = results.get(callKey)
     const call = calls.get(callKey)
     const duration = result !== undefined && call !== undefined ? result.event.time - call.event.time : undefined
     return {
-      ...base, kind: 'tool', callId, callKey, name: name || call?.name || 'ツール', arguments: args || call?.arguments || '',
+      ...base, kind: 'tool', callId, callKey, name: name || call?.name || rowText.toolFallbackName, arguments: args || call?.arguments || '',
       result: result?.content ?? [], status: result === undefined ? 'running' : result.isError ? 'error' : 'success',
       ...(duration !== undefined && Number.isFinite(duration) ? { durationMs: Math.max(0, duration) } : {}),
       ...(result?.error !== undefined ? { error: result.error } : {}),
@@ -332,7 +342,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       continue
     }
     if (event.type === 'user/message') {
-      const content = contentOf(data.content)
+      const content = contentOf(data.content, text.toolFallbackName)
       // DSH logs injected context (instruction files, skills, recalls) as user
       // messages whose source is not the user; only the user's own input is a bubble.
       const source = objectOf(data.source) ?? {}
@@ -349,7 +359,7 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
       const content = Array.isArray(message.content) ? message.content : []
       const { indices, durations } = assistantBlockMetadata(data.stream, content)
       content.forEach((value, index) => {
-        const block = contentOf([value])[0]
+        const block = contentOf([value], text.toolFallbackName)[0]
         if (block === undefined) return
         const blockBase = { ...base, key: assistantBlockKey(data.turn, data.step, indices[index] ?? index, base.key) }
         if (block.type === 'text' || block.type === 'reasoning') {
@@ -365,17 +375,17 @@ export function buildSettledChat(records: readonly SessionWireEvent[]): SettledC
         }
       })
     } else if (event.type === 'tool/result') {
-      for (const { callId } of resultsOf(event)) {
+      for (const { callId } of resultsOf(event, text.toolFallbackName)) {
         const callKey = toolCallKey(data, callId)
         if (shownCalls.has(callKey) || assistantCallIds.has(callKey)) continue
         shownCalls.add(callKey)
         const call = calls.get(callKey)
-        rows.push(toolRow(callId, call?.name ?? 'ツール', call?.arguments ?? '', { ...base, key: `${base.key}:${callId}` }, data))
+        rows.push(toolRow(callId, call?.name ?? text.toolFallbackName, call?.arguments ?? '', { ...base, key: `${base.key}:${callId}` }, data))
       }
     } else if (event.type === 'system/message') {
       const message = objectOf(data.message)
-      const text = textOf(contentOf(message?.content))
-      if (text) rows.push({ ...base, kind: 'system', text })
+      const body = textOf(contentOf(message?.content, text.toolFallbackName))
+      if (body) rows.push({ ...base, kind: 'system', text: body })
     } else if (event.type === 'command/done') {
       const name = stringOf(data.name)
         ?? (typeof data.commandId === 'string' ? commandNames.get(data.commandId) : undefined)
@@ -396,6 +406,7 @@ export function appendLiveRows(
   settled: SettledChat,
   stream: AssistantStream | null,
   pendingSubmissions: readonly PendingSubmission[] = [],
+  text: ChatMessages = chatText,
 ): ChatRow[] {
   const rows = [...settled.rows]
   if (stream !== null && !settled.acceptedSteps.has(assistantStepKey(stream.turn, stream.step) ?? '')) {
@@ -415,7 +426,7 @@ export function appendLiveRows(
         const callKey = toolCallKey(stream, block.id)
         if (settled.shownCalls.has(callKey) || shownCalls.has(callKey)) continue
         shownCalls.add(callKey)
-        rows.push(settled.toolRow(block.id, block.name, block.arguments, base, stream))
+        rows.push(settled.toolRow(block.id, block.name, block.arguments, base, stream, text))
       }
     }
   }
@@ -431,8 +442,9 @@ export function buildChatRows(
   records: readonly SessionWireEvent[],
   stream: AssistantStream | null = null,
   pendingSubmissions: readonly PendingSubmission[] = [],
+  text: ChatMessages = chatText,
 ): ChatRow[] {
-  return appendLiveRows(buildSettledChat(records), stream, pendingSubmissions)
+  return appendLiveRows(buildSettledChat(records, text), stream, pendingSubmissions, text)
 }
 
 export interface CommandPresentation {
@@ -441,14 +453,22 @@ export interface CommandPresentation {
   readonly failureReason?: string
 }
 
-/** Keep missing outcomes neutral and failures distinct in the collapsed row. */
+/**
+ * The Japanese default. It takes only the row, so it stays safe to pass
+ * straight to `Array#map` (tests/02-chat.test.ts), which supplies extra
+ * arguments; callers that have a language use `formatCommandPresentation`.
+ */
 export function commandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'status'>): CommandPresentation {
-  const name = row.name ? `/${row.name} ` : 'コマンド'
+  return formatCommandPresentation(row, chatText)
+}
+/** Keep missing outcomes neutral and failures distinct in the collapsed row. */
+export function formatCommandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'status'>, text: ChatMessages): CommandPresentation {
+  const name = row.name ? `/${row.name}` : undefined
   if (row.status === 'error') {
-    return { label: `${name}の実行に失敗しました`, icon: 'error', failureReason: row.text.trim() || '詳しい理由は記録されていません。' }
+    return { label: text.commandFailed(name), icon: 'error', failureReason: row.text.trim() || text.commandFailedNoReason }
   }
-  if (row.status === 'success') return { label: `${name}を実行しました`, icon: 'terminal' }
-  return { label: `${name}の結果を受け取りました`, icon: 'info' }
+  if (row.status === 'success') return { label: text.commandSucceeded(name), icon: 'terminal' }
+  return { label: text.commandResultReceived(name), icon: 'info' }
 }
 
 /** Tool identity stays independent of its running or failed status. */
@@ -475,13 +495,13 @@ export function formatToolArguments(raw: string): string {
   try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw }
 }
 
-export function formatDuration(milliseconds: number): string {
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '不明'
-  if (milliseconds < 1000) return `${Math.round(milliseconds)} ミリ秒`
-  if (milliseconds < 60000) return `${Number((milliseconds / 1000).toFixed(1))} 秒`
+export function formatDuration(milliseconds: number, text: ChatMessages = chatText, locale: Locale = SOURCE_LOCALE): string {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return text.durationUnknown
+  if (milliseconds < 1000) return text.durationMilliseconds(formatNumber(locale, Math.round(milliseconds), { useGrouping: false }))
+  if (milliseconds < 60000) return text.durationSeconds(formatNumber(locale, Number((milliseconds / 1000).toFixed(1)), { maximumFractionDigits: 1, useGrouping: false }))
   const minutes = Math.floor(milliseconds / 60000)
   const seconds = Math.floor((milliseconds % 60000) / 1000)
-  return `${minutes} 分 ${seconds} 秒`
+  return text.durationMinutesSeconds(formatNumber(locale, minutes, { useGrouping: false }), formatNumber(locale, seconds, { useGrouping: false }))
 }
 
 export interface ScrollMetrics { readonly scrollHeight: number; readonly clientHeight: number; readonly scrollTop: number }

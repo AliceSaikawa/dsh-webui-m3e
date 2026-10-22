@@ -1,5 +1,8 @@
 import type { ISessions } from '../../dsh/services.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
+import { chatMessages } from './messages.ts'
 
 export type ForkState =
   | { readonly status: 'idle' | 'pending' }
@@ -22,7 +25,7 @@ export function createForkOperation(fork: () => Promise<string>) {
       // Start on a microtask so even a synchronous callback cannot reenter first.
       flight = Promise.resolve().then(fork).then(
         sessionId => update({ status: 'success', sessionId }),
-        cause => update({ status: 'error', message: remoteErrorMessage(cause, '会話を分岐できませんでした。') }),
+        cause => update({ status: 'error', message: remoteErrorMessage(cause, messagesOf(chatMessages, currentLocale()).forkFailed) }),
       ).finally(() => { flight = undefined })
       update({ status: 'pending' })
       return flight
