@@ -23,10 +23,9 @@
 | 処理に失敗しました。もう一度お試しください。 | The operation failed. Try again. | 操作失败，请重试。 | dsh-client-ui-* error | Host の失敗の既定文 |
 | 会話が見つかりません。 | The conversation was not found. | 找不到对话。 | なし | 会話が消えているとき |
 | 親の会話が見つかりません。 | The parent conversation was not found. | 找不到父对话。 | なし | サブエージェントの親が引けないとき |
-| この要求への回答はすでに終了しています。 | This request has already been answered. | 此请求已结束，无法再回答。 | なし | 承認・質問の内部エラー |
 | 読み取りのみ | Read Only | 仅可查看 | dsh-client-ui-permission-presets | 権限プリセット。DSH 標準の訳語 |
 | ワークスペース書込 | Workspace Write | 工作区内修改 | dsh-client-ui-permission-presets | 権限プリセット |
 | フル アクセス | Full access | 完全权限 | dsh-client-ui-permission-presets | 権限プリセット |
-| 自動レビュー（実験的） | Auto review | 自动审查 | dsh-client-ui-permission-presets | 権限プリセット |
+| 自動レビュー（実験的） | Auto review (experimental) | 自动审查（实验性） | dsh-client-ui-permission-presets | 権限プリセット。日本語の名前にある「実験的」を訳にも入れた |
 | シートのハンドル | Resize the sheet | 调整面板高度 | なし | ボトムシートのつまみの読み上げ |
 | ワークスペース | workspace | 工作区 | dsh-client-ui-workspace | 作業フォルダのまとまり |
