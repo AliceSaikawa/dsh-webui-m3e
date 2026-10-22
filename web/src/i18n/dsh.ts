@@ -33,19 +33,26 @@ export function localePreferenceOf(description: unknown): { readonly preference:
   return { preference: isLocaleTag(preference) ? preference : undefined }
 }
 
+/** A disposer that also tells when the first read of the preference has ended. */
+export interface LocalePreferenceConnection {
+  (): void
+  /** Settles when the first read ends, whether it found a preference, found none or failed. It never rejects. */
+  readonly ready: Promise<void>
+}
+
 /**
  * Keep the store's preference in step with DSH: read once now, again when the
  * `locale` document changes and after reconnecting. One read runs at a time;
  * requests during a read are folded into one more read. Failures keep the
  * current language and are not reported, since the page works either way.
- * @returns a disposer.
+ * @returns a disposer whose `ready` settles after the first read.
  */
 export function connectLocalePreference(
   services: { readonly remote: DshRemote; readonly connection?: Connection },
   store: { setPreference(preference: string | undefined): void },
-): () => void {
+): LocalePreferenceConnection {
   const api = services.remote.settings as Partial<LocaleSettingsRemote> | undefined
-  if (!api || typeof api.describe !== 'function') return () => {}
+  if (!api || typeof api.describe !== 'function') return Object.assign(() => {}, { ready: Promise.resolve() })
   const settings = api as LocaleSettingsRemote
   let active = true
   let reading = false
@@ -74,10 +81,25 @@ export function connectLocalePreference(
     if (next === 'connected' && previous !== 'connected') void read()
     previous = next
   })
-  void read()
-  return () => {
+  const ready = read()
+  return Object.assign(() => {
     active = false
     offEvent()
     if (typeof offConnection === 'function') offConnection()
-  }
+  }, { ready })
+}
+
+/**
+ * How long the first paint waits for DSH's language. Without the wait the page
+ * would first paint in the browser's language and switch when the read ends.
+ */
+export const FIRST_LOCALE_WAIT_MS = 1000
+
+/** Resolves when `ready` settles or after `ms`, whichever comes first. It never rejects. */
+export function waitAtMost(ready: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, ms)
+    const done = () => { clearTimeout(timer); resolve() }
+    ready.then(done, done)
+  })
 }

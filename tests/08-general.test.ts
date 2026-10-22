@@ -206,9 +206,11 @@ test('ui-chat でも、競合は読み直して入力を残し、拒否は項目
 
 const locale = (value: Record<string, string> = {}): SettingsNamespace => ({ ...settingsFixtures().find(item => item.ns === 'locale')!, value })
 
-test('言語の行は locale の preference を、端末の言語に合わせる・English・中文 から選ぶ形で出す', () => {
+test('言語の行は locale の preference を、端末の言語に合わせる・日本語・English・中文 から選ぶ形で出す', () => {
   const language = (code: 'ja' | 'en' | 'zh', rows = [locale()]) => generalEntries(rows, messagesOf(generalMessages, code)).find(item => item.id === 'language')!
-  assert.deepEqual(language('ja').display.choices, [{ label: '端末の言語に合わせる', value: null }, { label: 'English', value: 'en' }, { label: '中文', value: 'zh' }])
+  assert.deepEqual(language('ja').display.choices, [{ label: '端末の言語に合わせる', value: null }, { label: '日本語', value: 'ja' }, { label: 'English', value: 'en' }, { label: '中文', value: 'zh' }])
+  // Language names are written in themselves in every page language.
+  assert.deepEqual(language('en').display.choices!.slice(1).map(choice => choice.label), ['日本語', 'English', '中文'])
   assert.deepEqual([language('ja'), language('en'), language('zh')].map(item => item.display.label), ['言語', 'Language', '语言'])
   assert.deepEqual([language('en'), language('zh')].map(item => item.display.choices![0]!.label), ['Match device language', '跟随设备语言'])
   assert.deepEqual({ kind: language('ja').display.kind, path: language('ja').field.path, ns: language('ja').namespace.ns }, { kind: 'select', path: ['preference'], ns: 'locale' })
@@ -218,21 +220,24 @@ test('言語の行は locale の preference を、端末の言語に合わせる
   assert.equal(language('ja').display.effective!('zh'), 'zh')
 })
 
-test('標準の画面が出さない言語タグが保存されていたら、そのタグを選択肢に足して出す', () => {
-  const choices = generalEntries([locale({ preference: 'ja' })], ja).find(item => item.id === 'language')!.display.choices!
-  assert.deepEqual(choices.map(choice => choice.value), [null, 'en', 'zh', 'ja'])
-  assert.equal(choices[3]!.label, 'ja')
+test('選択肢にない言語タグが保存されていたら、そのタグを選択肢に足して出す', () => {
+  const choices = generalEntries([locale({ preference: 'fr' })], ja).find(item => item.id === 'language')!.display.choices!
+  assert.deepEqual(choices.map(choice => choice.value), [null, 'ja', 'en', 'zh', 'fr'])
+  assert.equal(choices[4]!.label, 'fr')
+  const japanese = generalEntries([locale({ preference: 'ja' })], ja).find(item => item.id === 'language')!
+  assert.deepEqual(japanese.display.choices!.map(choice => choice.value), [null, 'ja', 'en', 'zh'])
+  assert.equal(japanese.display.effective!('ja'), 'ja')
 })
 
 test('保存値の大文字・小文字は標準の画面と同じく区別せず、EN は English、ZH は 中文 の行として出す', () => {
-  for (const [stored, shown] of [['EN', 'en'], ['Zh', 'zh'], ['en', 'en']] as const) {
+  for (const [stored, shown] of [['EN', 'en'], ['Zh', 'zh'], ['en', 'en'], ['JA', 'ja']] as const) {
     const language = generalEntries([locale({ preference: stored })], ja).find(item => item.id === 'language')!
-    assert.deepEqual(language.display.choices!.map(choice => choice.value), [null, 'en', 'zh'], stored)
+    assert.deepEqual(language.display.choices!.map(choice => choice.value), [null, 'ja', 'en', 'zh'], stored)
     assert.equal(language.display.effective!(stored), shown, stored)
   }
   // Only the case is ignored: a region tag is a different tag for the stock screen.
   const regional = generalEntries([locale({ preference: 'en-US' })], ja).find(item => item.id === 'language')!
-  assert.deepEqual(regional.display.choices!.map(choice => choice.value), [null, 'en', 'zh', 'en-US'])
+  assert.deepEqual(regional.display.choices!.map(choice => choice.value), [null, 'ja', 'en', 'zh', 'en-US'])
   assert.equal(regional.display.effective!('en-US'), 'en-US')
 })
 
@@ -240,6 +245,10 @@ test('言語の説明は「端末の言語に合わせる」の実際の動き�
   assert.match(messagesOf(generalMessages, 'ja').languageDescription, /English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English/)
   assert.match(messagesOf(generalMessages, 'en').languageDescription, /only for English or Chinese and uses English for any other language, Japanese included/)
   assert.match(messagesOf(generalMessages, 'zh').languageDescription, /仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文/)
+  // The description follows requestedLocale: the first supported language in the device's order, then English.
+  assert.match(messagesOf(generalMessages, 'ja').languageDescription, /端末の言語を優先順に見て、日本語・English・中文（簡体字）のうち最初にあるものを使い、どれもなければ English/)
+  assert.match(messagesOf(generalMessages, 'en').languageDescription, /the first of Japanese, English or Chinese \(Simplified\) in the device’s language order, and English if none is there/)
+  assert.match(messagesOf(generalMessages, 'zh').languageDescription, /按设备语言的优先顺序，使用日语、英文、中文（简体）中最先出现的一种；都没有时使用英文/)
 })
 
 test('言語は汎用ページに出ず、Web 検索とシェルのページから外れる', () => {

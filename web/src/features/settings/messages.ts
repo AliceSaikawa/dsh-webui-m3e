@@ -146,7 +146,7 @@ export const generalMessages = defineMessages({
     performanceCompact: '簡潔',
     performanceDetailed: '詳細',
     languageTitle: '言語',
-    languageDescription: 'DSH の言語設定で、標準の画面と共通です。「端末の言語に合わせる」を選ぶと、標準の画面は端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります。M3E の画面は今のところ日本語で表示します。',
+    languageDescription: 'DSH の言語設定で、標準の画面と共通です。M3E の画面はこの言語で表示します。「端末の言語に合わせる」では、端末の言語を優先順に見て、日本語・English・中文（簡体字）のうち最初にあるものを使い、どれもなければ English になります。標準の画面には日本語がないため、日本語を選んだときと「端末の言語に合わせる」では、端末の言語が English か中文のときだけそれに合わせ、ほかの言語（日本語を含む）では English になります。',
     languageDevice: '端末の言語に合わせる',
   },
   en: {
@@ -168,7 +168,7 @@ export const generalMessages = defineMessages({
     performanceCompact: 'Compact',
     performanceDetailed: 'Detailed',
     languageTitle: 'Language',
-    languageDescription: 'The DSH language setting, shared with the standard screen. With "Match device language", the standard screen follows the device only for English or Chinese and uses English for any other language, Japanese included. This screen is shown in Japanese for now.',
+    languageDescription: 'The DSH language setting, shared with the standard screen. This screen is shown in this language. With “Match device language”, it uses the first of Japanese, English or Chinese (Simplified) in the device’s language order, and English if none is there. The standard screen has no Japanese: with Japanese or “Match device language”, it follows the device only for English or Chinese and uses English for any other language, Japanese included.',
     languageDevice: 'Match device language',
   },
   zh: {
@@ -190,7 +190,7 @@ export const generalMessages = defineMessages({
     performanceCompact: '简洁',
     performanceDetailed: '详细',
     languageTitle: '语言',
-    languageDescription: 'DSH 的语言设置，与标准界面共用。选择“跟随设备语言”时，标准界面仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文。此界面目前仅以日语显示。',
+    languageDescription: 'DSH 的语言设置，与标准界面共用。此界面使用该语言显示。选择“跟随设备语言”时，按设备语言的优先顺序，使用日语、英文、中文（简体）中最先出现的一种；都没有时使用英文。标准界面没有日语：选择日语或“跟随设备语言”时，标准界面仅在设备语言为英文或中文时跟随，其他语言（包括日语）则使用英文。',
     languageDevice: '跟随设备语言',
   },
 })

@@ -53,9 +53,10 @@ export const generalRows: readonly GeneralRow[] = [
   { id: 'performanceUsage', ns: 'ui-chat', key: 'performanceUsage', kind: 'select', schemaKind: 'select', fallback: 'detailed',
     choices: ['compact', 'detailed'] },
   // dsh-client-locale (`locale`): `preference`, a free string of the form [A-Za-z]{2,8}(-…)*; the stock screen
-  // offers its two built-in languages, `zh` and `en`, and no stored value means the browser's language.
+  // offers its two built-in languages, `zh` and `en`, and no stored value means the browser's language. M3E also
+  // offers `ja`: the stock screen does not register it and then follows the browser as if nothing were stored.
   { id: 'language', ns: 'locale', key: 'preference', kind: 'select', schemaKind: 'text', fallback: null,
-    choices: ['en', 'zh'], unsettable: true, open: true },
+    choices: ['ja', 'en', 'zh'], unsettable: true, open: true },
 ]
 
 /** The value the stock screen shows for a stored one. */
@@ -80,7 +81,7 @@ function rowText(id: GeneralRowId, text: GeneralTexts): { title: string; descrip
       completion: text.collapseCompletion, 'next-input': text.collapseNextInput } }
     case 'language': return { title: text.languageTitle, description: text.languageDescription, unsetLabel: text.languageDevice,
       // Each language is named in itself, as the stock screen does.
-      choiceLabels: { en: 'English', zh: '中文' } }
+      choiceLabels: { ja: '日本語', en: 'English', zh: '中文' } }
     case 'performanceUsage': return { title: text.performanceUsageTitle, description: text.performanceUsageDescription, choiceLabels: {
       compact: text.performanceCompact, detailed: text.performanceDetailed } }
   }

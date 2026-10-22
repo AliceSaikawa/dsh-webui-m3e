@@ -6,7 +6,7 @@ import { initializeInteractions } from './dsh/interactions.ts'
 import type { InteractionContext } from './dsh/interactions-store.ts'
 import { initializeRouter } from './app/router.ts'
 import { classifyBootFailure, SUPPORTED_DSH_VERSION } from '../../src/shared/dsh-compat.ts'
-import { connectDshLocale, currentLocale, messagesOf, startLocale } from './i18n/index.ts'
+import { connectDshLocale, currentLocale, FIRST_LOCALE_WAIT_MS, messagesOf, startLocale, waitAtMost } from './i18n/index.ts'
 import { bootMessages, errorMessages } from './app/messages.ts'
 import { applyStoredTheme } from './app/theme/index.ts'
 import { markTabShowedM3e } from '../../src/shared/ui-choice.ts'
@@ -28,10 +28,11 @@ const context = import.meta.env.DEV && new URLSearchParams(location.search).has(
   : bootDsh()
 
 context.then(
-  (ctx) => {
+  async (ctx) => {
     initializeRouter()
     initializeInteractions(ctx as unknown as InteractionContext)
-    connectDshLocale(ctx)
+    // Paint in DSH's language when it arrives soon; otherwise paint now and switch later.
+    await waitAtMost(connectDshLocale(ctx).ready, FIRST_LOCALE_WAIT_MS)
     createRoot(element).render(
       <StrictMode>
         <App ctx={ctx} />

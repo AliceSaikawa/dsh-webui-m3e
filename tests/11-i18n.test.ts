@@ -9,7 +9,8 @@ import { DISPLAY_LOCALES, LOCALES, displayLocale, documentLanguage, isLocaleTag,
 import { compareText, formatDateTime, formatNumber, intlLocale, numberFormat } from '../web/src/i18n/format.ts'
 import { catalogProblems, defineMessages, isCatalog, messagesOf, untranslatedLocales, type Catalog, type Messages, type Translation } from '../web/src/i18n/catalog.ts'
 import { createLocaleStore } from '../web/src/i18n/store.ts'
-import { connectLocalePreference, localePreferenceOf } from '../web/src/i18n/dsh.ts'
+import { currentLocale, localeStore } from '../web/src/i18n/current.ts'
+import { connectLocalePreference, localePreferenceOf, waitAtMost } from '../web/src/i18n/dsh.ts'
 import { bootMessages } from '../web/src/app/messages.ts'
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve))
@@ -57,28 +58,28 @@ test('中国語は簡体字だけ。繁体字は未対応として英語にす�
   assert.equal(matchLocale('en-US-u-ca-gregory'), 'en')
 })
 
-test('訳がそろうまでは、英語・中国語を求められても画面は日本語のまま（lang も ja）', () => {
-  assert.deepEqual(DISPLAY_LOCALES, ['ja'])
-  assert.equal(displayLocale('en'), 'ja')
-  assert.equal(displayLocale('zh'), 'ja')
+test('画面は日本語・英語・中国語で表示し、表示に使えない言語は日本語に落ちる', () => {
+  assert.deepEqual(DISPLAY_LOCALES, ['ja', 'en', 'zh'])
+  assert.equal(displayLocale('en'), 'en')
+  assert.equal(displayLocale('zh'), 'zh')
   assert.equal(displayLocale('ja'), 'ja')
-  assert.equal(displayLocale('en', LOCALES), 'en')
+  assert.equal(displayLocale('en', ['ja']), 'ja')
   assert.equal(displayLocale('zh', ['ja', 'en']), 'ja')
 })
 
-test('DSH が受け付ける形の未知の言語タグでも、画面はキー名を出さず日本語に落ちる（Issue #128 の確かめ）', () => {
+test('DSH が受け付ける形の未知の言語タグでは、画面はキー名を出さず英語になる（Issue #128 の確かめ）', () => {
   // Same shape as dsh-client-locale's LOCALE_ID_PATTERN (web/src/i18n/locale.ts LOCALE_TAG).
   // The heading in e2e-dsh/real-dsh.spec.ts shows the DSH workspace record directly, so even
   // if the dictionary's language resolution breaks on unknown values, no key name may appear on screen.
   for (const preference of ['fr', 'ko-KR', 'de-CH', 'zz', 'xx-3', 'qq-Q']) {
     assert.ok(isLocaleTag(preference), `${preference}: DSH の preference の形と同じパターン`)
     const store = createLocaleStore({ languages: ['ja-JP'], preference })
-    assert.equal(displayLocale(store.getSnapshot().requested), 'ja', preference)
-    assert.equal(store.getSnapshot().lang, 'ja', preference)
+    assert.equal(displayLocale(store.getSnapshot().requested), 'en', preference)
+    assert.equal(store.getSnapshot().lang, 'en', preference)
     const messages = messagesOf(bootMessages, store.getSnapshot().active)
     for (const key of Object.keys(bootMessages.ja) as (keyof typeof bootMessages.ja)[]) {
       assert.notEqual(messages[key], key, `${preference}: キー名 ${String(key)} をそのまま出さない`)
-      assert.equal(messages[key], bootMessages.ja[key], preference)
+      assert.equal(messages[key], bootMessages.en![key], preference)
     }
   }
 })
@@ -113,14 +114,21 @@ test('言語の store は結果が変わったときだけ通知し、設定を�
   assert.equal(notified, 4)
 })
 
-test('既定の store は、英語を求められても表示を日本語にし、求めた言語は requested に残す', () => {
+test('既定の store は、求められた英語・中国語でそのまま表示する', () => {
   const store = createLocaleStore({ languages: ['en-US'], preference: 'zh' })
-  assert.deepEqual(store.getSnapshot(), { requested: 'zh', active: 'ja', lang: 'ja' })
+  assert.deepEqual(store.getSnapshot(), { requested: 'zh', active: 'zh', lang: 'zh-CN' })
   let notified = 0
   store.subscribe(() => { notified++ })
   store.setPreference('en')
-  assert.deepEqual(store.getSnapshot(), { requested: 'en', active: 'ja', lang: 'ja' })
+  assert.deepEqual(store.getSnapshot(), { requested: 'en', active: 'en', lang: 'en' })
   assert.equal(notified, 1)
+})
+
+test('ページの外（Node の単体試験）では、機械の言語によらず正本の日本語になる', () => {
+  // Node's navigator reports the machine's language; the page store must not follow it here.
+  assert.equal('document' in globalThis, false)
+  assert.deepEqual(localeStore.getSnapshot(), { requested: 'ja', active: 'ja', lang: 'ja' })
+  assert.equal(currentLocale(), 'ja')
 })
 
 // --- Reading DSH's locale.preference ---------------------------------------
@@ -249,6 +257,40 @@ test('describe が投げても、settings のない DSH でも何もしない', 
   connectLocalePreference({ remote: {} }, store)()
 })
 
+test('最初の読み込みが終わると ready が解決し、そのときには DSH の言語になっている', async () => {
+  const fake = fakeRemote()
+  const store = createLocaleStore({ languages: ['ja-JP'], available: LOCALES })
+  const stop = connectLocalePreference(fake, store)
+  let settled = false
+  void stop.ready.then(() => { settled = true })
+  await tick()
+  assert.equal(settled, false, 'waits for the first read')
+  fake.answer('en')
+  await stop.ready
+  assert.equal(store.getSnapshot().requested, 'en')
+  stop()
+  // A failed read and a DSH without settings also settle, so the first paint is never held.
+  const failed = connectLocalePreference({ remote: { settings: { describe: () => Promise.reject(new Error('x')) } } }, store)
+  await failed.ready
+  await connectLocalePreference({ remote: {} }, store).ready
+})
+
+test('最初の描画の待ちは、読み込みが終わるか時間切れのどちらか早いほうで進む', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  let done = false
+  void waitAtMost(new Promise(() => {}), 1000).then(() => { done = true })
+  t.mock.timers.tick(999)
+  await tick()
+  assert.equal(done, false)
+  t.mock.timers.tick(1)
+  await tick()
+  assert.equal(done, true, 'a read that never ends does not hold the page')
+  let early = false
+  void waitAtMost(Promise.reject(new Error('x')), 1000).then(() => { early = true })
+  await tick()
+  assert.equal(early, true, 'a failed read lets the page paint at once')
+})
+
 // --- Formats ---------------------------------------------------------------
 
 test('日本語の書式は、いま各機能に直接書いてある ja-JP の書式と同じ結果になる', () => {
@@ -363,4 +405,36 @@ test('web/src の全 messages.ts の辞書がそろっていて、表示に使�
   }
   const pending = (locale: Locale) => found.filter(({ catalog }) => untranslatedLocales(catalog).includes(locale)).length
   t.diagnostic(`catalogs: ${found.length}; untranslated en: ${pending('en')}, zh: ${pending('zh')}`)
+})
+
+/** Japanese left in a translation: kana anywhere, or Han characters in English. */
+function untranslatedText(locale: 'en' | 'zh', text: string): boolean {
+  return locale === 'en' ? /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(text) : /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)
+}
+
+test('英語の訳に日本語・中国語の文字がなく、中国語の訳に仮名がない', async () => {
+  const files = await messageFiles(new URL('../web/src/', import.meta.url))
+  const problems: string[] = []
+  for (const file of files) {
+    const module = await import(file.href) as Record<string, unknown>
+    for (const [name, value] of Object.entries(module)) {
+      if (!isCatalog(value)) continue
+      for (const locale of ['en', 'zh'] as const) {
+        const translation = value[locale]
+        if (translation === null) continue
+        // A function message is checked through its source, which holds its template text.
+        for (const [key, message] of Object.entries(translation)) {
+          if (untranslatedText(locale, typeof message === 'string' ? message : String(message))) {
+            problems.push(`${file.pathname.replace(/^.*\/web\/src\//u, '')}#${name}.${locale}.${key}`)
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual(problems, [])
+  assert.equal(untranslatedText('en', 'Copied.'), false)
+  assert.equal(untranslatedText('en', 'コピー'), true)
+  assert.equal(untranslatedText('en', '复制'), true)
+  assert.equal(untranslatedText('zh', '复制成功。'), false)
+  assert.equal(untranslatedText('zh', 'コピーしました。'), true)
 })

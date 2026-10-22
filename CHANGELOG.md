@@ -19,6 +19,11 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+### Added
+
+- **i18n:** 画面を日本語・英語・中国語（簡体字）で表示する。言語は DSH の言語設定（「設定 → 一般 → 言語」）に従い、未設定ならブラウザの言語に従う。ほかの言語と繁体字は英語になる。言語を切り替えると、再読み込みなしで画面が切り替わる ([#184](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/184))
+- **settings:** 「言語」で日本語も選べる。標準の画面には日本語がないため、日本語を選ぶと標準の画面はブラウザの言語（English か中文、ほかは English）で出る ([#184](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/184))
+
 ### Changed
 
 - **host:** ログインを確かめられないときに `/m3e/` で出す案内のページを、ブラウザの言語に合わせて日本語・英語・中国語（簡体字）で出す。ほかの言語では英語になる。標準の画面の「設定 → 一般」に足す M3E の切り替えの行は、標準の画面の言語（English か中文）で出る ([#175](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/175))

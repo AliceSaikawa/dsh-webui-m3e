@@ -11,7 +11,7 @@ A Material 3 Expressive (M3E) mobile Web UI plugin for DeepSeek Harness (DSH), s
   <img src="docs/images/inbox.en.png" alt="Inbox" width="200">
 </p>
 
-The screenshots show translated mock screens. The actual app UI is Japanese only.
+The screenshots show mock screens. The app UI is shown in Japanese, English, or Simplified Chinese.
 
 > [!NOTE]
 > This is a personal project and is not an official DeepSeek product. It is under development and may contain bugs. Please use it with care.
@@ -86,7 +86,7 @@ On iPhone, choose "Add to Home Screen" from Safari's Share menu to open it like 
 In this README, the "standard interface" is DSH's own Web UI (the URL parameter and the setting call it "classic"). Choose which interface to use on this device with any of the following options. Your choice is saved separately on each device.
 
 - In the standard interface: `Settings → General → Use the M3E interface on this device` (the row follows the standard interface's language)
-- In this interface: `設定 → 今の画面に戻す` (Settings → Switch back to the classic interface)
+- In this interface: `Settings → Return to the standard screen`
 - Add `?ui=m3e` or `?ui=classic` to the URL
 
 On a device where you chose M3E, newly opening `/` on a phone switches to M3E. On a computer (where the main input is a mouse or trackpad), `/` stays on the standard interface; open `/m3e/` directly to use M3E. On devices such as Windows Firefox with a touchscreen, the main input may not be detected as a computer, so `/` may still move to `/m3e/` as on a phone. If you remove `/m3e/` from the URL in a tab that was showing M3E and open `/`, that tab stays on the standard interface. A newly opened tab follows the setting on a phone. In 0.0.8, `/` also moves to `/m3e/` on a computer, and there is no per-tab behavior that keeps a tab on the standard interface.
@@ -131,7 +131,7 @@ For source builds, see the [development and distribution guide](docs/development
 
 ## Notes
 
-- The UI text is Japanese only for now. The foundation for following DSH's language setting exists ([docs/design/11-i18n.md](docs/design/11-i18n.md), Japanese), but the English and Chinese translations are not added yet.
+- The UI is shown in Japanese, English, or Simplified Chinese. It follows DSH's language setting (Settings → General → Language, shared with the standard interface), or the browser language when nothing is set. Other languages, Traditional Chinese included, are shown in English. The English and Chinese texts are AI translations that follow the standard interface's terms ([docs/i18n/glossary.md](docs/i18n/glossary.md), Japanese).
 - This plugin bundles internal DSH libraries (`@deepseek-ai/cordis` and `@deepseek-ai/dsh-client-store`), so it may not work with every DSH version.
 - Real-device testing has been done only by opening it in Safari on an iPhone 17 Pro Max. Behavior as a Web app added to the Home Screen, and other devices and browsers, are not tested.
 - UI tests mainly use mock data, and the DSH connection is checked with an isolated real DSH and a fake LLM. Behavior with a real LLM is not verified. See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for the detailed verification scope.

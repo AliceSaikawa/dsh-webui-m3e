@@ -6,11 +6,12 @@ import { M3eOption } from '@m3e/react/option'
 import { M3eSelect, type M3eSelectElement } from '@m3e/react/select'
 import { M3eSwitch, type M3eSwitchElement } from '@m3e/react/switch'
 import { useDsh } from '../../dsh/services.ts'
-import { remoteErrorMessage } from '../../dsh/remote-result.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { PROVIDER_EVENTS } from './providers.ts'
 import { composerApi, type ModelCatalog, type ModelSelection } from '../composer/api.ts'
+// composerApi throws its own failures as LocalizedError; errorText shows only those and Host failures.
+import { errorText } from '../composer/localized-error.ts'
 import { reasoningEffortLabel } from '../composer/helpers.ts'
 import { modelChoices, modelValue } from '../composer/model-picker.ts'
 import {
@@ -31,10 +32,6 @@ type ModelTexts = ReturnType<typeof useMessages<typeof modelMessages.ja>>
 interface PanelProps { namespaces: SettingsNamespace[]; state: SettingsState; store: SettingsStore }
 type CatalogState = { phase: 'loading' | 'ready' | 'error'; catalog?: ModelCatalog; error?: string }
 
-function catalogError(cause: unknown, text: ModelTexts): string {
-  if (cause instanceof Error && /[\u3040-\u30ff\u3400-\u9fff]/.test(cause.message)) return cause.message
-  return remoteErrorMessage(cause, text.catalogFailed)
-}
 
 export function ModelsPanel({ namespaces, state, store }: PanelProps) {
   const text = useMessages(modelMessages)
@@ -50,7 +47,7 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
     void api.modelCatalog().then(value => {
       if (ticket === request.current) setCatalog({ phase: 'ready', catalog: value })
     }).catch(cause => {
-      if (ticket === request.current) setCatalog(previous => ({ ...previous, phase: 'error', error: catalogError(cause, text) }))
+      if (ticket === request.current) setCatalog(previous => ({ ...previous, phase: 'error', error: errorText(cause, text.catalogFailed) }))
     })
   }
   useEffect(() => {
@@ -68,7 +65,7 @@ export function ModelsPanel({ namespaces, state, store }: PanelProps) {
     </div>}
     {catalog.catalog && catalog.catalog.failures.length > 0 && <div className="settings-notice" role="status">
       <p>{text.partial}</p>
-      {catalog.catalog.failures.map(item => <p key={item.id}>{text.failureRow(item.name, catalogError(new Error(item.message), text))}</p>)}
+      {catalog.catalog.failures.map(item => <p key={item.id}>{text.failureRow(item.name, text.catalogFailed)}</p>)}
       <M3eButton onClick={load}>{text.reload}</M3eButton>
     </div>}
     {namespaces.map(namespace => <section className="settings-namespace" key={namespace.ns}>
