@@ -170,7 +170,7 @@ export function CustomProviderSheet({ controller, keys, close, overlayKey, relea
       </section>
       <KeyField draft={key.draft} visible={key.visible} disabled={saving || !['editing', 'keyFailed'].includes(state.phase)} error={state.errors.key}
         present={present} store={controller.input} label={text.keyLabel} />
-      <p>{providerStatusText(providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown', false, providerText)}</p>
+      <p>{providerStatusText(providers.rows.find(row => row.id === draft.id)?.status ?? 'unknown', true, providerText)}</p>
       {keyRefInvalid && !state.errors.key && <p className="settings-field-help">{invalidKeyReferenceMessage(providerText)} {text.keyEmptyHelp}</p>}
       {provider?.keyNoticeKey && <p className="settings-field-help">{providerText[provider.keyNoticeKey]}</p>}
       <M3eButton variant="text" disabled={saving} aria-pressed={key.visible} onClick={controller.input.toggle}>{key.visible ? text.keyToggleHide : text.keyToggleShow}</M3eButton>

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { messagesOf, untranslatedLocales } from '../web/src/i18n/catalog.ts'
 import { customDraft, modelDraft, validateCustom } from '../web/src/features/settings/custom-provider.ts'
 import { createCustomProviderStore } from '../web/src/features/settings/custom-provider-store.ts'
-import { createKeyDraft } from '../web/src/features/settings/providers.ts'
+import { createKeyDraft, createProviderStore, type ProviderRemote } from '../web/src/features/settings/providers.ts'
+import { createMockContext } from '../web/src/dsh/mock/context.ts'
+import { extendMock } from '../web/src/features/settings/mock.ts'
 import { settingsFixtures } from '../web/src/features/settings/mock-fixtures.ts'
 import {
   customProviderMessages, modelMessages, providerMessages,
@@ -32,7 +34,7 @@ test('提供元・モデル・カスタムプロバイダーの文言は3言語�
 })
 
 test('提供元の一覧と入力シートの文言は英語と中国語になる', () => {
-  assert.equal(en.provider.heading, 'Providers and API keys')
+  assert.equal(en.provider.heading, 'Providers and registration status')
   assert.equal(en.provider.none, 'No providers are registered.')
   assert.equal(en.provider.loading, 'Loading registration status…')
   assert.equal(en.provider.statusRegistered, 'API key: registered')
@@ -43,6 +45,11 @@ test('提供元の一覧と入力シートの文言は英語と中国語にな�
   assert.equal(en.provider.keyReferenceError('MY_API_KEY', 'another reason', 'my-local'),
     'Reference name “MY_API_KEY”: another reason Leave the key empty, or add the provider with a non-overlapping prefix in the ID (for example, my-local).')
   assert.equal(zh.provider.heading, '提供方与注册状态')
+  // The terms follow docs/i18n/glossary.md.
+  assert.equal(zh.provider.removeButton, '移除注册')
+  assert.equal(zh.provider.removed, '已移除 API 密钥注册')
+  assert.equal(en.model.allowedModels, 'Allowed models')
+  assert.equal(zh.custom.details, '详情')
   assert.equal(zh.provider.statusReadOnly(zh.provider.statusMissing), 'API 密钥：未注册（无法更改）')
   assert.equal(zh.provider.saved, 'API 密钥已保存')
 })
@@ -118,4 +125,18 @@ test('カスタムプロバイダーの保存メッセージは、表示した�
   message = store.getSnapshot().message
   assert.equal(message, 'The provider settings were saved, but the API key could not be saved. API キーの変更が拒否されました。登録状況を確認してください。')
   store.dispose()
+})
+
+test('提供元のストアの文は、文を作る時点の言語で作る', async () => {
+  const remote = createMockContext({ extensions: [{ extendMock }] }).remote as unknown as ProviderRemote
+  let locale: 'ja' | 'en' | 'zh' = 'ja'
+  const keys = createProviderStore(remote, () => messagesOf(providerMessages, locale))
+  await keys.load()
+  const target = keys.getSnapshot().rows[0]!
+  keys.connectionChanged(false)
+  assert.deepEqual(await keys.save(target, 'key'), { ok: false, code: 'busy', message: ja.provider.busy })
+  locale = 'en'
+  assert.deepEqual(await keys.save(target, 'key'), { ok: false, code: 'busy', message: 'Check the connection and the operation in progress.' })
+  locale = 'zh'
+  assert.deepEqual(await keys.save(target, 'key'), { ok: false, code: 'busy', message: '请检查连接和正在进行的操作。' })
 })

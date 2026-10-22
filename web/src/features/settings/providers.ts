@@ -7,7 +7,10 @@ import type { ModelCatalog } from '../composer/api.ts'
 import { providerMessages } from './messages.ts'
 import type { KeyReferenceReasonKey } from './provider-key-refs.ts'
 
-/** The texts the provider store produces; tests may pass another language's catalog. */
+/**
+ * The texts the provider store produces; tests may pass another language's catalog.
+ * The store calls `text` for each message, so a message follows the language current when it is made.
+ */
 export type ProviderStoreTexts = Translation<typeof providerMessages.ja>
 const storeText = (): ProviderStoreTexts => messagesOf(providerMessages, currentLocale())
 /** The two messages a key draft itself produces; the custom provider form has its own catalog with both. */
@@ -108,7 +111,7 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
   })
 }
 
-export function createProviderStore(remote: ProviderRemote, text: ProviderStoreTexts = storeText()) {
+export function createProviderStore(remote: ProviderRemote, text: () => ProviderStoreTexts = storeText) {
   let state: ProviderState = { phase: 'loading', rows: [], error: null, busy: false }
   let sequence = 0
   let epoch = 0
@@ -142,7 +145,7 @@ export function createProviderStore(remote: ProviderRemote, text: ProviderStoreT
         if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
-          ...(row.custom && status && !status.configured ? { keyNotice: text.pendingKeyReference, keyNoticeKey: 'pendingKeyReference' as const } : {}),
+          ...(row.custom && status && !status.configured ? { keyNotice: text().pendingKeyReference, keyNoticeKey: 'pendingKeyReference' as const } : {}),
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
@@ -150,10 +153,10 @@ export function createProviderStore(remote: ProviderRemote, text: ProviderStoreT
       const incomplete = resolved.some(row => row.status === 'unknown')
       publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
         customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
-        error: incomplete ? text.incomplete : null })
+        error: incomplete ? text().incomplete : null })
       return true
     } catch {
-      if (request === sequence && generation === epoch) publish({ phase: 'error', error: text.unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
+      if (request === sequence && generation === epoch) publish({ phase: 'error', error: text().unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
       return false
     }
   }
@@ -175,7 +178,7 @@ export function createProviderStore(remote: ProviderRemote, text: ProviderStoreT
     if (connected) void load()
   }
   async function change(target: ProviderRow, value?: string, options: KeySaveOptions = {}): Promise<KeyOutcome> {
-    if (state.busy || !connected) return { ok: false, code: 'busy', message: text.busy }
+    if (state.busy || !connected) return { ok: false, code: 'busy', message: text().busy }
     const generation = epoch
     let finish!: () => void
     const operation = { generation, done: new Promise<void>(resolve => { finish = resolve }), finish: () => finish() }
@@ -186,34 +189,34 @@ export function createProviderStore(remote: ProviderRemote, text: ProviderStoreT
       let validatedVersion: number
       do {
         validatedVersion = refreshVersion
-        if (!await read() || generation !== epoch) return { ok: false, code: 'unavailable', message: text.unavailable }
+        if (!await read() || generation !== epoch) return { ok: false, code: 'unavailable', message: text().unavailable }
       } while (validatedVersion !== refreshVersion)
-      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text.closed }
+      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text().closed }
       const row = state.rows.find(item => item.id === target.id)
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
-        return { ok: false, code: 'changed', message: text.changed }
+        return { ok: false, code: 'changed', message: text().changed }
       }
-      if (value !== undefined && !value.trim()) return { ok: false, code: 'keyRequired', message: text.keyRequired }
+      if (value !== undefined && !value.trim()) return { ok: false, code: 'keyRequired', message: text().keyRequired }
       if (value !== undefined && row.needsReference) {
-        if (row.revision === undefined) return { ok: false, code: 'rereadProvider', message: text.rereadProvider }
+        if (row.revision === undefined) return { ok: false, code: 'rereadProvider', message: text().rereadProvider }
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)
-        if (!named.ok || generation !== epoch) return { ok: false, code: 'referenceFailed', message: text.referenceFailed }
+        if (!named.ok || generation !== epoch) return { ok: false, code: 'referenceFailed', message: text().referenceFailed }
         referenceWritten = true
       }
-      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text.closed }
-      if (options.requireMissing && row.status !== 'missing') return { ok: false, code: 'keyRegisteredMeanwhile', message: text.keyRegisteredMeanwhile }
+      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text().closed }
+      if (options.requireMissing && row.status !== 'missing') return { ok: false, code: 'keyRegisteredMeanwhile', message: text().keyRegisteredMeanwhile }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
-      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text.connectionChanged }
+      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text().connectionChanged }
       if (!result.ok) {
-        if (referenceWritten) return { ok: false, code: 'referenceSetKeyFailed', message: text.referenceSetKeyFailed }
-        return { ok: false, code: 'rejected', message: text.rejected }
+        if (referenceWritten) return { ok: false, code: 'referenceSetKeyFailed', message: text().referenceSetKeyFailed }
+        return { ok: false, code: 'rejected', message: text().rejected }
       }
       await read()
-      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text.connectionChanged }
+      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text().connectionChanged }
       return { ok: true }
     } catch {
-      return { ok: false, code: 'changeFailed', message: text.changeFailed }
+      return { ok: false, code: 'changeFailed', message: text().changeFailed }
     } finally {
       value = undefined
       if (pendingChange === operation) pendingChange = undefined
