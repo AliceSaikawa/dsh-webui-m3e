@@ -1,6 +1,9 @@
 import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from 'react'
 import { openSheet, openFullSheet, type OverlayRender, type SheetOptions } from '../../app/overlay/index.ts'
 import { createChatSheetLifetime } from './sheet-lifetime.ts'
+import { messagesOf } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
+import { chatMessages } from './messages.ts'
 
 function createChatSheets() {
   const lifetime = createChatSheetLifetime()
@@ -31,6 +34,6 @@ export function ChatSheets({ children }: { children: ReactNode }) {
 
 export function useChatSheets() {
   const scope = useContext(ChatSheetContext)
-  if (!scope) throw new Error('会話のシートを開けませんでした。')
+  if (!scope) throw new Error(messagesOf(chatMessages, currentLocale()).sheetsUnavailable)
   return scope
 }
