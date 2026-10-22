@@ -1,15 +1,17 @@
 import type { PreparedImage } from './types.ts'
 import { fitImageDimensions, shouldConvertImage } from './helpers.ts'
 import { createPreparedImage } from './image-content.ts'
+import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 function readDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => typeof reader.result === 'string'
       ? resolve(reader.result)
-      : reject(new Error('画像を読み込めませんでした。もう一度選んでください。'))
-    reader.onerror = () => reject(new Error('画像を読み込めませんでした。もう一度選んでください。'))
-    reader.onabort = () => reject(new Error('画像の読み込みが中断されました。'))
+      : reject(new LocalizedError(composerText().imageReadAgain))
+    reader.onerror = () => reject(new LocalizedError(composerText().imageReadAgain))
+    reader.onabort = () => reject(new LocalizedError(composerText().imageReadAborted))
     reader.readAsDataURL(file)
   })
 }
@@ -19,8 +21,8 @@ function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
     const image = new Image()
     image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0
       ? resolve(image)
-      : reject(new Error('画像の大きさを読み取れませんでした。'))
-    image.onerror = () => reject(new Error('この画像を読み込めませんでした。PNG または JPEG に変換して選び直してください。'))
+      : reject(new LocalizedError(composerText().dimensionsUnreadable))
+    image.onerror = () => reject(new LocalizedError(composerText().imageUnreadableConvert))
     image.src = dataUrl
   })
 }
@@ -31,14 +33,14 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
   const image = await decodeImage(previewUrl)
   const dimensions = fitImageDimensions(image.naturalWidth, image.naturalHeight)
   let mediaType = file.type
-  let name = file.name || '画像'
+  let name = file.name || composerText().imageFallbackName
 
   if (shouldConvertImage(mediaType, image.naturalWidth, image.naturalHeight)) {
     const canvas = document.createElement('canvas')
     canvas.width = dimensions.width
     canvas.height = dimensions.height
     const context = canvas.getContext('2d')
-    if (!context) throw new Error('画像を変換できませんでした。PNG または JPEG を選んでください。')
+    if (!context) throw new LocalizedError(composerText().imageConvertFailed)
     try {
       context.fillStyle = '#ffffff'
       context.fillRect(0, 0, canvas.width, canvas.height)
@@ -46,10 +48,10 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
       previewUrl = canvas.toDataURL('image/jpeg', 0.9)
       if (!previewUrl.startsWith('data:image/jpeg;base64,')) throw new Error('JPEG')
     } catch {
-      throw new Error('画像を変換できませんでした。PNG または JPEG を選んでください。')
+      throw new LocalizedError(composerText().imageConvertFailed)
     }
     mediaType = 'image/jpeg'
-    name = `${name.replace(/\.[^.]+$/u, '') || '画像'}.jpg`
+    name = `${name.replace(/\.[^.]+$/u, '') || composerText().imageFallbackName}.jpg`
   }
 
   return createPreparedImage({ name, previewUrl, ...dimensions, mediaType })

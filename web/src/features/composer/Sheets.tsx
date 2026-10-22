@@ -9,23 +9,21 @@ import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { presetDescription, presetDisplayName } from '../../dsh/permission-presets.ts'
-import { remoteErrorMessage, unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { InboxState, QueueAction } from '../../dsh/services.ts'
 import { queueFromInbox } from '../../dsh/inbox.ts'
+import { useMessages } from '../../i18n/index.ts'
 import type { ModelCatalog, ModelSelection, ModelSelectionProjection, PermissionProjection, PermissionSelection } from './api.ts'
 import type { ComposerTarget } from './Composer.tsx'
 import { readDraft, subscribeDraft } from './drafts.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
+import { composerMessages } from './messages.ts'
 import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue, type ModelApplyController } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 import { permissionIcon } from './presentation.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
+import { errorText } from './localized-error.ts'
 
-export function errorText(error: unknown, fallback = '処理に失敗しました。もう一度お試しください。'): string {
-  // Local validation errors are authored in Japanese; host diagnostics use the shared translator.
-  if (error instanceof Error && /^[ぁ-んァ-ヶ一-龠]/.test(error.message)) return error.message
-  return remoteErrorMessage(error, fallback)
-}
 export function SheetRow({ icon, trailingIcon, children, detail, selected, disabled, onClick }: {
   icon?: string; trailingIcon?: string; children: ReactNode; detail?: string; selected?: boolean; disabled?: boolean; onClick(): void
 }) {
@@ -49,6 +47,7 @@ export function PlusSheet({ close, plan, onImage, onReference, onCommand, onPlan
   onImage(): void; onReference(): void; onCommand(): void; onPlan(active: boolean): Promise<void>
 } & ModelPickerProps) {
   const { connected } = useConnection()
+  const text = useMessages(composerMessages)
   const applyState = useSyncExternalStore(modelProps.modelApply.subscribe, modelProps.modelApply.getSnapshot, modelProps.modelApply.getSnapshot)
   const disabled = !connected || applyState.composerBusy || applyState.pending
   const [active, setActive] = useState(plan)
@@ -58,24 +57,26 @@ export function PlusSheet({ close, plan, onImage, onReference, onCommand, onPlan
   async function toggle() {
     if (busy || disabled) return
     setBusy(true); setError('')
-    try { await onPlan(!active); setActive(!active) } catch (error) { setError(errorText(error)) }
+    try { await onPlan(!active); setActive(!active) } catch (error) { setError(errorText(error, undefined, text)) }
     finally { setBusy(false) }
   }
-  return <div className="composer-sheet"><h2>入力の補助</h2>
-    <SheetRow icon="image" onClick={() => choose(onImage)}>画像を添付</SheetRow>
-    <SheetRow icon="alternate_email" detail="入力欄で @ を打っても出せる" onClick={() => choose(onReference)}>ファイルを参照</SheetRow>
-    <SheetRow icon="terminal" detail="入力欄で / を打っても出せる" onClick={() => choose(onCommand)}>コマンド</SheetRow>
-    <div className="composer-switch-row"><Icon name="checklist" className="composer-sheet-icon" /><span className="composer-sheet-copy">計画モード</span><M3eSwitch aria-label="計画モード" checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
+  return <div className="composer-sheet"><h2>{text.plusTitle}</h2>
+    <SheetRow icon="image" onClick={() => choose(onImage)}>{text.attachImage}</SheetRow>
+    <SheetRow icon="alternate_email" detail={text.referenceDetail} onClick={() => choose(onReference)}>{text.referenceFile}</SheetRow>
+    <SheetRow icon="terminal" detail={text.commandDetail} onClick={() => choose(onCommand)}>{text.command}</SheetRow>
+    <div className="composer-switch-row"><Icon name="checklist" className="composer-sheet-icon" /><span className="composer-sheet-copy">{text.planMode}</span><M3eSwitch aria-label={text.planMode} checked={active} disabled={disabled || busy} onChange={() => { void toggle() }} /></div>
     <ModelPicker {...modelProps} extraDisabled={busy} />
     {error && <p role="alert">{error}</p>}
   </div>
 }
 
 export function ModelPickerSheet(props: ModelPickerProps) {
-  return <div className="composer-sheet"><h2>モデルの選択</h2><ModelPicker {...props} /></div>
+  const text = useMessages(composerMessages)
+  return <div className="composer-sheet"><h2>{text.modelSheetLabel}</h2><ModelPicker {...props} /></div>
 }
 
 function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog, applyModel, extraDisabled = false }: ModelPickerProps & { extraDisabled?: boolean }) {
+  const text = useMessages(composerMessages)
   const { connected } = useConnection()
   const sessionId = target.kind === 'session' ? target.sessionId : ''
   const { face, snapshot, projection } = useSession(sessionId)
@@ -104,7 +105,7 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
     if (initialCatalog) return
     let active = true
     void loadCatalog().then(value => { if (active) { setCatalog(value); setCurrent(previous => previous ?? value.default); setLoading(false) } })
-      .catch(cause => { if (active) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')); setLoading(false) } })
+      .catch(cause => { if (active) { setError(errorText(cause, text.modelListFailed, text)); setLoading(false) } })
     return () => { active = false }
   }, [initialCatalog, loadCatalog])
   useEffect(() => {
@@ -112,7 +113,7 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
     let active = true
     setLoading(true); setError('')
     void loadCatalog(true).then(value => { if (active) { setCatalog(value); setLoading(false) } })
-      .catch(cause => { if (active) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')); setLoading(false) } })
+      .catch(cause => { if (active) { setError(errorText(cause, text.modelListFailed, text)); setLoading(false) } })
     return () => { active = false }
   }, [connected])
   useEffect(() => { if (!busy) setCurrent(observed ?? applyState.selected) }, [observedKey])
@@ -135,7 +136,7 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
   async function retry() {
     setLoading(true); setError('')
     try { const value = await loadCatalog(true); setCatalog(value); setCurrent(previous => previous ?? value.default) }
-    catch (cause) { setError(errorText(cause, 'モデル一覧を取得できませんでした。')) }
+    catch (cause) { setError(errorText(cause, text.modelListFailed, text)) }
     finally { setLoading(false) }
   }
   async function choose(selection: ModelSelection) {
@@ -148,37 +149,37 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
   }
   return <div className="composer-model-picker">
     <M3eFormField variant="outlined">
-      <label slot="label" htmlFor={modelId}>モデル</label>
-      <M3eSelect ref={modelSelect} id={modelId} aria-label="モデル" value={modelValue(current)} disabled={disabled || busy || loading || choices.length === 0}
+      <label slot="label" htmlFor={modelId}>{text.modelLabel}</label>
+      <M3eSelect ref={modelSelect} id={modelId} aria-label={text.modelLabel} value={modelValue(current)} disabled={disabled || busy || loading || choices.length === 0}
         onChange={event => {
           const value = (event.currentTarget as M3eSelectElement).value
           const selection = typeof value === 'string' ? selectionFromModelValue(value, choices) : undefined
           if (selection) void choose(selection)
         }}>
-        {loading && <M3eOption value="" disabled>読み込み中</M3eOption>}
-        {!loading && choices.length === 0 && <M3eOption value="" disabled>選べるモデルがありません</M3eOption>}
+        {loading && <M3eOption value="" disabled>{text.loading}</M3eOption>}
+        {!loading && choices.length === 0 && <M3eOption value="" disabled>{text.noModels}</M3eOption>}
         {choices.map(choice => <M3eOption key={choice.value} value={choice.value}>{choice.label}</M3eOption>)}
       </M3eSelect>
     </M3eFormField>
-    {loading && <p role="status">モデル一覧を読み込み中…</p>}
+    {loading && <p role="status">{text.modelListLoading}</p>}
     {catalog && catalog.failures.length > 0 && <div role="status">
-      <p>一部のモデル一覧を取得できませんでした。</p>
-      {catalog.failures.map(failure => <p key={failure.id}>{failure.name}：{errorText(new Error(failure.message), 'モデル一覧を取得できませんでした。')}</p>)}
+      <p>{text.someModelListsFailed}</p>
+      {catalog.failures.map(failure => <p key={failure.id}>{text.modelFailureLine(failure.name, text.modelListFailed)}</p>)}
     </div>}
     {reasoning && <M3eFormField variant="outlined">
-      <label slot="label" htmlFor={effortId}>考える深さ</label>
-      <M3eSelect ref={effortSelect} id={effortId} aria-label="考える深さ" value={selectedEffort} disabled={disabled || busy || loading}
+      <label slot="label" htmlFor={effortId}>{text.reasoningDepth}</label>
+      <M3eSelect ref={effortSelect} id={effortId} aria-label={text.reasoningDepth} value={selectedEffort} disabled={disabled || busy || loading}
         onChange={event => {
           const value = (event.currentTarget as M3eSelectElement).value
           if (current && typeof value === 'string' && reasoning.efforts.some(effort => effort.id === value)) void choose({ ...current, reasoningEffort: value })
         }}>
-        {!selectedEffort && <><span slot="value">既定</span><M3eOption value="" disabled>既定</M3eOption></>}
+        {!selectedEffort && <><span slot="value">{text.defaultEffort}</span><M3eOption value="" disabled>{text.defaultEffort}</M3eOption></>}
         {reasoning.efforts.map((effort, index) => <M3eOption key={effort.id} value={effort.id}>{reasoningEffortLabel(effort.id, index)}</M3eOption>)}
       </M3eSelect>
     </M3eFormField>}
-    {busy && <p role="status">選択を反映中…</p>}
-    {(error || applyState.error !== undefined) && <p role="alert">{error || errorText(applyState.error, 'モデルを切り替えられませんでした。')}</p>}
-    {!loading && (!catalog || catalog.failures.length > 0) && <M3eButton disabled={disabled} onClick={() => { void retry() }}>もう一度読み込む</M3eButton>}
+    {busy && <p role="status">{text.applying}</p>}
+    {(error || applyState.error !== undefined) && <p role="alert">{error || errorText(applyState.error, text.modelSwitchFailed, text)}</p>}
+    {!loading && (!catalog || catalog.failures.length > 0) && <M3eButton disabled={disabled} onClick={() => { void retry() }}>{text.reload}</M3eButton>}
   </div>
 }
 
@@ -186,6 +187,7 @@ export function PermissionSheet({ permissions, defaults = false, sessionId = '',
   permissions: PermissionProjection; defaults?: boolean; sessionId?: string; apply(value: string): Promise<void>; close(): void
 }) {
   const catalogState = usePermissionCatalog()
+  const text = useMessages(composerMessages)
   const { catalog } = catalogState
   const { projection } = useSession(sessionId)
   // Another client can change the preset while this sheet stays open, so compare
@@ -203,15 +205,16 @@ export function PermissionSheet({ permissions, defaults = false, sessionId = '',
     // The stock UI does nothing when the current preset is picked again.
     if (value === currentValue) { close(); return }
     setBusy(true); setError('')
-    try { await apply(value); close() } catch (error) { setError(errorText(error)); setBusy(false) }
+    try { await apply(value); close() } catch (error) { setError(errorText(error, undefined, text)); setBusy(false) }
   }
-  return <div className="composer-sheet"><h2>権限の選び直し</h2>
+  return <div className="composer-sheet"><h2>{text.permissionPickTitle}</h2>
     {options.filter(option => option.value !== 'custom').map(option => <SheetRow key={option.value} icon={permissionIcon(option.value)} selected={option.value === currentValue} detail={presetDescription(option.value, option.description)} disabled={busy} onClick={() => { void choose(option.value) }}>{presetDisplayName(option.value, option.name)}</SheetRow>)}
-    {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error) : '')}</p>}
+    {(error || catalogState.status === 'error') && <p role="alert">{error || (catalogState.status === 'error' ? errorText(catalogState.error, undefined, text) : '')}</p>}
   </div>
 }
 
 export function QueueSheet({ sessionId, close }: { sessionId: string; close(): void }) {
+  const text = useMessages(composerMessages)
   const { face, snapshot, projection } = useSession(sessionId)
   const items = visibleQueue(queueFromInbox(projection<InboxState>('inbox')))
   const [selectedId, setSelectedId] = useState<string | undefined>(items.length === 1 ? items[0]?.id : undefined)
@@ -222,16 +225,16 @@ export function QueueSheet({ sessionId, close }: { sessionId: string; close(): v
     if (!face || !selected || busy) return
     setBusy(true); setError('')
     try { unwrapRemoteResult(await face.updateQueue(selected.id, action)); close() }
-    catch (error) { setError(errorText(error)); setBusy(false) }
+    catch (error) { setError(errorText(error, undefined, text)); setBusy(false) }
   }
-  return <div className="composer-sheet"><h2>順番待ちの編集</h2>
-    {!items.length && <p>順番待ちのメッセージはありません。</p>}
-    {!selected ? items.map(item => <SheetRow key={item.id} detail={item.placement === 'steering' ? '割り込み待ち' : '順番待ち'} onClick={() => setSelectedId(item.id)}>{item.preview || item.text || '画像付きのメッセージ'}</SheetRow>) : <>
-      <p className="composer-queue-preview">{selected.preview || selected.text || '画像付きのメッセージ'}</p>
-      <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <TextPromptDialog {...queueEditPrompt(face, selected, done)} />, { label: '順番待ちのメッセージを編集' }) }}>編集</SheetRow>
-      <SheetRow icon="bolt" disabled={busy || !face || selected.placement !== 'queued' || !snapshot.running} onClick={() => { void act({ kind: 'steer' }) }}>今すぐ割り込ませる</SheetRow>
-      <SheetRow icon="delete" disabled={busy || !face} onClick={() => { void act({ kind: 'remove' }) }}>取り消す</SheetRow>
-      {items.length > 1 && <M3eButton onClick={() => setSelectedId(undefined)}>一覧に戻る</M3eButton>}
+  return <div className="composer-sheet"><h2>{text.queueSheetLabel}</h2>
+    {!items.length && <p>{text.queueEmpty}</p>}
+    {!selected ? items.map(item => <SheetRow key={item.id} detail={item.placement === 'steering' ? text.queueStateSteering : text.queueStateQueued} onClick={() => setSelectedId(item.id)}>{item.preview || item.text || text.queueImageOnly}</SheetRow>) : <>
+      <p className="composer-queue-preview">{selected.preview || selected.text || text.queueImageOnly}</p>
+      <SheetRow icon="edit" disabled={busy || !face} onClick={() => { if (!face) return; close(); openDialog(done => <TextPromptDialog {...queueEditPrompt(face, selected, done, text)} />, { label: text.queueEditTitle }) }}>{text.editAction}</SheetRow>
+      <SheetRow icon="bolt" disabled={busy || !face || selected.placement !== 'queued' || !snapshot.running} onClick={() => { void act({ kind: 'steer' }) }}>{text.steerNow}</SheetRow>
+      <SheetRow icon="delete" disabled={busy || !face} onClick={() => { void act({ kind: 'remove' }) }}>{text.removeAction}</SheetRow>
+      {items.length > 1 && <M3eButton onClick={() => setSelectedId(undefined)}>{text.backToList}</M3eButton>}
     </>}
     {error && <p role="alert">{error}</p>}
   </div>

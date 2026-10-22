@@ -1,6 +1,11 @@
 import { remoteFailureOf } from '../../dsh/remote-result.ts'
+import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
-export const uncertainDeliveryMessage = '送信結果を確認できませんでした。会話や順番待ちを確認してから、必要ならもう一度送ってください。同じ内容が重複して届く可能性があります。'
+/** The text of a prompt whose outcome cannot be proven; made in the page language when read. */
+export function uncertainDeliveryMessage(): string {
+  return composerText().uncertainDelivery
+}
 
 /** Gateway maps carrier loss and Host faults to the same internal code. */
 export function promptOutcomeIsUnknown(error: unknown): boolean {
@@ -9,9 +14,9 @@ export function promptOutcomeIsUnknown(error: unknown): boolean {
 }
 
 /** Only created after invoking prompt, never for model/command preparation. */
-export class UncertainPromptError extends Error {
+export class UncertainPromptError extends LocalizedError {
   constructor(cause: unknown) {
-    super(uncertainDeliveryMessage, { cause })
+    super(uncertainDeliveryMessage(), { cause })
     this.name = 'UncertainPromptError'
   }
 }

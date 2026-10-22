@@ -1,6 +1,8 @@
 import type { DshRemote, RemoteResult } from '../../dsh/services.ts'
 import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { onRemoteEvent } from '../../dsh/remote-events.ts'
+import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 /** Browser wire shapes verified against the installed DSH client plugins. */
 export interface CommandDescriptor {
@@ -48,7 +50,7 @@ type RecordValue = Record<string, unknown>
 const record = (value: unknown): RecordValue | undefined => typeof value === 'object' && value !== null && !Array.isArray(value) ? value as RecordValue : undefined
 
 export function requireMatched(result: RemoteResult<{ matched: boolean }>): void {
-  if (!unwrapRemoteResult(result).matched) throw new Error('この会話では、そのコマンドを使えません。')
+  if (!unwrapRemoteResult(result).matched) throw new LocalizedError(composerText().commandUnavailable)
 }
 
 /** Default choices come from the process catalog, independently of the schema. */
@@ -57,7 +59,7 @@ export function permissionDefaultsOf(view: SettingsNamespace | undefined, catalo
   const currentValue = record(view.value)?.defaultPreset ?? catalog.defaultPreset
   const options = catalog.defaultOptions
   if (typeof currentValue !== 'string' || options.length === 0 || !options.some((option) => option.value === currentValue)) {
-    throw new Error('新しい会話の権限候補を読み込めませんでした。')
+    throw new LocalizedError(composerText().defaultPermissionLoadFailed)
   }
   return { currentValue, options }
 }
@@ -66,25 +68,25 @@ export function permissionDefaultsOf(view: SettingsNamespace | undefined, catalo
 export function composerApi(remote: DshRemote) {
   const wire = remote as ComposerRemote
   async function permissionCatalog(): Promise<PermissionCatalog> {
-    if (!wire.permissionPresets) throw new Error('権限の候補を取得できませんでした。')
+    if (!wire.permissionPresets) throw new LocalizedError(composerText().permissionCatalogUnavailable)
     return unwrapRemoteResult(await wire.permissionPresets.catalog())
   }
   return {
     permissionCatalog,
     async listCommands(sessionId: string): Promise<readonly CommandDescriptor[]> {
-      if (!wire.commands) throw new Error('コマンドの候補を取得できません。')
+      if (!wire.commands) throw new LocalizedError(composerText().commandsUnavailable)
       return unwrapRemoteResult(await wire.commands.list(sessionId))
     },
     async listFiles(sessionId: string, query: string, signal: AbortSignal): Promise<readonly FileReference[]> {
-      if (!wire.fileReferences) throw new Error('ファイルの候補を取得できません。')
+      if (!wire.fileReferences) throw new LocalizedError(composerText().filesUnavailable)
       return unwrapRemoteResult(await wire.fileReferences.list(sessionId, query, signal))
     },
     async modelCatalog(): Promise<ModelCatalog> {
-      if (!wire.session?.modelCatalog) throw new Error('モデルの一覧を取得できません。')
+      if (!wire.session?.modelCatalog) throw new LocalizedError(composerText().modelsUnavailable)
       return unwrapRemoteResult(await wire.session.modelCatalog())
     },
     async selectModel(sessionId: string, selection: ModelSelection): Promise<ModelSelection> {
-      if (!wire.session?.selectModel) throw new Error('モデルを切り替えられません。')
+      if (!wire.session?.selectModel) throw new LocalizedError(composerText().modelSwitchUnavailable)
       return unwrapRemoteResult(await wire.session.selectModel({ sessionId, ...selection })).selected
     },
     async defaultPermissions(): Promise<PermissionProjection | undefined> {
