@@ -19,6 +19,10 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+### Changed
+
+- **host:** ログインを確かめられないときに `/m3e/` で出す案内のページを、ブラウザの言語に合わせて日本語・英語・中国語（簡体字）で出す。ほかの言語では英語になる。標準の画面の「設定 → 一般」に足す M3E の切り替えの行は、標準の画面の言語（English か中文）で出る ([#175](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/175))
+
 ## [0.0.9-rc.5] - 2026-10-22
 
 対応する DSH は **0.2.1-rc.2** だけです。0.2.0-rc.2 では起動しません。0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を使ってください。
