@@ -31,6 +31,12 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // Language names are written in the language itself, as the stock screen does.
   'features/settings/general.ts: 中文': 'language name',
   'features/settings/general.ts: 日本語': 'language name',
+  // Rejection reasons returned to the DSH requester, never shown on the page.
+  // docs/design/11-i18n.md keeps them in fixed Japanese.
+  'dsh/interactions-store.ts: 回答の前に質問が取り消されました。': 'reason for the requester',
+  'dsh/interactions-store.ts: 承認の要求が取り消されました。': 'reason for the requester',
+  'dsh/interactions-store.ts: この要求への回答はすでに終了しています。': 'reason for the requester',
+  'dsh/interactions-store.ts: この接続には対応待ちの受け取りがすでに登録されています。': 'reason for the requester',
 }
 
 interface Finding { readonly path: string; readonly line: number; readonly text: string }
