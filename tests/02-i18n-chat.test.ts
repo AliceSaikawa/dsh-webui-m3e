@@ -5,7 +5,7 @@ import { LOCALES } from '../web/src/i18n/locale.ts'
 import {
   attachmentMessages, chatMessages, messageActionMessages, toolDetailMessages,
 } from '../web/src/features/chat/messages.ts'
-import { commandPresentation, formatCommandPresentation, formatDuration } from '../web/src/features/chat/model.ts'
+import { buildChatRows, commandPresentation, formatCommandPresentation, formatDuration } from '../web/src/features/chat/model.ts'
 import { toolErrorMessage } from '../web/src/features/chat/tool-output.ts'
 
 const catalogs = { chatMessages, attachmentMessages, toolDetailMessages, messageActionMessages } as const
@@ -43,6 +43,43 @@ test('コマンドの結果は言語ごとの文で組み立て、日本語の�
       { label: '/permission failed', icon: 'error', failureReason: 'No detailed reason was recorded.' },
       { label: '/permission 执行失败', icon: 'error', failureReason: '没有记录详细原因。' },
     ])
+})
+
+test('コマンドの名前の有無で、言語ごとに区切りを付けて組み立てる', () => {
+  const rows = [
+    { name: 'permission', text: '', status: 'success' },
+    { name: '', text: '', status: 'success' },
+    { name: '', text: '', status: 'error' },
+    { name: 'permission', text: '', status: 'unknown' },
+    { name: '', text: '', status: 'unknown' },
+  ] as const
+  const labels = (locale: typeof LOCALES[number]) => rows.map(row => formatCommandPresentation(row, messagesOf(chatMessages, locale)).label)
+  assert.deepEqual(labels('ja'), [
+    '/permission を実行しました', 'コマンドを実行しました', 'コマンドの実行に失敗しました',
+    '/permission の結果を受け取りました', 'コマンドの結果を受け取りました',
+  ])
+  assert.deepEqual(labels('en'), [
+    'Ran /permission', 'Ran the command', 'Command failed',
+    'Received the result of /permission', 'Received the command result',
+  ])
+  assert.deepEqual(labels('zh'), [
+    '已执行 /permission', '已执行指令', '指令执行失败',
+    '已收到 /permission 的结果', '已收到指令的结果',
+  ])
+})
+
+test('名前のない添付ファイルは、モデルでは名前を決めず、表示の言語の既定名を使う', () => {
+  const rows = buildChatRows([{
+    seq: 1, time: 100, type: 'user/message',
+    data: { source: { kind: 'user' }, content: [{ type: 'file', attachment: { attachmentId: 'unnamed', bytes: 10 } }, { type: 'file', attachment: { attachmentId: 'named', name: 'a.txt', bytes: 1 } }] },
+  }])
+  const user = rows.find(row => row.kind === 'user')
+  assert.ok(user?.kind === 'user')
+  assert.deepEqual(user.content, [
+    { type: 'file', attachment: { attachmentId: 'unnamed', bytes: 10 } },
+    { type: 'file', attachment: { attachmentId: 'named', name: 'a.txt', bytes: 1 } },
+  ])
+  assert.deepEqual(LOCALES.map(locale => messagesOf(attachmentMessages, locale).defaultFileName), ['添付ファイル', 'Attached file', '附件文件'])
 })
 
 test('ツールの失敗理由は言語ごとの見出しで組み立てる', () => {

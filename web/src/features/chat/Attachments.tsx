@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { M3eButton } from '@m3e/react/button'
 import { Icon } from '../../app/icons/Icon.tsx'
-import type { FileAttachmentRef, ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
+import type { ImageAttachmentRef, SessionFace } from '../../dsh/services.ts'
 import { formatNumber, useLocale, useMessages } from '../../i18n/index.ts'
 import { attachmentMessages } from './messages.ts'
+import type { ChatFileAttachment } from './model.ts'
 import { useChatSheets } from './ChatSheets.tsx'
 
-export function FileAttachment({ attachment }: { attachment: FileAttachmentRef }) {
+export function FileAttachment({ attachment }: { attachment: ChatFileAttachment }) {
   const text = useMessages(attachmentMessages)
   const locale = useLocale()
   const size = (value: number, maximumFractionDigits: number) =>
@@ -14,7 +15,7 @@ export function FileAttachment({ attachment }: { attachment: FileAttachmentRef }
   const bytes = Math.max(0, attachment.bytes)
   const formatted = bytes < 1024 ? text.bytes(formatNumber(locale, bytes, { useGrouping: false }))
     : bytes < 1024 * 1024 ? text.kilobytes(size(bytes / 1024, 1)) : text.megabytes(size(bytes / (1024 * 1024), 1))
-  return <span className="chat-file"><Icon name="attach_file" /><span>{attachment.name}<small>{formatted}</small></span></span>
+  return <span className="chat-file"><Icon name="attach_file" /><span>{attachment.name ?? text.defaultFileName}<small>{formatted}</small></span></span>
 }
 
 function ImageSheet({ name, close, trigger, children }: { name: string; close(): void; trigger: HTMLButtonElement; children: ReactNode }) {

@@ -96,11 +96,11 @@ export const chatMessages = defineMessages({
     pendingSending: '送信中…',
 
     // model.ts
-    commandNameFallback: 'コマンド',
-    commandFailed: (name: string) => `${name}の実行に失敗しました`,
+    // `command` is the slash command (`/name`), or undefined when the row has no name.
+    commandFailed: (command: string | undefined) => command ? `${command} の実行に失敗しました` : 'コマンドの実行に失敗しました',
     commandFailedNoReason: '詳しい理由は記録されていません。',
-    commandSucceeded: (name: string) => `${name}を実行しました`,
-    commandResultReceived: (name: string) => `${name}の結果を受け取りました`,
+    commandSucceeded: (command: string | undefined) => command ? `${command} を実行しました` : 'コマンドを実行しました',
+    commandResultReceived: (command: string | undefined) => command ? `${command} の結果を受け取りました` : 'コマンドの結果を受け取りました',
     durationUnknown: '不明',
     durationMilliseconds: (value: string) => `${value} ミリ秒`,
     durationSeconds: (value: string) => `${value} 秒`,
@@ -142,11 +142,10 @@ export const chatMessages = defineMessages({
     pendingSending: 'Sending…',
 
     // model.ts
-    commandNameFallback: 'Command',
-    commandFailed: (name: string) => `${name}failed`,
+    commandFailed: (command: string | undefined) => `${command ?? 'Command'} failed`,
     commandFailedNoReason: 'No detailed reason was recorded.',
-    commandSucceeded: (name: string) => `Ran ${name}`,
-    commandResultReceived: (name: string) => `Received the result of ${name}`,
+    commandSucceeded: (command: string | undefined) => command ? `Ran ${command}` : 'Ran the command',
+    commandResultReceived: (command: string | undefined) => command ? `Received the result of ${command}` : 'Received the command result',
     durationUnknown: 'Unknown',
     durationMilliseconds: (value: string) => `${value} ms`,
     durationSeconds: (value: string) => `${value} s`,
@@ -188,11 +187,10 @@ export const chatMessages = defineMessages({
     pendingSending: '发送中…',
 
     // model.ts
-    commandNameFallback: '指令',
-    commandFailed: (name: string) => `${name}执行失败`,
+    commandFailed: (command: string | undefined) => command ? `${command} 执行失败` : '指令执行失败',
     commandFailedNoReason: '没有记录详细原因。',
-    commandSucceeded: (name: string) => `已执行 ${name}`,
-    commandResultReceived: (name: string) => `已收到 ${name}的结果`,
+    commandSucceeded: (command: string | undefined) => command ? `已执行 ${command}` : '已执行指令',
+    commandResultReceived: (command: string | undefined) => command ? `已收到 ${command} 的结果` : '已收到指令的结果',
     durationUnknown: '未知',
     durationMilliseconds: (value: string) => `${value} 毫秒`,
     durationSeconds: (value: string) => `${value} 秒`,
@@ -312,8 +310,5 @@ export const toolDetailMessages = defineMessages({
   },
 })
 
-/** The Japanese messages; React-external helpers use this as their default. */
-export type AttachmentMessages = Translation<typeof attachmentMessages.ja>
-export const attachmentText = messagesOf(attachmentMessages, SOURCE_LOCALE)
 export type ToolDetailMessages = Translation<typeof toolDetailMessages.ja>
 export const toolDetailText = messagesOf(toolDetailMessages, SOURCE_LOCALE)

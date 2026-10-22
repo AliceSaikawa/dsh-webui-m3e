@@ -5,10 +5,16 @@ import type {
 import { streamBlocksOf, type AssistantStream, type StreamBlock } from '../../dsh/session-journal.ts'
 import { formatNumber } from '../../i18n/format.ts'
 import { SOURCE_LOCALE, type Locale } from '../../i18n/locale.ts'
-import { attachmentText, chatText, type ChatMessages } from './messages.ts'
+import { chatText, type ChatMessages } from './messages.ts'
 
 /** Unknown content is kept as a label, without attempting to render its payload. */
-export type ChatContentBlock = Exclude<ContentBlock, { type: `plugin:${string}` | 'tool-addition' | 'tool-removal' }>
+/**
+ * A file in a chat row. `name` is missing when the Host sent none; the view
+ * shows the default name in the page language, so it follows a language change.
+ */
+export type ChatFileAttachment = Omit<FileAttachmentRef, 'name'> & { readonly name?: string }
+export type ChatContentBlock = Exclude<ContentBlock, { type: `plugin:${string}` | 'tool-addition' | 'tool-removal' | 'file' }>
+  | { type: 'file'; attachment: ChatFileAttachment }
   | { type: 'unsupported'; originalType: string }
 
 interface RowBase {
@@ -107,12 +113,13 @@ function assistantBlockKey(turn: unknown, step: unknown, index: number, fallback
   return `${assistantStepKey(turn, step) ?? fallback}:${index}`
 }
 
-function fileAttachment(value: unknown): FileAttachmentRef | undefined {
+function fileAttachment(value: unknown): ChatFileAttachment | undefined {
   const attachment = objectOf(value)
   if (attachment === undefined || typeof attachment.attachmentId !== 'string') return undefined
+  const name = stringOf(attachment.name)
   return {
     attachmentId: attachment.attachmentId,
-    name: stringOf(attachment.name) ?? attachmentText.defaultFileName,
+    ...(name === undefined ? {} : { name }),
     bytes: typeof attachment.bytes === 'number' ? attachment.bytes : 0,
   }
 }
@@ -456,7 +463,7 @@ export function commandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'sta
 }
 /** Keep missing outcomes neutral and failures distinct in the collapsed row. */
 export function formatCommandPresentation(row: Pick<CommandRow, 'name' | 'text' | 'status'>, text: ChatMessages): CommandPresentation {
-  const name = row.name ? `/${row.name} ` : text.commandNameFallback
+  const name = row.name ? `/${row.name}` : undefined
   if (row.status === 'error') {
     return { label: text.commandFailed(name), icon: 'error', failureReason: row.text.trim() || text.commandFailedNoReason }
   }
