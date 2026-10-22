@@ -1,4 +1,5 @@
 import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 export interface ReferenceToken {
   start: number
@@ -35,7 +36,7 @@ export function replaceReference(
   path: string,
   kind: 'file' | 'directory' = 'file',
 ): { text: string; cursor: number } {
-  if (!isReferencePathSafe(path)) throw new Error(composerText().referenceUnsafe)
+  if (!isReferencePathSafe(path)) throw new LocalizedError(composerText().referenceUnsafe)
   const value = kind === 'directory' && !path.endsWith('/') ? `${path}/` : path
   const mention = /\s/u.test(value) ? `@"${value}"` : `@${value}`
   const suffix = text.slice(token.end)
@@ -96,7 +97,7 @@ export function shouldConvertImage(mediaType: string, width: number, height: num
 
 export function fitImageDimensions(width: number, height: number): { width: number; height: number } {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error(composerText().dimensionsUnreadable)
+    throw new LocalizedError(composerText().dimensionsUnreadable)
   }
   const scale = Math.min(1, imageMaxEdge / Math.max(width, height))
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }

@@ -22,7 +22,7 @@ import { composerApi, requireMatched, type CommandDescriptor, type FileReference
 import { consumeDraftCommand, draftTextRevision, prepareDraftImages, readDraft, subscribeDraft, writeDraft, type Draft } from './drafts.ts'
 import { filterCommands, findReferenceToken, isKnownCommand, isReferencePathSafe, replaceReference, visibleQueue, withdrawnPermission } from './helpers.ts'
 import { prepareImage } from './images.ts'
-import { errorText, ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
+import { ModelPickerSheet, PermissionSheet, PlusSheet, QueueSheet, SheetRow } from './Sheets.tsx'
 import { deliverDraft, pendingDelivery, type DeliveryResult } from './delivery.ts'
 import { registerDeliveryDestination, handoffDeliveryDestination } from './delivery-destination.ts'
 import { conversationSelection } from '../../dsh/conversation-selection.ts'
@@ -36,6 +36,7 @@ import { useMessages } from '../../i18n/index.ts'
 import { composerMessages, composerText } from './messages.ts'
 import '../session-tools/session-tools.css'
 import './composer.css'
+import { errorText, LocalizedError } from './localized-error.ts'
 
 export type ComposerTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
 export function Composer({ target }: { target: ComposerTarget }) {
@@ -123,8 +124,8 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
   }, [api])
   const applyModel = useCallback((selection: ModelSelection): Promise<ModelSelection> => modelApply.run(selection, async requested => {
     const current = latestModelContext.current
-    if (current.services.connection.state.getSnapshot() !== 'connected') throw new Error(composerText().modelConnectFirst)
-    if (pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)) throw new Error(composerText().modelAfterSend)
+    if (current.services.connection.state.getSnapshot() !== 'connected') throw new LocalizedError(composerText().modelConnectFirst)
+    if (pendingDelivery(draftKey) || pendingWorkspaceAttachment(draftKey)) throw new LocalizedError(composerText().modelAfterSend)
     const textRevision = draftTextRevision(draftKey)
     if (current.target.kind === 'new') {
       writeDraft(draftKey, { ...readDraft(draftKey), model: requested })
@@ -132,7 +133,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
       return requested
     }
     if (!current.face || current.snapshot.removed || current.snapshot.openState !== 'open') {
-      throw new Error(composerText().modelOpenConversation)
+      throw new LocalizedError(composerText().modelOpenConversation)
     }
     const selected = await current.api.selectModel(current.sessionId, requested)
     writeDraft(draftKey, { ...readDraft(draftKey), model: undefined })
@@ -304,7 +305,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
     try {
       const options = permission ?? (target.kind === 'new' ? await api.defaultPermissions()
         : permissionValue ? { ...permissionValue, options: (await api.permissionCatalog()).options } : undefined)
-      if (!options) throw new Error(text.permissionCandidatesFailed)
+      if (!options) throw new LocalizedError(text.permissionCandidatesFailed)
       if (!mounted.current) return
       closeSheet.current = openSheet(close => <PermissionSheet permissions={options} defaults={target.kind === 'new'} sessionId={sessionId} close={close} apply={async value => {
         if (target.kind === 'new') { setDefaults(options); update({ permission: value }) }
@@ -324,7 +325,7 @@ function ComposerInput({ target, draftKey }: { target: ComposerTarget; draftKey:
         if (target.kind === 'new') update({ plan: active })
         else {
           const currentFace = latestModelContext.current.face
-          if (!currentFace) throw new Error(composerText().planOpenConversation)
+          if (!currentFace) throw new LocalizedError(composerText().planOpenConversation)
           requireMatched(await currentFace.command(active ? '/plan' : '/plan off'))
           update({ plan: undefined })
         }

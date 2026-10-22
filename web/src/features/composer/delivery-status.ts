@@ -1,5 +1,6 @@
 import { remoteFailureOf } from '../../dsh/remote-result.ts'
 import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 /** The text of a prompt whose outcome cannot be proven; made in the page language when read. */
 export function uncertainDeliveryMessage(): string {
@@ -13,7 +14,7 @@ export function promptOutcomeIsUnknown(error: unknown): boolean {
 }
 
 /** Only created after invoking prompt, never for model/command preparation. */
-export class UncertainPromptError extends Error {
+export class UncertainPromptError extends LocalizedError {
   constructor(cause: unknown) {
     super(uncertainDeliveryMessage(), { cause })
     this.name = 'UncertainPromptError'

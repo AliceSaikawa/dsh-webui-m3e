@@ -7,6 +7,7 @@ import { uncertainDeliveryMessage, UncertainPromptError } from './delivery-statu
 import { attachmentBaseline, clearWorkspaceOrigin, pendingWorkspaceAttachment, sessionIsAddressable, workspaceAttachmentFrom } from './workspace-recovery.ts'
 import { modelApplyController } from './model-picker.ts'
 import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 export type DeliveryTarget = { kind: 'session'; sessionId: string } | { kind: 'new'; workspaceId: string }
 export interface DeliveryOptions {
@@ -24,7 +25,7 @@ const flights = new Map<string, Promise<DeliveryResult>>()
 const flightKeys = new Map<Promise<DeliveryResult>, Set<string>>()
 function shareKey(key: string, flight: Promise<DeliveryResult>): void {
   const existing = flights.get(key)
-  if (existing && existing !== flight) throw new Error(composerText().sendInProgress)
+  if (existing && existing !== flight) throw new LocalizedError(composerText().sendInProgress)
   flights.set(key, flight)
   const keys = flightKeys.get(flight) ?? new Set<string>()
   keys.add(key)
@@ -45,9 +46,9 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
   const active = pendingDelivery(options.draftKey)
   if (active) return active
   // The retry may hand the body over to this draft when it settles; sending now could race that handoff.
-  if (pendingWorkspaceAttachment(options.draftKey)) return Promise.resolve({ error: new Error(composerText().recoveryInProgressSend) })
+  if (pendingWorkspaceAttachment(options.draftKey)) return Promise.resolve({ error: new LocalizedError(composerText().recoveryInProgressSend) })
   const modelApply = modelApplyController(options.sessions, options.draftKey)
-  if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new Error(composerText().modelApplying) })
+  if (modelApply.getSnapshot().pending) return Promise.resolve({ error: new LocalizedError(composerText().modelApplying) })
   modelApply.setComposerBusy(true)
   const keys = new Set([options.draftKey])
   const flight = runDelivery(options, key => {
@@ -67,14 +68,14 @@ export function deliverDraft(options: DeliveryOptions): Promise<DeliveryResult> 
 function ensureWritable(face: SessionFace, sessions: DeliveryOptions['sessions']) {
   const snapshot = face.getSnapshot()
   const access = sessionAccess(sessions.list.getSnapshot().byId[face.sessionId], snapshot)
-  if (!access.canCompose) throw new Error(composerText().subagentReadOnly)
-  if (snapshot.removed) throw new Error(composerText().conversationRemoved)
+  if (!access.canCompose) throw new LocalizedError(composerText().subagentReadOnly)
+  if (snapshot.removed) throw new LocalizedError(composerText().conversationRemoved)
   return access
 }
 
 async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: DeliveryOptions, shareFlight: (key: string) => void): Promise<DeliveryResult> {
   if ((readDraft(draftKey).preparingImages ?? 0) > 0) {
-    return { error: new Error(composerText().imagesPreparingSend) }
+    return { error: new LocalizedError(composerText().imagesPreparingSend) }
   }
   const currentDraft = readDraft(draftKey)
   // A failed retry cannot establish what happened to the earlier request.
@@ -84,13 +85,13 @@ async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: D
   let destinationReady = false
   let reference: SessionReference | undefined
   try {
-    if (!sending.text.trim() && !sending.images.length) throw new Error(composerText().addMessageOrImage)
+    if (!sending.text.trim() && !sending.images.length) throw new LocalizedError(composerText().addMessageOrImage)
     writeDraft(draftKey, sending)
     let sessionId: string
     if (target.kind === 'new') {
       const retained = sending.workspaceAttachment
       if (retained && !workspaceAttachmentFrom({ code: 'session/workspace-attach-failed', details: retained }, target.workspaceId)) {
-        throw new Error(composerText().createdConversationUnknown)
+        throw new LocalizedError(composerText().createdConversationUnknown)
       }
       createdId = retained
         ? retained.sessionId
@@ -103,7 +104,7 @@ async function runDelivery({ target, draftKey, sessions, api, mode, handoff }: D
     }
     reference = sessions.retain(sessions.subagentAddress(sessionId) ?? sessionId, { source: 'm3e.delivery' })
     const destination = (await reference.ready).session
-    if (destination.getSnapshot().openState === 'error') throw new Error(composerText().conversationPrepareFailed)
+    if (destination.getSnapshot().openState === 'error') throw new LocalizedError(composerText().conversationPrepareFailed)
     destinationReady = true
     ensureWritable(destination, sessions)
 

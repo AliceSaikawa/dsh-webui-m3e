@@ -1,5 +1,6 @@
 import type { ModelCatalog, ModelCatalogModel, ModelSelection } from './api.ts'
 import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 export interface ModelChoice {
   value: string
@@ -71,8 +72,8 @@ export function createModelApplyController() {
       if (snapshot.composerBusy !== value) publish({ ...snapshot, composerBusy: value })
     },
     async run(selection: ModelSelection, apply: (selection: ModelSelection) => Promise<ModelSelection>): Promise<ModelSelection> {
-      if (snapshot.pending) throw new Error(composerText().modelApplying)
-      if (snapshot.composerBusy) throw new Error(composerText().modelAfterSend)
+      if (snapshot.pending) throw new LocalizedError(composerText().modelApplying)
+      if (snapshot.composerBusy) throw new LocalizedError(composerText().modelAfterSend)
       publish({ ...snapshot, pending: true, error: undefined })
       try {
         const selected = await apply(selection)

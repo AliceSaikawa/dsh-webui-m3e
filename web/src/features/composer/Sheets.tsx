@@ -9,7 +9,7 @@ import { openDialog, TextPromptDialog } from '../../app/overlay/index.ts'
 import { useConnection } from '../../app/shell/index.ts'
 import { useSession } from '../../dsh/session.ts'
 import { presetDescription, presetDisplayName } from '../../dsh/permission-presets.ts'
-import { remoteErrorMessage, remoteFailureOf, RemoteCallError, unwrapRemoteResult } from '../../dsh/remote-result.ts'
+import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import type { InboxState, QueueAction } from '../../dsh/services.ts'
 import { queueFromInbox } from '../../dsh/inbox.ts'
 import { useMessages } from '../../i18n/index.ts'
@@ -17,22 +17,13 @@ import type { ModelCatalog, ModelSelection, ModelSelectionProjection, Permission
 import type { ComposerTarget } from './Composer.tsx'
 import { readDraft, subscribeDraft } from './drafts.ts'
 import { reasoningEffortLabel, visibleQueue } from './helpers.ts'
-import { composerMessages, composerText, type ComposerMessages } from './messages.ts'
+import { composerMessages } from './messages.ts'
 import { effortValue, modelChoices, modelValue, reasoningForSelection, selectionFromModelValue, type ModelApplyController } from './model-picker.ts'
 import { queueEditPrompt } from './queue-edit.ts'
 import { permissionIcon } from './presentation.ts'
 import { usePermissionCatalog } from './use-permission-catalog.ts'
+import { errorText } from './localized-error.ts'
 
-/**
- * The visible text for a failure. A local error already carries its message in
- * the page language, so only a Host failure goes through the shared translator.
- */
-export function errorText(error: unknown, fallback?: string, text: ComposerMessages = composerText()): string {
-  if (error instanceof RemoteCallError || remoteFailureOf(error) !== undefined) return remoteErrorMessage(error, fallback)
-  if (error instanceof Error && error.name === 'AbortError') return remoteErrorMessage(error, fallback)
-  if (error instanceof Error) return error.message || fallback || text.errorFailed
-  return fallback ?? text.errorFailed
-}
 export function SheetRow({ icon, trailingIcon, children, detail, selected, disabled, onClick }: {
   icon?: string; trailingIcon?: string; children: ReactNode; detail?: string; selected?: boolean; disabled?: boolean; onClick(): void
 }) {
@@ -173,7 +164,7 @@ function ModelPicker({ initialCatalog, target, draftKey, modelApply, loadCatalog
     {loading && <p role="status">{text.modelListLoading}</p>}
     {catalog && catalog.failures.length > 0 && <div role="status">
       <p>{text.someModelListsFailed}</p>
-      {catalog.failures.map(failure => <p key={failure.id}>{text.modelFailureLine(failure.name, errorText(new Error(failure.message), text.modelListFailed, text))}</p>)}
+      {catalog.failures.map(failure => <p key={failure.id}>{text.modelFailureLine(failure.name, text.modelListFailed)}</p>)}
     </div>}
     {reasoning && <M3eFormField variant="outlined">
       <label slot="label" htmlFor={effortId}>{text.reasoningDepth}</label>

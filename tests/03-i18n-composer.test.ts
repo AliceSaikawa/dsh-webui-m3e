@@ -65,3 +65,17 @@ test('数や値を差し込む文言は言語ごとに文全体を組み立て�
   assert.equal(en.permissionWithdrawn('Read Only', undefined), 'The permission “Read Only” is no longer available, so it was changed back to the default.')
   assert.equal(zh.permissionWithdrawn('仅可查看', '工作区内修改'), '权限“仅可查看”已不可用，已改回“工作区内修改”。')
 })
+
+test('入力欄の失敗の文は、M3E が書いた文だけをそのまま出し、提供元の生の文は出さない', async () => {
+  const { errorText, LocalizedError } = await import('../web/src/features/composer/localized-error.ts')
+  const { RemoteCallError } = await import('../web/src/dsh/remote-result.ts')
+  // A provider's raw English message must not reach a Japanese, English or Chinese page.
+  const raw = new Error('401 Unauthorized: invalid x-api-key')
+  assert.equal(errorText(raw, ja.modelListFailed, ja), ja.modelListFailed)
+  assert.equal(errorText(raw, en.modelListFailed, en), en.modelListFailed)
+  assert.equal(errorText(raw, undefined, zh), zh.errorFailed)
+  // M3E's own messages are already in the page language.
+  assert.equal(errorText(new LocalizedError(en.modelConnectFirst), en.modelListFailed, en), en.modelConnectFirst)
+  // Host failures go through the shared translator.
+  assert.equal(errorText(new RemoteCallError({ code: 'session/not-found', message: 'Session abc not found', details: {} }), ja.modelListFailed, ja), '会話が見つかりません。')
+})

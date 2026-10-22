@@ -5,6 +5,7 @@ import { unwrapRemoteResult } from '../../dsh/remote-result.ts'
 import { isKnownCommand } from './helpers.ts'
 import { promptOutcomeIsUnknown, UncertainPromptError } from './delivery-status.ts'
 import { composerText } from './messages.ts'
+import { LocalizedError } from './localized-error.ts'
 
 export interface SubmissionOptions {
   optimisticEcho?: boolean
@@ -12,9 +13,9 @@ export interface SubmissionOptions {
 }
 
 export async function submitMessage(face: ISession, text: string, images: readonly PreparedImage[], mode: 'queue' | 'steer', commands: readonly CommandDescriptor[], options: SubmissionOptions = {}): Promise<void> {
-  if (!text.trim() && !images.length) throw new Error(composerText().addMessageOrImage)
+  if (!text.trim() && !images.length) throw new LocalizedError(composerText().addMessageOrImage)
   if (isKnownCommand(text, commands)) {
-    if (images.length) throw new Error(composerText().commandWithImages)
+    if (images.length) throw new LocalizedError(composerText().commandWithImages)
     const result = unwrapRemoteResult(await face.command(text))
     if (result.matched) return
     // A command can disappear between listing and sending. Treat it as text.
