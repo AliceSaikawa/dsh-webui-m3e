@@ -19,12 +19,12 @@
 ## 快速开始
 
 > [!IMPORTANT]
-> 当前发布的 0.0.8 面向 **DSH 0.2.0-rc.2**。请用 `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` 安装 DSH 0.2.0-rc.2，并用 `dsh --version` 确认版本。**支持 DSH 0.2.1-rc.2 的是预发布版本 v0.0.9-rc.2**（GitHub 的 Latest 仍是 0.0.8）。安装方法与下面相同，只需把 URL 中的 `v0.0.8` 和 `0.0.8` 换成 `v0.0.9-rc.2` 和 `0.0.9-rc.2`。0.0.8 无法在 DSH 0.2.1-rc.2 上运行。如果你继续使用 DSH 0.2.0-rc.2，回退目标同样是 0.0.8。
+> 当前发布的 **0.0.9**（GitHub Latest）面向 **DSH 0.2.1-rc.2**。请用 `npm i -g @deepseek-ai/dsh@0.2.1-rc.2` 安装 DSH 0.2.1-rc.2，并用 `dsh --version` 确认版本。**0.0.8 仅适用于 DSH 0.2.0-rc.2**，无法在 0.2.1-rc.2 上运行。如果你继续使用 DSH 0.2.0-rc.2，请安装 [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8)。
 
 1. 在运行 DSH 的机器上执行以下命令：
 
    ```bash
-   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
    ```
 
    `web` 只是示例，请指定实际提供 Web 界面的配置档案（名称拼错时也只会创建新档案，安装成功并不代表目标正确）。
@@ -38,7 +38,7 @@ M3E 未发布到 npm registry，因此不能只用名称执行 `add dsh-webui-m3
 ## 功能
 
 > [!NOTE]
-> 本节介绍 main 的内容。0.0.8 没有固定会话、显示和恢复已归档的会话、选择基准色、插件列表，也没有通用的错误界面和设置中的「モード」页面。预发布版本 v0.0.9-rc.2 已包含这些功能。
+> 本节介绍 0.0.9 与 main 的内容。0.0.8 没有固定会话、显示和恢复已归档的会话、选择基准色、插件列表，也没有通用的错误界面和设置中的「モード」页面。
 
 - **会话**：在手机屏幕上阅读 AI 的回复、工具执行结果和思考内容，也可以切换到按时间顺序排列的「トレース」（追踪）视图。
 - **会话列表**：可以把会话固定到列表顶部。固定状态在所有工作区之间共用，标准界面或其他设备上的更改也会反映过来。已归档的会话可以通过切换显示来查看，并在长按菜单中恢复归档。
@@ -58,11 +58,9 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.0-rc.2**（使用当前发布的 0.0.8 时）
-  - 0.0.8 适用于这个版本。安装方法见「快速开始」。
+- DeepSeek Harness **0.2.1-rc.2**（当前发布的 0.0.9 与本仓库的 main）
+  - 0.0.9 适用于这个版本。安装方法见「快速开始」。已取消对 0.1.5 系列的支持。
   - 验证结果、已知差异和未验证的操作见 [docs/dsh-compatibility.md](docs/dsh-compatibility.md)（日文）。
-- DeepSeek Harness **0.2.1-rc.2**（本仓库的 main 和预发布版本 v0.0.9-rc.2）
-  - main 和 v0.0.9-rc.2 支持这个版本。已取消对 0.1.5 系列的支持。
   - 安装 DSH 本体时需要指定版本。npm 的 `latest`、`next` 等标签会随时间变动（截至 2026-10-20，两者都指向 0.2.1-rc.2），请固定为本仓库支持的版本。
 
     ```bash
@@ -70,6 +68,8 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
     ```
 
     可用 `dsh --version` 确认本机版本。
+- DeepSeek Harness **0.2.0-rc.2**（使用 0.0.8 时）
+  - [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) 适用于这个版本。0.0.9 无法在 0.2.0-rc.2 上运行。
 - 满足 DSH 和 pnpm 要求的 Node.js，以及 PATH 中的 pnpm（供通过 npm 安装的普通 DSH CLI 使用）。
   - DSH 本身未声明 Node 版本下限，但 CLI 使用的 commander 15 要求 Node `>=22.12.0`，pnpm 11.17.0 要求 `>=22.13`。请使用同时满足 DSH 和所用 pnpm 版本要求的 Node。
 - 验证环境为 macOS 27.2、Node.js 26.7.0 和 pnpm 11.17.0；依赖声明的下限不代表 M3E 保证支持的最低版本。
@@ -101,13 +101,13 @@ DSH 原有的界面会保留。你可以在每台设备上分别选择使用哪�
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新时，从[发布列表](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)选择兼容版本，用其 tgz 附件的 URL 重新添加。URL 格式为 `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`。下面是迁移到 0.0.8 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
+更新时，从[发布列表](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)选择兼容版本，用其 tgz 附件的 URL 重新添加。URL 格式为 `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`。下面是迁移到 0.0.9 的示例。通过本地 tgz 安装的用户也在同一配置档案中执行此命令，重启 Host，再用上面的命令检查版本，无需手动修改版本号。
 
 ```bash
-dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
 ```
 
-从未来的新版本回退时，从发布列表选择已验证的兼容版本的 URL，重新添加并重启 Host。回到 0.0.8 可使用同一命令。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
+从未来的新版本回退时，从发布列表选择已验证的兼容版本的 URL，重新添加并重启 Host。在 DSH 0.2.1-rc.2 上可用同一形式回到 0.0.9；在 DSH 0.2.0-rc.2 上请回到 [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8)。请勿将以前分发的 0.0.7 作为 DSH 0.2.0-rc.2 的回退目标。也可以使用保留的兼容 tgz：
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz

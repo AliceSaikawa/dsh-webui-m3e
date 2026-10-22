@@ -77,7 +77,7 @@ test('readme: the three READMEs state the same real-device scope and the same se
     const text = read(path)
     assert.match(text, /iPhone 17 Pro Max/, `${path} names the verified device`)
     assert.match(text, /Safari/, `${path} names the verified browser`)
-    for (const token of ['v0.0.8', 'v0.0.9-rc.2', '0.2.0-rc.2', '0.2.1-rc.2', 'dsh plugin --profile web add', 'dsh plugin --profile web remove dsh-webui-m3e']) {
+    for (const token of ['v0.0.8', 'v0.0.9', '0.2.0-rc.2', '0.2.1-rc.2', 'dsh plugin --profile web add', 'dsh plugin --profile web remove dsh-webui-m3e']) {
       assert.ok(text.includes(token), `${path} mentions ${token}`)
     }
   }

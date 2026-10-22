@@ -96,7 +96,9 @@ DSH に入れる手順は README の「Quick Start」にあります。
 
 ## 配布
 
-当面は **GitHub Releases の添付 tgz の URL** で配ります。公開済みの版は `dsh-webui-m3e` の **0.0.8**（当時の対応 DSH は **0.2.0-rc.2 のみ**）です。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。現在の main は DSH **0.2.1-rc.2** に対応しています。この版に対応するのは、プレリリースの **v0.0.9-rc.2** です（GitHub の Latest は 0.0.8 のままです）。npm 公開と CI の追加は行っていません。
+当面は **GitHub Releases の添付 tgz の URL** で配ります。公開済みの安定版は `dsh-webui-m3e` の **0.0.9**（対応 DSH は **0.2.1-rc.2 のみ**、GitHub の Latest）です。0.0.8 は DSH **0.2.0-rc.2** 用のままです。0.0.7 は以前配布した内容と main の内容が異なるため、その番号を再利用しません。npm 公開は行っていません。
+
+**2026-10-22 に v0.0.9 をリリースしました。** PR #185 を squash マージした main `cee8f414971b3f9fd5706bad10973e955a4f9359` で確認を通した後、同じコミットを対象にタグ `v0.0.9` と [GitHub Release](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.9) を作成しました（プレリリースではない）。添付は pnpm で作った `dsh-webui-m3e-0.0.9.tgz`（4,619,445 バイト）、SHA-256 は `f967b5f5ec5af1103d3212127934e20131baf1f697a0d5f033d952574c30daa0` です。マージ前の確認は型検査・単体 1,515 件（失敗 0、skip 2）・ビルド・配布検査 19 ファイル・公開後の添付 URL の SHA-256 一致です。偽データ e2e はローカルで 386 件成功（global-timeout のため 39 件未実行）で、PR #185 の CI browser shard はすべて成功しています。実 DSH への GitHub URL 追加の隔離確認は、このリリース作業では未実施です。
 
 **2026-10-05 に v0.0.8 をリリースしました。** 指示役が PR #20 を通常のマージで取り込み、main の先頭 `d00515e0776f46608a5c3ffe70eb529974ecf744` で確認を通した後、同じコミットを対象にタグ `v0.0.8` と [GitHub Release](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を作成しました。添付は pnpm で作った `dsh-webui-m3e-0.0.8.tgz`（4,465,060 バイト）、SHA-256 は `1d77d0ac8cc85333c1937927f879d5c83774c00ee3519080f584f7120b9bae24` です。
 

@@ -17,12 +17,12 @@ DeepSeek Harness（DSH）を、スマートフォンで使いやすい Material 
 ## Quick Start
 
 > [!IMPORTANT]
-> いま配布している 0.0.8 は **DSH 0.2.0-rc.2 用**です。DSH 0.2.0-rc.2 は `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` で入れ、`dsh --version` で確かめます。**DSH 0.2.1-rc.2 に対応するのは、プレリリースの v0.0.9-rc.2 です**（GitHub の Latest は 0.0.8 のままです）。入れ方は下の手順と同じで、URL の `v0.0.8`・`0.0.8` を `v0.0.9-rc.2`・`0.0.9-rc.2` に替えます。0.0.8 は DSH 0.2.1-rc.2 では動きません。DSH 0.2.0-rc.2 を使い続ける場合の戻し先も 0.0.8 です。
+> いま配布している **0.0.9**（GitHub の Latest）は **DSH 0.2.1-rc.2 用**です。DSH 0.2.1-rc.2 は `npm i -g @deepseek-ai/dsh@0.2.1-rc.2` で入れ、`dsh --version` で確かめます。**0.0.8 は DSH 0.2.0-rc.2 専用**で、0.2.1-rc.2 では動きません。DSH 0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を入れてください。
 
 1. DSH が動いている端末で、次のコマンドを実行します。
 
    ```bash
-   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
    ```
 
    `web` は例なので、実際に Web 画面を動かしているプロファイルを指定してください（名前を間違えても新しいプロファイルが作られるだけで、追加に成功しても接続先が正しいとは限りません）。
@@ -36,7 +36,7 @@ M3E は npm レジストリに公開していないため、名前だけの `add
 ## できること
 
 > [!NOTE]
-> この節は main の内容です。0.0.8 には、ピン留め、アーカイブ済みの表示と復元、基準の色の選択、プラグイン一覧、共通のエラー画面、設定の「モード」のページはありません。プレリリースの v0.0.9-rc.2 には入っています。
+> この節は 0.0.9 と main の内容です。0.0.8 には、ピン留め、アーカイブ済みの表示と復元、基準の色の選択、プラグイン一覧、共通のエラー画面、設定の「モード」のページはありません。
 
 - **会話**：AI の返事、ツールの実行結果、考えた内容を、スマートフォンの幅で読めます。時間の順に並べた「トレース」に切り替えられます。
 - **一覧**：会話をピン留めして一覧の先頭に固定できます。ピン留めは全ワークスペース共通で、標準画面やほかの端末での変更も反映されます。アーカイブ済みの会話は表示を切り替えて確認でき、長押しのメニューからアーカイブを戻せます。
@@ -56,11 +56,9 @@ M3E は npm レジストリに公開していないため、名前だけの `add
 
 ## 必要なもの
 
-- DeepSeek Harness **0.2.0-rc.2**（配布中の 0.0.8 を使う場合）
-  - 0.0.8 はこの版で使います。入れ方は Quick Start を見てください。
+- DeepSeek Harness **0.2.1-rc.2**（配布中の 0.0.9 と、このリポジトリの main）
+  - 0.0.9 はこの版で使います。入れ方は Quick Start を見てください。0.1.5 系への対応は外しました。
   - 確認結果、既知の差、未検証の経路は [docs/dsh-compatibility.md](docs/dsh-compatibility.md) にあります。
-- DeepSeek Harness **0.2.1-rc.2**（このリポジトリの main と、プレリリースの v0.0.9-rc.2）
-  - main と v0.0.9-rc.2 はこの版に対応しています。0.1.5 系への対応は外しました。
   - DSH 本体を入れるときは版を付けます。npm の `latest` や `next` などのタグは時間とともに動きます（2026-10-20 時点ではどちらも 0.2.1-rc.2 を指します）。このリポジトリの対応版に固定してください。
 
     ```bash
@@ -68,6 +66,8 @@ M3E は npm レジストリに公開していないため、名前だけの `add
     ```
 
     手元の版は `dsh --version` で確かめられます。
+- DeepSeek Harness **0.2.0-rc.2**（0.0.8 を使う場合）
+  - [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) はこの版で使います。0.0.9 は 0.2.0-rc.2 では動きません。
 - DSH と pnpm の要件を満たす Node.js、および PATH 上の pnpm（通常の npm インストール版 DSH CLI が使います）。
   - DSH 自身には Node の下限宣言がありませんが、CLI が使う commander 15 は Node `>=22.12.0`、pnpm 11.17.0 は `>=22.13` を要求します。DSH と使用する pnpm の両方を満たす Node を用意してください。
 - 動作確認環境は macOS 27.2、Node.js 26.7.0、pnpm 11.17.0 です。依存側の下限宣言を M3E の動作保証の下限とはしていません。
@@ -99,13 +99,13 @@ M3E を選んだ端末では、スマートフォンなら新しく `/` を開�
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-更新は、[リリースの一覧](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)から対応する版を選び、その添付 tgz の URL で追加し直します。URL の形は `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz` です。次は 0.0.8 への移行例です。ローカル tgz 版を使っている人も同じプロファイルで実行し、Host を再起動して上の一覧を確認してください。版番号の手編集は不要です。
+更新は、[リリースの一覧](https://github.com/AliceSaikawa/dsh-webui-m3e/releases)から対応する版を選び、その添付 tgz の URL で追加し直します。URL の形は `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz` です。次は 0.0.9 への移行例です。ローカル tgz 版を使っている人も同じプロファイルで実行し、Host を再起動して上の一覧を確認してください。版番号の手編集は不要です。
 
 ```bash
-dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
 ```
 
-将来の新版から戻す場合も、リリースの一覧から確認済みの互換版の URL を選んで追加し直し、Host を再起動します。0.0.8 に戻す場合は同じコマンドです。以前配布した 0.0.7 と DSH 0.2.0-rc.2 の組合せは復帰先にしないでください。手元に保管した互換版の tgz に戻す形は次のとおりです。
+将来の新版から戻す場合も、リリースの一覧から確認済みの互換版の URL を選んで追加し直し、Host を再起動します。DSH 0.2.1-rc.2 では同じ形で 0.0.9 に戻し、DSH 0.2.0-rc.2 では [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) に戻します。以前配布した 0.0.7 と DSH 0.2.0-rc.2 の組合せは復帰先にしないでください。手元に保管した互換版の tgz に戻す形は次のとおりです。
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz

@@ -19,6 +19,10 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+### Changed
+
+- **docs:** README の Quick Start を安定版 0.0.9（DSH 0.2.1-rc.2）向けにし、0.0.8 は DSH 0.2.0-rc.2 用として案内する
+
 ## [0.0.9] - 2026-10-23
 
 対応する DSH は **0.2.1-rc.2** だけです。0.2.0-rc.2 では起動しません。0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を使ってください。

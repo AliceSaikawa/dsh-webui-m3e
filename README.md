@@ -19,12 +19,12 @@ The screenshots show mock screens. The app UI is shown in Japanese, English, or 
 ## Quick Start
 
 > [!IMPORTANT]
-> The published release 0.0.8 is built for **DSH 0.2.0-rc.2**. Install DSH 0.2.0-rc.2 with `npm i -g @deepseek-ai/dsh@0.2.0-rc.2` and check it with `dsh --version`. **The pre-release v0.0.9-rc.2 is the release that supports DSH 0.2.1-rc.2** (GitHub's Latest is still 0.0.8). Install it the same way as below, replacing `v0.0.8` and `0.0.8` in the URL with `v0.0.9-rc.2` and `0.0.9-rc.2`. 0.0.8 does not work with DSH 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, 0.0.8 is also your rollback target.
+> The published release **0.0.9** (GitHub Latest) is built for **DSH 0.2.1-rc.2**. Install DSH 0.2.1-rc.2 with `npm i -g @deepseek-ai/dsh@0.2.1-rc.2` and check it with `dsh --version`. **0.0.8 is for DSH 0.2.0-rc.2 only** and does not run on 0.2.1-rc.2. If you stay on DSH 0.2.0-rc.2, install [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) instead.
 
 1. Run this on the machine running DSH:
 
    ```bash
-   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+   dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
    ```
 
    `web` is an example, so select the profile that actually serves your Web UI (a misspelled name still creates a new profile, and a successful install alone does not confirm the target).
@@ -38,7 +38,7 @@ M3E is not published to the npm registry, so installing by name with `add dsh-we
 ## Features
 
 > [!NOTE]
-> This section describes main. 0.0.8 does not have pinning, archived-session display and restore, base color selection, the plugin list, the shared error screens, or the Modes page in Settings. The pre-release v0.0.9-rc.2 includes them.
+> This section describes 0.0.9 and main. 0.0.8 does not have pinning, archived-session display and restore, base color selection, the plugin list, the shared error screens, or the Modes page in Settings.
 
 - **Conversations:** Read AI responses, tool results, and reasoning at phone width. You can also switch to a chronological trace view (「トレース」 in the app).
 - **Session list:** Pin conversations to the top of the list. Pins are shared across all workspaces, and changes made in the standard interface or on other devices are reflected too. You can show archived conversations by switching the list filter, and restore one from the long-press menu.
@@ -58,11 +58,9 @@ The existing DSH interface remains available. You can choose which interface to 
 
 ## Requirements
 
-- DeepSeek Harness **0.2.0-rc.2** (when using the published 0.0.8)
-  - Use 0.0.8 with this version. See Quick Start for installation.
+- DeepSeek Harness **0.2.1-rc.2** (published 0.0.9 and this repository's main)
+  - Use 0.0.9 with this version. See Quick Start for installation. Support for the 0.1.5 series has been removed.
   - See [docs/dsh-compatibility.md](docs/dsh-compatibility.md) (Japanese) for results, known differences, and unverified paths.
-- DeepSeek Harness **0.2.1-rc.2** (this repository's main and the pre-release v0.0.9-rc.2)
-  - main and v0.0.9-rc.2 support this version. Support for the 0.1.5 series has been removed.
   - Install DSH itself with an explicit version. npm dist-tags such as `latest` and `next` move over time (on 2026-10-20 both pointed to 0.2.1-rc.2), so pin the version that this repository supports.
 
     ```bash
@@ -70,6 +68,8 @@ The existing DSH interface remains available. You can choose which interface to 
     ```
 
     Check your installed version with `dsh --version`.
+- DeepSeek Harness **0.2.0-rc.2** (when using 0.0.8)
+  - Use [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) with this version. 0.0.9 does not run on 0.2.0-rc.2.
 - Node.js that meets DSH's and pnpm's requirements, and pnpm on PATH (used by the regular npm-installed DSH CLI).
   - DSH itself declares no minimum Node version, but its CLI dependency commander 15 requires Node `>=22.12.0`, and pnpm 11.17.0 requires `>=22.13`. Use Node that meets both DSH's and your pnpm version's requirements.
 - The tested environment is macOS 27.2, Node.js 26.7.0 and pnpm 11.17.0; those dependency declarations do not establish M3E's minimum supported Node version.
@@ -101,13 +101,13 @@ Read `dependencies.dsh-webui-m3e.version` in the JSON output for the installed v
 dsh plugin --profile web list dsh-webui-m3e --depth 0 --json
 ```
 
-To update, choose a compatible version from the [release list](https://github.com/AliceSaikawa/dsh-webui-m3e/releases) and add its attached tgz URL. URLs follow `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`. This example migrates to 0.0.8. Local-tgz users use the same command in the same profile, restart the Host, and check the installed version above. No manual version editing is needed.
+To update, choose a compatible version from the [release list](https://github.com/AliceSaikawa/dsh-webui-m3e/releases) and add its attached tgz URL. URLs follow `https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v<version>/dsh-webui-m3e-<version>.tgz`. This example migrates to 0.0.9. Local-tgz users use the same command in the same profile, restart the Host, and check the installed version above. No manual version editing is needed.
 
 ```bash
-dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.8/dsh-webui-m3e-0.0.8.tgz
+dsh plugin --profile web add https://github.com/AliceSaikawa/dsh-webui-m3e/releases/download/v0.0.9/dsh-webui-m3e-0.0.9.tgz
 ```
 
-To roll back from a future release, choose a verified compatible version's URL from the release list, add it again, and restart the Host. The same command returns to 0.0.8. Do not use the previously distributed 0.0.7 as a rollback target with DSH 0.2.0-rc.2. A saved compatible tarball can also be selected:
+To roll back from a future release, choose a verified compatible version's URL from the release list, add it again, and restart the Host. The same pattern returns to 0.0.9 on DSH 0.2.1-rc.2, or to [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) on DSH 0.2.0-rc.2. Do not use the previously distributed 0.0.7 as a rollback target with DSH 0.2.0-rc.2. A saved compatible tarball can also be selected:
 
 ```bash
 dsh plugin --profile web add file:/path/to/dsh-webui-m3e-<version>.tgz
