@@ -160,7 +160,7 @@ export const traceMessages = defineMessages({
     toolNameUnknown: 'Unknown name',
     attachmentOnly: 'Attachment only',
     rowRunning: 'Started · Running',
-    outputTokens: (count: string) => `${count} ${count === '1' ? 'token' : 'tokens'}`,
+    outputTokens: (count: string) => `${count} output ${count === '1' ? 'token' : 'tokens'}`,
     uncommittedAttempts: (count: number) => count === 1
       ? '1 uncommitted attempt'
       : `${count} uncommitted attempts`,
@@ -201,24 +201,24 @@ export const traceMessages = defineMessages({
     interruptedPartial: 'The run was interrupted, keeping the output produced so far.',
 
     // Safe JSON marks (model.ts formatJson)
-    jsonOmittedCycle: '[Omitted: circular reference]',
-    jsonOmittedDepth: (limit: string) => `[Omitted: nested too deeply (shown up to ${limit} levels)]`,
-    jsonOmittedLimit: (limit: string) => `[Omitted after this (shown up to ${limit} items)]`,
+    jsonOmittedCycle: '〔Omitted: circular reference〕',
+    jsonOmittedDepth: (limit: string) => `〔Omitted: nested too deeply (shown up to ${limit} levels)〕`,
+    jsonOmittedLimit: (limit: string) => `〔Omitted after this (shown up to ${limit} items)〕`,
     jsonUnreadable: '[Content cannot be shown]',
     attachmentFallback: 'Attachment',
 
     // Record detail sheet (RecordSheet.tsx)
     imageLoadFailed: 'Could not load the image.',
     imageFallbackName: 'Attached image',
-    imageInfo: (name: string, width: number, height: number, bytes: string) => `${name} (${width} × ${height}, ${bytes} bytes)`,
+    imageInfo: (name: string, width: number, height: number, bytes: string) => `${name} (${width} × ${height}, ${bytes} ${bytes === '1' ? 'byte' : 'bytes'})`,
     imageShow: 'Show image',
     contentEmpty: 'No text was recorded.',
     reasoningSummary: 'Thinking',
     toolCallSummary: (name: string) => `Tool call: ${name}`,
     toolOutputSummary: (failed: boolean) => failed ? 'Tool result · Failed' : 'Tool result',
-    fileInfo: (name: string, bytes: string) => `Attached file: ${name} (${bytes} bytes)`,
+    fileInfo: (name: string, bytes: string) => `Attached file: ${name} (${bytes} ${bytes === '1' ? 'byte' : 'bytes'})`,
     contentUnsupported: 'This content cannot be shown.',
-    jsonNote: 'Text in brackets marks where content was omitted and why. It is not part of the original data.',
+    jsonNote: 'Text in 〔〕 marks where content was omitted and why. It is not part of the original data.',
     durationLabel: 'Duration',
     recordHeading: (title: string, turn: number | null) => turn === null ? title : `${title} (turn ${turn})`,
     terminationStatus: (label: string, message: string) => `${label}: ${message}`,

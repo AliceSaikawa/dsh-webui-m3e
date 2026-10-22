@@ -59,6 +59,20 @@ test('trace units, rows and JSON marks follow the page language', () => {
 
   const cycle: Record<string, unknown> = {}
   cycle.self = cycle
-  assert.equal(formatJson(cycle, traceEn, 'en').text, '{\n  "self": [Omitted: circular reference]\n}')
+  // The English marks use the same 〔〕 as Japanese and Chinese, so they cannot be read as a JSON array.
+  assert.equal(formatJson(cycle, traceEn, 'en').text, '{\n  "self": 〔Omitted: circular reference〕\n}')
   assert.equal(formatJson(cycle, traceZh, 'zh').text, '{\n  "self": 〔因循环引用而省略〕\n}')
+})
+
+test('trace and session-tools texts keep the meaning of the Japanese', () => {
+  assert.equal(traceEn.outputTokens('1'), '1 output token')
+  assert.equal(traceEn.outputTokens('812'), '812 output tokens')
+  assert.equal(traceEn.imageInfo('a.png', 2, 3, '1'), 'a.png (2 × 3, 1 byte)')
+  assert.equal(traceEn.imageInfo('a.png', 2, 3, '2,048'), 'a.png (2 × 3, 2,048 bytes)')
+  assert.equal(traceEn.fileInfo('a.txt', '1'), 'Attached file: a.txt (1 byte)')
+  assert.equal(traceEn.fileInfo('a.txt', '10'), 'Attached file: a.txt (10 bytes)')
+  assert.equal(sessionEn.listUnavailable, 'The file list is not available.')
+  assert.equal(sessionEn.jobKindOther, 'Job')
+  assert.equal(sessionZh.jobKindOther, '任务')
+  assert.equal(sessionZh.jobStatusKilled, '已停止')
 })
