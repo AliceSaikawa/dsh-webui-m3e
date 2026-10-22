@@ -5,11 +5,14 @@ import type { PluginTexts } from './messages.ts'
 
 /** Pure presentation rules for the read-only plugin list (unit-tested in tests/96-plugins.test.ts). */
 
-/** A localized value: the asked-for language, then `ja`, then `en`. A string is used as is. */
+/**
+ * A localized value: the asked-for language, then `en` (DSH's own fallback
+ * language), then `ja`. A string is used as is.
+ */
 export function localizedText(text: LocalizedText | undefined, locale: string): string | undefined {
   if (text === undefined) return undefined
   if (typeof text === 'string') return text
-  return text[locale] ?? text.ja ?? text.en
+  return text[locale] ?? text.en ?? text.ja
 }
 
 /** Strip an `@scope/` and a `dsh-` / `dsh-plugin-` prefix from a module name. */

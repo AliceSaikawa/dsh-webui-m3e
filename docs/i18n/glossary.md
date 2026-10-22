@@ -94,6 +94,15 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 言語 | Language | 语言 | `language.title`（`dsh-client-locale`） | 一致 |
 | 端末の言語に合わせる | Match device language | 跟随设备语言 | なし | M3E の選択肢（依頼で決めた名前）。標準の画面は保存値がなければ、ブラウザの言語が英語か中国語のときだけそれに従い、ほかは英語になる。選択肢としては出さない。中国語の 跟随 は DSH の他の画面にある「跟随系统」（外観）に合わせた |
 | English／中文 | English／中文 | English／中文 | `BUILT_IN_LOCALE_METADATA`（`dsh-client-locale`） | 言語名は各言語の自称で、訳さない |
+| 対応待ち | Needs attention | 待处理 | なし | 承認と質問の待ち行列の画面の題名。対応待ち・検索・質問と承認・プラグインのほかの語は [terms/inbox-search-interactions-plugins.md](terms/inbox-search-interactions-plugins.md) |
+| 検索 | Search | 搜索 | `search`（`dsh-client-locale`） | 一致 |
+| 承認 | approval | 审批 | `status.compact.approval`（`dsh-client-ui-workspace`。Approval／待审批） | ツールの実行の承認。中国語は 批准 ではなく 审批 |
+| ツールの承認 | Tool approval | 工具审批 | `status.compact.approval`（`dsh-client-ui-workspace`） | 承認のシートの題名 |
+| 拒否 | Refuse | 拒绝 | `plan.decline`（`dsh-client-ui-user-questions`） | 承認の拒否ボタン |
+| 許可（1 回） | Allow once | 允许（一次） | `action.approveOnce`（`dsh-client-ui-cordis`） | 承認の許可ボタン |
+| プラグイン | plugin | 插件 | `panel.title`（`dsh-client-ui-cordis`。Cordis plugins／Cordis 插件） | 一致 |
+| バンドル | bundle | 捆绑包 | なし | プラグインのバンドル |
+| プロファイル | profile | profile | `reasonStopProfile`（`dsh-client-ui-plugin-manager`） | DSH の中国語も profile のまま。配置 は設定の意味になるので使わない |
 
 ## 書き方
 
