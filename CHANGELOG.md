@@ -19,6 +19,10 @@ Release の見出しは、次の見出しに移しました。
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-10-23
+
+対応する DSH は **0.2.1-rc.2** だけです。0.2.0-rc.2 では起動しません。0.2.0-rc.2 を使い続ける場合は [v0.0.8](https://github.com/AliceSaikawa/dsh-webui-m3e/releases/tag/v0.0.8) を使ってください。
+
 ### Added
 
 - **i18n:** 画面を日本語・英語・中国語（簡体字）で表示する。言語は DSH の言語設定（「設定 → 一般 → 言語」）に従い、未設定ならブラウザの言語に従う。ほかの言語と繁体字は英語になる。言語を切り替えると、再読み込みなしで画面が切り替わる ([#184](https://github.com/AliceSaikawa/dsh-webui-m3e/pull/184))
@@ -169,7 +173,8 @@ DeepSeek Harness（DSH）0.2.0-rc.2 に対応した、最初の配布版です�
 - 期限つきの質問への回答に対応
 - 配布物の検査と、本番のビルドに偽データが入らないことの検査を追加
 
-[Unreleased]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.5...HEAD
+[Unreleased]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9...HEAD
+[0.0.9]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.5...v0.0.9
 [0.0.9-rc.5]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.4...v0.0.9-rc.5
 [0.0.9-rc.4]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.3...v0.0.9-rc.4
 [0.0.9-rc.3]: https://github.com/AliceSaikawa/dsh-webui-m3e/compare/v0.0.9-rc.2...v0.0.9-rc.3
