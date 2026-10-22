@@ -11,6 +11,15 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | 閉じる | Close | 关闭 | `close`（`dsh-client-locale`） | 一致 |
 | ここから分岐 | Branch from here | 从这里分支 | `message.branch`（`dsh-client-ui-chat`。英語は "Branch into a new conversation"、中国語は 在新对话中分支） | 語（branch／分支）は一致。DSH は長い説明の文、M3E はボタンの短い言い方にした。ワークスペースの画面には fork／分叉会话（`menu.fork`）もあるが、チャットの `message.branch` に合わせた |
 | 会話 | conversation | 对话 | `message.branch` の文中（`dsh-client-ui-chat`。英語 conversation、中国語 在新对话中分支） | DSH の中国語には 会话（session に当たる語として多数）と 对话 の両方がある。チャットの画面は 对话 なので、チャットの文言は 对话 にそろえた |
+| セッション | session | 会话 | `menu.archiveSession`（`dsh-client-ui-workspace`）ほか多数 | 一致。会話（conversation／对话）とは別の語。一覧（ホーム）とワークスペースのほかの語は [terms/home.md](terms/home.md) |
+| ワークスペース | workspace | 工作区 | `workspace.add`、`rename.workspace.title`（`dsh-client-ui-workspace`） | 一致 |
+| フォルダ | folder | 文件夹 | `browser.newFolder`、`browser.folderName`（`dsh-client-ui-directory-picker-browse`） | 一致。directory は訳さない |
+| ピン留め／ピン留めを外す | Pin／Unpin | 置顶／取消置顶 | `menu.pinSession`、`menu.unpinSession`（`dsh-client-ui-workspace`） | 一致 |
+| アーカイブ／アーカイブを戻す | Archive／Unarchive | 归档／取消归档 | `menu.archiveSession`、`menu.unarchiveSession`（`dsh-client-ui-workspace`） | 一致 |
+| 名前を変える | Rename | 重命名 | `rename`（`dsh-client-ui-workspace`） | 一致 |
+| 登録を解除 | Remove | 移除 | `delete.workspace`（`dsh-client-ui-workspace`。Delete workspace／删除工作区） | フォルダは消さないので Remove／移除 にした |
+| 並べ替え | Reorder | 调整顺序 | なし | 名詞。ドラッグの説明も同じ語 |
+| 操作を終了 | Done | 退出操作 | なし | 選択や並べ替えを終えて一覧に戻るボタン。英語は選択に限らない Done |
 | メッセージ | message | 消息 | なし（`dsh-client-ui-chat` に「条消息」の用例が 3 か所） | 中国語は「消息」 |
 | メッセージの操作 | Message actions | 消息操作 | なし | シートの題名。M3E の言い方 |
 | テキストを選択 | Select text | 选择文本 | なし | M3E の新しい操作。「選択」は DSH の「选择」に合わせた |
