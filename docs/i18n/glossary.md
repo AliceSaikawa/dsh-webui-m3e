@@ -19,6 +19,17 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | コーディングビューを表示 | Show coding view | 显示代码工作视图 | `developerTools.title`（`dsh-client-ui-settings-general`） | 一致 |
 | トレース | trajectory | 轨迹 | `developerTools.description`（`dsh-client-ui-settings-general`） | DSH の英語は trajectory、中国語は 轨迹 |
 | コードの差分 | code diffs | 代码差异 | 同上 | 一致 |
+| 統計 | Statistics | 统计 | `stats.dialog.title`（`dsh-client-ui-chat`。Session statistics／会话统计） | セッションメニューの項目。セッションツールとトレースのほかの語は [terms/session-tools-trace.md](terms/session-tools-trace.md) |
+| キャッシュヒット率 | Cache hit rate | 缓存命中率 | `stats.cacheHit`（`dsh-client-ui-chat`） | 一致 |
+| トークン | token / tokens | token | `stats.dialog.usageTitle`（`dsh-client-ui-chat`。Token 用量） | 中国語は DSH と同じく訳さない |
+| ジョブ | job | 任务 | `count.idle.other`（`dsh-client-ui-jobs`。background jobs／后台任务） | 種別の分からないジョブも Job／任务 と出す |
+| ゴール | goal | 目标 | `token.goal`（`dsh-client-ui-commands`） | 一致 |
+| 行き詰まり | Blocked | 受阻 | `phase.blocked`（`dsh-client-ui-goal`。Blocked Goal／受阻的目标） | ゴールの状態。DSH に合わせた |
+| 子の会話 | child conversation | 子对话 | なし（`tree.aria` は Subagent sessions／子智能体会话） | サブエージェントの子セッション。ホームの行の補足では subagent／子智能体 と書く |
+| ターン | turn | 轮 | `turn.label`（`dsh-client-ui-trajectory`） | 一致 |
+| 記録（トレース） | record | 记录 | なし | トレースの 1 行 |
+| 所要時間（トレース） | Duration | 时长 | `timing.duration`（`dsh-client-ui-trajectory`） | トレースは DSH のトレースの画面の 时长 に合わせた |
+| 添付 | attachment | 附件 | `attachment.list`（`dsh-client-ui-trajectory`） | 一致 |
 | PTC モード | PTC mode | PTC 模式 | `guidePtcIntro`（`dsh-client-ui-agent-preset`。中国語は「PTC 模式」） | 一致 |
 | 最小モード | Minimal mode | 极简模式 | `guideMinimalIntro`（`dsh-client-ui-agent-preset`。中国語は「极简模式」） | 一致。DSH の中国語は 最小 ではなく 极简 |
 | 作業の詳細 | Work details | 工作步骤展示 | `settings.transcript.title`（`dsh-client-ui-chat`） | 一致 |

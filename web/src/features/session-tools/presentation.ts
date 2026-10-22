@@ -49,15 +49,13 @@ export function cacheHit(usage?: Usage | null): CacheHit | undefined {
 }
 
 /**
- * Token counts. Above 10,000 the scale is 万 (10,000) for every language; the
- * formatted value and its placement follow the page language (formatNumber).
- * Large-number display for English/Chinese: kept as the same scale for now —
- * a `compact` format would change the printed magnitude, and the unit text is
- * a dictionary entry that the translation PRs can reword (docs/design/11-i18n.md).
+ * Token counts. Japanese and Chinese use a unit of 10,000 for values of
+ * 10,000 and above; English prints the full count with grouping. The formatted
+ * value and its placement follow the page language (formatNumber).
  */
 export function formatTokens(value: number | undefined, locale: Locale = SOURCE_LOCALE, text: SessionToolsText = defaultText): string {
   if (value === undefined || !Number.isFinite(value) || value < 0) return text.notRetrieved
-  if (value < 10000) return formatNumber(locale, Math.floor(value))
+  if (locale === 'en' || value < 10000) return formatNumber(locale, Math.floor(value))
   return text.tenThousandTokens(formatNumber(locale, value / 10000, { maximumFractionDigits: 1 }))
 }
 

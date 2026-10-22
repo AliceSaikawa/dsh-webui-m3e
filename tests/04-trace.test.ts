@@ -770,13 +770,13 @@ test('record detail rows summarize time, tokens, input and output as in Canvas',
   assert.equal(recordResultText({ running: false, failed: false }), undefined)
 })
 
-test('the trace dictionary has every Japanese key and no translations yet', () => {
+test('the trace dictionary has every Japanese key and every translation', () => {
   assert.deepEqual(catalogProblems(traceMessages), [])
-  assert.deepEqual(untranslatedLocales(traceMessages), ['en', 'zh'])
+  assert.deepEqual(untranslatedLocales(traceMessages), [])
   for (const [key, message] of Object.entries(traceMessages.ja)) {
     assert.ok(typeof message === 'string' ? message.length > 0 : typeof message === 'function', key)
   }
-  assert.equal(messagesOf(traceMessages, 'en'), traceMessages.ja)
+  assert.notEqual(messagesOf(traceMessages, 'en'), traceMessages.ja)
 })
 
 test('trace text helpers assemble their words from the dictionary', () => {
