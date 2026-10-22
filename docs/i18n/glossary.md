@@ -21,6 +21,17 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | コードの差分 | code diffs | 代码差异 | 同上 | 一致 |
 | PTC モード | PTC mode | PTC 模式 | `guidePtcIntro`（`dsh-client-ui-agent-preset`。中国語は「PTC 模式」） | 一致 |
 | 最小モード | Minimal mode | 极简模式 | `guideMinimalIntro`（`dsh-client-ui-agent-preset`。中国語は「极简模式」） | 一致。DSH の中国語は 最小 ではなく 极简 |
+| モデル | model | 模型 | `menu.model`（`dsh-client-ui-model-selection`） | 一致。モデル名と提供元の名前は訳さない。入力欄のほかの語は [terms/composer.md](terms/composer.md) |
+| 権限 | permission | 权限 | `label.permission`（`dsh-client-ui-commands`）、`title`（`dsh-client-ui-permission-presets`） | 一致 |
+| サブエージェント | subagent | 子智能体 | `message.stepProcess.subagents`（`dsh-client-ui-chat`） | 一致 |
+| 既定 | Default | 默认 | なし | 権限や考える深さの既定値 |
+| 考える深さ | Reasoning effort | 推理等级 | `menu.effort`（`dsh-client-ui-model-selection`） | 入力欄の言い方。設定では「推論の強さ」と書く |
+| 順番待ち | Queue | 排队发送 | `settings.enter.queue`（`dsh-client-ui-conversation`） | 一致 |
+| 割り込み | Steer | 插话发送 | `settings.enter.steer`（`dsh-client-ui-conversation`） | 実行中の会話に今のメッセージを差し込む送り方 |
+| 計画モード | Plan mode | 计划模式 | `description.plan`（`dsh-client-ui-commands`） | 一致 |
+| 画像 | image | 图片 | `image.label`（`dsh-client-ui-conversation`） | 一致 |
+| 送信 | Send | 发送 | `input.send`（`dsh-client-ui-conversation`） | ボタンの短い言い方 |
+| 実行を停止 | Stop the run | 停止运行 | `placeholder.parentOffline`（`dsh-client-ui-conversation`） | 実行中の会話を止めるボタン |
 | 作業の詳細 | Work details | 工作步骤展示 | `settings.transcript.title`（`dsh-client-ui-chat`） | 一致 |
 | 簡潔 | Compact | 简洁 | `settings.transcript.compact`、`settings.performance.compact` | 一致 |
 | 標準 | Standard | 标准 | `settings.transcript.standard` | 一致 |
