@@ -2,6 +2,12 @@ import type { ModelSelection } from '../composer/api.ts'
 import { modelValue, type ModelChoice } from '../composer/model-picker.ts'
 import type { SettingObject } from './schema.ts'
 import type { SettingsOperation } from './store.ts'
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
+import { modelMessages } from './messages.ts'
+
+export type ModelSettingsTexts = Translation<typeof modelMessages.ja>
+const modelText = (): ModelSettingsTexts => messagesOf(modelMessages, currentLocale())
 
 export interface AllowedModel { provider: string; model: string }
 export interface SubagentSelection { enabled: boolean; allowedModels: AllowedModel[] }
@@ -16,10 +22,10 @@ export function savedModel(value: SettingObject): ModelSelection | undefined {
     : undefined
 }
 
-export function modelSelectionState(saved: ModelSelection | undefined, choices: readonly ModelChoice[]) {
+export function modelSelectionState(saved: ModelSelection | undefined, choices: readonly ModelChoice[], text: ModelSettingsTexts = modelText()) {
   const value = modelValue(saved)
   const known = choices.some(choice => choice.value === value)
-  return { value, unknownLabel: saved && !known ? `一覧にないモデル：${saved.provider} / ${saved.model}` : undefined }
+  return { value, unknownLabel: saved && !known ? text.unknownModel(saved.provider, saved.model) : undefined }
 }
 
 export function chooseModel(choice: ModelChoice): ModelSelection {
@@ -32,11 +38,11 @@ export function selectedEffort(saved: ModelSelection | undefined, choice: ModelC
     ? saved?.reasoningEffort ?? '' : ''
 }
 
-export function effortSelectionState(saved: ModelSelection | undefined, choice: ModelChoice | undefined) {
+export function effortSelectionState(saved: ModelSelection | undefined, choice: ModelChoice | undefined, text: ModelSettingsTexts = modelText()) {
   const value = saved?.reasoningEffort ?? ''
   return { value, unknownLabel: value && choice?.model.reasoning &&
     !choice.model.reasoning.efforts.some(effort => effort.id === value)
-    ? `一覧にない推論の強さ：${value}` : undefined }
+    ? text.unknownEffort(value) : undefined }
 }
 
 export function withReasoningEffort(current: ModelSelection, effort: string): ModelSelection {

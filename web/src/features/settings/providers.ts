@@ -1,8 +1,23 @@
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { currentLocale } from '../../i18n/current.ts'
 import type { RemoteResult } from '../../dsh/services.ts'
 import { buildPatch, valueAt, type SettingsDescription } from './schema.ts'
 import type { SettingsApi } from './store.ts'
 import type { ModelCatalog } from '../composer/api.ts'
-import { keyRegisteredMeanwhileMessage, pendingKeyReferenceMessage } from './provider-key-refs.ts'
+import { providerMessages } from './messages.ts'
+import type { KeyReferenceReasonKey } from './provider-key-refs.ts'
+
+/** The texts the provider store produces; tests may pass another language's catalog. */
+export type ProviderStoreTexts = Translation<typeof providerMessages.ja>
+const storeText = (): ProviderStoreTexts => messagesOf(providerMessages, currentLocale())
+/** The two messages a key draft itself produces; the custom provider form has its own catalog with both. */
+export type KeyDraftTexts = { keyRequired: string; saveFailed: string }
+/** The line that states one row's registration status, including the read-only note. */
+export const providerStatusText = (status: ProviderRow['status'], writable: boolean, text: ProviderStoreTexts): string => {
+  const label = { registered: text.statusRegistered, missing: text.statusMissing, unnecessary: text.statusUnnecessary,
+    unknown: text.statusUnknown, unset: text.statusUnset }[status]
+  return writable ? label : text.statusReadOnly(label)
+}
 
 /** Broadcasts after which the provider list and key state must be read again. */
 export const PROVIDER_EVENTS = ['credentials/reference-updated', 'credentials/record-updated', 'llm/adapters-updated', 'settings/document-updated'] as const
@@ -31,7 +46,10 @@ export interface ProviderRow {
   path: string[]
   revision?: number
   ref?: string
+  /** A text the list and the form show as it is (the current language's). */
   keyNotice?: string
+  /** The same notice as a catalog key, so a form translates it when it draws. */
+  keyNoticeKey?: 'pendingKeyReference'
   needsReference: boolean
   status: 'registered' | 'missing' | 'unnecessary' | 'unknown' | 'unset'
   writable: boolean
@@ -44,7 +62,16 @@ export interface ProviderState {
   settingsWritable?: boolean
   customAvailable?: boolean
 }
-export type KeyOutcome = { ok: true } | { ok: false; message: string }
+/**
+ * A failed key operation. `message` is the text to show, in the language of
+ * the call; `code` names the catalog key so a form that draws later can
+ * translate it again, and `reason` is the text the operation took from an
+ * option called with another catalog. `keyReason` holds a `keyReferenceReason`
+ * key so the caller can build its own sentence.
+ */
+/** A failure from the custom provider form itself, which owns its own catalog. */
+export type CustomKeyFailure = { ok: false; message: string; code: 'custom'; keyReason?: KeyReferenceReasonKey }
+export type KeyOutcome = { ok: true } | { ok: false; message: string; code: keyof ProviderStoreTexts; reason?: string; keyReason?: KeyReferenceReasonKey } | CustomKeyFailure
 /** `requireMissing`: the caller has just assigned this reference name, so a key registered meanwhile is someone else's. */
 export interface KeySaveOptions { canSend?(): boolean; requireMissing?: boolean }
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -81,7 +108,7 @@ export function providerRows(registered: ProviderEntry[], directory: ProviderAdd
   })
 }
 
-export function createProviderStore(remote: ProviderRemote) {
+export function createProviderStore(remote: ProviderRemote, text: ProviderStoreTexts = storeText()) {
   let state: ProviderState = { phase: 'loading', rows: [], error: null, busy: false }
   let sequence = 0
   let epoch = 0
@@ -90,7 +117,6 @@ export function createProviderStore(remote: ProviderRemote) {
   let pendingChange: { generation: number; done: Promise<void>; finish(): void } | undefined
   const listeners = new Set<() => void>()
   const publish = (patch: Partial<ProviderState>) => { state = { ...state, ...patch }; listeners.forEach(listener => listener()) }
-  const unavailable = '提供元と API キーの登録状況を読み込めませんでした。もう一度お試しください。'
   async function read(): Promise<boolean> {
     const request = ++sequence
     const generation = epoch
@@ -116,7 +142,7 @@ export function createProviderStore(remote: ProviderRemote) {
         if (!row.ref) return row
         const status = keyInfo(Object.hasOwn(info, row.ref) ? info[row.ref] : undefined)
         return { ...row, status: status ? status.configured ? 'registered' as const : 'missing' as const : 'unknown' as const,
-          ...(row.custom && status && !status.configured ? { keyNotice: pendingKeyReferenceMessage } : {}),
+          ...(row.custom && status && !status.configured ? { keyNotice: text.pendingKeyReference, keyNoticeKey: 'pendingKeyReference' as const } : {}),
           // A derived reference is useful for status everywhere. Only pi-ai's
           // missing-reference write contract has been confirmed.
           writable: (!row.needsReference || row.ns === 'llm-pi-ai') && settings.value.writable && status?.writable === true }
@@ -124,10 +150,10 @@ export function createProviderStore(remote: ProviderRemote) {
       const incomplete = resolved.some(row => row.status === 'unknown')
       publish({ phase: 'ready', rows: resolved, settingsWritable: settings.value.writable,
         customAvailable: settings.value.namespaces.some(row => row.ns === 'llm-pi-ai'),
-        error: incomplete ? '一部の API キーの登録状況を確認できません。再読み込みしてください。' : null })
+        error: incomplete ? text.incomplete : null })
       return true
     } catch {
-      if (request === sequence && generation === epoch) publish({ phase: 'error', error: unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
+      if (request === sequence && generation === epoch) publish({ phase: 'error', error: text.unavailable, rows: state.rows.map(row => ({ ...row, writable: false })) })
       return false
     }
   }
@@ -149,7 +175,7 @@ export function createProviderStore(remote: ProviderRemote) {
     if (connected) void load()
   }
   async function change(target: ProviderRow, value?: string, options: KeySaveOptions = {}): Promise<KeyOutcome> {
-    if (state.busy || !connected) return { ok: false, message: '接続と処理中の操作を確認してください。' }
+    if (state.busy || !connected) return { ok: false, code: 'busy', message: text.busy }
     const generation = epoch
     let finish!: () => void
     const operation = { generation, done: new Promise<void>(resolve => { finish = resolve }), finish: () => finish() }
@@ -160,31 +186,34 @@ export function createProviderStore(remote: ProviderRemote) {
       let validatedVersion: number
       do {
         validatedVersion = refreshVersion
-        if (!await read() || generation !== epoch) return { ok: false, message: unavailable }
+        if (!await read() || generation !== epoch) return { ok: false, code: 'unavailable', message: text.unavailable }
       } while (validatedVersion !== refreshVersion)
-      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
+      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text.closed }
       const row = state.rows.find(item => item.id === target.id)
       if (!row?.ref || !row.writable || row.ref !== target.ref || row.ns !== target.ns || JSON.stringify(row.path) !== JSON.stringify(target.path)) {
-        return { ok: false, message: '設定が変わったか、このキーは変更できません。入力画面を開き直してください。' }
+        return { ok: false, code: 'changed', message: text.changed }
       }
-      if (value !== undefined && !value.trim()) return { ok: false, message: 'API キーを入力してください。' }
+      if (value !== undefined && !value.trim()) return { ok: false, code: 'keyRequired', message: text.keyRequired }
       if (value !== undefined && row.needsReference) {
-        if (row.revision === undefined) return { ok: false, message: '提供元の設定を読み直してください。' }
+        if (row.revision === undefined) return { ok: false, code: 'rereadProvider', message: text.rereadProvider }
         const named = await remote.settings.update(row.ns, buildPatch([...row.path, 'apiKeyEnv'], row.ref), row.revision)
-        if (!named.ok || generation !== epoch) return { ok: false, message: '参照先を設定できませんでした。提供元の設定を読み直してください。' }
+        if (!named.ok || generation !== epoch) return { ok: false, code: 'referenceFailed', message: text.referenceFailed }
         referenceWritten = true
       }
-      if (options.canSend?.() === false) return { ok: false, message: '入力画面を閉じたため、API キーの送信を中止しました。' }
-      if (options.requireMissing && row.status !== 'missing') return { ok: false, message: keyRegisteredMeanwhileMessage }
+      if (options.canSend?.() === false) return { ok: false, code: 'closed', message: text.closed }
+      if (options.requireMissing && row.status !== 'missing') return { ok: false, code: 'keyRegisteredMeanwhile', message: text.keyRegisteredMeanwhile }
       const result = value === undefined ? await remote.credentials.unset(row.ref) : await remote.credentials.set(row.ref, value)
       value = undefined
-      if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
-      if (!result.ok) return { ok: false, message: referenceWritten ? '参照先を設定しましたが、キーを保存できませんでした。入力し直してください。' : 'API キーの変更が拒否されました。登録状況を確認してください。' }
+      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text.connectionChanged }
+      if (!result.ok) {
+        if (referenceWritten) return { ok: false, code: 'referenceSetKeyFailed', message: text.referenceSetKeyFailed }
+        return { ok: false, code: 'rejected', message: text.rejected }
+      }
       await read()
-      if (generation !== epoch) return { ok: false, message: '接続が変わりました。登録状況を確認してください。' }
+      if (generation !== epoch) return { ok: false, code: 'connectionChanged', message: text.connectionChanged }
       return { ok: true }
     } catch {
-      return { ok: false, message: 'API キーを変更できませんでした。接続と登録状況を確認してください。' }
+      return { ok: false, code: 'changeFailed', message: text.changeFailed }
     } finally {
       value = undefined
       if (pendingChange === operation) pendingChange = undefined
@@ -203,7 +232,7 @@ export function createProviderStore(remote: ProviderRemote) {
 export type ProviderStore = ReturnType<typeof createProviderStore>
 
 /** A write-only draft. Submission consumes the input, including failed writes. */
-export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>) {
+export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>, text: () => KeyDraftTexts = () => storeText()) {
   let state = { draft: '', visible: false, busy: false, error: null as string | null }
   let active = true
   let epoch = 0
@@ -218,7 +247,7 @@ export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>) {
     toggle() { if (active && !state.busy) publish({ visible: !state.visible }) },
     async submit(): Promise<boolean> {
       if (!active || state.busy) return false
-      if (!state.draft.trim()) { publish({ error: 'API キーを入力してください。' }); return false }
+      if (!state.draft.trim()) { publish({ error: text().keyRequired }); return false }
       const generation = epoch
       let value = state.draft.trim()
       publish({ draft: '', visible: false, busy: true, error: null })
@@ -229,7 +258,7 @@ export function createKeyDraft(save: (value: string) => Promise<KeyOutcome>) {
         if (active && generation === epoch) publish({ busy: false, error: outcome.ok ? null : outcome.message })
         return active && generation === epoch && outcome.ok
       } catch {
-        if (active && generation === epoch) publish({ busy: false, error: 'API キーを保存できませんでした。入力し直してください。' })
+        if (active && generation === epoch) publish({ busy: false, error: text().saveFailed })
         return false
       } finally { value = '' }
     },
