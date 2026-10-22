@@ -13,8 +13,20 @@ export const bootMessages = defineMessages({
     reload: '読み直す',
     classic: '今の画面に戻す',
   },
-  en: null,
-  zh: null,
+  en: {
+    notHost: 'Could not start. This page was not served by the DSH Host. To open the development screen, add ?mock to the URL.',
+    incompatible: (version: string) => `Could not start. The M3E screen may not support this version of DSH. The M3E screen has been checked with DSH ${version}.`,
+    failed: 'Could not start. Reload the page.',
+    reload: 'Reload',
+    classic: 'Return to the standard screen',
+  },
+  zh: {
+    notHost: '启动失败。此页面不是由 DSH 主机提供的页面。开发用页面请在网址后添加 ?mock 打开。',
+    incompatible: (version: string) => `启动失败。M3E 页面可能不支持此版本的 DSH。M3E 页面已在 DSH ${version} 上验证。`,
+    failed: '启动失败，请刷新页面。',
+    reload: '刷新',
+    classic: '返回标准界面',
+  },
 })
 
 /**
@@ -37,8 +49,34 @@ export const errorMessages = defineMessages({
     back: '戻る',
     retryOpen: 'もう一度開く',
   },
-  en: null,
-  zh: null,
+  en: {
+    renderTitle: 'This screen could not be displayed',
+    renderMessage: 'Something unexpected went wrong. Reloading the page may bring it back.',
+    notFoundBarTitle: 'Error',
+    notFoundTitle: 'Screen not found',
+    notFoundMessage: 'The URL may be old or incorrect.',
+    openFailedTitle: 'Could not open the conversation',
+    offlineTitle: 'You are offline',
+    offlineMessage: 'You are not connected to the network. Check your connection, then reload the page.',
+    reload: 'Reload',
+    home: 'Back to sessions',
+    back: 'Back',
+    retryOpen: 'Open again',
+  },
+  zh: {
+    renderTitle: '无法显示页面',
+    renderMessage: '发生了意外问题，刷新后可能恢复正常。',
+    notFoundBarTitle: '错误',
+    notFoundTitle: '找不到页面',
+    notFoundMessage: '链接可能已过期或输入有误。',
+    openFailedTitle: '无法打开对话',
+    offlineTitle: '当前离线',
+    offlineMessage: '未连接到网络。请检查连接后刷新页面。',
+    reload: '刷新',
+    home: '返回会话列表',
+    back: '返回',
+    retryOpen: '重新打开',
+  },
 })
 
 /**
@@ -61,8 +99,36 @@ export const shellMessages = defineMessages({
     reconnect: '再接続',
     openFailed: '会話を開けませんでした。もう一度お試しください。',
   },
-  en: null,
-  zh: null,
+  en: {
+    back: 'Back',
+    homeTab: 'Sessions',
+    searchTab: 'Search',
+    inboxTab: 'Inbox',
+    settingsTab: 'Settings',
+    mainNavigation: 'Main navigation',
+    inboxTabWithCount: (count: number) => count === 1 ? 'Inbox, 1 pending item' : `Inbox, ${count} pending items`,
+    reconnecting: 'Reconnecting',
+    staleWithoutTime: 'Showing saved data',
+    staleMinutes: (minutes: number) => `Showing data from ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`,
+    disconnected: 'Disconnected from DSH',
+    reconnect: 'Reconnect',
+    openFailed: 'Could not open the conversation. Try again.',
+  },
+  zh: {
+    back: '返回',
+    homeTab: '会话',
+    searchTab: '搜索',
+    inboxTab: '待处理',
+    settingsTab: '设置',
+    mainNavigation: '主导航',
+    inboxTabWithCount: (count: number) => `待处理，${count} 项`,
+    reconnecting: '正在重新连接',
+    staleWithoutTime: '正在显示已保存的数据',
+    staleMinutes: (minutes: number) => `正在显示 ${minutes} 分钟前的数据`,
+    disconnected: '与 DSH 的连接已断开',
+    reconnect: '重新连接',
+    openFailed: '无法打开对话，请重试。',
+  },
 })
 
 /** Sheets, dialogs, the snackbar and the text prompt (web/src/app/overlay/). */
@@ -77,8 +143,26 @@ export const overlayMessages = defineMessages({
     cancel: 'キャンセル',
     saveFailed: '保存できませんでした。もう一度お試しください。',
   },
-  en: null,
-  zh: null,
+  en: {
+    close: 'Close',
+    dialogLabel: 'Confirm',
+    sheetLabel: 'Actions',
+    sheetHandle: 'Resize the sheet',
+    promptLabel: 'Name',
+    promptConfirm: 'OK',
+    cancel: 'Cancel',
+    saveFailed: 'Could not save. Try again.',
+  },
+  zh: {
+    close: '关闭',
+    dialogLabel: '确认',
+    sheetLabel: '操作列表',
+    sheetHandle: '调整面板高度',
+    promptLabel: '名称',
+    promptConfirm: '确定',
+    cancel: '取消',
+    saveFailed: '无法保存，请重试。',
+  },
 })
 
 /** Remote images are not rendered; the placeholder says what was there (web/src/app/Markdown.tsx). */
@@ -87,6 +171,12 @@ export const markdownMessages = defineMessages({
     image: '画像',
     imageNamed: (alt: string) => `画像：${alt}`,
   },
-  en: null,
-  zh: null,
+  en: {
+    image: 'Image',
+    imageNamed: (alt: string) => `Image: ${alt}`,
+  },
+  zh: {
+    image: '图片',
+    imageNamed: (alt: string) => `图片：${alt}`,
+  },
 })

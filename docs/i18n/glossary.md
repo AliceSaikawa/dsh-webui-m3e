@@ -9,6 +9,15 @@ DSH 0.2.1-rc.2 のパッケージを読んで確かめました。DSH は起動�
 | コピー | Copy | 复制 | `copy`（`dsh-client-locale`） | 一致 |
 | コピーしました。 | Copied. | 复制成功。 | `copied`（`dsh-client-locale`） | 共通のキー `copied` に合わせた。個別の画面（`dsh-client-ui-workspace` など）には 已复制 もある。文末の句点は M3E の文の書き方に合わせて足した |
 | 閉じる | Close | 关闭 | `close`（`dsh-client-locale`） | 一致 |
+| 今の画面に戻す | Return to the standard screen | 返回标准界面 | なし | M3E を閉じて DSH の標準の画面に戻す操作。設定の行と起動失敗の画面で使う。共通の部品・会話・DSH のエラーのほかの語は [terms/shell.md](terms/shell.md) |
+| 標準の画面 | the standard screen | 标准界面 | なし | DSH の標準の Web 画面 |
+| 一覧（タブ） | Sessions | 会话 | なし | 下端のタブ。中身はセッションの一覧なので session の語にした |
+| 実行中 | Running | 运行中 | なし | 会話やジョブの状態 |
+| Host | Host | 主机 | `presented.hostError`（`dsh-client-ui-deliverables`） | DSH の Host。英語は訳さず Host |
+| 読み取りのみ | Read Only | 仅可查看 | `preset.readOnly`（`dsh-client-ui-permission-presets`） | 権限プリセットの名前。一致 |
+| ワークスペース書込 | Workspace Write | 工作区内修改 | `preset.workspaceWrite`（同上） | 一致 |
+| フル アクセス | Full access | 完全权限 | `preset.fullAccess`（同上） | 一致 |
+| 自動レビュー（実験的） | Auto review (experimental) | 自动审查（实验性） | `auto.label`（同上。Auto review／自动审查） | 日本語の名前にある「実験的」を訳にも入れた |
 | ここから分岐 | Branch from here | 从这里分支 | `message.branch`（`dsh-client-ui-chat`。英語は "Branch into a new conversation"、中国語は 在新对话中分支） | 語（branch／分支）は一致。DSH は長い説明の文、M3E はボタンの短い言い方にした。ワークスペースの画面には fork／分叉会话（`menu.fork`）もあるが、チャットの `message.branch` に合わせた |
 | 会話 | conversation | 对话 | `message.branch` の文中（`dsh-client-ui-chat`。英語 conversation、中国語 在新对话中分支） | DSH の中国語には 会话（session に当たる語として多数）と 对话 の両方がある。チャットの画面は 对话 なので、チャットの文言は 对话 にそろえた |
 | セッション | session | 会话 | `menu.archiveSession`（`dsh-client-ui-workspace`）ほか多数 | 一致。会話（conversation／对话）とは別の語。一覧（ホーム）とワークスペースのほかの語は [terms/home.md](terms/home.md) |

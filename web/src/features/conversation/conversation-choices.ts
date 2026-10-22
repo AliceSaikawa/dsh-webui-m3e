@@ -1,8 +1,13 @@
 import { sessionRowIds } from '../../dsh/session-rows.ts'
 import type { SessionListState, SessionSummary, WorkspaceSnapshot } from '../../dsh/services.ts'
+import { messagesOf, type Translation } from '../../i18n/catalog.ts'
+import { conversationMessages } from './messages.ts'
 
 export const CONVERSATION_CHOICE_LIMIT = 50
 export interface ConversationChoice { row: SessionSummary; workspaceTitle: string }
+
+/** The texts this feature shows. Tests and callers may pass them explicitly. */
+export type ConversationMessages = Translation<typeof conversationMessages.ja>
 
 function routeableId(id: string): boolean {
   if (!id) return false
@@ -15,6 +20,7 @@ export function conversationChoices(
   workspaces: Pick<WorkspaceSnapshot, 'items' | 'archivedSessionIds'>,
   currentId: string,
   query: string,
+  text: ConversationMessages = messagesOf(conversationMessages, 'ja'),
 ): { items: ConversationChoice[]; total: number } {
   const membership = new Map<string, { workspaceId: string; title: string }>()
   for (const workspace of workspaces.items) for (const id of workspace.sessionIds) {
@@ -33,7 +39,7 @@ export function conversationChoices(
     if (search && !row.displayTitle.toLocaleLowerCase().includes(search)) continue
     const workspace = membership.get(id) ?? membership.get(row.parentId ?? '')
     const group = id === currentId ? 0 : currentWorkspace && workspace?.workspaceId === currentWorkspace.workspaceId ? 1 : 2
-    groups[group]!.push({ row, workspaceTitle: workspace?.title ?? 'ワークスペース未登録' })
+    groups[group]!.push({ row, workspaceTitle: workspace?.title ?? text.unregisteredWorkspace })
   }
   const all = groups.flat()
   return { items: all.slice(0, CONVERSATION_CHOICE_LIMIT), total: all.length }

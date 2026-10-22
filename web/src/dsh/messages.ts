@@ -37,8 +37,64 @@ export const remoteErrorMessages = defineMessages({
     pickerExists: '同じ名前のフォルダがすでにあります。',
     pickerCreateFailed: 'フォルダを作れませんでした。',
   },
-  en: null,
-  zh: null,
+  en: {
+    failed: 'The operation failed. Try again.',
+    cancelled: 'The operation was cancelled.',
+    disconnected: 'Could not connect. Check your connection and try again.',
+    timeout: 'The request timed out. Try again.',
+    badRequest: 'Check what you sent and try again.',
+    gatewayInternal: 'The server encountered an error. Wait a moment, then try again.',
+    sessionNotFound: 'The conversation was not found.',
+    sessionTitleInvalid: 'Enter a title for the conversation.',
+    sessionAgentBusy: 'Wait for the running operation to finish, then try again.',
+    sessionModelUnavailable: 'The selected model is unavailable. Choose a different model.',
+    providerModelsUnavailable: 'This provider has no available models. Check the provider settings or choose a different model.',
+    projectionsUnavailable: 'Could not load the conversation state. Open the conversation again.',
+    writerHeld: 'Another operation is using this conversation. Wait for it to finish, then try again.',
+    forkUnavailable: 'You cannot branch the conversation from this point.',
+    queueItemNotFound: 'This message is no longer in the queue.',
+    steerUnavailable: 'This message cannot interrupt the running operation.',
+    attachmentInvalid: 'Could not send the attachment. Check its contents and size.',
+    workspaceInvalidPath: 'This folder cannot be used. Check the path.',
+    workspaceNameConflict: 'A workspace with the same name already exists.',
+    workspaceMoveInvalid: 'The workspace cannot be moved here.',
+    credentialsUnavailable: 'Cannot check whether the API key is registered. Check the DSH configuration.',
+    workspaceSessionActive: 'A running conversation cannot be archived. Stop the run, then try again.',
+    watchUnsupported: 'File change notifications are unavailable. Reload to check.',
+    pickerUnavailable: 'The folder picker is unavailable.',
+    pickerUnreadable: 'This folder cannot be read.',
+    pickerExists: 'A folder with the same name already exists.',
+    pickerCreateFailed: 'Could not create the folder.',
+  },
+  zh: {
+    failed: '操作失败，请重试。',
+    cancelled: '操作已取消。',
+    disconnected: '无法连接。请检查网络连接后重试。',
+    timeout: '等待响应超时，请重试。',
+    badRequest: '请检查发送内容后重试。',
+    gatewayInternal: '服务器发生错误，请稍候后重试。',
+    sessionNotFound: '找不到对话。',
+    sessionTitleInvalid: '请输入对话标题。',
+    sessionAgentBusy: '请等待当前操作结束后重试。',
+    sessionModelUnavailable: '所选模型不可用，请重新选择模型。',
+    providerModelsUnavailable: '此提供方没有可用的模型。请检查提供方设置，或重新选择模型。',
+    projectionsUnavailable: '无法加载对话状态，请重新打开对话。',
+    writerHeld: '此对话正被其他操作占用，请等待操作结束后重试。',
+    forkUnavailable: '无法从此位置分支对话。',
+    queueItemNotFound: '此消息已不在队列中。',
+    steerUnavailable: '此消息无法插话发送。',
+    attachmentInvalid: '无法发送附件，请检查内容和大小。',
+    workspaceInvalidPath: '无法使用此文件夹，请检查路径。',
+    workspaceNameConflict: '已存在同名工作区。',
+    workspaceMoveInvalid: '无法移动到此处。',
+    credentialsUnavailable: '无法确认 API 密钥的注册状态，请检查 DSH 配置。',
+    workspaceSessionActive: '正在运行的对话无法归档，请停止运行后重试。',
+    watchUnsupported: '此文件不支持更新通知，请重新加载确认。',
+    pickerUnavailable: '无法使用文件夹选择。',
+    pickerUnreadable: '无法读取此文件夹。',
+    pickerExists: '已存在同名文件夹。',
+    pickerCreateFailed: '无法创建文件夹。',
+  },
 })
 
 /**
@@ -56,6 +112,67 @@ export const permissionPresetMessages = defineMessages({
     dangerFullAccessDescription: '確認なしで、すべてのファイルにアクセスできます。',
     autoReviewDescription: 'サンドボックスなしで動きます。ツールを呼び出すたびに、同じモデルが実験的に確認します。',
   },
-  en: null,
-  zh: null,
+  en: {
+    readOnly: 'Read Only',
+    workspaceWrite: 'Workspace Write',
+    dangerFullAccess: 'Full access',
+    autoReview: 'Auto review (experimental)',
+    custom: 'Custom',
+    workspaceWriteDescription: 'Can write inside the workspace and permitted temporary folders. Asks before widening the scope.',
+    dangerFullAccessDescription: 'Can access all files without asking.',
+    autoReviewDescription: 'Runs without a sandbox. Each time a tool is called, the same model checks it as an experiment.',
+  },
+  zh: {
+    readOnly: '仅可查看',
+    workspaceWrite: '工作区内修改',
+    dangerFullAccess: '完全权限',
+    autoReview: '自动审查（实验性）',
+    custom: '自定义',
+    workspaceWriteDescription: '可在工作区和允许的临时文件夹内写入。扩大范围时会先确认。',
+    dangerFullAccessDescription: '无需确认即可访问所有文件。',
+    autoReviewDescription: '无沙箱运行。每次调用工具时，由同一模型进行实验性检查。',
+  },
+})
+
+/**
+ * Failures while resolving or opening a conversation
+ * (web/src/dsh/session-navigation.ts, conversation-selection.ts, session.ts).
+ * The UI usually shows its own fallback for these plain errors, but the
+ * messages still come from the page language.
+ */
+export const navigationErrorMessages = defineMessages({
+  ja: {
+    sessionMissing: '会話が見つかりません。',
+    parentMissing: '親の会話が見つかりません。',
+    childChanged: '子の会話の情報が変わりました。もう一度お試しください。',
+    childUnavailable: '子の会話の情報を読み込めませんでした。',
+    openFailed: '会話を開けませんでした。',
+  },
+  en: {
+    sessionMissing: 'The conversation was not found.',
+    parentMissing: 'The parent conversation was not found.',
+    childChanged: 'The child conversation changed. Try again.',
+    childUnavailable: 'Could not load the child conversation.',
+    openFailed: 'Could not open the conversation.',
+  },
+  zh: {
+    sessionMissing: '找不到对话。',
+    parentMissing: '找不到父对话。',
+    childChanged: '子对话的信息已变化，请重试。',
+    childUnavailable: '无法加载子对话的信息。',
+    openFailed: '无法打开对话。',
+  },
+})
+
+/** Developer failures of the service layer (web/src/dsh/services.ts). They are not shown as text. */
+export const serviceErrorMessages = defineMessages({
+  ja: {
+    connectionMissing: 'DSH の接続先が設定されていません。',
+  },
+  en: {
+    connectionMissing: 'No DSH connection is configured.',
+  },
+  zh: {
+    connectionMissing: '未设置 DSH 的连接地址。',
+  },
 })

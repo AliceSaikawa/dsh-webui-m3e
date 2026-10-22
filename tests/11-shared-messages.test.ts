@@ -34,10 +34,10 @@ const JAPANESE_BY_CODE: readonly (readonly [string, string])[] = [
 ]
 const failure = (code: string) => ({ code, message: 'host diagnostic', details: {} })
 
-test('共通の部品の辞書のキーはそろい、訳は未着手（null）のまま', () => {
+test('共通の部品の辞書のキーはそろい、英語と中国語がそろっている', () => {
   for (const catalog of [shellMessages, overlayMessages, markdownMessages, remoteErrorMessages, permissionPresetMessages]) {
     assert.deepEqual(catalogProblems(catalog as never), [])
-    assert.deepEqual(untranslatedLocales(catalog as never), ['en', 'zh'])
+    assert.deepEqual(untranslatedLocales(catalog as never), [])
   }
 })
 

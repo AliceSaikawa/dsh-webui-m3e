@@ -11,11 +11,14 @@ import { navigate } from '../../app/router.ts'
 import { useDsh, type SessionSummary } from '../../dsh/services.ts'
 import { useSnapshot } from '../../dsh/use-snapshot.ts'
 import { remoteErrorMessage } from '../../dsh/remote-result.ts'
+import { useMessages } from '../../i18n/index.ts'
 import { openHomeSession } from '../home/session-navigation.ts'
 import { conversationChoices, conversationChoiceAvailable, CONVERSATION_CHOICE_LIMIT } from './conversation-choices.ts'
+import { conversationMessages } from './messages.ts'
 import './conversation-picker.css'
 
 function ConversationPicker({ currentId, close }: { currentId: string; close: CloseOverlay }) {
+  const text = useMessages(conversationMessages)
   const { sessions, workspaces } = useDsh()
   const list = useSnapshot(sessions.list)
   const workspaceList = useSnapshot(workspaces.list)
@@ -58,14 +61,14 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
   // Check the logical overlay too, so Escape/swipe invalidates delayed selection.
   const isOpen = () => active.current && getOverlays().some(entry => entry.close === close)
   const dismiss = () => { active.current = false; opening.current?.abort(); restoreAfterDismissal(); close() }
-  const choices = useMemo(() => conversationChoices(list, workspaceList, currentId, query), [list, workspaceList, currentId, query])
+  const choices = useMemo(() => conversationChoices(list, workspaceList, currentId, query, text), [list, workspaceList, currentId, query, text])
   async function choose(id: string, keyboard = false) {
     if (locked.current || !isOpen()) return
     if (id === currentId) { dismiss(); return }
     const latest = sessions.list.getSnapshot()
     const row: SessionSummary | undefined = Object.hasOwn(latest.byId, id) ? latest.byId[id] : undefined
     if (!row || !conversationChoiceAvailable(row, latest, workspaces.list.getSnapshot().archivedSessionIds)) {
-      setError('この会話は一覧からなくなりました。選び直してください。')
+      setError(text.choiceGone)
       return
     }
     locked.current = true; setBusy(true); setError('')
@@ -79,32 +82,32 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
         dismiss(); navigate(path)
       },
         () => isOpen() && conversationChoiceAvailable(row, sessions.list.getSnapshot(), workspaces.list.getSnapshot().archivedSessionIds), opening.current.signal)
-      if (!opened && isOpen()) setError('会話の状態が変わりました。一覧から選び直してください。')
+      if (!opened && isOpen()) setError(text.choiceChanged)
     } catch (cause) {
-      if (isOpen()) setError(remoteErrorMessage(cause, '会話を開けませんでした。もう一度お試しください。'))
+      if (isOpen()) setError(remoteErrorMessage(cause, text.openFailed))
     } finally {
       locked.current = false
       if (isOpen()) setBusy(false)
     }
   }
   return <div ref={root} className="conversation-picker">
-    <div className="conversation-picker-heading"><h2>会話を切り替え</h2><M3eButton onClick={dismiss}>閉じる</M3eButton></div>
-    <M3eSearchBar clearable clearLabel="会話名の検索を消去" onClear={() => setQuery('')}>
+    <div className="conversation-picker-heading"><h2>{text.pickerTitle}</h2><M3eButton onClick={dismiss}>{text.close}</M3eButton></div>
+    <M3eSearchBar clearable clearLabel={text.searchClear} onClear={() => setQuery('')}>
       <Icon name="search" slot="leading" />
-      <input slot="input" type="search" aria-label="会話名で検索" placeholder="会話名で検索" autoComplete="off" enterKeyHint="search"
+      <input slot="input" type="search" aria-label={text.searchPlaceholder} placeholder={text.searchPlaceholder} autoComplete="off" enterKeyHint="search"
         value={query} disabled={busy} onChange={event => setQuery(event.currentTarget.value)} />
     </M3eSearchBar>
-    {busy && <p role="status">会話を開いています…</p>}
+    {busy && <p role="status">{text.opening}</p>}
     {error && <p role="alert" className="conversation-picker-error">{error}</p>}
-    {list.phase === 'pending' && <p role="status">一覧を読み込んでいます…</p>}
-    {choices.total > CONVERSATION_CHOICE_LIMIT && <p className="conversation-picker-hint">{choices.total} 件中、先頭 {CONVERSATION_CHOICE_LIMIT} 件を表示しています。会話名で絞り込めます。</p>}
-    {!choices.total && list.phase !== 'pending' && <p role="status">{query.trim() ? '一致する会話がありません。' : '切り替えられる会話がありません。'}</p>}
-    <ul className="conversation-picker-list" aria-label="切り替える会話">
+    {list.phase === 'pending' && <p role="status">{text.loadingList}</p>}
+    {choices.total > CONVERSATION_CHOICE_LIMIT && <p className="conversation-picker-hint">{text.limitNotice(choices.total, CONVERSATION_CHOICE_LIMIT)}</p>}
+    {!choices.total && list.phase !== 'pending' && <p role="status">{query.trim() ? text.noMatch : text.noChoices}</p>}
+    <ul className="conversation-picker-list" aria-label={text.listLabel}>
       {choices.items.map(({ row, workspaceTitle }) => <li key={row.id}>
         <button type="button" className="conversation-picker-row" disabled={busy} aria-current={row.id === currentId ? 'page' : undefined}
           onClick={event => { void choose(row.id, event.detail === 0) }}>
           <Icon name={row.id === currentId ? 'check' : row.origin === 'subagent' ? 'account_tree' : 'chat_bubble'} />
-          <span><strong>{row.displayTitle}</strong><small>{workspaceTitle}{row.origin === 'subagent' ? ' ・ 子の会話' : ''}{row.running ? ' ・ 実行中' : ''}{row.id === currentId ? ' ・ 開いている会話' : ''}</small></span>
+          <span><strong>{row.displayTitle}</strong><small>{text.rowDescription(workspaceTitle, row.origin === 'subagent', row.running, row.id === currentId)}</small></span>
         </button>
       </li>)}
     </ul>
@@ -112,12 +115,13 @@ function ConversationPicker({ currentId, close }: { currentId: string; close: Cl
 }
 
 export function ConversationPickerButton({ sessionId }: { sessionId: string }) {
+  const text = useMessages(conversationMessages)
   const closeRef = useRef<CloseOverlay | undefined>(undefined)
   const overlays = useOverlays()
   const opened = overlays.some(entry => entry.close === closeRef.current)
   useEffect(() => () => { closeRef.current?.() }, [])
-  return <M3eIconButton className="conversation-picker-trigger" data-session-id={sessionId} aria-label="会話を切り替え" aria-haspopup="dialog" aria-expanded={opened} onClick={() => {
+  return <M3eIconButton className="conversation-picker-trigger" data-session-id={sessionId} aria-label={text.pickerTitle} aria-haspopup="dialog" aria-expanded={opened} onClick={() => {
     if (getOverlays().some(entry => entry.close === closeRef.current)) return
-    closeRef.current = openSheet(close => <ConversationPicker currentId={sessionId} close={close} />, { label: '会話を切り替え', owner: { kind: 'conversation', sessionId } })
+    closeRef.current = openSheet(close => <ConversationPicker currentId={sessionId} close={close} />, { label: text.pickerTitle, owner: { kind: 'conversation', sessionId } })
   }}><Icon name="forum" /></M3eIconButton>
 }
