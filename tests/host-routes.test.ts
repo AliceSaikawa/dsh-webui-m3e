@@ -6,7 +6,7 @@ import { sep } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads, unauthorizedPage,
+  acceptedLanguages, apply, injectUiChoice, prepareM3eIndex, resolveTarget, stripApplicationPreloads, unauthorizedPage,
   type IndexAuthResponse,
 } from '../src/host/index.ts'
 import { uiChoiceScript } from '../src/shared/ui-choice.ts'
@@ -66,9 +66,9 @@ function createHostHarness(t: TestContext, authorized: boolean, deny: DenialWrit
 
   return {
     authorize, reads, render, registrations, tap,
-    async request(url: string, method = 'GET') {
+    async request(url: string, method = 'GET', headers: IncomingMessage['headers'] = {}) {
       const result = { status: 0, headers: {} as Record<string, string>, body: undefined as unknown }
-      const req = { method, url } as IncomingMessage
+      const req = { method, url, headers } as IncomingMessage
       const res = {
         writeHead(status: number, headers: Record<string, string> = {}) {
           result.status = status
@@ -99,7 +99,8 @@ test('GET and HEAD index spellings require authorization before reading or rende
     const response = await host.request(path, method)
     assert.equal(response.status, 401, path)
     assert.equal(response.headers['cache-control'], 'no-store', path)
-    assert.equal(response.body, method === 'HEAD' ? undefined : unauthorizedPage(), path)
+    // No Accept-Language names no supported language, so the page is English.
+    assert.equal(response.body, method === 'HEAD' ? undefined : unauthorizedPage('en'), path)
   }
   assert.equal(host.authorize.mock.callCount(), INDEX_PATHS.length * 2)
   assert.equal(host.reads.mock.callCount(), 0)
@@ -128,40 +129,81 @@ test('GET and HEAD authorized index spellings prevent framing and keep no-store 
 
 test('the unauthenticated explanation page carries fixed headers and a CSP without scripts', async (t) => {
   const host = createHostHarness(t, false)
-  const response = await host.request('/m3e/')
+  const response = await host.request('/m3e/', 'GET', { 'accept-language': 'ja-JP,ja;q=0.9' })
   assert.equal(response.status, 401)
   assert.equal(response.headers['content-type'], 'text/html; charset=utf-8')
   assert.equal(response.headers['cache-control'], 'no-store')
+  assert.equal(response.headers.vary, 'accept-language')
   assert.equal(response.headers['referrer-policy'], 'no-referrer')
   assert.equal(response.headers['x-frame-options'], 'DENY')
   assert.equal(
     response.headers['content-security-policy'],
     "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   )
-  assert.equal(response.body, unauthorizedPage())
+  assert.equal(response.body, unauthorizedPage('ja'))
   assert.equal(host.reads.mock.callCount(), 0)
   assert.equal(host.render.mock.callCount(), 0)
 })
 
-test('the explanation page stays self-contained, Japanese, and free of request data', () => {
-  const page = unauthorizedPage()
-  const requestUrl = 'https://phone.example/m3e/index.html?ui=m3e'
-  assert.match(page, /<html lang="ja">/)
-  assert.match(page, /<meta name="viewport" content="width=device-width, initial-scale=1">/)
-  assert.match(page, /color-scheme: light dark/)
-  for (const text of [
-    'ログインの情報を確かめられませんでした',
-    'このページを再読み込みしても直りません。',
+const PAGE_TEXTS = {
+  ja: ['ログインの情報を確かめられませんでした', 'このページを再読み込みしても直りません。',
     'アドレスバーの URL をタップし、そのままキーボードの「開く」を押してください。',
-    '<code>dsh web</code> が表示した URL を開き直してください。',
-  ]) assert.ok(page.includes(text), text)
-  // A restored Safari tab drops the cookie on every reload the page could start,
-  // so the page offers no script and no button that would only fail again.
-  assert.doesNotMatch(page, /<script|<button/)
-  // No external resource, and nothing carried over from a request.
-  assert.doesNotMatch(page, /\s(?:src|href)=/)
-  assert.doesNotMatch(page, /@import|url\(/)
-  assert.ok(!page.includes(requestUrl))
+    '<code>dsh web</code> が表示した URL を開き直してください。'],
+  en: ['Could not verify your sign-in', 'Reloading this page does not fix it.',
+    'Tap the URL in the address bar, then tap “Go” on the keyboard.',
+    'Open the URL printed by <code>dsh web</code> again.'],
+  zh: ['无法确认登录信息', '重新加载此页面也无法解决。', '请点击地址栏中的 URL，然后直接点击键盘上的“前往”。',
+    '请重新打开 <code>dsh web</code> 显示的 URL。'],
+} as const
+
+for (const [locale, lang] of [['ja', 'ja'], ['en', 'en'], ['zh', 'zh-CN']] as const) {
+  test(`the explanation page stays self-contained and free of request data (${locale})`, () => {
+    const page = unauthorizedPage(locale)
+    const requestUrl = 'https://phone.example/m3e/index.html?ui=m3e'
+    assert.match(page, new RegExp(`<html lang="${lang}">`))
+    assert.match(page, /<meta name="viewport" content="width=device-width, initial-scale=1">/)
+    assert.match(page, /color-scheme: light dark/)
+    assert.match(page, new RegExp(`<title>${PAGE_TEXTS[locale][0]}</title>`))
+    for (const text of PAGE_TEXTS[locale]) assert.ok(page.includes(text), text)
+    // A restored Safari tab drops the cookie on every reload the page could start,
+    // so the page offers no script and no button that would only fail again.
+    assert.doesNotMatch(page, /<script|<button/)
+    // No external resource, and nothing carried over from a request.
+    assert.doesNotMatch(page, /\s(?:src|href)=/)
+    assert.doesNotMatch(page, /@import|url\(/)
+    assert.ok(!page.includes(requestUrl))
+  })
+}
+
+test('the explanation page follows Accept-Language like the M3E page follows the browser language', async (t) => {
+  const host = createHostHarness(t, false)
+  const cases: Array<[string | undefined, 'ja' | 'en' | 'zh']> = [
+    ['ja-JP,ja;q=0.9,en-US;q=0.8', 'ja'],
+    ['zh-CN,zh;q=0.9', 'zh'],
+    ['zh-Hans-HK', 'zh'],
+    ['en-GB,en;q=0.9', 'en'],
+    // Traditional Chinese is not supported; the next supported language wins.
+    ['zh-TW,zh-HK;q=0.9,ja;q=0.8', 'ja'],
+    ['zh-TW', 'en'],
+    ['fr-FR,de;q=0.9', 'en'],
+    // Weights decide the order, not the position; q=0 and * name no language.
+    ['en;q=0.5,zh-CN;q=0.8', 'zh'],
+    ['ja;q=0,*;q=0.5,en;q=0.1', 'en'],
+    ['', 'en'],
+    [undefined, 'en'],
+  ]
+  for (const [header, locale] of cases) {
+    const response = await host.request('/m3e/', 'GET', header === undefined ? {} : { 'accept-language': header })
+    assert.equal(response.status, 401, String(header))
+    assert.equal(response.body, unauthorizedPage(locale), String(header))
+  }
+})
+
+test('acceptedLanguages orders ranges by weight and keeps the header order for ties', () => {
+  assert.deepEqual(acceptedLanguages('fr;q=0.2, ja-JP , en;q=0.8, zh;q=0.8'), ['ja-JP', 'en', 'zh', 'fr'])
+  assert.deepEqual(acceptedLanguages('*, en;q=0'), [])
+  assert.deepEqual(acceptedLanguages(undefined), [])
+  assert.deepEqual(acceptedLanguages('en; Q=0.3, zh ;q=1.0'), ['zh', 'en'])
 })
 
 test('a token-bearing 401 and other Connection refusals reach the browser unchanged', async (t) => {

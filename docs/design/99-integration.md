@@ -551,3 +551,10 @@ Macの接続復帰後、`739dcc0` と既存成果物7件のハッシュ、保全
 - ページの中から始める `location.replace` もボタンも同じ理由で効かないため、説明ページからスクリプトとボタン「開き直す」を外した。CSP は `script-src` の `sha256` を外し、`default-src 'none'` でスクリプトをすべて止める。文言は「再読み込みしても直らない」「アドレスバーの URL をタップし、そのままキーボードの『開く』を押す」を中心にし、それでも開けないときは期限切れか別のアドレスと書く。
 - 試験：`tests/host-routes.test.ts` からスクリプトの動作を `node:vm` で確かめる 2 件を外し、ページに `<script>` と `<button>` が無いこと、CSP がスクリプトを許さないことを確かめるようにした。`e2e-dsh/tab-restore-auth.spec.ts` は、別のサイトから開くと案内が出て読み直さないこと（401 の 1 回だけ）、そのあと `page.goto`（アドレスバーから開く代わり）で 200 と一覧が出ることを確かめるようにした。
 - 根本の対策は DSH 本体の Cookie の `SameSite` で、M3E からは変えられない（DSH の Discussion #9096 に同じ要望がある）。
+
+#### 説明ページと標準画面の行の言語（2026-10-22、Issue #78）
+
+- 説明ページ（`unauthorizedPage(locale)`）は、要求の `Accept-Language` を `acceptedLanguages` で重みの順に並べ、M3E の画面と同じ `requestedLocale`（`web/src/i18n/locale.ts`）で日本語・英語・中国語（簡体字）を選ぶ。未対応の言語、繁体字だけ、ヘッダーが無いときは英語。`lang` も合わせ、`UNAUTHORIZED_HEADERS` に `vary: accept-language` を足した。
+- ログインの前なので、DSH の `locale.preference` は読めない。DSH で English を選んだ日本語のブラウザでは、説明ページは日本語、M3E の画面は英語になる。
+- 標準画面の「設定 → 一般」の切り替えの行（`src/client/index.tsx`）は、標準画面の `locale`（`LocaleRuntime.getSnapshot().active`）に合わせる。標準画面の言語は English と中文だけなので、日本語のブラウザでも標準画面が English なら行も English になる。言語パックで足した言語のうち M3E が対応しないものは English。
+- 試験：`tests/host-routes.test.ts` で、3 言語のページの本文と `lang`、`Accept-Language` の選び方（重み、`q=0`、`*`、繁体字、未対応、ヘッダーなし）、`vary` を確かめる。e2e-dsh は `locale: 'ja-JP'` なので日本語のページのまま。標準画面の行は実 DSH で見ていない。
