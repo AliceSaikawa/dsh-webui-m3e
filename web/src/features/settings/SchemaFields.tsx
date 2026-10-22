@@ -71,6 +71,19 @@ export function FieldEditor({ field: stored, display, namespace, state, store }:
   const draft = String(editing.value ?? '')
   const choice = display?.effective ? display.effective(editing.value) : editing.value
   const selection = selectFieldState(field, choice, schemaText)
+  // m3e-select applies each `value` asynchronously, and two applications close together (a language change
+  // that also changes the stored language re-renders twice) can leave no option selected. Once they have
+  // settled, compare the options actually selected with the wanted one and set it again if they differ.
+  const selectRef = useRef<M3eSelectElement>(null)
+  const optionLabels = field.options?.map(option => option.label).join('\u0000')
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const select = selectRef.current
+      const wanted = String(selection.index)
+      if (select && select.selected.map(option => option.value).join(',') !== wanted) select.value = wanted
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [optionLabels, selection.index])
   const error = state.fieldErrors[fieldKey(namespace.ns, field.path)]
   const timing = display ? '' : text.appliedImmediately
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -112,7 +125,7 @@ export function FieldEditor({ field: stored, display, namespace, state, store }:
         checked={choice === true} onChange={event => { void changeChoice((event.currentTarget as M3eSwitchElement).checked) }} />
     </div> : field.kind === 'select' ? <M3eFormField variant="outlined" error={Boolean(error)}>
       <label slot="label" htmlFor={id}>{field.label}</label>
-      <M3eSelect id={id} aria-label={field.label} aria-describedby={describedBy} disabled={disabled}
+      <M3eSelect ref={selectRef} id={id} aria-label={field.label} aria-describedby={describedBy} disabled={disabled}
         value={String(selection.index)}
         onChange={event => {
           const index = Number((event.currentTarget as M3eSelectElement).value)
@@ -120,7 +133,9 @@ export function FieldEditor({ field: stored, display, namespace, state, store }:
           if (option) void changeChoice(option.value)
         }}>
         {selection.placeholder && <M3eOption value="-1" disabled>{selection.placeholder}</M3eOption>}
-        {field.options?.map((option, index) => <M3eOption key={index} value={String(index)}>{option.label}</M3eOption>)}
+        {/* m3e-select copies its options when their child list changes, not when a text changes. A keyed span
+            makes a new label (after a language change) replace a node, so the copy is made again. */}
+        {field.options?.map((option, index) => <M3eOption key={index} value={String(index)}><span key={option.label}>{option.label}</span></M3eOption>)}
       </M3eSelect>
     </M3eFormField> : readonly ? <>
       <h3>{field.label}</h3>
