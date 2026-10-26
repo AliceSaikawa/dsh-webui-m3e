@@ -2,6 +2,9 @@
 
 [日本語](README.ja.md) | English | [简体中文](README.zh-CN.md)
 
+> [!WARNING]
+> This project is archived and will receive no further updates. Please use [kuraneko1/dsh-mobile-maxxing](https://github.com/kuraneko1/dsh-mobile-maxxing) instead.
+
 A Material 3 Expressive (M3E) mobile Web UI plugin for DeepSeek Harness (DSH), so you can use DSH comfortably on a phone.
 
 <p>

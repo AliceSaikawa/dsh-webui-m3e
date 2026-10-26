@@ -2,6 +2,9 @@
 
 [日本語](README.ja.md) | [English](README.md) | 简体中文
 
+> [!WARNING]
+> 本项目已归档，不再更新。请改用 [kuraneko1/dsh-mobile-maxxing](https://github.com/kuraneko1/dsh-mobile-maxxing)。
+
 这是一个插件，让你在手机上通过易用的 Material 3 Expressive（M3E）界面操作 DeepSeek Harness（DSH）。
 
 <p>
